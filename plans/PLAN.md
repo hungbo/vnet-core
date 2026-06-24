@@ -156,6 +156,12 @@ vnet/
 │   ├── ui/
 │   ├── db/
 │   └── chat/
+├── scripts/
+│   ├── build-server.sh            # Build server + embed admin UI
+│   └── build-client.sh            # Build client + agent + zip
+├── .github/workflows/
+│   └── release.yml                # Auto release khi push tag v*
+├── VERSION                        # Current version (0.1.0-dev)
 ├── docker-compose.yml
 ├── opencode.jsonc
 └── README.md
