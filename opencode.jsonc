@@ -1,0 +1,80 @@
+{
+  "$schema": "https://opencode.ai/opencode.schema.json",
+  "name": "VNET Core",
+  "description": "Hệ thống Quản lý Phòng Game Toàn Diện (Open Source)",
+  "techStack": {
+    "backend": {
+      "language": "Go",
+      "framework": "Gin/Echo/Fiber",
+      "database": "PostgreSQL",
+      "cache": "Redis",
+      "realtime": "WebSocket (gorilla/websocket)"
+    },
+    "admin": {
+      "framework": "Vue 3 + TypeScript",
+      "build": "Vite",
+      "state": "Pinia",
+      "ui": "Element Plus"
+    },
+    "desktop": {
+      "framework": "Wails",
+      "frontend": "Vue 3"
+    }
+  },
+  "commands": {
+    "dev": {
+      "backend": {
+        "command": "go run ./cmd/server",
+        "workdir": "backend"
+      },
+      "admin": {
+        "command": "npm run dev",
+        "workdir": "admin"
+      },
+      "client": {
+        "command": "wails dev",
+        "workdir": "client"
+      }
+    },
+    "build": {
+      "backend": {
+        "command": "go build -o bin/server ./cmd/server",
+        "workdir": "backend"
+      },
+      "admin": {
+        "command": "npm run build",
+        "workdir": "admin"
+      },
+      "client": {
+        "command": "wails build",
+        "workdir": "client"
+      }
+    },
+    "lint": {
+      "command": "golangci-lint run",
+      "workdir": "backend"
+    },
+    "test": {
+      "command": "go test ./...",
+      "workdir": "backend"
+    },
+    "migrate": {
+      "command": "go run ./cmd/migrate",
+      "workdir": "backend"
+    }
+  },
+  "context": [
+    {
+      "path": "PLAN.md",
+      "description": "Project plan and feature documentation"
+    }
+  ],
+  "customInstructions": "VNET Core là hệ thống quản lý phòng game mã nguồn mở. Gồm: VNET Core (tính tiền hội viên), VNET F&B (POS), VNET Up (update game). Backend Go, Admin Vue 3, Desktop client Wails. VNET Cloud Hub (central SaaS sync) và VNET Mobile (gamer app) là sản phẩm riêng biệt không nằm trong repo này.",
+  "rules": [
+    "Tuân thủ kiến trúc Go backend + Vue 3 admin + Wails client",
+    "Sử dụng GORM cho database operations",
+    "API response format: { code, message, data }",
+    "JWT cho authentication, middleware cho phân quyền",
+    "WebSocket cho real-time order và machine status"
+  ]
+}
