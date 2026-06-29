@@ -1,8 +1,6 @@
 package service
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"time"
 
@@ -108,9 +106,8 @@ type GroupResponse struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
-type ResetPasswordResponse struct {
-	MemberID    string `json:"member_id"`
-	NewPassword string `json:"new_password"`
+type ResetPasswordRequest struct {
+	Password string `json:"password" binding:"required,min=1"`
 }
 
 type MemberTransactionResponse struct {
@@ -449,26 +446,22 @@ func (s *MemberService) Delete(id string) error {
 	return nil
 }
 
-func (s *MemberService) ResetPassword(id string) (*ResetPasswordResponse, error) {
+func (s *MemberService) ResetPassword(id string, newPassword string) error {
 	var member model.Member
 	if err := s.db.Where("id = ?", id).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("member not found")
+			return errors.New("member not found")
 		}
-		return nil, err
+		return err
 	}
 
-	b := make([]byte, 4)
-	rand.Read(b)
-	newPass := hex.EncodeToString(b)
-
-	hash, err := utils.HashPassword(newPass)
+	hash, err := utils.HashPassword(newPassword)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := s.db.Model(&member).Update("password_hash", hash).Error; err != nil {
-		return nil, err
+		return err
 	}
 
 	s.audit.Log(&LogAuditRequest{
@@ -478,7 +471,7 @@ func (s *MemberService) ResetPassword(id string) (*ResetPasswordResponse, error)
 		Metadata:   map[string]string{"username": member.Username},
 	})
 
-	return &ResetPasswordResponse{MemberID: id, NewPassword: newPass}, nil
+	return nil
 }
 
 func (s *MemberService) Topup(id string, req *TopupRequest, userID string, storeID string) (*MemberResponse, error) {

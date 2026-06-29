@@ -134,23 +134,28 @@ func (h *MemberHandler) Delete(c *gin.Context) {
 }
 
 // @Summary Reset member password
-// @Description Reset a member's password to a random new one
+// @Description Reset a member's password
 // @Tags Members
 // @Accept json
 // @Produce json
 // @Param id path string true "Member ID"
-// @Success 200 {object} response.Response{data=service.ResetPasswordResponse}
+// @Param body body service.ResetPasswordRequest true "New password"
+// @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
 // @Router /members/{id}/reset-password [post]
 // @Security BearerAuth
 func (h *MemberHandler) ResetPassword(c *gin.Context) {
 	id := c.Param("id")
-	result, err := h.svc.ResetPassword(id)
-	if err != nil {
+	var req service.ResetPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	if err := h.svc.ResetPassword(id, req.Password); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	response.Success(c, result)
+	response.Success(c, map[string]string{"member_id": id})
 }
 
 // @Summary Topup member balance

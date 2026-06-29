@@ -69,7 +69,7 @@ func main() {
 		&model.PrinterConfig{}, &model.ProductPrinterMapping{},
 		&model.Supplier{}, &model.Warehouse{}, &model.StockTransaction{}, &model.InventoryCount{},
 		&model.Shift{}, &model.CashHandover{},
-		&model.ChatConversation{}, &model.ChatParticipant{}, &model.ChatMessage{}, &model.ServiceFeedback{},
+		&model.ChatRoom{}, &model.ChatParticipant{}, &model.ChatMessage{}, &model.ServiceFeedback{},
 		&model.SystemSetting{}, &model.AuditLog{},
 		&model.Notification{}, &model.NotificationRecipient{},
 		&model.MemberNotification{},

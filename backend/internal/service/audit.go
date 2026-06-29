@@ -223,7 +223,7 @@ func entityLabel(entityType string) string {
 		"curfew_policy":    "giới hạn tuổi",
 		"user":             "người dùng",
 		"role":             "vai trò",
-		"chat_conversation": "hội thoại",
+		"chat_room": "phòng",
 		"chat_message":     "tin nhắn",
 	}
 	if label, ok := labels[entityType]; ok {
@@ -261,7 +261,7 @@ func actionLabel(action string) string {
 		"restore":        "Phục hồi",
 		"override":       "Ghi đè",
 		"change_password": "Đổi mật khẩu",
-		"create_conversation": "Tạo hội thoại",
+		"create_room": "Tạo phòng",
 		"send_message":   "Gửi tin nhắn",
 		"mark_read":      "Đánh dấu đã đọc",
 	}

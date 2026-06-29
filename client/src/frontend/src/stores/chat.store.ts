@@ -26,7 +26,7 @@ function sortMessages(msgs: any[]) {
 }
 
 export const useChatStore = defineStore('chat', () => {
-  const convId = ref('')
+  const roomId = ref('')
   const messages = ref<any[]>([])
   const screenshotting = ref(false)
   const messageText = ref('')
@@ -52,15 +52,15 @@ export const useChatStore = defineStore('chat', () => {
   async function loadSupportConv(uid?: string) {
     if (uid) userId.value = uid
     try {
-      const data = await api().GetConversations()
+      const data = await api().GetRooms()
       const list = data ? JSON.parse(data) : []
       if (list.length > 0) {
-        convId.value = list[0].id
+        roomId.value = list[0].id
       } else {
         const uid = userId.value || ''
-        const created = await api().CreateConversation('Hỗ trợ', uid, 'member')
+        const created = await api().CreateRoom('Hỗ trợ', uid, 'member')
         const parsed = JSON.parse(created)
-        convId.value = parsed.id || parsed
+        roomId.value = parsed.id || parsed
       }
       await loadMessages()
     } catch (e) {
@@ -69,9 +69,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function loadMessages() {
-    if (!convId.value) return
+    if (!roomId.value) return
     try {
-      const data = await api().GetChatMessages(convId.value)
+      const data = await api().GetRoomMessages(roomId.value)
       const parsed = data ? JSON.parse(data) : []
       const items = Array.isArray(parsed) ? parsed : []
       messages.value = sortMessages(items.map(m => mapMessage(m, userId.value)))
@@ -79,16 +79,16 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function appendMessage(raw: any) {
-    if (raw.conversation_id !== convId.value) return
+    if (raw.room_id !== roomId.value) return
     if (!messages.value.some(m => m._id === raw.id)) {
       messages.value = sortMessages([...messages.value, mapMessage(raw, userId.value)])
     }
   }
 
   async function sendMessage() {
-    if (!messageText.value.trim() || !convId.value) return
+    if (!messageText.value.trim() || !roomId.value) return
     try {
-      const raw = await api().SendChatMessage(convId.value, messageText.value)
+      const raw = await api().SendRoomMessage(roomId.value, messageText.value)
       if (raw) {
         const msg = JSON.parse(raw)
         appendMessage(msg)
@@ -100,7 +100,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function sendScreenshot() {
-    if (!convId.value) return
+    if (!roomId.value) return
     screenshotting.value = true
     try {
       const imgData = await api().TakeScreenshot()
@@ -108,7 +108,7 @@ export const useChatStore = defineStore('chat', () => {
         ElMessage.warning('Chụp màn hình không khả dụng trên nền tảng này')
         return
       }
-      await api().SendScreenshotMessage(convId.value, imgData)
+      await api().SendScreenshotMessage(roomId.value, imgData)
     } catch (e) {
       ElMessage.error(String(e))
     } finally {
@@ -134,21 +134,21 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function markConversationRead() {
-    if (!convId.value) return
-    try { await api().MarkConversationMessagesRead(convId.value) } catch {}
+  async function markRoomRead() {
+    if (!roomId.value) return
+    try { await api().MarkRoomMessagesRead(roomId.value) } catch {}
   }
 
   function clearAll() {
-    convId.value = ''
+    roomId.value = ''
     messages.value = []
   }
 
   return {
-    convId, messages, screenshotting, messageText,
+    roomId, messages, screenshotting, messageText,
     initWsHandlers,
     loadSupportConv, loadMessages, appendMessage, sendMessage, sendScreenshot,
-    updateMessageStatus, markDelivered, markRead, markConversationRead,
+    updateMessageStatus, markDelivered, markRead, markRoomRead,
     clearAll,
   }
 })

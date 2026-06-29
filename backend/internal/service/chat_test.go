@@ -14,7 +14,7 @@ func TestChatService_SendMessage_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewChatService(db, nil, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "chat_conversations" WHERE id = \$1 ORDER BY "chat_conversations"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "chat_rooms" WHERE id = \$1 ORDER BY "chat_rooms"."id" LIMIT \$2`).
 		WithArgs("conv1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow("conv1", "Test"))
 
@@ -24,7 +24,7 @@ func TestChatService_SendMessage_Success(t *testing.T) {
 	mock.ExpectCommit()
 
 	result, err := svc.SendMessage(&SendMessageRequest{
-		ConversationID: "conv1",
+		RoomID: "conv1",
 		SenderType:     "staff",
 		SenderID:       "u1",
 		Message:        "Hello",
@@ -35,37 +35,37 @@ func TestChatService_SendMessage_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestChatService_SendMessage_ConversationNotFound(t *testing.T) {
+func TestChatService_SendMessage_RoomNotFound(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewChatService(db, nil, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "chat_conversations" WHERE id = \$1 ORDER BY "chat_conversations"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "chat_rooms" WHERE id = \$1 ORDER BY "chat_rooms"."id" LIMIT \$2`).
 		WithArgs("nonexistent", 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
 	_, err := svc.SendMessage(&SendMessageRequest{
-		ConversationID: "nonexistent",
+		RoomID: "nonexistent",
 		SenderType:     "staff",
 		SenderID:       "u1",
 		Message:        "Hello",
 	})
 	assert.Error(t, err)
-	assert.Equal(t, "conversation not found", err.Error())
+	assert.Equal(t, "room not found", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestChatService_CreateConversation(t *testing.T) {
+func TestChatService_CreateRoom(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewChatService(db, nil, NewAuditService(db))
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "chat_conversations"`).
+	mock.ExpectQuery(`INSERT INTO "chat_rooms"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
 	mock.ExpectQuery(`INSERT INTO "chat_participants"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("part1"))
 	mock.ExpectCommit()
 
-	result, err := svc.CreateConversation(&CreateConversationRequest{
+	result, err := svc.CreateRoom(&CreateRoomRequest{
 		Title:           "Support",
 		ParticipantID:   "u1",
 		ParticipantType: "staff",
@@ -79,13 +79,13 @@ func TestChatService_GetMessages(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewChatService(db, nil, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT count\(\*\) FROM "chat_messages" WHERE conversation_id = \$1`).
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "chat_messages" WHERE room_id = \$1`).
 		WithArgs("conv1").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 
-	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE conversation_id = \$1 ORDER BY created_at desc LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE room_id = \$1 ORDER BY created_at DESC,created_at desc LIMIT \$2`).
 		WithArgs("conv1", 20).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "conversation_id", "sender_type", "sender_id", "message", "message_type", "created_at"}).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "room_id", "sender_type", "sender_id", "message", "message_type", "created_at"}).
 			AddRow("msg1", "conv1", "staff", "u1", "Hello", "text", testNow))
 
 	result, total, page, pageSize, err := svc.GetMessages("conv1", pagination.Params{Page: 1, PageSize: 20, Sort: "created_at", Order: "desc"})

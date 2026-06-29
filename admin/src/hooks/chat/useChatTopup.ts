@@ -12,7 +12,7 @@ export function useChatTopup(
   const topupAmount = ref(50000);
   const topupMethod = ref('cash');
   const topupMemberId = ref('');
-  const topupConversationId = ref('');
+  const topupRoomId = ref('');
 
   function extractAmount(text: string): number {
     const match = text.match(/([\d.]+)\s*(k|K|tr)/);
@@ -29,7 +29,7 @@ export function useChatTopup(
     const userId = conv.users?.find((u: any) => u._id !== currentUserId.value)?._id;
     if (!userId) return;
     topupMemberId.value = userId;
-    topupConversationId.value = roomId;
+    topupRoomId.value = roomId;
     topupAmount.value = 50000;
     topupMethod.value = 'cash';
     showTopupDialog.value = true;
@@ -40,7 +40,7 @@ export function useChatTopup(
     const memberId = conv?.users?.find((u: any) => u._id !== currentUserId.value)?._id;
     if (memberId) {
       topupMemberId.value = memberId;
-      topupConversationId.value = roomId;
+      topupRoomId.value = roomId;
       topupAmount.value = extractAmount(message.content);
       topupMethod.value = 'cash';
       showTopupDialog.value = true;
@@ -58,13 +58,13 @@ export function useChatTopup(
       ElMessage.success(`Đã nạp ${topupAmount.value.toLocaleString()}đ thành công`);
       showTopupDialog.value = false;
       await client.post('/chat/messages', {
-        conversation_id: topupConversationId.value,
+        room_id: topupRoomId.value,
         message: `✅ Đã nạp ${topupAmount.value.toLocaleString()}đ`,
         sender_type: 'admin',
         sender_id: currentUserId.value,
         message_type: 'text',
       });
-      currentRoomId.value = topupConversationId.value;
+      currentRoomId.value = topupRoomId.value;
     } catch (e: any) {
       ElMessage.error(e.message || 'Nạp tiền thất bại');
     }
@@ -75,7 +75,7 @@ export function useChatTopup(
     topupAmount,
     topupMethod,
     topupMemberId,
-    topupConversationId,
+    topupRoomId,
     extractAmount,
     openTopupDialog,
     openTopupFromMessage,

@@ -5,15 +5,11 @@ export function BlockApp(arg1:string):Promise<void>;
 
 export function ChangePin(arg1:string,arg2:string):Promise<string>;
 
-export function CreateConversation(arg1:string,arg2:string,arg3:string):Promise<string>;
+export function CreateRoom(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function ExecuteCommand(arg1:string):Promise<string>;
 
 export function GetCategories():Promise<string>;
-
-export function GetChatMessages(arg1:string):Promise<string>;
-
-export function GetConversations():Promise<string>;
 
 export function GetHardware():Promise<string>;
 
@@ -24,6 +20,10 @@ export function GetMemberInfo():Promise<string>;
 export function GetMenu(arg1:string):Promise<string>;
 
 export function GetNotifications():Promise<string>;
+
+export function GetRoomMessages(arg1:string):Promise<string>;
+
+export function GetRooms():Promise<string>;
 
 export function GetServerURL():Promise<string>;
 
@@ -45,13 +45,13 @@ export function Logout():Promise<void>;
 
 export function MarkAllNotificationsRead():Promise<string>;
 
-export function MarkConversationMessagesRead(arg1:string):Promise<string>;
-
 export function MarkMessageDelivered(arg1:string):Promise<string>;
 
 export function MarkMessageRead(arg1:string):Promise<string>;
 
 export function MarkNotificationRead(arg1:string):Promise<string>;
+
+export function MarkRoomMessagesRead(arg1:string):Promise<string>;
 
 export function PlaceOrder(arg1:string):Promise<string>;
 
@@ -61,7 +61,7 @@ export function RestartMachine():Promise<string>;
 
 export function RestoreSession(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<void>;
 
-export function SendChatMessage(arg1:string,arg2:string):Promise<string>;
+export function SendRoomMessage(arg1:string,arg2:string):Promise<string>;
 
 export function SendScreenshotMessage(arg1:string,arg2:string):Promise<string>;
 

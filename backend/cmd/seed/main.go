@@ -43,7 +43,7 @@ func runMigrations(db *gorm.DB) error {
 		&model.Supplier{}, &model.Warehouse{}, &model.StockTransaction{}, &model.InventoryCount{},
 		&model.Notification{}, &model.NotificationRecipient{}, &model.MemberNotification{}, &model.BackupLog{},
 		&model.EInvoiceConfig{}, &model.EInvoice{},
-		&model.ChatConversation{}, &model.ChatParticipant{}, &model.ChatMessage{}, &model.ServiceFeedback{},
+		&model.ChatRoom{}, &model.ChatParticipant{}, &model.ChatMessage{}, &model.ServiceFeedback{},
 		&model.AppUpdate{}, &model.WebsiteBlockingRule{}, &model.WebsiteRuleMapping{},
 		&model.WebsiteBlockingSchedule{}, &model.WebsiteBlockingViolation{},
 		&model.CurfewPolicy{}, &model.LuckySpinReward{}, &model.LuckySpinLog{},

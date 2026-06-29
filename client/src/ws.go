@@ -71,8 +71,8 @@ func NewWSClient(ctx context.Context, baseURL, token string, machineCode string)
 		}
 	})
 
-	c.On("conversations:cleared", func(msg WSMessage) {
-		runtime.EventsEmit(ctx, "vnet:conversations:cleared")
+	c.On("rooms:cleared", func(msg WSMessage) {
+		runtime.EventsEmit(ctx, "vnet:rooms:cleared")
 	})
 
 	return c

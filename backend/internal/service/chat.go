@@ -21,21 +21,21 @@ func NewChatService(db *gorm.DB, wsHub *hub.Hub, audit *AuditService) *ChatServi
 	return &ChatService{db: db, hub: wsHub, audit: audit}
 }
 
-type CreateConversationRequest struct {
+type CreateRoomRequest struct {
 	Title         string   `json:"title"`
 	ParticipantID string   `json:"participant_id" binding:"required"`
 	ParticipantType string `json:"participant_type" binding:"required"`
 }
 
 type SendMessageRequest struct {
-	ConversationID string `json:"conversation_id" binding:"required"`
+	RoomID string `json:"room_id" binding:"required"`
 	SenderType     string `json:"sender_type" binding:"required"`
 	SenderID       string `json:"sender_id" binding:"required"`
 	Message        string `json:"message" binding:"required"`
 	MessageType    string `json:"message_type"`
 }
 
-type ConversationResponse struct {
+type RoomResponse struct {
 	ID          string            `json:"id"`
 	Title       string            `json:"title"`
 	IsGroup     bool              `json:"is_group"`
@@ -52,7 +52,7 @@ type ParticipantInfo struct {
 
 type MessageResponse struct {
 	ID             string    `json:"id"`
-	ConversationID string    `json:"conversation_id"`
+	RoomID string    `json:"room_id"`
 	SenderType     string    `json:"sender_type"`
 	SenderID       string    `json:"sender_id"`
 	Message        string    `json:"message"`
@@ -64,7 +64,7 @@ type MessageResponse struct {
 func messageResponseFromModel(m *model.ChatMessage) MessageResponse {
 	return MessageResponse{
 		ID:             m.ID,
-		ConversationID: m.ConversationID,
+		RoomID: m.RoomID,
 		SenderType:     m.SenderType,
 		SenderID:       m.SenderID,
 		Message:        m.Message,
@@ -74,19 +74,19 @@ func messageResponseFromModel(m *model.ChatMessage) MessageResponse {
 	}
 }
 
-func (s *ChatService) ListConversations(participantID string, participantType string, params pagination.Params) ([]ConversationResponse, int64, int, int, error) {
-	log.Printf("[ChatSvc] ListConversations: participantID=%s type=%s page=%d", participantID, participantType, params.Page)
-	query := s.db.Model(&model.ChatConversation{})
+func (s *ChatService) ListRooms(participantID string, participantType string, params pagination.Params) ([]RoomResponse, int64, int, int, error) {
+	log.Printf("[ChatSvc] ListRooms: participantID=%s type=%s page=%d", participantID, participantType, params.Page)
+	query := s.db.Model(&model.ChatRoom{})
 
 	if participantID != "" {
-		var convIDs []string
-		if err := s.db.Model(&model.ChatParticipant{}).Where("participant_id = ? AND participant_type = ?", participantID, participantType).Pluck("conversation_id", &convIDs).Error; err != nil {
+		var roomIDs []string
+		if err := s.db.Model(&model.ChatParticipant{}).Where("participant_id = ? AND participant_type = ?", participantID, participantType).Pluck("room_id", &roomIDs).Error; err != nil {
 			return nil, 0, 0, 0, nil
 		}
-		if len(convIDs) == 0 {
-			return []ConversationResponse{}, 0, params.Page, params.PageSize, nil
+		if len(roomIDs) == 0 {
+			return []RoomResponse{}, 0, params.Page, params.PageSize, nil
 		}
-		query = query.Where("id IN ?", convIDs)
+		query = query.Where("id IN ?", roomIDs)
 	}
 
 	var total int64
@@ -94,16 +94,16 @@ func (s *ChatService) ListConversations(participantID string, participantType st
 		return nil, 0, 0, 0, err
 	}
 
-	var conversations []model.ChatConversation
-	if err := pagination.Apply(query.Order("created_at DESC"), &params).Find(&conversations).Error; err != nil {
+	var rooms []model.ChatRoom
+	if err := pagination.Apply(query.Order("created_at DESC"), &params).Find(&rooms).Error; err != nil {
 		return nil, 0, 0, 0, err
 	}
 
-	result := make([]ConversationResponse, len(conversations))
-	for i, conv := range conversations {
+	result := make([]RoomResponse, len(rooms))
+	for i, room := range rooms {
 		var lastMsg model.ChatMessage
 		var lastMsgResp *MessageResponse
-		if err := s.db.Where("conversation_id = ?", conv.ID).Order("created_at desc").First(&lastMsg).Error; err == nil {
+		if err := s.db.Where("room_id = ?", room.ID).Order("created_at desc").First(&lastMsg).Error; err == nil {
 			resp := messageResponseFromModel(&lastMsg)
 			lastMsgResp = &resp
 		}
@@ -111,44 +111,44 @@ func (s *ChatService) ListConversations(participantID string, participantType st
 		var unreadCount int64
 		if participantID != "" {
 			var participantRow model.ChatParticipant
-			if err := s.db.Where("conversation_id = ? AND participant_id = ?", conv.ID, participantID).First(&participantRow).Error; err == nil {
+			if err := s.db.Where("room_id = ? AND participant_id = ?", room.ID, participantID).First(&participantRow).Error; err == nil {
 				if participantRow.LastReadAt != nil {
-					s.db.Model(&model.ChatMessage{}).Where("conversation_id = ? AND created_at > ?", conv.ID, *participantRow.LastReadAt).Count(&unreadCount)
+					s.db.Model(&model.ChatMessage{}).Where("room_id = ? AND created_at > ?", room.ID, *participantRow.LastReadAt).Count(&unreadCount)
 				} else {
-					s.db.Model(&model.ChatMessage{}).Where("conversation_id = ?", conv.ID).Count(&unreadCount)
+					s.db.Model(&model.ChatMessage{}).Where("room_id = ?", room.ID).Count(&unreadCount)
 				}
 			}
 		}
 
-		result[i] = ConversationResponse{
-			ID:          conv.ID,
-			Title:       conv.Title,
-			IsGroup:     conv.IsGroup,
+		result[i] = RoomResponse{
+			ID:          room.ID,
+			Title:       room.Title,
+			IsGroup:     room.IsGroup,
 			LastMessage: lastMsgResp,
 			UnreadCount: int(unreadCount),
-			Participants: s.getParticipants(conv.ID),
-			CreatedAt:   conv.CreatedAt,
+			Participants: s.getParticipants(room.ID),
+			CreatedAt:   room.CreatedAt,
 		}
 	}
 
 	return result, total, params.Page, params.PageSize, nil
 }
 
-func (s *ChatService) CreateConversation(req *CreateConversationRequest) (*ConversationResponse, error) {
-	conv := model.ChatConversation{
+func (s *ChatService) CreateRoom(req *CreateRoomRequest) (*RoomResponse, error) {
+	room := model.ChatRoom{
 		Title:   req.Title,
 		IsGroup: false,
 	}
 
 	tx := s.db.Begin()
 
-	if err := tx.Create(&conv).Error; err != nil {
+	if err := tx.Create(&room).Error; err != nil {
 		tx.Rollback()
 		return nil, err
 	}
 
 	participant := model.ChatParticipant{
-		ConversationID:  conv.ID,
+		RoomID:  room.ID,
 		ParticipantType: req.ParticipantType,
 		ParticipantID:   req.ParticipantID,
 	}
@@ -161,30 +161,30 @@ func (s *ChatService) CreateConversation(req *CreateConversationRequest) (*Conve
 
 	s.audit.Log(&LogAuditRequest{
 		Action:     "create",
-		EntityType: "chat_conversation",
-		EntityID:   conv.ID,
+		EntityType: "chat_room",
+		EntityID:   room.ID,
 		Metadata:   map[string]interface{}{"participant_id": req.ParticipantID, "participant_type": req.ParticipantType},
 	})
 
 	if s.hub != nil {
-		s.hub.JoinAllAdminsToRoom(conv.ID)
+		s.hub.JoinAllAdminsToRoom(room.ID)
 		s.hub.BroadcastToType(hub.Event{
-			Type: "conversation:new",
-			Data: map[string]string{"conversation_id": conv.ID},
+			Type: "room:new",
+			Data: map[string]string{"room_id": room.ID},
 		}, hub.ClientTypeAdmin)
 	}
 
-	return &ConversationResponse{
-		ID:      conv.ID,
-		Title:   conv.Title,
-		IsGroup: conv.IsGroup,
-		CreatedAt: conv.CreatedAt,
+	return &RoomResponse{
+		ID:      room.ID,
+		Title:   room.Title,
+		IsGroup: room.IsGroup,
+		CreatedAt: room.CreatedAt,
 	}, nil
 }
 
-func (s *ChatService) getParticipants(conversationID string) []ParticipantInfo {
+func (s *ChatService) getParticipants(roomID string) []ParticipantInfo {
 	var participants []model.ChatParticipant
-	if err := s.db.Where("conversation_id = ?", conversationID).Find(&participants).Error; err != nil {
+	if err := s.db.Where("room_id = ?", roomID).Find(&participants).Error; err != nil {
 		return nil
 	}
 	result := make([]ParticipantInfo, 0, len(participants))
@@ -201,8 +201,8 @@ func (s *ChatService) getParticipants(conversationID string) []ParticipantInfo {
 	return result
 }
 
-func (s *ChatService) GetMessages(conversationID string, params pagination.Params) ([]MessageResponse, int64, int, int, error) {
-	query := s.db.Model(&model.ChatMessage{}).Where("conversation_id = ?", conversationID).Order("created_at ASC")
+func (s *ChatService) GetMessages(roomID string, params pagination.Params) ([]MessageResponse, int64, int, int, error) {
+	query := s.db.Model(&model.ChatMessage{}).Where("room_id = ?", roomID).Order("created_at DESC")
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -224,40 +224,40 @@ func (s *ChatService) GetMessages(conversationID string, params pagination.Param
 
 func (s *ChatService) MarkMessageDelivered(messageID string) error {
 	var msg model.ChatMessage
-	if err := s.db.Select("conversation_id").Where("id = ?", messageID).First(&msg).Error; err != nil {
+	if err := s.db.Select("room_id").Where("id = ?", messageID).First(&msg).Error; err != nil {
 		return err
 	}
 	if err := s.db.Model(&model.ChatMessage{}).Where("id = ? AND status = ?", messageID, "sent").Update("status", "delivered").Error; err != nil {
 		return err
 	}
-	s.broadcastStatus(msg.ConversationID, messageID, "delivered")
+	s.broadcastStatus(msg.RoomID, messageID, "delivered")
 	return nil
 }
 
 func (s *ChatService) MarkMessageRead(messageID string) error {
 	var msg model.ChatMessage
-	if err := s.db.Select("conversation_id").Where("id = ?", messageID).First(&msg).Error; err != nil {
+	if err := s.db.Select("room_id").Where("id = ?", messageID).First(&msg).Error; err != nil {
 		return err
 	}
 	if err := s.db.Model(&model.ChatMessage{}).Where("id = ?", messageID).Update("status", "read").Error; err != nil {
 		return err
 	}
-	s.broadcastStatus(msg.ConversationID, messageID, "read")
+	s.broadcastStatus(msg.RoomID, messageID, "read")
 	return nil
 }
 
-func (s *ChatService) MarkConversationMessagesRead(conversationID string) (int64, error) {
+func (s *ChatService) MarkRoomMessagesRead(roomID string) (int64, error) {
 	result := s.db.Model(&model.ChatMessage{}).
-		Where("conversation_id = ? AND status != ?", conversationID, "read").
+		Where("room_id = ? AND status != ?", roomID, "read").
 		Update("status", "read")
 	if result.Error != nil {
 		return 0, result.Error
 	}
 	if result.RowsAffected > 0 {
-		s.hub.PublishToRoom(conversationID, hub.Event{
-			Type: "conversation:read",
+		s.hub.PublishToRoom(roomID, hub.Event{
+			Type: "room:read",
 			Data: map[string]interface{}{
-				"conversation_id": conversationID,
+				"room_id": roomID,
 				"status":          "read",
 			},
 		}, "")
@@ -265,11 +265,11 @@ func (s *ChatService) MarkConversationMessagesRead(conversationID string) (int64
 	return result.RowsAffected, nil
 }
 
-func (s *ChatService) broadcastStatus(conversationID, messageID, status string) {
+func (s *ChatService) broadcastStatus(roomID, messageID, status string) {
 	if s.hub == nil {
 		return
 	}
-	s.hub.PublishToRoom(conversationID, hub.Event{
+	s.hub.PublishToRoom(roomID, hub.Event{
 		Type: "message:status:updated",
 		Data: map[string]interface{}{
 			"id":     messageID,
@@ -279,11 +279,11 @@ func (s *ChatService) broadcastStatus(conversationID, messageID, status string) 
 }
 
 func (s *ChatService) SendMessage(req *SendMessageRequest) (*MessageResponse, error) {
-	log.Printf("[ChatSvc] SendMessage: conv=%s sender=%s type=%s", req.ConversationID, req.SenderType, req.MessageType)
-	var conv model.ChatConversation
-	if err := s.db.Where("id = ?", req.ConversationID).First(&conv).Error; err != nil {
+	log.Printf("[ChatSvc] SendMessage: room=%s sender=%s type=%s", req.RoomID, req.SenderType, req.MessageType)
+	var room model.ChatRoom
+	if err := s.db.Where("id = ?", req.RoomID).First(&room).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("conversation not found")
+			return nil, errors.New("room not found")
 		}
 		return nil, err
 	}
@@ -294,7 +294,7 @@ func (s *ChatService) SendMessage(req *SendMessageRequest) (*MessageResponse, er
 	}
 
 	msg := model.ChatMessage{
-		ConversationID: req.ConversationID,
+		RoomID: req.RoomID,
 		SenderType:     req.SenderType,
 		SenderID:       req.SenderID,
 		Message:        req.Message,
@@ -309,14 +309,14 @@ func (s *ChatService) SendMessage(req *SendMessageRequest) (*MessageResponse, er
 		Action:     "send_message",
 		EntityType: "chat_message",
 		EntityID:   msg.ID,
-		Metadata:   map[string]interface{}{"conversation_id": req.ConversationID},
+		Metadata:   map[string]interface{}{"room_id": req.RoomID},
 	})
 
 	result := messageResponseFromModel(&msg)
 
 	if s.hub != nil {
-		s.hub.JoinRoomByUserID(req.SenderID, req.ConversationID)
-		s.hub.PublishToRoom(req.ConversationID, hub.Event{
+		s.hub.JoinRoomByUserID(req.SenderID, req.RoomID)
+		s.hub.PublishToRoom(req.RoomID, hub.Event{
 			Type: "chat:message",
 			Data: result,
 		}, req.SenderID)
@@ -337,18 +337,18 @@ func (s *ChatService) HubRoomSync() {
 		}
 		if client.ClientType == hub.ClientTypeAdmin {
 			var allIDs []string
-			s.db.Model(&model.ChatConversation{}).Pluck("id", &allIDs)
+			s.db.Model(&model.ChatRoom{}).Pluck("id", &allIDs)
 			return allIDs
 		}
-		var convIDs []string
+		var roomIDs []string
 		s.db.Model(&model.ChatParticipant{}).
 			Where("participant_id = ?", client.UserID).
-			Pluck("conversation_id", &convIDs)
-		return convIDs
+			Pluck("room_id", &roomIDs)
+		return roomIDs
 	})
 }
 
-func (s *ChatService) DeleteAllConversations() error {
+func (s *ChatService) DeleteAllRooms() error {
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("1 = 1").Delete(&model.ChatParticipant{}).Error; err != nil {
 			return err
@@ -356,7 +356,7 @@ func (s *ChatService) DeleteAllConversations() error {
 		if err := tx.Where("1 = 1").Delete(&model.ChatMessage{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("1 = 1").Delete(&model.ChatConversation{}).Error; err != nil {
+		if err := tx.Where("1 = 1").Delete(&model.ChatRoom{}).Error; err != nil {
 			return err
 		}
 		return nil
@@ -366,22 +366,22 @@ func (s *ChatService) DeleteAllConversations() error {
 	}
 	if s.hub != nil {
 		s.hub.Broadcast(hub.Event{
-			Type: "conversations:cleared",
+			Type: "rooms:cleared",
 		})
 		s.hub.RemoveAllRooms()
 	}
 	return nil
 }
 
-func (s *ChatService) DeleteConversation(conversationID string) error {
+func (s *ChatService) DeleteRoom(roomID string) error {
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("conversation_id = ?", conversationID).Delete(&model.ChatParticipant{}).Error; err != nil {
+		if err := tx.Where("room_id = ?", roomID).Delete(&model.ChatParticipant{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("conversation_id = ?", conversationID).Delete(&model.ChatMessage{}).Error; err != nil {
+		if err := tx.Where("room_id = ?", roomID).Delete(&model.ChatMessage{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("id = ?", conversationID).Delete(&model.ChatConversation{}).Error; err != nil {
+		if err := tx.Where("id = ?", roomID).Delete(&model.ChatRoom{}).Error; err != nil {
 			return err
 		}
 		return nil
@@ -390,27 +390,27 @@ func (s *ChatService) DeleteConversation(conversationID string) error {
 		return err
 	}
 	if s.hub != nil {
-		s.hub.PublishToRoom(conversationID, hub.Event{
-			Type: "conversation:deleted",
+		s.hub.PublishToRoom(roomID, hub.Event{
+			Type: "room:deleted",
 			Data: map[string]interface{}{
-				"conversation_id": conversationID,
+				"room_id": roomID,
 			},
 		}, "")
-		s.hub.RemoveRoom(conversationID)
+		s.hub.RemoveRoom(roomID)
 	}
 	return nil
 }
 
-func (s *ChatService) MarkRead(conversationID string, participantID string) error {
+func (s *ChatService) MarkRead(roomID string, participantID string) error {
 	now := time.Now()
-	if err := s.db.Model(&model.ChatParticipant{}).Where("conversation_id = ? AND participant_id = ?", conversationID, participantID).Update("last_read_at", &now).Error; err != nil {
+	if err := s.db.Model(&model.ChatParticipant{}).Where("room_id = ? AND participant_id = ?", roomID, participantID).Update("last_read_at", &now).Error; err != nil {
 		return err
 	}
 
 	s.audit.Log(&LogAuditRequest{
 		Action:     "mark_read",
-		EntityType: "chat_conversation",
-		EntityID:   conversationID,
+		EntityType: "chat_room",
+		EntityID:   roomID,
 		Metadata:   map[string]interface{}{"participant_id": participantID},
 	})
 

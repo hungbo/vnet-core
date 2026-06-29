@@ -6,7 +6,7 @@ register();
 import { useAuthStore } from '@/store/modules/auth';
 import { useWebSocketStore } from '@/store/modules/ws';
 import client from '@/api/client';
-import { useChatConversations } from '@/hooks/chat/useChatConversations';
+import { useChatRooms } from '@/hooks/chat/useChatRooms';
 import { useChatTopup } from '@/hooks/chat/useChatTopup';
 import { useChatWs } from '@/hooks/chat/useChatWs';
 import { isChatOpen, chatUnreadCount } from '@/hooks/chat/chatState';
@@ -27,22 +27,22 @@ const messagesLoaded = ref(true);
 const chatRef = ref<any>(null);
 
 // ── Composables ──
-const convs = useChatConversations(messages, currentRoomId);
-const { rooms, showNewConversationDialog, convForm, users, saving,
-        fetchRooms, onRoomSelected, fetchMembers, handleCreateConversation,
-        deleteSingleConversation, deleteAllConversations } = convs;
-const { wsChatHandler, wsStatusHandler, wsConversationDeleted, wsConversationsCleared, wsConversationNew, sortMessages, mapMessage } = useChatWs(
+const convs = useChatRooms(messages, currentRoomId, messagesLoaded);
+const { rooms, showNewRoomDialog, roomForm, users, saving,
+        fetchRooms, onFetchMessages, fetchMembers, handleCreateRoom,
+        deleteRoom, deleteAllRooms } = convs;
+const { wsChatHandler, wsStatusHandler, wsRoomDeleted, wsRoomsCleared, wsRoomNew, sortMessages, mapMessage } = useChatWs(
   currentRoomId, messages, fetchRooms,
 );
-const { showTopupDialog, topupAmount, topupMethod, topupMemberId, topupConversationId,
+const { showTopupDialog, topupAmount, topupMethod, topupMemberId, topupRoomId,
         openTopupDialog, openTopupFromMessage, confirmTopup } = useChatTopup(
   rooms, currentUserId, currentRoomId,
 );
 
 // ── vue-advanced-chat config ──
 const menuActions = [
-  { name: 'newConversation', title: 'Tạo hội thoại' },
-  { name: 'deleteConversation', title: 'Xoá' },
+  { name: 'newRoom', title: 'Tạo phòng' },
+  { name: 'deleteRoom', title: 'Xoá' },
   { name: 'topup', title: 'Nạp tiền' },
 ];
 const messageActions = [
@@ -66,7 +66,7 @@ async function onSendMessage($event: any) {
   if (!content || !roomId) return;
   try {
     const postRes: any = await client.post('/chat/messages', {
-      conversation_id: roomId, message: content,
+      room_id: roomId, message: content,
       sender_type: 'admin', sender_id: currentUserId.value,
     });
     if (postRes?.id) {
@@ -88,11 +88,11 @@ async function onMenuAction($event: any) {
   const raw = $event?.detail ?? $event;
   const payload = Array.isArray(raw) ? raw[0] : raw;
   const { roomId, action } = payload;
-  if (action.name === 'newConversation') {
-    showNewConversationDialog.value = true;
+  if (action.name === 'newRoom') {
+    showNewRoomDialog.value = true;
     fetchMembers();
-  } else if (action.name === 'deleteConversation') {
-    deleteSingleConversation(roomId);
+  } else if (action.name === 'deleteRoom') {
+    deleteRoom(roomId);
   } else if (action.name === 'topup') {
     openTopupDialog(roomId);
   }
@@ -108,7 +108,7 @@ async function onMessageAction($event: any) {
   } else if (action.name === 'cancelTopup') {
     try {
       await client.post('/chat/messages', {
-        conversation_id: roomId,
+        room_id: roomId,
         message: '❌ Yêu cầu nạp không được duyệt',
         sender_type: 'admin', sender_id: currentUserId.value, message_type: 'text',
       });
@@ -142,28 +142,28 @@ function stopDrag() {
 // ── vue-advanced-chat lifecycle ──
 function attachChatListener() {
   const el = document.querySelector('vue-advanced-chat');
-  if (el) el.addEventListener('fetch-messages', onRoomSelected);
+  if (el) el.addEventListener('fetch-messages', onFetchMessages);
 }
 function detachChatListener() {
   const el = document.querySelector('vue-advanced-chat');
-  if (el) el.removeEventListener('fetch-messages', onRoomSelected);
+  if (el) el.removeEventListener('fetch-messages', onFetchMessages);
 }
 
 onMounted(() => {
   fetchRooms();
   wsStore.on('chat:message', wsChatHandler);
   wsStore.on('message:status:updated', wsStatusHandler);
-  wsStore.on('conversation:deleted', wsConversationDeleted);
-  wsStore.on('conversations:cleared', wsConversationsCleared);
-  wsStore.on('conversation:new', wsConversationNew);
+  wsStore.on('room:deleted', wsRoomDeleted);
+  wsStore.on('rooms:cleared', wsRoomsCleared);
+  wsStore.on('room:new', wsRoomNew);
 });
 
 onBeforeUnmount(() => {
   wsStore.off('chat:message', wsChatHandler);
   wsStore.off('message:status:updated', wsStatusHandler);
-  wsStore.off('conversation:deleted', wsConversationDeleted);
-  wsStore.off('conversations:cleared', wsConversationsCleared);
-  wsStore.off('conversation:new', wsConversationNew);
+  wsStore.off('room:deleted', wsRoomDeleted);
+  wsStore.off('rooms:cleared', wsRoomsCleared);
+  wsStore.off('room:new', wsRoomNew);
   detachChatListener();
 });
 
@@ -183,20 +183,14 @@ watch(isChatOpen, async (open) => {
 
 watch(currentRoomId, async (newId) => {
   if (!newId) return;
-  messagesLoaded.value = false;
   try {
-    const res: any = await client.get(`/chat/conversations/${newId}/messages`);
-    const items = Array.isArray(res) ? res : res?.items || [];
-    messages.value = sortMessages(items.map(mapMessage));
-    await client.put(`/chat/conversations/${newId}/read`);
+    await client.put(`/chat/rooms/${newId}/read`);
     const readRoom = rooms.value.find((r: any) => r.roomId === newId);
     if (readRoom?.unreadCount) {
       chatUnreadCount.value = Math.max(0, chatUnreadCount.value - readRoom.unreadCount);
     }
   } catch {
     // ignore
-  } finally {
-    messagesLoaded.value = true;
   }
 });
 </script>
@@ -207,7 +201,7 @@ watch(currentRoomId, async (newId) => {
     <div class="chat-panel-handle" @mousedown="startDrag">
       <span>Chat hỗ trợ</span>
       <div>
-        <ElButton size="small" text @click.stop="deleteAllConversations">🗑</ElButton>
+        <ElButton size="small" text @click.stop="deleteAllRooms">🗑</ElButton>
         <ElButton size="small" text @click.stop="isChatOpen = false">─</ElButton>
       </div>
     </div>
@@ -231,7 +225,6 @@ watch(currentRoomId, async (newId) => {
       :styles="JSON.stringify(chatStyles)"
       height="100%"
       :room-id="currentRoomId"
-      @update:room-id="currentRoomId = $event"
       @send-message="onSendMessage"
       @menu-action-handler="onMenuAction"
       @message-action-handler="onMessageAction"
@@ -239,11 +232,11 @@ watch(currentRoomId, async (newId) => {
   </div>
 
   <!-- Dialog tạo hội thoại -->
-  <ElDialog v-model="showNewConversationDialog" title="Tạo hội thoại mới" width="350px" :close-on-click-modal="false">
+  <ElDialog v-model="showNewRoomDialog" title="Tạo phòng mới" width="350px" :close-on-click-modal="false">
     <ElForm label-width="100px">
       <ElFormItem label="Người nhận" prop="participant_ids">
         <ElSelect
-          v-model="convForm.participant_ids"
+          v-model="roomForm.participant_ids"
           multiple
           placeholder="Chọn người nhận"
           style="width: 100%"
@@ -253,8 +246,8 @@ watch(currentRoomId, async (newId) => {
       </ElFormItem>
     </ElForm>
     <template #footer>
-      <ElButton @click="showNewConversationDialog = false">Huỷ</ElButton>
-      <ElButton type="primary" :loading="saving" @click="handleCreateConversation">Tạo</ElButton>
+      <ElButton @click="showNewRoomDialog = false">Huỷ</ElButton>
+      <ElButton type="primary" :loading="saving" @click="handleCreateRoom">Tạo</ElButton>
     </template>
   </ElDialog>
 

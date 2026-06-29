@@ -10,15 +10,15 @@
 			<h3>Hỗ trợ</h3>
 		</header>
 		<vue-advanced-chat v-show="!showClearedUI" :current-user-id="currentUserId" :rooms="roomsJson"
-			:messages="messagesJson" :room-id="store.convId" :messages-loaded="messagesLoaded" :show-add-room="false"
+			:messages="messagesJson" :room-id="store.roomId" :messages-loaded="messagesLoaded" :show-add-room="false"
 			:show-search="false" :show-files="false" :show-audio="false" :show-emojis="false"
 			:show-reaction-emojis="false" :show-new-messages-divider="false" :show-rooms="false"
 			:auto-scroll="autoScrollJson" :styles="stylesJson" rooms-loaded height="100%"
 			@fetch-messages="onFetchMessages" @send-message="onSendMessage" />
 		<div v-show="showClearedUI" class="cleared-overlay">
-			<p>Tất cả hội thoại đã được xoá</p>
+			<p>Tất cả phòng đã được xoá</p>
 			<div class="cleared-actions">
-				<el-button type="primary" @click="onCreateNewConversation">+ Tạo hội thoại mới</el-button>
+				<el-button type="primary" @click="onCreateNewRoom">+ Tạo phòng mới</el-button>
 				<el-button @click="onBackToMain">← Trở về màn hình chính</el-button>
 			</div>
 		</div>
@@ -33,15 +33,15 @@
 				<el-button size="small" text @click="isOpen = false" style="cursor:pointer">─</el-button>
 			</div>
 			<vue-advanced-chat v-show="!showClearedUI" :current-user-id="currentUserId" :rooms="roomsJson"
-				:messages="messagesJson" :room-id="store.convId" :messages-loaded="messagesLoaded" :show-add-room="false"
+				:messages="messagesJson" :room-id="store.roomId" :messages-loaded="messagesLoaded" :show-add-room="false"
 				:show-search="false" :show-files="false" :show-audio="false" :show-emojis="false"
 				:show-reaction-emojis="false" :show-new-messages-divider="false" :show-rooms="false"
 				:auto-scroll="autoScrollJson" :styles="stylesJson" rooms-loaded height="100%"
 				@fetch-messages="onFetchMessages" @send-message="onSendMessage" />
 			<div v-show="showClearedUI" class="cleared-overlay">
-				<p>Tất cả hội thoại đã được xoá</p>
+				<p>Tất cả phòng đã được xoá</p>
 				<div class="cleared-actions">
-					<el-button type="primary" @click="onCreateNewConversation">+ Tạo hội thoại mới</el-button>
+					<el-button type="primary" @click="onCreateNewRoom">+ Tạo phòng mới</el-button>
 					<el-button @click="onBackToMain">← Trở về màn hình chính</el-button>
 				</div>
 			</div>
@@ -100,7 +100,7 @@ const stylesJson = computed(() => JSON.stringify({
 
 function openWidget() {
 	isOpen.value = true
-	loadConversation()
+	loadRoom()
 }
 
 function startDrag(e: MouseEvent) {
@@ -123,12 +123,12 @@ function stopDrag() {
 	document.removeEventListener('mouseup', stopDrag)
 }
 
-async function loadConversation() {
+async function loadRoom() {
 	try {
 		await store.loadSupportConv(session.userID)
-		if (store.convId) {
+		if (store.roomId) {
 			rooms.value = [{
-				roomId: store.convId,
+				roomId: store.roomId,
 				roomName: 'Hỗ trợ',
 				unreadCount: 0,
 				users: [{ _id: currentUserId.value, username: 'Tôi' }]
@@ -142,7 +142,7 @@ async function onFetchMessages($event: any) {
 	const raw = $event?.detail ?? $event
 	const payload = Array.isArray(raw) ? raw[0] : raw
 	if (!payload?.room?.roomId) return
-	store.convId = payload.room.roomId
+	store.roomId = payload.room.roomId
 	messagesLoaded.value = false
 	await store.loadMessages()
 	messagesLoaded.value = true
@@ -151,11 +151,11 @@ async function onFetchMessages($event: any) {
 async function onSendMessage($event: any) {
 	const raw = $event?.detail ?? $event
 	const payload = Array.isArray(raw) ? raw[0] : raw
-	const roomId = payload?.roomId || store.convId
+	const roomId = payload?.roomId || store.roomId
 	const content = payload?.content
 	if (!content || !roomId) return
 	try {
-		const resp = await api().SendChatMessage(roomId, content)
+		const resp = await api().SendRoomMessage(roomId, content)
 		if (resp) {
 			store.appendMessage(JSON.parse(resp))
 		}
@@ -166,9 +166,9 @@ async function onSendMessage($event: any) {
 
 let cleanup: (() => void) | null = null
 
-async function onCreateNewConversation() {
+async function onCreateNewRoom() {
 	showClearedUI.value = false
-	await loadConversation()
+	await loadRoom()
 }
 
 function onBackToMain() {
@@ -181,14 +181,14 @@ function onBackToMain() {
 }
 
 onMounted(async () => {
-	cleanup = EventsOn('vnet:conversations:cleared', () => {
+	cleanup = EventsOn('vnet:rooms:cleared', () => {
 		store.clearAll()
 		rooms.value = []
 		showClearedUI.value = true
 	})
 
 	if (props.fullPage) {
-		await loadConversation()
+		await loadRoom()
 		await nextTick()
 		messagesLoaded.value = false
 		await nextTick()

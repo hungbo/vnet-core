@@ -474,9 +474,9 @@ func (a *App) ChangePin(oldPin, newPin string) (string, error) {
 	return string(data), nil
 }
 
-func (a *App) SendChatMessage(conversationID, message string) (string, error) {
+func (a *App) SendRoomMessage(roomID, message string) (string, error) {
 	reqBody := map[string]string{
-		"conversation_id": conversationID,
+		"room_id":         roomID,
 		"sender_type":     "member",
 		"sender_id":       a.userID,
 		"message":         message,
@@ -490,8 +490,8 @@ func (a *App) SendChatMessage(conversationID, message string) (string, error) {
 	return string(data), nil
 }
 
-func (a *App) GetChatMessages(conversationID string) (string, error) {
-	data, err := a.doRequest("GET", "/api/chat/conversations/"+conversationID+"/messages", nil)
+func (a *App) GetRoomMessages(roomID string) (string, error) {
+	data, err := a.doRequest("GET", "/api/chat/rooms/"+roomID+"/messages", nil)
 	if err != nil {
 		return "", err
 	}
@@ -503,21 +503,21 @@ func (a *App) GetChatMessages(conversationID string) (string, error) {
 	return string(paginated.Items), nil
 }
 
-func (a *App) CreateConversation(title, participantID, participantType string) (string, error) {
+func (a *App) CreateRoom(title, participantID, participantType string) (string, error) {
 	reqBody := map[string]string{
 		"title":            title,
 		"participant_id":   participantID,
 		"participant_type": participantType,
 	}
-	data, err := a.doRequest("POST", "/api/chat/conversations", reqBody)
+	data, err := a.doRequest("POST", "/api/chat/rooms", reqBody)
 	if err != nil {
 		return "", err
 	}
 	return string(data), nil
 }
 
-func (a *App) GetConversations() (string, error) {
-	data, err := a.doRequest("GET", "/api/chat/conversations", nil)
+func (a *App) GetRooms() (string, error) {
+	data, err := a.doRequest("GET", "/api/chat/rooms", nil)
 	if err != nil {
 		return "", err
 	}
@@ -570,9 +570,9 @@ func (a *App) TakeScreenshot() (string, error) {
 	return "", nil
 }
 
-func (a *App) SendScreenshotMessage(conversationID, imageData string) (string, error) {
+func (a *App) SendScreenshotMessage(roomID, imageData string) (string, error) {
 	reqBody := map[string]string{
-		"conversation_id": conversationID,
+		"room_id": roomID,
 		"sender_type":     "member",
 		"sender_id":       a.userID,
 		"message":         imageData,
@@ -602,8 +602,8 @@ func (a *App) MarkMessageRead(messageID string) (string, error) {
 	return string(data), nil
 }
 
-func (a *App) MarkConversationMessagesRead(conversationID string) (string, error) {
-	data, err := a.doRequest("PUT", "/api/chat/conversations/"+conversationID+"/read", nil)
+func (a *App) MarkRoomMessagesRead(roomID string) (string, error) {
+	data, err := a.doRequest("PUT", "/api/chat/rooms/"+roomID+"/read", nil)
 	if err != nil {
 		return "", err
 	}

@@ -309,12 +309,12 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 
 			chat := protected.Group("/chat")
 			{
-				chat.GET("/conversations", h.Chat.ListConversations)
-				chat.POST("/conversations", h.Chat.CreateConversation)
-				chat.DELETE("/conversations", h.Chat.DeleteAllConversations)
-				chat.GET("/conversations/:id/messages", h.Chat.GetMessages)
-				chat.DELETE("/conversations/:id", h.Chat.DeleteConversation)
-				chat.PUT("/conversations/:id/read", h.Chat.MarkConversationMessagesRead)
+				chat.GET("/rooms", h.Chat.ListRooms)
+				chat.POST("/rooms", h.Chat.CreateRoom)
+				chat.DELETE("/rooms", h.Chat.DeleteAllRooms)
+				chat.GET("/rooms/:id/messages", h.Chat.GetMessages)
+				chat.DELETE("/rooms/:id", h.Chat.DeleteRoom)
+				chat.PUT("/rooms/:id/read", h.Chat.MarkRoomMessagesRead)
 				chat.POST("/messages", h.Chat.SendMessage)
 				chat.PUT("/messages/:id/deliver", h.Chat.MarkMessageDelivered)
 				chat.PUT("/messages/:id/read", h.Chat.MarkMessageRead)

@@ -15,9 +15,7 @@ const search = ref('');
 
 const dialogVisible = ref(false);
 const topupVisible = ref(false);
-const resetPwdVisible = ref(false);
 const detailVisible = ref(false);
-const newPassword = ref('');
 const isEdit = ref(false);
 const submitting = ref(false);
 const editingId = ref<number | null>(null);
@@ -192,18 +190,16 @@ async function handleDelete(row: any) {
 
 async function handleResetPassword(row: any) {
   try {
-    await ElMessageBox.confirm($t('vnetPages.members.resetPasswordConfirm'), $t('vnetPages.common.confirm'), {
+    const { value } = await ElMessageBox.prompt($t('vnetPages.members.resetPasswordConfirm'), $t('vnetPages.common.confirm'), {
+      confirmButtonText: $t('vnetPages.common.confirm'),
+      cancelButtonText: $t('vnetPages.common.cancel'),
+      inputPattern: /.+/,
+      inputErrorMessage: $t('vnetPages.members.resetPasswordRequired'),
       type: 'warning'
     });
-    const res: any = await client.post(`/members/${row.id}/reset-password`);
-    newPassword.value = res.new_password || '';
-    resetPwdVisible.value = true;
+    await client.post(`/members/${row.id}/reset-password`, { password: value });
+    ElMessage.success($t('vnetPages.members.messages.resetPasswordSuccess'));
   } catch {}
-}
-
-function copyPassword() {
-  navigator.clipboard.writeText(newPassword.value);
-  ElMessage.success($t('vnetPages.members.copySuccess'));
 }
 
 function formatDate(date: string | null | undefined) {
@@ -370,28 +366,6 @@ async function handleTopup() {
         <ElButton type="primary" :loading="submitting" @click="handleTopup">
           {{ $t('vnetPages.common.confirm') }}
         </ElButton>
-      </template>
-    </ElDialog>
-
-    <ElDialog
-      v-model="resetPwdVisible"
-      :title="$t('vnetPages.members.resetPassword')"
-      width="420px"
-      :close-on-click-modal="false"
-    >
-      <div style="text-align: center; padding: 16px 0">
-        <p style="margin-bottom: 12px; color: #666">{{ $t('vnetPages.members.resetPasswordResult') }}</p>
-        <div style="display: flex; align-items: center; justify-content: center; gap: 8px">
-          <ElInput
-            :model-value="newPassword"
-            readonly
-            style="width: 200px; font-size: 18px; font-weight: bold; text-align: center"
-          />
-          <ElButton size="default" @click="copyPassword">{{ $t('vnetPages.members.copy') }}</ElButton>
-        </div>
-      </div>
-      <template #footer>
-        <ElButton type="primary" @click="resetPwdVisible = false">{{ $t('vnetPages.common.confirm') }}</ElButton>
       </template>
     </ElDialog>
 

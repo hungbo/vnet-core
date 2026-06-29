@@ -40,7 +40,7 @@ export function useChatWs(
   }
 
   const wsChatHandler = (msg: any) => {
-    if (msg.conversation_id === currentRoomId.value && isChatOpen.value) {
+    if (msg.room_id === currentRoomId.value && isChatOpen.value) {
       if (!messages.value.some((m: any) => m._id === msg.id)) {
         messages.value = sortMessages([...messages.value, mapMessage(msg)]);
       }
@@ -63,23 +63,23 @@ export function useChatWs(
     });
   };
 
-  const wsConversationDeleted = (data: any) => {
-    if (data.conversation_id === currentRoomId.value) {
+  const wsRoomDeleted = (data: any) => {
+    if (data.room_id === currentRoomId.value) {
       currentRoomId.value = '';
       messages.value = [];
     }
     fetchRooms();
   };
 
-  const wsConversationsCleared = () => {
+  const wsRoomsCleared = () => {
     currentRoomId.value = '';
     messages.value = [];
     fetchRooms();
   };
 
-  const wsConversationNew = () => {
+  const wsRoomNew = () => {
     fetchRooms();
   };
 
-  return { wsChatHandler, wsStatusHandler, wsConversationDeleted, wsConversationsCleared, wsConversationNew, sortMessages, mapMessage };
+  return { wsChatHandler, wsStatusHandler, wsRoomDeleted, wsRoomsCleared, wsRoomNew, sortMessages, mapMessage };
 }

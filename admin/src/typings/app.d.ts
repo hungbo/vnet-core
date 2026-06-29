@@ -1174,18 +1174,18 @@ declare namespace App {
         };
         chat: {
           title: string;
-          conversations: string;
-          newConversation: string;
+          rooms: string;
+          newRoom: string;
           noMessages: string;
-          selectConversation: string;
+          selectRoom: string;
           inputPlaceholder: string;
           send: string;
-          createConversation: string;
+          createRoom: string;
           recipients: string;
           selectRecipients: string;
           messages: {
             selectAtLeastOne: string;
-            loadConversationsError: string;
+            loadRoomsError: string;
             loadMessagesError: string;
             sendError: string;
             createSuccess: string;

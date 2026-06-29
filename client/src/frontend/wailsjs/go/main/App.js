@@ -10,8 +10,8 @@ export function ChangePin(arg1, arg2) {
   return window['go']['main']['App']['ChangePin'](arg1, arg2);
 }
 
-export function CreateConversation(arg1, arg2, arg3) {
-  return window['go']['main']['App']['CreateConversation'](arg1, arg2, arg3);
+export function CreateRoom(arg1, arg2, arg3) {
+  return window['go']['main']['App']['CreateRoom'](arg1, arg2, arg3);
 }
 
 export function ExecuteCommand(arg1) {
@@ -20,14 +20,6 @@ export function ExecuteCommand(arg1) {
 
 export function GetCategories() {
   return window['go']['main']['App']['GetCategories']();
-}
-
-export function GetChatMessages(arg1) {
-  return window['go']['main']['App']['GetChatMessages'](arg1);
-}
-
-export function GetConversations() {
-  return window['go']['main']['App']['GetConversations']();
 }
 
 export function GetHardware() {
@@ -48,6 +40,14 @@ export function GetMenu(arg1) {
 
 export function GetNotifications() {
   return window['go']['main']['App']['GetNotifications']();
+}
+
+export function GetRoomMessages(arg1) {
+  return window['go']['main']['App']['GetRoomMessages'](arg1);
+}
+
+export function GetRooms() {
+  return window['go']['main']['App']['GetRooms']();
 }
 
 export function GetServerURL() {
@@ -90,10 +90,6 @@ export function MarkAllNotificationsRead() {
   return window['go']['main']['App']['MarkAllNotificationsRead']();
 }
 
-export function MarkConversationMessagesRead(arg1) {
-  return window['go']['main']['App']['MarkConversationMessagesRead'](arg1);
-}
-
 export function MarkMessageDelivered(arg1) {
   return window['go']['main']['App']['MarkMessageDelivered'](arg1);
 }
@@ -104,6 +100,10 @@ export function MarkMessageRead(arg1) {
 
 export function MarkNotificationRead(arg1) {
   return window['go']['main']['App']['MarkNotificationRead'](arg1);
+}
+
+export function MarkRoomMessagesRead(arg1) {
+  return window['go']['main']['App']['MarkRoomMessagesRead'](arg1);
 }
 
 export function PlaceOrder(arg1) {
@@ -122,8 +122,8 @@ export function RestoreSession(arg1, arg2, arg3, arg4, arg5, arg6) {
   return window['go']['main']['App']['RestoreSession'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
-export function SendChatMessage(arg1, arg2) {
-  return window['go']['main']['App']['SendChatMessage'](arg1, arg2);
+export function SendRoomMessage(arg1, arg2) {
+  return window['go']['main']['App']['SendRoomMessage'](arg1, arg2);
 }
 
 export function SendScreenshotMessage(arg1, arg2) {

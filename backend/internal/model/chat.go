@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-type ChatConversation struct {
+type ChatRoom struct {
 	ID        string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	Title     string     `gorm:"type:varchar(200)" json:"title"`
 	IsGroup   bool       `gorm:"default:false" json:"is_group"`
@@ -12,7 +12,7 @@ type ChatConversation struct {
 
 type ChatParticipant struct {
 	ID               string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	ConversationID   string     `gorm:"type:uuid;not null;index" json:"conversation_id"`
+	RoomID   string     `gorm:"type:uuid;not null;index" json:"room_id"`
 	ParticipantType  string     `gorm:"type:varchar(20);not null" json:"participant_type"`
 	ParticipantID    string     `gorm:"type:uuid;not null" json:"participant_id"`
 	LastReadAt       *time.Time `gorm:"type:timestamptz" json:"last_read_at"`
@@ -21,7 +21,7 @@ type ChatParticipant struct {
 
 type ChatMessage struct {
 	ID              string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	ConversationID  string    `gorm:"type:uuid;not null;index:idx_chat_messages_conv" json:"conversation_id"`
+	RoomID  string    `gorm:"type:uuid;not null;index:idx_chat_messages_conv" json:"room_id"`
 	SenderType      string    `gorm:"type:varchar(20);not null" json:"sender_type"`
 	SenderID        string    `gorm:"type:uuid;not null" json:"sender_id"`
 	Message         string    `gorm:"type:text;not null" json:"message"`

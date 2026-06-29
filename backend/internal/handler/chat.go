@@ -19,7 +19,7 @@ func NewChatHandler(svc *service.ChatService) *ChatHandler {
 	return &ChatHandler{svc: svc}
 }
 
-func (h *ChatHandler) ListConversations(c *gin.Context) {
+func (h *ChatHandler) ListRooms(c *gin.Context) {
 	participantID := c.Query("participant_id")
 	participantType := c.Query("participant_type")
 	if participantID == "" {
@@ -33,42 +33,42 @@ func (h *ChatHandler) ListConversations(c *gin.Context) {
 		}
 	}
 
-	log.Printf("[Chat] ListConversations: participantID=%s type=%s", participantID, participantType)
+	log.Printf("[Chat] ListRooms: participantID=%s type=%s", participantID, participantType)
 
 	params := pagination.GetParams(c)
 
-	conversations, total, page, pageSize, err := h.svc.ListConversations(participantID, participantType, *params)
+	rooms, total, page, pageSize, err := h.svc.ListRooms(participantID, participantType, *params)
 	if err != nil {
-		log.Printf("[Chat] ListConversations error: %v", err)
-		response.InternalError(c, "Failed to fetch conversations")
+		log.Printf("[Chat] ListRooms error: %v", err)
+		response.InternalError(c, "Failed to fetch rooms")
 		return
 	}
-	log.Printf("[Chat] ListConversations result: %d conversations (total=%d)", len(conversations), total)
-	response.Paginated(c, conversations, total, page, pageSize)
+	log.Printf("[Chat] ListRooms result: %d rooms (total=%d)", len(rooms), total)
+	response.Paginated(c, rooms, total, page, pageSize)
 }
 
 func (h *ChatHandler) GetMessages(c *gin.Context) {
-	conversationID := c.Param("id")
+	roomID := c.Param("id")
 	params := pagination.GetParams(c)
-	log.Printf("[Chat] GetMessages: conversationID=%s page=%d size=%d", conversationID, params.Page, params.PageSize)
+	log.Printf("[Chat] GetMessages: roomID=%s page=%d size=%d", roomID, params.Page, params.PageSize)
 
-	messages, total, page, pageSize, err := h.svc.GetMessages(conversationID, *params)
+	messages, total, page, pageSize, err := h.svc.GetMessages(roomID, *params)
 	if err != nil {
 		log.Printf("[Chat] GetMessages error: %v", err)
-		response.NotFound(c, "Conversation not found")
+		response.NotFound(c, "Room not found")
 		return
 	}
 	log.Printf("[Chat] GetMessages result: %d messages (total=%d)", len(messages), total)
 	response.Paginated(c, messages, total, page, pageSize)
 }
 
-func (h *ChatHandler) CreateConversation(c *gin.Context) {
-	var req service.CreateConversationRequest
+func (h *ChatHandler) CreateRoom(c *gin.Context) {
+	var req service.CreateRoomRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
 		return
 	}
-	result, err := h.svc.CreateConversation(&req)
+	result, err := h.svc.CreateRoom(&req)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -76,13 +76,13 @@ func (h *ChatHandler) CreateConversation(c *gin.Context) {
 	response.Created(c, result)
 }
 
-func (h *ChatHandler) ensureConversation(senderID, senderType string) (string, error) {
-	convs, _, _, _, err := h.svc.ListConversations(senderID, senderType,
+func (h *ChatHandler) ensureRoom(senderID, senderType string) (string, error) {
+	rooms, _, _, _, err := h.svc.ListRooms(senderID, senderType,
 		pagination.Params{Page: 1, PageSize: 1, Sort: "created_at", Order: "desc"})
-	if err == nil && len(convs) > 0 {
-		return convs[0].ID, nil
+	if err == nil && len(rooms) > 0 {
+		return rooms[0].ID, nil
 	}
-	conv, err := h.svc.CreateConversation(&service.CreateConversationRequest{
+	room, err := h.svc.CreateRoom(&service.CreateRoomRequest{
 		Title:           "Hỗ trợ",
 		ParticipantID:   senderID,
 		ParticipantType: senderType,
@@ -90,12 +90,12 @@ func (h *ChatHandler) ensureConversation(senderID, senderType string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return conv.ID, nil
+	return room.ID, nil
 }
 
 func (h *ChatHandler) SendMessage(c *gin.Context) {
 	var input struct {
-		ConversationID string `json:"conversation_id"`
+		RoomID string `json:"room_id"`
 		SenderType     string `json:"sender_type"`
 		SenderID       string `json:"sender_id"`
 		Message        string `json:"message"`
@@ -106,7 +106,7 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
-	log.Printf("[Chat] SendMessage: conv=%s sender=%s type=%s msg_len=%d", input.ConversationID, input.SenderType, input.MessageType, len(input.Message))
+	log.Printf("[Chat] SendMessage: conv=%s sender=%s type=%s msg_len=%d", input.RoomID, input.SenderType, input.MessageType, len(input.Message))
 
 	if input.Message == "" {
 		handleValidationError(c, nil)
@@ -123,23 +123,23 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		input.MessageType = "text"
 	}
 
-	convID := input.ConversationID
-	if convID == "" && input.SenderType == "member" && input.SenderID != "" {
+	roomID := input.RoomID
+	if roomID == "" && input.SenderType == "member" && input.SenderID != "" {
 		var err error
-		convID, err = h.ensureConversation(input.SenderID, "member")
+		roomID, err = h.ensureRoom(input.SenderID, "member")
 		if err != nil {
 			handleValidationError(c, nil)
 			return
 		}
 	}
 
-	if convID == "" {
+	if roomID == "" {
 		handleValidationError(c, nil)
 		return
 	}
 
 	req := service.SendMessageRequest{
-		ConversationID: convID,
+		RoomID: roomID,
 		SenderType:     input.SenderType,
 		SenderID:       input.SenderID,
 		Message:        input.Message,
@@ -160,18 +160,18 @@ type TopupRequest struct {
 	MachineCode string `json:"machine_code"`
 }
 
-func (h *ChatHandler) DeleteConversation(c *gin.Context) {
+func (h *ChatHandler) DeleteRoom(c *gin.Context) {
 	id := c.Param("id")
-	if err := h.svc.DeleteConversation(id); err != nil {
-		response.InternalError(c, "Failed to delete conversation")
+	if err := h.svc.DeleteRoom(id); err != nil {
+		response.InternalError(c, "Failed to delete room")
 		return
 	}
 	response.Success(c, nil)
 }
 
-func (h *ChatHandler) DeleteAllConversations(c *gin.Context) {
-	if err := h.svc.DeleteAllConversations(); err != nil {
-		response.InternalError(c, "Failed to delete all conversations")
+func (h *ChatHandler) DeleteAllRooms(c *gin.Context) {
+	if err := h.svc.DeleteAllRooms(); err != nil {
+		response.InternalError(c, "Failed to delete all rooms")
 		return
 	}
 	response.Success(c, nil)
@@ -195,9 +195,9 @@ func (h *ChatHandler) MarkMessageRead(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-func (h *ChatHandler) MarkConversationMessagesRead(c *gin.Context) {
+func (h *ChatHandler) MarkRoomMessagesRead(c *gin.Context) {
 	id := c.Param("id")
-	count, err := h.svc.MarkConversationMessagesRead(id)
+	count, err := h.svc.MarkRoomMessagesRead(id)
 	if err != nil {
 		response.InternalError(c, "Failed to mark read")
 		return
@@ -212,14 +212,14 @@ func (h *ChatHandler) RequestTopup(c *gin.Context) {
 		return
 	}
 
-	convID, err := h.ensureConversation(req.MemberID, "member")
+	roomID, err := h.ensureRoom(req.MemberID, "member")
 	if err != nil {
-		response.InternalError(c, "Failed to create conversation")
+		response.InternalError(c, "Failed to create room")
 		return
 	}
 
 	msg := service.SendMessageRequest{
-		ConversationID: convID,
+		RoomID: roomID,
 		SenderType:     "member",
 		SenderID:       req.MemberID,
 		Message:        "Yêu cầu nạp " + formatAmount(req.Amount) + " từ máy " + req.MachineCode,
