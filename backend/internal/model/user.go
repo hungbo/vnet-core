@@ -10,7 +10,7 @@ type User struct {
 	Email        string     `gorm:"type:varchar(100)" json:"email"`
 	Phone        string     `gorm:"type:varchar(20)" json:"phone"`
 	AvatarURL    string     `gorm:"type:text" json:"avatar_url"`
-	StoreID      *string    `gorm:"type:uuid;index" json:"store_id"`
+	StoreID      *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	IsActive     bool       `gorm:"default:true" json:"is_active"`
 	LastLoginAt  *time.Time `gorm:"type:timestamptz" json:"last_login_at"`
 	CreatedAt    time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
@@ -39,11 +39,11 @@ type Permission struct {
 }
 
 type UserRole struct {
-	UserID string `gorm:"type:uuid;primaryKey" json:"user_id"`
-	RoleID string `gorm:"type:uuid;primaryKey" json:"role_id"`
+	UserID string `gorm:"type:uuid;primaryKey;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"user_id"`
+	RoleID string `gorm:"type:uuid;primaryKey;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"role_id"`
 }
 
 type RolePermission struct {
-	RoleID       string `gorm:"type:uuid;primaryKey" json:"role_id"`
-	PermissionID string `gorm:"type:uuid;primaryKey" json:"permission_id"`
+	RoleID       string `gorm:"type:uuid;primaryKey;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"role_id"`
+	PermissionID string `gorm:"type:uuid;primaryKey;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"permission_id"`
 }

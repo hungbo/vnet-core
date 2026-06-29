@@ -7,10 +7,3 @@ export function toggleChat() {
   isChatOpen.value = !isChatOpen.value;
 }
 
-export function incrementUnread() {
-  chatUnreadCount.value++;
-}
-
-export function resetUnread() {
-  chatUnreadCount.value = 0;
-}

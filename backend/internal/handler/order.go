@@ -129,6 +129,57 @@ func (h *OrderHandler) Delete(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+// @Summary Batch delete orders
+// @Description Delete multiple orders by IDs
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body object true "Batch delete request"
+// @Success 200 {object} response.Response
+// @Failure 400 {object} response.Response
+// @Router /orders/batch-delete [delete]
+func (h *OrderHandler) BatchDelete(c *gin.Context) {
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	if err := h.svc.BatchDelete(body.IDs); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// @Summary Create topup order
+// @Description Create a topup order that admin will approve
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body service.CreateTopupOrderRequest true "Topup data"
+// @Success 201 {object} response.Response{data=service.OrderResponse}
+// @Failure 400 {object} response.Response
+// @Router /orders/topup-request [post]
+func (h *OrderHandler) CreateTopup(c *gin.Context) {
+	var req service.CreateTopupOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	userID := middleware.GetUserID(c)
+	storeID := middleware.GetStoreID(c)
+	result, err := h.svc.CreateTopupOrder(req, userID, storeID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Created(c, result)
+}
+
 // @Summary Update order status
 // @Description Update the status of an order
 // @Tags Orders

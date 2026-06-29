@@ -206,32 +206,7 @@ func (h *ChatHandler) MarkRoomMessagesRead(c *gin.Context) {
 }
 
 func (h *ChatHandler) RequestTopup(c *gin.Context) {
-	var req TopupRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		handleValidationError(c, err)
-		return
-	}
-
-	roomID, err := h.ensureRoom(req.MemberID, "member")
-	if err != nil {
-		response.InternalError(c, "Failed to create room")
-		return
-	}
-
-	msg := service.SendMessageRequest{
-		RoomID: roomID,
-		SenderType:     "member",
-		SenderID:       req.MemberID,
-		Message:        "Yêu cầu nạp " + formatAmount(req.Amount) + " từ máy " + req.MachineCode,
-		MessageType:    "topup_request",
-	}
-
-	result, err := h.svc.SendMessage(&msg)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-	response.Created(c, result)
+	response.BadRequest(c, "Topup requests are now handled via orders. Use POST /orders/topup-request")
 }
 
 func formatAmount(amount int64) string {

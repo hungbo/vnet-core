@@ -213,7 +213,9 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				orders.GET("/:id", h.Order.GetByID)
 				orders.POST("", h.Order.Create)
 				orders.PUT("/:id", h.Order.Update)
+				orders.DELETE("/batch-delete", h.Order.BatchDelete)
 				orders.DELETE("/:id", h.Order.Delete)
+				orders.POST("/topup-request", h.Order.CreateTopup)
 				orders.POST("/:id/status", h.Order.UpdateStatus)
 				orders.POST("/:id/split", h.Order.Split)
 				orders.POST("/:id/pay", h.Order.Pay)
@@ -318,7 +320,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				chat.POST("/messages", h.Chat.SendMessage)
 				chat.PUT("/messages/:id/deliver", h.Chat.MarkMessageDelivered)
 				chat.PUT("/messages/:id/read", h.Chat.MarkMessageRead)
-				chat.POST("/topup-request", h.Chat.RequestTopup)
+				// chat.POST("/topup-request", h.Chat.RequestTopup)
 			}
 
 			notifications := protected.Group("/notifications")

@@ -108,12 +108,6 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 		},
 
 		{
-			Name:      "vnet_machines-detail",
-			Path:      "/vnet/machines/:id",
-			Component: "view.vnet_machines-detail",
-			Meta:      RouteMeta{Title: "vnet_machines-detail", I18nKey: "route.vnet_machines-detail", HideInMenu: true},
-		},
-		{
 			Name:      "vnet_machine-groups",
 			Path:      "/vnet/machine-groups",
 			Component: "view.vnet_machine-groups",

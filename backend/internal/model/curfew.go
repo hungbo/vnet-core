@@ -9,7 +9,7 @@ type CurfewPolicy struct {
 	CurfewEnd       string     `gorm:"type:time;not null" json:"curfew_end"`
 	MaxMinorHours   int        `gorm:"default:2" json:"max_minor_hours"`
 	IsActive        bool       `gorm:"default:true" json:"is_active"`
-	StoreID         *string    `gorm:"type:uuid;index" json:"store_id"`
+	StoreID         *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	OverrideByAdmin *string    `gorm:"type:uuid" json:"override_by_admin"`
 	OverrideReason  string     `gorm:"type:text" json:"override_reason"`
 	OverrideAt      *time.Time `gorm:"type:timestamptz" json:"override_at"`

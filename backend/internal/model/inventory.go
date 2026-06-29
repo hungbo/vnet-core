@@ -24,7 +24,7 @@ type Warehouse struct {
 
 type StockTransaction struct {
 	ID              string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	ProductID       *string   `gorm:"type:uuid;index" json:"product_id"`
+	ProductID       *string   `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"product_id"`
 	TransactionType string    `gorm:"type:varchar(30);not null" json:"transaction_type"`
 	Quantity        float64   `gorm:"type:decimal(12,3);not null" json:"quantity"`
 	UnitPrice       int64     `gorm:"column:unit_price" json:"unit_price"`
@@ -32,21 +32,21 @@ type StockTransaction struct {
 	StockBefore     float64   `gorm:"type:decimal(12,3)" json:"stock_before"`
 	StockAfter      float64   `gorm:"type:decimal(12,3)" json:"stock_after"`
 	ReferenceID     *string   `gorm:"type:uuid" json:"reference_id"`
-	SupplierID      *string   `gorm:"type:uuid" json:"supplier_id"`
-	WarehouseID     *string   `gorm:"type:uuid" json:"warehouse_id"`
+	SupplierID      *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"supplier_id"`
+	WarehouseID     *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"warehouse_id"`
 	Description     string    `gorm:"type:text" json:"description"`
-	StoreID         *string   `gorm:"type:uuid;index" json:"store_id"`
-	CreatedBy       *string   `gorm:"type:uuid" json:"created_by"`
+	StoreID         *string   `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
+	CreatedBy       *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"created_by"`
 	CreatedAt       time.Time `gorm:"default:now();index" json:"created_at,omitempty"`
 }
 
 type InventoryCount struct {
 	ID            string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	WarehouseID   *string   `gorm:"type:uuid" json:"warehouse_id"`
-	ProductID     string    `gorm:"type:uuid;not null;index" json:"product_id"`
+	WarehouseID   *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"warehouse_id"`
+	ProductID     string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"product_id"`
 	ExpectedQty   float64   `gorm:"type:decimal(12,3)" json:"expected_qty"`
 	ActualQty     float64   `gorm:"type:decimal(12,3)" json:"actual_qty"`
 	DifferenceQty float64   `gorm:"type:decimal(12,3)" json:"difference_qty"`
-	CountedBy     *string   `gorm:"type:uuid" json:"counted_by"`
+	CountedBy     *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"counted_by"`
 	CountedAt     time.Time `gorm:"default:now()" json:"counted_at"`
 }

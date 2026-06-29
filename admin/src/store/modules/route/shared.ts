@@ -331,7 +331,6 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     vnet_dashboard: 'mdi:monitor-dashboard',
     vnet_members: 'carbon:user-avatar',
     vnet_machines: 'carbon:bare-metal-server',
-    'vnet_machines-detail': 'carbon:bare-metal-server',
     vnet_sessions: 'carbon:time',
     vnet_transactions: 'carbon:currency-dollar',
     vnet_orders: 'carbon:receipt',
@@ -368,7 +367,6 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
       children: [
         'vnet_members',
         'vnet_machines',
-        'vnet_machines-detail',
         'vnet_machine-groups',
         'vnet_member-groups',
         'vnet_sessions',

@@ -21,6 +21,16 @@ var ValidUnits = map[string]string{
 	"goi":   "Gói",
 	"bich":  "Bịch",
 	"thung": "Thùng",
+	"ly":    "Ly",
+	"coc":   "Cốc",
+	"dia":   "Đĩa",
+	"to":    "Tô",
+	"phan":  "Phần",
+	"suat":  "Suất",
+	"mieng": "Miếng",
+	"vien":  "Viên",
+	"cay":   "Cây",
+	"que":   "Que",
 }
 
 type InventoryService struct {

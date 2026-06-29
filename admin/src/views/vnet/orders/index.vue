@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import { useWebSocketStore } from '@/store/modules/ws';
 import client from '@/api/client';
-import { useUIPaginatedTable } from '@/hooks/common/table';
+import { useUIPaginatedTable, useTableOperate } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
@@ -14,6 +14,7 @@ const wsStore = useWebSocketStore();
 
 const search = ref('');
 const filterStatus = ref(null);
+const filterType = ref('');
 const dateRange = ref(null);
 const detailVisible = ref(false);
 const detail = ref<any>(null);
@@ -53,12 +54,14 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
         page_size: pageSize,
         search: search.value || undefined,
         status: filterStatus.value || undefined,
+        order_type: filterType.value || undefined,
         date_from: dateRange.value?.[0] || undefined,
         date_to: dateRange.value?.[1] || undefined
       }
     }),
   transform: vnetTransform,
   columns: () => [
+    { prop: 'selection', type: 'selection', width: 48 },
     { prop: 'order_code', label: $t('vnetPages.orders.orderCode'), width: 140 },
     {
       prop: 'status',
@@ -67,16 +70,31 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       formatter: (row: any) => h(ElTag, { type: statusType(row.status) }, () => statusLabel(row.status))
     },
     {
+      prop: 'order_type',
+      label: $t('vnetPages.orders.orderType'),
+      width: 100,
+      formatter: (row: any) => {
+        if (row.order_type === 'topup') return $t('vnetPages.orders.topup');
+        return $t('vnetPages.orders.product');
+      }
+    },
+    {
       prop: 'member_name',
       label: $t('vnetPages.orders.member'),
       width: 120,
-      formatter: (row: any) => row.member_name || row.member_id || '-'
+      formatter: (row: any) => row.member_username || row.member_name || '-'
     },
     {
       prop: 'total_amount',
       label: $t('vnetPages.orders.total'),
       width: 130,
       formatter: (row: any) => formatPrice(row.total_amount)
+    },
+    {
+      prop: 'payment_method',
+      label: $t('vnetPages.orders.paymentMethod'),
+      width: 110,
+      formatter: (row: any) => row.payment_method || '-'
     },
     {
       prop: 'machine_code',
@@ -150,6 +168,30 @@ async function handleCancel(row: any) {
   try {
     await ElMessageBox.confirm(
       $t('vnetPages.orders.messages.cancelConfirm', { code: row.order_code }),
+      $t('vnetPages.common.confirm'),
+      { type: 'warning' }
+    );
+    await updateStatus(row, 'cancelled');
+  } catch (_) {}
+}
+
+async function handleApproveTopup(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `Xác nhận nạp ${formatPrice(row.final_amount)} cho ${row.member_username || row.member_name || row.member_id}?`,
+      $t('vnetPages.common.confirm'),
+      { type: 'info' }
+    );
+    await client.post(`/orders/${row.id}/status`, { status: 'completed' });
+    ElMessage.success(`Đã nạp ${formatPrice(row.final_amount)} thành công`);
+    await fetchData();
+  } catch (_) {}
+}
+
+async function handleRejectTopup(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      `Từ chối nạp ${formatPrice(row.final_amount)} cho ${row.member_username || row.member_name || row.member_id}?`,
       $t('vnetPages.common.confirm'),
       { type: 'warning' }
     );
@@ -241,9 +283,24 @@ async function handleCreate() {
   }
 }
 
+function playOrderSound(orderType?: string) {
+  const src = orderType === 'topup' ? '/audio/deposit.mp3' : '/audio/order.mp3';
+  const audio = new Audio(src);
+  audio.volume = 0.5;
+  audio.play().catch(() => {});
+}
+
+const { checkedRowKeys, onBatchDeleted } = useTableOperate(data, 'id', getData);
+
+async function handleBatchDelete() {
+  await client.delete('/orders/batch-delete', { data: { ids: checkedRowKeys.value } });
+  onBatchDeleted();
+}
+
 onMounted(() => {
-  wsStore.on('order:new', async () => {
+  wsStore.on('order:new', async (data?: any) => {
     await getData();
+    playOrderSound(data?.order_type);
     ElNotification({
       title: $t('vnetPages.orders.newOrder'),
       message: $t('vnetPages.orders.newOrderMessage'),
@@ -264,9 +321,13 @@ onBeforeUnmount(() => {
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.orders.title') }}</span>
-          <TableHeaderOperation v-model:columns="columnChecks" :loading="loading" @refresh="getData">
+          <TableHeaderOperation v-model:columns="columnChecks" :loading="loading" :disabled-delete="checkedRowKeys.length === 0" @add="openCreateDialog" @delete="handleBatchDelete" @refresh="getData">
             <template #prefix>
-              <ElButton type="primary" @click="openCreateDialog">{{ $t('vnetPages.orders.createOrder') }}</ElButton>
+              <ElRadioGroup v-model="filterType" @change="fetchData" style="margin-right: 12px">
+                <ElRadioButton value="">{{ $t('vnetPages.common.all') }}</ElRadioButton>
+                <ElRadioButton value="product">{{ $t('vnetPages.orders.product') }}</ElRadioButton>
+                <ElRadioButton value="topup">{{ $t('vnetPages.orders.topup') }}</ElRadioButton>
+              </ElRadioGroup>
               <ElSelect
                 v-model="filterStatus"
                 :placeholder="$t('vnetPages.common.status')"
@@ -296,26 +357,42 @@ onBeforeUnmount(() => {
           </TableHeaderOperation>
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <ElTable v-loading="loading" :data="data" style="width: 100%" @selection-change="checkedRowKeys = $event.map((r: any) => r.id)">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="320" fixed="right">
           <template #default="{ row }">
             <ElButton size="small" @click="viewDetail(row)">{{ $t('vnetPages.common.detail') }}</ElButton>
-            <ElButton v-if="row.status === 'pending'" size="small" type="primary" @click="handleConfirm(row)">
-              {{ $t('vnetPages.orders.confirm') }}
-            </ElButton>
-            <ElButton v-if="row.status === 'confirmed'" size="small" type="success" @click="handleComplete(row)">
-              {{ $t('vnetPages.orders.pay') }}
-            </ElButton>
-            <ElButton
-              v-if="row.status !== 'completed' && row.status !== 'cancelled'"
-              size="small"
-              type="danger"
-              plain
-              @click="handleCancel(row)"
-            >
-              {{ $t('vnetPages.orders.cancel') }}
-            </ElButton>
+            <template v-if="row.order_type === 'topup'">
+              <ElButton v-if="row.status === 'pending'" size="small" type="success" @click="handleApproveTopup(row)">
+                {{ $t('vnetPages.orders.approve') }}
+              </ElButton>
+              <ElButton
+                v-if="row.status === 'pending'"
+                size="small"
+                type="danger"
+                plain
+                @click="handleRejectTopup(row)"
+              >
+                {{ $t('vnetPages.orders.reject') }}
+              </ElButton>
+            </template>
+            <template v-else>
+              <ElButton v-if="row.status === 'pending'" size="small" type="primary" @click="handleConfirm(row)">
+                {{ $t('vnetPages.orders.confirm') }}
+              </ElButton>
+              <ElButton v-if="row.status === 'confirmed'" size="small" type="success" @click="handleComplete(row)">
+                {{ $t('vnetPages.orders.pay') }}
+              </ElButton>
+              <ElButton
+                v-if="row.status !== 'completed' && row.status !== 'cancelled'"
+                size="small"
+                type="danger"
+                plain
+                @click="handleCancel(row)"
+              >
+                {{ $t('vnetPages.orders.cancel') }}
+              </ElButton>
+            </template>
           </template>
         </ElTableColumn>
       </ElTable>

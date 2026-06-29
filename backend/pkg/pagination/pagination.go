@@ -9,11 +9,12 @@ import (
 )
 
 type Params struct {
-	Page     int    `form:"page"`
-	PageSize int    `form:"page_size"`
-	Sort     string `form:"sort"`
-	Order    string `form:"order"`
-	Search   string `form:"search"`
+	Page      int    `form:"page"`
+	PageSize  int    `form:"page_size"`
+	Sort      string `form:"sort"`
+	Order     string `form:"order"`
+	Search    string `form:"search"`
+	OrderType string `form:"order_type"`
 }
 
 type Result struct {
@@ -32,11 +33,12 @@ const (
 
 func GetParams(c *gin.Context) *Params {
 	p := &Params{
-		Page:     DefaultPage,
-		PageSize: DefaultPageSize,
-		Sort:     c.DefaultQuery("sort", "id"),
-		Order:    c.DefaultQuery("order", "desc"),
-		Search:   c.Query("search"),
+		Page:      DefaultPage,
+		PageSize:  DefaultPageSize,
+		Sort:      c.DefaultQuery("sort", "id"),
+		Order:     c.DefaultQuery("order", "desc"),
+		Search:    c.Query("search"),
+		OrderType: c.Query("order_type"),
 	}
 
 	if page, err := parseInt(c.Query("page"), DefaultPage); err == nil && page > 0 {

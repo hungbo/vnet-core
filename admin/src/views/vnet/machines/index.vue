@@ -137,10 +137,6 @@ function openEdit(row: any) {
   dialogVisible.value = true;
 }
 
-function viewDetail(row: any) {
-  router.push(`/machines/${row.id}`);
-}
-
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) return;
@@ -217,7 +213,6 @@ onBeforeUnmount(() => {
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="260" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="viewDetail(row)">{{ $t('vnetPages.common.detail') }}</ElButton>
             <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
             <ElButton size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}

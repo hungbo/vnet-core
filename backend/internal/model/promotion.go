@@ -17,7 +17,7 @@ type Promotion struct {
 
 type PromotionCondition struct {
 	ID             string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	PromotionID    string    `gorm:"type:uuid;not null;index" json:"promotion_id"`
+	PromotionID    string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"promotion_id"`
 	ConditionKey   string    `gorm:"type:varchar(50);not null" json:"condition_key"`
 	ConditionValue string    `gorm:"type:jsonb;not null" json:"condition_value"`
 	CreatedAt      time.Time `gorm:"default:now()" json:"created_at,omitempty"`
@@ -44,8 +44,8 @@ type LuckySpinReward struct {
 
 type LuckySpinLog struct {
 	ID       string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	MemberID string    `gorm:"type:uuid;not null;index" json:"member_id"`
-	RewardID *string   `gorm:"type:uuid" json:"reward_id"`
+	MemberID string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"member_id"`
+	RewardID *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"reward_id"`
 	IsWin    bool      `gorm:"default:false" json:"is_win"`
 	SpunAt   time.Time `gorm:"default:now()" json:"spun_at"`
 }

@@ -16,9 +16,18 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
   let latestFetch = 0;
 
   function mapRoom(room: any) {
+    const p = room.participants?.[0];
+    let roomName = 'Hỗ trợ';
+    if (p) {
+      if (p.username && p.machineCode) {
+        roomName = `${p.username} - ${p.machineCode}`;
+      } else if (p.username) {
+        roomName = p.username;
+      }
+    }
     return {
       roomId: room.id,
-      roomName: room.participants?.map((p: any) => p.name || p.username).filter(Boolean).join(', ') || 'Hỗ trợ',
+      roomName,
       unreadCount: room.unread_count || 0,
       lastMessage: room.last_message
         ? {
@@ -65,7 +74,7 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
       saved: true,
       distributed: msg.status === 'delivered' || msg.status === 'read',
       seen: msg.status === 'read',
-      disableActions: false,
+      disableActions: true,
       messageType: msg.message_type,
       senderType: msg.sender_type,
     };
@@ -99,11 +108,12 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
     messagesLoaded.value = false;
 
     try {
-      if (isNewRoom) {
+      if (!before) {
+        currentPage = 1;
         const items = await fetchPage(roomId, 1);
         if (fetchId !== latestFetch) return;
         messages.value = sortMessages(items.map(mapMessage));
-      } else if (before) {
+      } else {
         const items = await fetchPage(roomId, currentPage + 1);
         if (fetchId !== latestFetch) return;
         if (items.length > 0) {

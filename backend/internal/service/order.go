@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type OrderOption struct {
@@ -23,12 +25,13 @@ type OrderOption struct {
 
 type OrderService struct {
 	db    *gorm.DB
+	hub   *hub.Hub
 	audit *AuditService
 	inv   *InventoryService
 }
 
-func NewOrderService(db *gorm.DB, audit *AuditService, inv *InventoryService) *OrderService {
-	return &OrderService{db: db, audit: audit, inv: inv}
+func NewOrderService(db *gorm.DB, hub *hub.Hub, audit *AuditService, inv *InventoryService) *OrderService {
+	return &OrderService{db: db, hub: hub, audit: audit, inv: inv}
 }
 
 type CreateOrderRequest struct {
@@ -38,6 +41,13 @@ type CreateOrderRequest struct {
 	TableNumber string             `json:"table_number"`
 	Note        string             `json:"note"`
 	Items       []OrderItemRequest `json:"items"`
+}
+
+type CreateTopupOrderRequest struct {
+	MemberID    string `json:"member_id"`
+	Amount      int64  `json:"amount"`
+	MachineCode string `json:"machine_code"`
+	StoreID     string `json:"store_id"`
 }
 
 type OrderItemRequest struct {
@@ -70,6 +80,7 @@ type OrderResponse struct {
 	ID             string              `json:"id"`
 	OrderCode      string              `json:"order_code"`
 	Status         string              `json:"status"`
+	OrderType      string              `json:"order_type,omitempty"`
 	MemberID       *string             `json:"member_id"`
 	MachineID      *string             `json:"machine_id"`
 	StoreID        *string             `json:"store_id"`
@@ -77,11 +88,13 @@ type OrderResponse struct {
 	TotalAmount    int64               `json:"total_amount"`
 	DiscountAmount int64               `json:"discount_amount"`
 	FinalAmount    int64               `json:"final_amount"`
+	PaymentMethod  string              `json:"payment_method,omitempty"`
 	Note           string              `json:"note"`
 	CreatedBy      *string             `json:"created_by"`
 	UpdatedBy      *string             `json:"updated_by"`
 	UpdatedByName  string              `json:"updated_by_name,omitempty"`
 	MemberName     string              `json:"member_name,omitempty"`
+	MemberUsername string              `json:"member_username,omitempty"`
 	MachineCode    string              `json:"machine_code,omitempty"`
 	CompletedAt    *time.Time          `json:"completed_at"`
 	CreatedAt      time.Time           `json:"created_at"`
@@ -116,6 +129,10 @@ type PaymentResponse struct {
 
 func (s *OrderService) List(params pagination.Params, storeID string) ([]OrderResponse, int64, int, int, error) {
 	query := s.db.Model(&model.Order{}).Where("store_id = ? AND deleted_at IS NULL", storeID)
+
+	if params.OrderType != "" {
+		query = query.Where("order_type = ?", params.OrderType)
+	}
 
 	if params.Search != "" {
 		search := "%" + params.Search + "%"
@@ -152,12 +169,14 @@ func (s *OrderService) List(params pagination.Params, storeID string) ([]OrderRe
 	}
 
 	memberNames := s.batchLoadMemberNames(memberIDs)
+	memberUsernames := s.batchLoadMemberUsernames(memberIDs)
 	machineCodes := s.batchLoadMachineCodes(machineIDs)
 	userNames := s.batchLoadUserNames(userIDs)
 
 	for i := range result {
 		if orders[i].MemberID != nil {
 			result[i].MemberName = memberNames[*orders[i].MemberID]
+			result[i].MemberUsername = memberUsernames[*orders[i].MemberID]
 		}
 		if orders[i].MachineID != nil {
 			result[i].MachineCode = machineCodes[*orders[i].MachineID]
@@ -187,7 +206,9 @@ func (s *OrderService) GetByID(id string) (*OrderResponse, error) {
 
 	if order.MemberID != nil {
 		names := s.batchLoadMemberNames([]string{*order.MemberID})
+		usernames := s.batchLoadMemberUsernames([]string{*order.MemberID})
 		result.MemberName = names[*order.MemberID]
+		result.MemberUsername = usernames[*order.MemberID]
 	}
 	if order.MachineID != nil {
 		codes := s.batchLoadMachineCodes([]string{*order.MachineID})
@@ -197,6 +218,68 @@ func (s *OrderService) GetByID(id string) (*OrderResponse, error) {
 		names := s.batchLoadUserNames([]string{*order.UpdatedBy})
 		result.UpdatedByName = names[*order.UpdatedBy]
 	}
+
+	return &result, nil
+}
+
+func (s *OrderService) CreateTopupOrder(req CreateTopupOrderRequest, createdBy, storeID string) (*OrderResponse, error) {
+	if req.Amount <= 0 {
+		return nil, errors.New("số tiền phải lớn hơn 0")
+	}
+
+	orderCode := s.GenerateOrderCode()
+
+	order := model.Order{
+		OrderCode:   orderCode,
+		Status:      "pending",
+		OrderType:   model.OrderTypeTopup,
+		TotalAmount: req.Amount,
+		FinalAmount: req.Amount,
+		CreatedBy:   &createdBy,
+	}
+	if req.MemberID != "" {
+		order.MemberID = &req.MemberID
+	}
+	if storeID != "" {
+		order.StoreID = &storeID
+	}
+	if req.MachineCode != "" {
+		var machine model.Machine
+		if err := s.db.Select("id").Where("machine_code = ?", req.MachineCode).First(&machine).Error; err == nil {
+			order.MachineID = &machine.ID
+		}
+	}
+
+	if err := s.db.Create(&order).Error; err != nil {
+		return nil, err
+	}
+
+	items := s.loadOrderItems(order.ID)
+	result := toOrderResponse(&order, items)
+
+	var uid *string
+	if createdBy != "" {
+		uid = &createdBy
+	}
+	s.audit.Log(&LogAuditRequest{
+		Action:     "create_topup_order",
+		EntityType: "order",
+		EntityID:   order.ID,
+		UserID:     uid,
+		Metadata: map[string]interface{}{
+			"order_code": order.OrderCode,
+			"amount":     req.Amount,
+		},
+	})
+
+	s.hub.Broadcast(hub.Event{
+		Type: "order:new",
+		Data: map[string]interface{}{
+			"order_id":     order.ID,
+			"order_type":   model.OrderTypeTopup,
+			"final_amount": order.FinalAmount,
+		},
+	})
 
 	return &result, nil
 }
@@ -362,6 +445,14 @@ func (s *OrderService) Create(req CreateOrderRequest, createdBy string, storeID 
 			"status":       order.Status,
 		},
 	})
+	s.hub.Broadcast(hub.Event{
+		Type: "order:new",
+		Data: map[string]interface{}{
+			"order_id":     order.ID,
+			"order_type":   model.OrderTypeProduct,
+			"final_amount": order.FinalAmount,
+		},
+	})
 	return &result, nil
 }
 
@@ -435,6 +526,21 @@ func (s *OrderService) Delete(id string) error {
 	return nil
 }
 
+func (s *OrderService) BatchDelete(ids []string) error {
+	if len(ids) == 0 {
+		return errors.New("no ids provided")
+	}
+	if err := s.db.Where("id IN ?", ids).Delete(&model.Order{}).Error; err != nil {
+		return err
+	}
+	s.audit.Log(&LogAuditRequest{
+		Action:     "batch_delete",
+		EntityType: "order",
+		Metadata:   map[string]interface{}{"ids": ids, "count": len(ids)},
+	})
+	return nil
+}
+
 var validOrderTransitions = map[string][]string{
 	"pending":   {"confirmed", "cancelled"},
 	"confirmed": {"completed", "cancelled"},
@@ -460,12 +566,81 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 		return nil, err
 	}
 
+	if order.OrderType == model.OrderTypeTopup && order.Status == "pending" && req.Status == "completed" {
+		req.Status = "confirmed"
+	}
+
 	if !contains(validOrderTransitions[order.Status], req.Status) {
 		return nil, errors.New("không thể chuyển từ " + order.Status + " sang " + req.Status)
 	}
 
 	switch req.Status {
 	case "confirmed":
+		if order.OrderType == model.OrderTypeTopup {
+			now := time.Now()
+			tx := s.db.Begin()
+			var member model.Member
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *order.MemberID).First(&member).Error; err != nil {
+				tx.Rollback()
+				return nil, errors.New("không tìm thấy hội viên")
+			}
+			balanceBefore := member.Balance
+			balanceAfter := balanceBefore + order.FinalAmount
+			transaction := model.MemberTransaction{
+				MemberID:        member.ID,
+				TransactionType: "topup",
+				Amount:          order.FinalAmount,
+				BalanceBefore:   balanceBefore,
+				BalanceAfter:    balanceAfter,
+				PaymentMethod:   order.PaymentMethod,
+				Description:     "Nạp tiền qua đơn hàng " + order.OrderCode,
+				StoreID:         order.StoreID,
+				CreatedBy:       &updatedBy,
+			}
+			if err := tx.Create(&transaction).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+			if err := tx.Model(&member).Updates(map[string]interface{}{
+				"balance":    balanceAfter,
+				"updated_at": time.Now(),
+			}).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+			if err := tx.Model(&order).Updates(map[string]interface{}{
+				"status":       "completed",
+				"updated_by":   updatedBy,
+				"completed_at": &now,
+			}).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+			if err := tx.Commit().Error; err != nil {
+				return nil, err
+			}
+			req.Status = "completed"
+			s.hub.Broadcast(hub.Event{
+				Type: "balance:updated",
+				Data: map[string]interface{}{
+					"member_id": *order.MemberID,
+					"balance":   balanceAfter,
+				},
+			})
+			if order.MachineID != nil {
+				var machine model.Machine
+				if err := s.db.Select("machine_code").Where("id = ?", *order.MachineID).First(&machine).Error; err == nil {
+					s.hub.SendToMachine(machine.MachineCode, hub.Event{
+						Type: "topup:confirmed",
+						Data: map[string]interface{}{
+							"amount":   order.FinalAmount,
+							"order_id": order.ID,
+						},
+					})
+				}
+			}
+			goto afterUpdate
+		}
 		tx := s.db.Begin()
 		if err := tx.Model(&order).Updates(map[string]interface{}{
 			"status":     "confirmed",
@@ -484,6 +659,69 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 
 	case "completed":
 		now := time.Now()
+		if order.OrderType == model.OrderTypeTopup {
+			tx := s.db.Begin()
+			var member model.Member
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *order.MemberID).First(&member).Error; err != nil {
+				tx.Rollback()
+				return nil, errors.New("không tìm thấy hội viên")
+			}
+			balanceBefore := member.Balance
+			balanceAfter := balanceBefore + order.FinalAmount
+			transaction := model.MemberTransaction{
+				MemberID:        member.ID,
+				TransactionType: "topup",
+				Amount:          order.FinalAmount,
+				BalanceBefore:   balanceBefore,
+				BalanceAfter:    balanceAfter,
+				PaymentMethod:   order.PaymentMethod,
+				Description:     "Nạp tiền qua đơn hàng " + order.OrderCode,
+				StoreID:         order.StoreID,
+				CreatedBy:       &updatedBy,
+			}
+			if err := tx.Create(&transaction).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+			if err := tx.Model(&member).Updates(map[string]interface{}{
+				"balance":    balanceAfter,
+				"updated_at": time.Now(),
+			}).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+			if err := tx.Model(&order).Updates(map[string]interface{}{
+				"status":       "completed",
+				"updated_by":   updatedBy,
+				"completed_at": &now,
+			}).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+			if err := tx.Commit().Error; err != nil {
+				return nil, err
+			}
+			s.hub.Broadcast(hub.Event{
+				Type: "balance:updated",
+				Data: map[string]interface{}{
+					"member_id": *order.MemberID,
+					"balance":   balanceAfter,
+				},
+			})
+			if order.MachineID != nil {
+				var machine model.Machine
+				if err := s.db.Select("machine_code").Where("id = ?", *order.MachineID).First(&machine).Error; err == nil {
+					s.hub.SendToMachine(machine.MachineCode, hub.Event{
+						Type: "topup:confirmed",
+						Data: map[string]interface{}{
+							"amount":   order.FinalAmount,
+							"order_id": order.ID,
+						},
+					})
+				}
+			}
+			goto afterUpdate
+		}
 		tx := s.db.Begin()
 		payment := model.Payment{
 			OrderID:       order.ID,
@@ -517,7 +755,7 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			tx.Rollback()
 			return nil, err
 		}
-		if order.Status == "confirmed" {
+		if order.Status == "confirmed" && order.OrderType != model.OrderTypeTopup {
 			if err := s.restoreStockForOrder(tx, order.ID, order.OrderCode); err != nil {
 				tx.Rollback()
 				return nil, err
@@ -527,6 +765,8 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			return nil, err
 		}
 	}
+
+afterUpdate:
 
 	items := s.loadOrderItems(order.ID)
 	result := toOrderResponse(&order, items)
@@ -899,10 +1139,31 @@ func (s *OrderService) batchLoadMemberNames(ids []string) map[string]string {
 	var members []struct {
 		ID       string
 		FullName string
+		Username string
 	}
-	s.db.Model(&model.Member{}).Where("id IN ? AND deleted_at IS NULL", ids).Find(&members)
+	s.db.Model(&model.Member{}).Where("id IN ? AND deleted_at IS NULL", ids).Select("id, full_name, username").Find(&members)
 	for _, m := range members {
-		result[m.ID] = m.FullName
+		n := m.FullName
+		if n == "" {
+			n = m.Username
+		}
+		result[m.ID] = n
+	}
+	return result
+}
+
+func (s *OrderService) batchLoadMemberUsernames(ids []string) map[string]string {
+	result := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return result
+	}
+	var members []struct {
+		ID       string
+		Username string
+	}
+	s.db.Model(&model.Member{}).Where("id IN ? AND deleted_at IS NULL", ids).Select("id, username").Find(&members)
+	for _, m := range members {
+		result[m.ID] = m.Username
 	}
 	return result
 }
@@ -964,6 +1225,7 @@ func toOrderResponse(o *model.Order, items []model.OrderItem) OrderResponse {
 		ID:             o.ID,
 		OrderCode:      o.OrderCode,
 		Status:         o.Status,
+		OrderType:      o.OrderType,
 		MemberID:       o.MemberID,
 		MachineID:      o.MachineID,
 		StoreID:        o.StoreID,
@@ -971,6 +1233,7 @@ func toOrderResponse(o *model.Order, items []model.OrderItem) OrderResponse {
 		TotalAmount:    o.TotalAmount,
 		DiscountAmount: o.DiscountAmount,
 		FinalAmount:    o.FinalAmount,
+		PaymentMethod:  o.PaymentMethod,
 		Note:           o.Note,
 		CreatedBy:      o.CreatedBy,
 		UpdatedBy:      o.UpdatedBy,

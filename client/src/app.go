@@ -454,7 +454,7 @@ func (a *App) RequestTopup(amount int64) (string, error) {
 		"machine_code": a.machineCode,
 	}
 
-	data, err := a.doRequest("POST", "/api/chat/topup-request", reqBody)
+	data, err := a.doRequest("POST", "/api/orders/topup-request", reqBody)
 	if err != nil {
 		return "", err
 	}

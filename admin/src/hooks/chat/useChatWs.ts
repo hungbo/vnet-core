@@ -19,7 +19,7 @@ export function useChatWs(
       saved: true,
       distributed: msg.status === 'delivered' || msg.status === 'read',
       seen: msg.status === 'read',
-      disableActions: false,
+      disableActions: true,
       messageType: msg.message_type,
       senderType: msg.sender_type,
     };

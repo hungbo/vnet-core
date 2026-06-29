@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, nextTick, ref } from 'vue';
+import { h, nextTick, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
@@ -222,6 +222,12 @@ async function fetchUnits() {
     units.value = Array.isArray(res) ? res : [];
   } catch (_) {}
 }
+
+onMounted(() => {
+  fetchCategories();
+  fetchUnits();
+  fetchSuppliers();
+});
 
 async function fetchProductIngredients(productId: string) {
   try {

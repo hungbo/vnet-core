@@ -9,14 +9,14 @@ type PrinterConfig struct {
 	IPAddress   string     `gorm:"type:varchar(45)" json:"ip_address"`
 	Port        int        `gorm:"default:9100" json:"port"`
 	IsDefault   bool       `gorm:"default:false" json:"is_default"`
-	StoreID     *string    `gorm:"type:uuid;index" json:"store_id"`
+	StoreID     *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	CreatedAt   time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
 	DeletedAt   *time.Time `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 type ProductPrinterMapping struct {
 	ID        string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	ProductID string    `gorm:"type:uuid;not null;index" json:"product_id"`
-	PrinterID string    `gorm:"type:uuid;not null;index" json:"printer_id"`
+	ProductID string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"product_id"`
+	PrinterID string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"printer_id"`
 	CreatedAt time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }

@@ -27,8 +27,8 @@ type Member struct {
 	BonusBalance         int64      `gorm:"default:0" json:"bonus_balance"`
 	TotalSpent           int64      `gorm:"default:0" json:"total_spent"`
 	TotalPlayedHours     int        `gorm:"default:0" json:"total_played_hours"`
-	GroupID              *string    `gorm:"type:uuid;index" json:"group_id"`
-	StoreID              *string    `gorm:"type:uuid;index" json:"store_id"`
+	GroupID              *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"group_id"`
+	StoreID              *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	Notes                string     `gorm:"type:text" json:"notes"`
 	ParentConsentFileURL string     `gorm:"type:text" json:"parent_consent_file_url"`
 	IsActive             bool       `gorm:"default:true" json:"is_active"`
@@ -40,7 +40,7 @@ type Member struct {
 
 type MemberTransaction struct {
 	ID              string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	MemberID        string    `gorm:"type:uuid;not null;index" json:"member_id"`
+	MemberID        string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"member_id"`
 	TransactionType string    `gorm:"type:varchar(30);not null" json:"transaction_type"`
 	Amount          int64     `gorm:"not null" json:"amount"`
 	BalanceBefore   int64     `gorm:"not null" json:"balance_before"`
@@ -50,8 +50,8 @@ type MemberTransaction struct {
 	PaymentMethod   string    `gorm:"type:varchar(30)" json:"payment_method"`
 	ReferenceID     *string   `gorm:"type:uuid" json:"reference_id"`
 	Description     string    `gorm:"type:text" json:"description"`
-	StoreID         *string   `gorm:"type:uuid;index" json:"store_id"`
-	CreatedBy       *string   `gorm:"type:uuid" json:"created_by"`
+	StoreID         *string   `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
+	CreatedBy       *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"created_by"`
 	CreatedAt       time.Time `gorm:"default:now();index" json:"created_at,omitempty"`
 }
 

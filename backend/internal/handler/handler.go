@@ -52,7 +52,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Curfew:    NewCurfewHandler(service.NewCurfewService(db, auditSvc)),
 		Category:  NewCategoryHandler(service.NewCategoryService(db, auditSvc)),
 		Product:   NewProductHandler(service.NewProductService(db, auditSvc)),
-		Order:     NewOrderHandler(service.NewOrderService(db, auditSvc, invSvc)),
+		Order:     NewOrderHandler(service.NewOrderService(db, wsHub, auditSvc, invSvc)),
 		Printer:   NewPrinterHandler(service.NewPrinterService(db, auditSvc)),
 		Inventory: NewInventoryHandler(invSvc),
 		Shift:     NewShiftHandler(service.NewShiftService(db, auditSvc)),

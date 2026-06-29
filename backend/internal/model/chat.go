@@ -12,7 +12,7 @@ type ChatRoom struct {
 
 type ChatParticipant struct {
 	ID               string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	RoomID   string     `gorm:"type:uuid;not null;index" json:"room_id"`
+	RoomID   string     `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"room_id"`
 	ParticipantType  string     `gorm:"type:varchar(20);not null" json:"participant_type"`
 	ParticipantID    string     `gorm:"type:uuid;not null" json:"participant_id"`
 	LastReadAt       *time.Time `gorm:"type:timestamptz" json:"last_read_at"`
@@ -32,9 +32,9 @@ type ChatMessage struct {
 
 type ServiceFeedback struct {
 	ID        string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	MachineID string    `gorm:"type:uuid;not null;index" json:"machine_id"`
-	MemberID  *string   `gorm:"type:uuid" json:"member_id"`
-	OrderID   *string   `gorm:"type:uuid" json:"order_id"`
+	MachineID string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"machine_id"`
+	MemberID  *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"member_id"`
+	OrderID   *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"order_id"`
 	Rating    int       `gorm:"type:integer" json:"rating"`
 	Content   string    `gorm:"type:text" json:"content"`
 	CreatedAt time.Time `gorm:"default:now()" json:"created_at,omitempty"`

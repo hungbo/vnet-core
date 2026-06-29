@@ -91,7 +91,7 @@ const roomsJson = computed(() => JSON.stringify(rooms.value))
 const messagesJson = computed(() => JSON.stringify(store.messages))
 const autoScrollJson = computed(() => JSON.stringify({
 	send: { new: true, newAfterScrollUp: false },
-	receive: { new: false, newAfterScrollUp: true }
+	receive: { new: true, newAfterScrollUp: true }
 }))
 const stylesJson = computed(() => JSON.stringify({
 	general: { color: '#333', borderStyle: '1px solid #e4e7ed' },

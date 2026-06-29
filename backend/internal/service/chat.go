@@ -46,8 +46,10 @@ type RoomResponse struct {
 }
 
 type ParticipantInfo struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Username    string `json:"username"`
+	MachineCode string `json:"machine_code"`
 }
 
 type MessageResponse struct {
@@ -194,6 +196,14 @@ func (s *ChatService) getParticipants(roomID string) []ParticipantInfo {
 			var member model.Member
 			if err := s.db.Select("id, full_name, username").Where("id = ?", p.ParticipantID).First(&member).Error; err == nil {
 				info.Name = member.FullName
+				info.Username = member.Username
+			}
+			var session model.MachineSession
+			if err := s.db.Where("member_id = ? AND is_active = ?", p.ParticipantID, true).First(&session).Error; err == nil {
+				var machine model.Machine
+				if err := s.db.Select("machine_code").Where("id = ?", session.MachineID).First(&machine).Error; err == nil {
+					info.MachineCode = machine.MachineCode
+				}
 			}
 		}
 		result = append(result, info)
