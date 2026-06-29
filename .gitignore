@@ -8,6 +8,7 @@
 *.out
 bin/
 vendor/
+.claude
 
 # Node
 node_modules/

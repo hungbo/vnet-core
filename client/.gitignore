@@ -1,0 +1,5 @@
+/dist/
+/tmp/
+/cmd/client/frontend/node_modules/
+/cmd/client/frontend/dist/
+*.exe

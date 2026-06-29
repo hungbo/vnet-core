@@ -2,33 +2,29 @@
 set -e
 
 VERSION=${1:-dev}
-echo "=== Building VNET Client + Agent v$VERSION ==="
+echo "=== Building VNET Desktop (Agent + Client) v$VERSION ==="
+
+cd "$(dirname "$0")/../client"
 
 echo "-> Building Agent..."
-cd "$(dirname "$0")/../agent"
-go build -ldflags="-s -w -H windowsgui" -o vnet-agent.exe ./main.go
+GOOS=windows GOARCH=amd64 go build -buildvcs=false \
+  -ldflags="-s -w -X main.version=$VERSION" \
+  -o dist/vnet-agent.exe ./cmd/agent/
 
-echo "-> Building Client (Wails)..."
-cd ../client
-wails build -platform windows/amd64
+echo "-> Building Client..."
+cd cmd/client
+npm install --silent 2>/dev/null
+npm run build --silent 2>/dev/null
+cd ../..
+go build -buildvcs=false \
+  -ldflags="-s -w -X main.version=$VERSION" \
+  -o dist/vnet-client.exe ./cmd/client/
 
-echo "-> Packing..."
-mkdir -p dist
-cp build/bin/VNET.exe dist/
-cp ../agent/vnet-agent.exe dist/
+echo "-> Packing installer..."
+cp installer/install.bat dist/
 
 cd dist
-cat > install.bat << 'EOF'
-@echo off
-title Cai dat VNET Agent
-echo Cai dat VNET Agent...
-start /wait vnet-agent.exe --install
-echo Hoan tat!
-pause
-EOF
-
-cd ..
-zip -r "vnet-client-windows-${VERSION}.zip" dist/*
+zip -r "../vnet-client-windows-${VERSION}.zip" ./*
 
 echo "=== Done: vnet-client-windows-${VERSION}.zip ==="
-ls -lh "vnet-client-windows-${VERSION}.zip"
+ls -lh "../vnet-client-windows-${VERSION}.zip"

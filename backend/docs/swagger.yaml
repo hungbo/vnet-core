@@ -1,0 +1,7052 @@
+basePath: /api
+definitions:
+  model.AuditLog:
+    properties:
+      action:
+        type: string
+      createdAt:
+        type: string
+      entityID:
+        type: string
+      entityType:
+        type: string
+      id:
+        type: string
+      ipaddress:
+        type: string
+      metadata:
+        type: string
+      userID:
+        type: string
+    type: object
+  model.BackupLog:
+    properties:
+      completedAt:
+        type: string
+      createdBy:
+        type: string
+      fileName:
+        type: string
+      filePath:
+        type: string
+      fileSize:
+        type: integer
+      id:
+        type: string
+      notes:
+        type: string
+      startedAt:
+        type: string
+      status:
+        type: string
+    type: object
+  model.Machine:
+    properties:
+      cpuname:
+        type: string
+      cputemp:
+        type: number
+      createdAt:
+        type: string
+      deletedAt:
+        type: string
+      gpuname:
+        type: string
+      gputemp:
+        type: number
+      groupID:
+        type: string
+      id:
+        type: string
+      ipaddress:
+        type: string
+      isActive:
+        type: boolean
+      lastHeartbeat:
+        type: string
+      macAddress:
+        type: string
+      machineCode:
+        type: string
+      osinfo:
+        type: string
+      ramgb:
+        type: integer
+      status:
+        type: string
+      storageGB:
+        type: integer
+      storeID:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  model.MachineAsset:
+    properties:
+      assetType:
+        type: string
+      brand:
+        type: string
+      checkPhotos:
+        items:
+          type: string
+        type: array
+      checkedAt:
+        type: string
+      checkedBy:
+        type: string
+      createdAt:
+        type: string
+      deletedAt:
+        type: string
+      id:
+        type: string
+      machineID:
+        type: string
+      model:
+        type: string
+      notes:
+        type: string
+      serial:
+        type: string
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  model.MachineGroup:
+    properties:
+      color:
+        type: string
+      createdAt:
+        type: string
+      deletedAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      sortOrder:
+        type: integer
+      storeID:
+        type: string
+    type: object
+  model.MachineHardwareSnapshot:
+    properties:
+      cputemp:
+        type: number
+      cpuusage:
+        type: number
+      createdAt:
+        type: string
+      diskUsage:
+        type: number
+      gputemp:
+        type: number
+      id:
+        type: string
+      machineID:
+        type: string
+      ramusage:
+        type: number
+    type: object
+  model.MachinePrice:
+    properties:
+      createdAt:
+        type: string
+      effectiveFrom:
+        type: string
+      effectiveTo:
+        type: string
+      id:
+        type: string
+      machineGroupID:
+        type: string
+      memberTierID:
+        type: string
+      minDuration:
+        type: integer
+      pricePerHour:
+        type: integer
+    type: object
+  model.Permission:
+    properties:
+      code:
+        type: string
+      createdAt:
+        type: string
+      id:
+        type: string
+      module:
+        type: string
+      name:
+        type: string
+    type: object
+  model.Store:
+    properties:
+      address:
+        type: string
+      code:
+        type: string
+      createdAt:
+        type: string
+      deletedAt:
+        type: string
+      id:
+        type: string
+      isActive:
+        type: boolean
+      name:
+        type: string
+      phone:
+        type: string
+    type: object
+  response.PaginatedData:
+    properties:
+      items: {}
+      page:
+        type: integer
+      page_size:
+        type: integer
+      total:
+        type: integer
+    type: object
+  response.Response:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
+  service.ActivateComboRequest:
+    properties:
+      machine_id:
+        type: string
+    required:
+    - machine_id
+    type: object
+  service.BookingResponse:
+    properties:
+      booked_from:
+        type: string
+      booked_to:
+        type: string
+      cancel_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      deposit_amount:
+        type: integer
+      deposit_transaction_id:
+        type: string
+      id:
+        type: string
+      machine_id:
+        type: string
+      member_id:
+        type: string
+      notes:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  service.ByEmployeeRow:
+    properties:
+      employee_id:
+        type: string
+      employee_name:
+        type: string
+      orders_taken:
+        type: integer
+      total_sales:
+        type: integer
+    type: object
+  service.ByMachineRow:
+    properties:
+      machine_id:
+        type: string
+      machine_name:
+        type: string
+      total_sales:
+        type: integer
+      usage_hours:
+        type: integer
+    type: object
+  service.ByMemberRow:
+    properties:
+      member_id:
+        type: string
+      member_name:
+        type: string
+      total_spent:
+        type: integer
+      visit_count:
+        type: integer
+    type: object
+  service.CategoryResponse:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/service.CategoryResponse'
+        type: array
+      created_at:
+        type: string
+      icon:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      parent_id:
+        type: string
+      printer_id:
+        type: string
+      sort_order:
+        type: integer
+    type: object
+  service.ChangePasswordRequest:
+    properties:
+      new_password:
+        minLength: 6
+        type: string
+      old_password:
+        type: string
+    required:
+    - new_password
+    - old_password
+    type: object
+  service.CloseShiftRequest:
+    properties:
+      closing_balance:
+        type: integer
+      notes:
+        type: string
+    required:
+    - closing_balance
+    type: object
+  service.ComboPurchaseResponse:
+    properties:
+      activated:
+        type: boolean
+      activated_at:
+        type: string
+      combo_id:
+        type: string
+      created_at:
+        type: string
+      current_session_id:
+        type: string
+      expires_at:
+        type: string
+      id:
+        type: string
+      member_id:
+        type: string
+      payment_method:
+        type: string
+      price:
+        type: integer
+      remaining_minutes:
+        type: integer
+    type: object
+  service.ComboResponse:
+    properties:
+      apply_days:
+        items:
+          type: integer
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      member_count:
+        type: integer
+      member_prefix:
+        type: string
+      name:
+        type: string
+      price:
+        type: integer
+      slot_end:
+        type: string
+      slot_start:
+        type: string
+      total_minutes:
+        type: integer
+      type:
+        type: string
+      validity_days:
+        type: integer
+    type: object
+  service.ConversationResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      is_group:
+        type: boolean
+      last_message:
+        $ref: '#/definitions/service.MessageResponse'
+      title:
+        type: string
+      unread_count:
+        type: integer
+    type: object
+  service.CostBreakdown:
+    properties:
+      base_price_per_hour:
+        type: integer
+      billed_minutes:
+        type: integer
+      breakdown_items:
+        items:
+          $ref: '#/definitions/service.CostItem'
+        type: array
+      duration_minutes:
+        type: integer
+      final_cost:
+        type: integer
+      grace_minutes:
+        type: integer
+      machine_group_name:
+        type: string
+      tier_discount_percent:
+        type: number
+    type: object
+  service.CostItem:
+    properties:
+      amount:
+        type: integer
+      label:
+        type: string
+    type: object
+  service.CreateBackupRequest:
+    properties:
+      created_by:
+        type: string
+      notes:
+        type: string
+    type: object
+  service.CreateBookingRequest:
+    properties:
+      booked_from:
+        type: string
+      booked_to:
+        type: string
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      deposit_amount:
+        type: integer
+      machine_id:
+        type: string
+      member_id:
+        type: string
+      notes:
+        type: string
+    required:
+    - booked_from
+    - booked_to
+    - customer_name
+    - customer_phone
+    - machine_id
+    type: object
+  service.CreateCategoryRequest:
+    properties:
+      icon:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      parent_id:
+        type: string
+      printer_id:
+        type: string
+      sort_order:
+        type: integer
+    required:
+    - name
+    type: object
+  service.CreateComboRequest:
+    properties:
+      apply_days:
+        items:
+          type: integer
+        type: array
+      description:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      price:
+        minimum: 0
+        type: integer
+      slot_end:
+        type: string
+      slot_start:
+        type: string
+      total_minutes:
+        type: integer
+      type:
+        enum:
+        - fixed_slot
+        - prepaid
+        type: string
+      validity_days:
+        type: integer
+    required:
+    - name
+    - price
+    - type
+    type: object
+  service.CreateConversationRequest:
+    properties:
+      participant_id:
+        type: string
+      participant_type:
+        type: string
+      title:
+        type: string
+    required:
+    - participant_id
+    - participant_type
+    type: object
+  service.CreateCurfewRequest:
+    properties:
+      curfew_end:
+        type: string
+      curfew_start:
+        type: string
+      day_of_week:
+        maximum: 6
+        minimum: 0
+        type: integer
+      is_active:
+        type: boolean
+      max_minor_hours:
+        type: integer
+    required:
+    - curfew_end
+    - curfew_start
+    - day_of_week
+    type: object
+  service.CreateMachineAssetRequest:
+    properties:
+      asset_type:
+        type: string
+      brand:
+        type: string
+      machine_id:
+        type: string
+      model:
+        type: string
+      notes:
+        type: string
+      serial:
+        type: string
+      status:
+        type: string
+    required:
+    - asset_type
+    - machine_id
+    type: object
+  service.CreateMachineGroupRequest:
+    properties:
+      color:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+    required:
+    - name
+    type: object
+  service.CreateMachinePriceRequest:
+    properties:
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      machine_group_id:
+        type: string
+      member_tier_id:
+        type: string
+      min_duration:
+        type: integer
+      price_per_hour:
+        type: integer
+    required:
+    - effective_from
+    - price_per_hour
+    type: object
+  service.CreateMachineRequest:
+    properties:
+      cpu_name:
+        type: string
+      gpu_name:
+        type: string
+      group_id:
+        type: string
+      machine_code:
+        type: string
+      os_info:
+        type: string
+      ram_gb:
+        type: integer
+      storage_gb:
+        type: integer
+    required:
+    - machine_code
+    type: object
+  service.CreateMaterialRequest:
+    properties:
+      current_stock:
+        type: number
+      is_active:
+        type: boolean
+      min_stock:
+        type: number
+      name:
+        type: string
+      price_per_unit:
+        type: integer
+      unit_id:
+        type: string
+    required:
+    - name
+    - unit_id
+    type: object
+  service.CreateMemberRequest:
+    properties:
+      date_of_birth:
+        type: string
+      email:
+        type: string
+      full_name:
+        type: string
+      id_card_number:
+        type: string
+      notes:
+        type: string
+      password:
+        type: string
+      phone:
+        type: string
+      store_id:
+        type: string
+      tier_id:
+        type: string
+    type: object
+  service.CreateOrderRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/service.OrderItemRequest'
+        type: array
+      machine_id:
+        type: string
+      member_id:
+        type: string
+      note:
+        type: string
+      order_type:
+        type: string
+      table_number:
+        type: string
+    type: object
+  service.CreatePrinterRequest:
+    properties:
+      ip_address:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      port:
+        type: integer
+      printer_type:
+        type: string
+      store_id:
+        type: string
+    required:
+    - name
+    - printer_type
+    type: object
+  service.CreateProductRequest:
+    properties:
+      category_id:
+        type: string
+      description:
+        type: string
+      has_stock:
+        type: boolean
+      image_url:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      options:
+        items:
+          $ref: '#/definitions/service.ProductOptionItem'
+        type: array
+      price:
+        minimum: 0
+        type: integer
+      sort_order:
+        type: integer
+    required:
+    - category_id
+    - name
+    - price
+    type: object
+  service.CreatePromotionCondition:
+    properties:
+      condition_key:
+        type: string
+      condition_value:
+        items:
+          type: integer
+        type: array
+    required:
+    - condition_key
+    - condition_value
+    type: object
+  service.CreatePromotionRequest:
+    properties:
+      conditions:
+        items:
+          $ref: '#/definitions/service.CreatePromotionCondition'
+        type: array
+      description:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      priority:
+        type: integer
+      rewards:
+        items:
+          $ref: '#/definitions/service.CreatePromotionReward'
+        type: array
+      type:
+        type: string
+      valid_from:
+        type: string
+      valid_to:
+        type: string
+    required:
+    - name
+    - type
+    type: object
+  service.CreatePromotionReward:
+    properties:
+      reward_type:
+        type: string
+      reward_value:
+        items:
+          type: integer
+        type: array
+    required:
+    - reward_type
+    - reward_value
+    type: object
+  service.CreateStockTransactionRequest:
+    properties:
+      description:
+        type: string
+      material_id:
+        type: string
+      quantity:
+        type: number
+      reference_id:
+        type: string
+      supplier_id:
+        type: string
+      total_price:
+        type: integer
+      transaction_type:
+        enum:
+        - inbound
+        - outbound
+        - adjustment
+        type: string
+      unit_price:
+        type: integer
+      warehouse_id:
+        type: string
+    required:
+    - material_id
+    - quantity
+    - transaction_type
+    type: object
+  service.CreateStoreRequest:
+    properties:
+      address:
+        type: string
+      code:
+        type: string
+      name:
+        type: string
+      phone:
+        type: string
+    required:
+    - code
+    - name
+    type: object
+  service.CreateSupplierRequest:
+    properties:
+      address:
+        type: string
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      phone:
+        type: string
+    required:
+    - name
+    type: object
+  service.CreateTierRequest:
+    properties:
+      discount_percent:
+        type: number
+      min_spent:
+        type: integer
+      name:
+        type: string
+    type: object
+  service.CreateWarehouseRequest:
+    properties:
+      address:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+    required:
+    - name
+    type: object
+  service.CurfewResponse:
+    properties:
+      created_at:
+        type: string
+      curfew_end:
+        type: string
+      curfew_start:
+        type: string
+      day_of_week:
+        type: integer
+      id:
+        type: string
+      is_active:
+        type: boolean
+      max_minor_hours:
+        type: integer
+      override_at:
+        type: string
+      override_by_admin:
+        type: string
+      override_reason:
+        type: string
+      store_id:
+        type: string
+    type: object
+  service.DailyRevenueRow:
+    properties:
+      date:
+        type: string
+      discount:
+        type: integer
+      revenue:
+        type: integer
+      total_orders:
+        type: integer
+    type: object
+  service.EndSessionResponse:
+    properties:
+      balance_after:
+        type: integer
+      balance_before:
+        type: integer
+      cost_breakdown:
+        $ref: '#/definitions/service.CostBreakdown'
+      duration_minutes:
+        type: integer
+      machine_code:
+        type: string
+      machine_id:
+        type: string
+      member_id:
+        type: string
+      session_id:
+        type: string
+      total_cost:
+        type: integer
+    type: object
+  service.HandoverRequest:
+    properties:
+      amount:
+        type: integer
+      handover_type:
+        enum:
+        - cash_in
+        - cash_out
+        type: string
+      reason:
+        type: string
+    required:
+    - amount
+    - handover_type
+    type: object
+  service.HeartbeatRequest:
+    properties:
+      cpu_temp:
+        type: number
+      gpu_temp:
+        type: number
+      ip:
+        type: string
+      mac:
+        type: string
+    type: object
+  service.LoginRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  service.LoginResponse:
+    properties:
+      access_token:
+        type: string
+      refresh_token:
+        type: string
+      user:
+        $ref: '#/definitions/service.UserResponse'
+    type: object
+  service.LuckySpinRewardResponse:
+    properties:
+      id:
+        type: string
+      is_active:
+        type: boolean
+      max_per_day:
+        type: integer
+      name:
+        type: string
+      probability:
+        type: number
+      reward_type:
+        type: string
+      reward_value:
+        items:
+          type: integer
+        type: array
+    type: object
+  service.MaterialResponse:
+    properties:
+      created_at:
+        type: string
+      current_stock:
+        type: number
+      id:
+        type: string
+      is_active:
+        type: boolean
+      min_stock:
+        type: number
+      name:
+        type: string
+      price_per_unit:
+        type: integer
+      unit_id:
+        type: string
+      unit_name:
+        type: string
+    type: object
+  service.MemberResponse:
+    properties:
+      avatar_url:
+        type: string
+      balance:
+        type: integer
+      bonus_balance:
+        type: integer
+      code:
+        type: string
+      created_at:
+        type: string
+      date_of_birth:
+        type: string
+      email:
+        type: string
+      full_name:
+        type: string
+      id:
+        type: string
+      id_card_image_url:
+        type: string
+      id_card_number:
+        type: string
+      is_active:
+        type: boolean
+      last_visit_at:
+        type: string
+      notes:
+        type: string
+      parent_consent_file_url:
+        type: string
+      phone:
+        type: string
+      store_id:
+        type: string
+      tier:
+        $ref: '#/definitions/service.TierResponse'
+      tier_id:
+        type: string
+      total_played_hours:
+        type: integer
+      total_spent:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  service.MemberTransactionResponse:
+    properties:
+      amount:
+        type: integer
+      balance_after:
+        type: integer
+      balance_before:
+        type: integer
+      bonus_after:
+        type: integer
+      bonus_before:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      member_id:
+        type: string
+      payment_method:
+        type: string
+      reference_id:
+        type: string
+      store_id:
+        type: string
+      transaction_type:
+        type: string
+    type: object
+  service.MessageResponse:
+    properties:
+      conversation_id:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      message_type:
+        type: string
+      sender_id:
+        type: string
+      sender_type:
+        type: string
+    type: object
+  service.MonthlyRevenueRow:
+    properties:
+      discount:
+        type: integer
+      month:
+        type: string
+      revenue:
+        type: integer
+      total_orders:
+        type: integer
+    type: object
+  service.OpenShiftRequest:
+    properties:
+      notes:
+        type: string
+      opening_balance:
+        type: integer
+    type: object
+  service.OrderItemRequest:
+    properties:
+      note:
+        type: string
+      options:
+        type: string
+      product_id:
+        type: string
+      quantity:
+        type: integer
+    type: object
+  service.OrderItemResponse:
+    properties:
+      id:
+        type: string
+      note:
+        type: string
+      options:
+        type: string
+      order_id:
+        type: string
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: integer
+      status:
+        type: string
+      subtotal:
+        type: integer
+      unit_price:
+        type: integer
+    type: object
+  service.OrderResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      created_by:
+        type: string
+      discount_amount:
+        type: integer
+      final_amount:
+        type: integer
+      id:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/service.OrderItemResponse'
+        type: array
+      machine_id:
+        type: string
+      member_id:
+        type: string
+      note:
+        type: string
+      order_code:
+        type: string
+      order_type:
+        type: string
+      payments:
+        items:
+          $ref: '#/definitions/service.PaymentResponse'
+        type: array
+      status:
+        type: string
+      store_id:
+        type: string
+      table_number:
+        type: string
+      total_amount:
+        type: integer
+    type: object
+  service.OverrideCurfewRequest:
+    properties:
+      override_reason:
+        type: string
+      policy_id:
+        type: string
+    required:
+    - override_reason
+    - policy_id
+    type: object
+  service.PayRequest:
+    properties:
+      amount:
+        type: integer
+      payment_method:
+        type: string
+      reference_code:
+        type: string
+    type: object
+  service.PaymentResponse:
+    properties:
+      amount:
+        type: integer
+      created_at:
+        type: string
+      id:
+        type: string
+      order_id:
+        type: string
+      paid_at:
+        type: string
+      payment_method:
+        type: string
+      reference_code:
+        type: string
+      status:
+        type: string
+    type: object
+  service.PrinterResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      ip_address:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      port:
+        type: integer
+      printer_type:
+        type: string
+      store_id:
+        type: string
+    type: object
+  service.ProductOptionItem:
+    properties:
+      group_id:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+    required:
+    - name
+    type: object
+  service.ProductOptionResponse:
+    properties:
+      group_id:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+    type: object
+  service.ProductResponse:
+    properties:
+      category_id:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      has_stock:
+        type: boolean
+      id:
+        type: string
+      image_url:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      options:
+        items:
+          $ref: '#/definitions/service.ProductOptionResponse'
+        type: array
+      price:
+        type: integer
+      sort_order:
+        type: integer
+    type: object
+  service.PromotionConditionResponse:
+    properties:
+      condition_key:
+        type: string
+      condition_value:
+        items:
+          type: integer
+        type: array
+      id:
+        type: string
+    type: object
+  service.PromotionResponse:
+    properties:
+      conditions:
+        items:
+          $ref: '#/definitions/service.PromotionConditionResponse'
+        type: array
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      priority:
+        type: integer
+      rewards:
+        items:
+          $ref: '#/definitions/service.PromotionRewardResponse'
+        type: array
+      type:
+        type: string
+      valid_from:
+        type: string
+      valid_to:
+        type: string
+    type: object
+  service.PromotionRewardResponse:
+    properties:
+      id:
+        type: string
+      reward_type:
+        type: string
+      reward_value:
+        items:
+          type: integer
+        type: array
+    type: object
+  service.PromotionUsageRow:
+    properties:
+      discount_given:
+        type: integer
+      promotion_id:
+        type: string
+      promotion_name:
+        type: string
+      usage_count:
+        type: integer
+    type: object
+  service.PurchaseComboRequest:
+    properties:
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      member_id:
+        type: string
+      payment_method:
+        type: string
+    required:
+    - payment_method
+    type: object
+  service.QRLoginRequest:
+    properties:
+      qr_code:
+        type: string
+    required:
+    - qr_code
+    type: object
+  service.RefreshRequest:
+    properties:
+      refresh_token:
+        type: string
+    required:
+    - refresh_token
+    type: object
+  service.RefundRequest:
+    properties:
+      amount:
+        type: integer
+      description:
+        type: string
+      is_bonus:
+        type: boolean
+    type: object
+  service.SendMessageRequest:
+    properties:
+      conversation_id:
+        type: string
+      message:
+        type: string
+      message_type:
+        type: string
+      sender_id:
+        type: string
+      sender_type:
+        type: string
+    required:
+    - conversation_id
+    - message
+    - sender_id
+    - sender_type
+    type: object
+  service.SessionDetail:
+    properties:
+      combo_id:
+        type: string
+      combo_type:
+        type: string
+      created_at:
+        type: string
+      duration_minutes:
+        type: integer
+      ended_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      is_overnight:
+        type: boolean
+      machine_code:
+        type: string
+      machine_id:
+        type: string
+      member_id:
+        type: string
+      member_name:
+        type: string
+      remaining_minutes:
+        type: integer
+      slot_end:
+        type: string
+      started_at:
+        type: string
+      store_id:
+        type: string
+      total_cost:
+        type: integer
+    type: object
+  service.SessionResponse:
+    properties:
+      combo_id:
+        type: string
+      combo_type:
+        type: string
+      created_at:
+        type: string
+      duration_minutes:
+        type: integer
+      ended_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      is_overnight:
+        type: boolean
+      machine_id:
+        type: string
+      member_id:
+        type: string
+      remaining_minutes:
+        type: integer
+      slot_end:
+        type: string
+      started_at:
+        type: string
+      store_id:
+        type: string
+      total_cost:
+        type: integer
+    type: object
+  service.SettingResponse:
+    properties:
+      description:
+        type: string
+      group_name:
+        type: string
+      key:
+        type: string
+      value:
+        type: string
+    type: object
+  service.ShiftResponse:
+    properties:
+      closing_balance:
+        type: integer
+      created_at:
+        type: string
+      discrepancy:
+        type: integer
+      ended_at:
+        type: string
+      expected_total:
+        type: integer
+      id:
+        type: string
+      notes:
+        type: string
+      opening_balance:
+        type: integer
+      started_at:
+        type: string
+      status:
+        type: string
+      store_id:
+        type: string
+      user_id:
+        type: string
+    type: object
+  service.SpinRequest:
+    properties:
+      member_id:
+        type: string
+    required:
+    - member_id
+    type: object
+  service.SpinResponse:
+    properties:
+      daily_spins:
+        type: integer
+      is_win:
+        type: boolean
+      max_per_day:
+        type: integer
+      reward:
+        $ref: '#/definitions/service.LuckySpinRewardResponse'
+    type: object
+  service.SplitItem:
+    properties:
+      new_quantity:
+        type: integer
+      order_item_id:
+        type: string
+    type: object
+  service.SplitOrderRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/service.SplitItem'
+        type: array
+    type: object
+  service.StartRequest:
+    properties:
+      combo_purchase_id:
+        type: string
+      machine_id:
+        type: string
+      member_id:
+        type: string
+    required:
+    - machine_id
+    - member_id
+    type: object
+  service.StockTransactionResponse:
+    properties:
+      created_at:
+        type: string
+      created_by:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      material_id:
+        type: string
+      material_name:
+        type: string
+      quantity:
+        type: number
+      reference_id:
+        type: string
+      stock_after:
+        type: number
+      stock_before:
+        type: number
+      supplier_id:
+        type: string
+      supplier_name:
+        type: string
+      total_price:
+        type: integer
+      transaction_type:
+        type: string
+      unit_price:
+        type: integer
+      warehouse_id:
+        type: string
+      warehouse_name:
+        type: string
+    type: object
+  service.SupplierResponse:
+    properties:
+      address:
+        type: string
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      phone:
+        type: string
+    type: object
+  service.SwitchMachineRequest:
+    properties:
+      new_machine_id:
+        type: string
+    required:
+    - new_machine_id
+    type: object
+  service.TierResponse:
+    properties:
+      created_at:
+        type: string
+      discount_percent:
+        type: number
+      id:
+        type: string
+      min_spent:
+        type: integer
+      name:
+        type: string
+    type: object
+  service.TopProductRow:
+    properties:
+      product_id:
+        type: string
+      product_name:
+        type: string
+      quantity:
+        type: integer
+      total_sales:
+        type: integer
+    type: object
+  service.TopupRequest:
+    properties:
+      amount:
+        type: integer
+      description:
+        type: string
+      payment_method:
+        type: string
+    type: object
+  service.UnitResponse:
+    properties:
+      id:
+        type: string
+      name:
+        type: string
+    type: object
+  service.UpdateBookingRequest:
+    properties:
+      booked_from:
+        type: string
+      booked_to:
+        type: string
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      deposit_amount:
+        type: integer
+      notes:
+        type: string
+    type: object
+  service.UpdateCategoryRequest:
+    properties:
+      icon:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      parent_id:
+        type: string
+      printer_id:
+        type: string
+      sort_order:
+        type: integer
+    type: object
+  service.UpdateComboRequest:
+    properties:
+      apply_days:
+        items:
+          type: integer
+        type: array
+      description:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      price:
+        minimum: 0
+        type: integer
+      slot_end:
+        type: string
+      slot_start:
+        type: string
+      total_minutes:
+        type: integer
+      type:
+        enum:
+        - fixed_slot
+        - prepaid
+        type: string
+      validity_days:
+        type: integer
+    type: object
+  service.UpdateCurfewRequest:
+    properties:
+      curfew_end:
+        type: string
+      curfew_start:
+        type: string
+      day_of_week:
+        maximum: 6
+        minimum: 0
+        type: integer
+      is_active:
+        type: boolean
+      max_minor_hours:
+        type: integer
+    type: object
+  service.UpdateMachineAssetRequest:
+    properties:
+      asset_type:
+        type: string
+      brand:
+        type: string
+      model:
+        type: string
+      notes:
+        type: string
+      serial:
+        type: string
+      status:
+        type: string
+    type: object
+  service.UpdateMachineGroupRequest:
+    properties:
+      color:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+    type: object
+  service.UpdateMachinePriceRequest:
+    properties:
+      effective_from:
+        type: string
+      effective_to:
+        type: string
+      machine_group_id:
+        type: string
+      member_tier_id:
+        type: string
+      min_duration:
+        type: integer
+      price_per_hour:
+        type: integer
+    type: object
+  service.UpdateMachineRequest:
+    properties:
+      cpu_name:
+        type: string
+      gpu_name:
+        type: string
+      group_id:
+        type: string
+      os_info:
+        type: string
+      ram_gb:
+        type: integer
+      status:
+        type: string
+      storage_gb:
+        type: integer
+    type: object
+  service.UpdateMaterialRequest:
+    properties:
+      current_stock:
+        type: number
+      is_active:
+        type: boolean
+      min_stock:
+        type: number
+      name:
+        type: string
+      price_per_unit:
+        type: integer
+      unit_id:
+        type: string
+    type: object
+  service.UpdateMemberRequest:
+    properties:
+      avatar_url:
+        type: string
+      date_of_birth:
+        type: string
+      email:
+        type: string
+      full_name:
+        type: string
+      id_card_number:
+        type: string
+      is_active:
+        type: boolean
+      notes:
+        type: string
+      password:
+        type: string
+      phone:
+        type: string
+      tier_id:
+        type: string
+    type: object
+  service.UpdatePrinterRequest:
+    properties:
+      ip_address:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      port:
+        type: integer
+      printer_type:
+        type: string
+      store_id:
+        type: string
+    type: object
+  service.UpdateProductRequest:
+    properties:
+      description:
+        type: string
+      has_stock:
+        type: boolean
+      image_url:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      options:
+        items:
+          $ref: '#/definitions/service.ProductOptionItem'
+        type: array
+      price:
+        minimum: 0
+        type: integer
+      sort_order:
+        type: integer
+    type: object
+  service.UpdatePromotionRequest:
+    properties:
+      conditions:
+        items:
+          $ref: '#/definitions/service.CreatePromotionCondition'
+        type: array
+      description:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      priority:
+        type: integer
+      rewards:
+        items:
+          $ref: '#/definitions/service.CreatePromotionReward'
+        type: array
+      type:
+        type: string
+      valid_from:
+        type: string
+      valid_to:
+        type: string
+    type: object
+  service.UpdateStatusRequest:
+    properties:
+      status:
+        type: string
+    type: object
+  service.UpdateStoreRequest:
+    properties:
+      address:
+        type: string
+      code:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      phone:
+        type: string
+    type: object
+  service.UpdateSupplierRequest:
+    properties:
+      address:
+        type: string
+      email:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+      phone:
+        type: string
+    type: object
+  service.UpdateTierRequest:
+    properties:
+      discount_percent:
+        type: number
+      min_spent:
+        type: integer
+      name:
+        type: string
+    type: object
+  service.UpdateWarehouseRequest:
+    properties:
+      address:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+    type: object
+  service.UserResponse:
+    properties:
+      avatar_url:
+        type: string
+      email:
+        type: string
+      full_name:
+        type: string
+      id:
+        type: string
+      permissions:
+        items:
+          type: string
+        type: array
+      phone:
+        type: string
+      role:
+        type: string
+      store_id:
+        type: string
+      username:
+        type: string
+    type: object
+  service.WarehouseResponse:
+    properties:
+      address:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@vnet.net
+    name: VNET Support
+  description: Hệ thống Quản lý Phòng Game Toàn Diện
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: https://vnet.net/terms
+  title: VNET Core API
+  version: "1.0"
+paths:
+  /api/audit-logs:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of audit logs
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/model.AuditLog'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List audit logs
+      tags:
+      - AuditLogs
+  /api/audit-logs/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a single audit log entry
+      parameters:
+      - description: Audit log ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.AuditLog'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get audit log by ID
+      tags:
+      - AuditLogs
+  /api/auth/change-password:
+    post:
+      consumes:
+      - application/json
+      description: Change current user's password
+      parameters:
+      - description: Password change data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.ChangePasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Change Password
+      tags:
+      - Auth
+  /api/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user with username and password
+      parameters:
+      - description: Login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LoginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Login
+      tags:
+      - Auth
+  /api/auth/me:
+    get:
+      consumes:
+      - application/json
+      description: Get current authenticated user details
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get Current User
+      tags:
+      - Auth
+  /api/auth/permissions:
+    get:
+      consumes:
+      - application/json
+      description: Get all available permissions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.Permission'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get Permissions
+      tags:
+      - Auth
+  /api/auth/qr-login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate user via QR code
+      parameters:
+      - description: QR code data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.QRLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LoginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: QR Login
+      tags:
+      - Auth
+  /api/auth/refresh:
+    post:
+      consumes:
+      - application/json
+      description: Refresh access token using refresh token
+      parameters:
+      - description: Refresh token
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.RefreshRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LoginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Refresh Token
+      tags:
+      - Auth
+  /api/backups:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of database backups
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/model.BackupLog'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List backups
+      tags:
+      - Backups
+    post:
+      consumes:
+      - application/json
+      description: Create a new database backup
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateBackupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.BackupLog'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create backup
+      tags:
+      - Backups
+  /api/backups/{id}/restore:
+    post:
+      consumes:
+      - application/json
+      description: Restore a database from a backup
+      parameters:
+      - description: Backup ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Restore backup
+      tags:
+      - Backups
+  /api/chat/conversations:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of conversations
+      parameters:
+      - description: Participant ID
+        in: query
+        name: participant_id
+        type: string
+      - description: Participant type
+        in: query
+        name: participant_type
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.ConversationResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List conversations
+      tags:
+      - Chat
+    post:
+      consumes:
+      - application/json
+      description: Create a new conversation
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateConversationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ConversationResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create conversation
+      tags:
+      - Chat
+  /api/chat/conversations/{id}/messages:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated messages for a conversation
+      parameters:
+      - description: Conversation ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.MessageResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get messages
+      tags:
+      - Chat
+  /api/chat/messages:
+    post:
+      consumes:
+      - application/json
+      description: Send a message in a conversation
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.SendMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.MessageResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Send message
+      tags:
+      - Chat
+  /api/machine-assets:
+    get:
+      consumes:
+      - application/json
+      description: Get machine assets, optionally filtered by machine
+      parameters:
+      - description: Filter by machine ID
+        in: query
+        name: machine_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.MachineAsset'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List Machine Assets
+      tags:
+      - MachineAssets
+    post:
+      consumes:
+      - application/json
+      description: Create a new machine asset record
+      parameters:
+      - description: Machine asset data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateMachineAssetRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.MachineAsset'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create Machine Asset
+      tags:
+      - MachineAssets
+  /api/machine-assets/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a machine asset by its ID
+      parameters:
+      - description: Machine Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete Machine Asset
+      tags:
+      - MachineAssets
+    put:
+      consumes:
+      - application/json
+      description: Update an existing machine asset
+      parameters:
+      - description: Machine Asset ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Machine asset update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateMachineAssetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.MachineAsset'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update Machine Asset
+      tags:
+      - MachineAssets
+  /api/machine-groups:
+    get:
+      consumes:
+      - application/json
+      description: Get all machine groups for the current store
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.MachineGroup'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List Machine Groups
+      tags:
+      - MachineGroups
+    post:
+      consumes:
+      - application/json
+      description: Create a new machine group
+      parameters:
+      - description: Machine group data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateMachineGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.MachineGroup'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create Machine Group
+      tags:
+      - MachineGroups
+  /api/machine-groups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a machine group by its ID
+      parameters:
+      - description: Machine Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete Machine Group
+      tags:
+      - MachineGroups
+    put:
+      consumes:
+      - application/json
+      description: Update an existing machine group
+      parameters:
+      - description: Machine Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Machine group update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateMachineGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.MachineGroup'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update Machine Group
+      tags:
+      - MachineGroups
+  /api/machine-prices:
+    get:
+      consumes:
+      - application/json
+      description: Get machine prices, optionally filtered by machine group
+      parameters:
+      - description: Filter by machine group ID
+        in: query
+        name: machine_group_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/model.MachinePrice'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List Machine Prices
+      tags:
+      - MachinePrices
+    post:
+      consumes:
+      - application/json
+      description: Create a new machine price entry
+      parameters:
+      - description: Machine price data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateMachinePriceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.MachinePrice'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create Machine Price
+      tags:
+      - MachinePrices
+  /api/machine-prices/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a machine price by its ID
+      parameters:
+      - description: Machine Price ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete Machine Price
+      tags:
+      - MachinePrices
+    put:
+      consumes:
+      - application/json
+      description: Update an existing machine price
+      parameters:
+      - description: Machine Price ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Machine price update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateMachinePriceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.MachinePrice'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update Machine Price
+      tags:
+      - MachinePrices
+  /api/machines:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of machines for the current store
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Sort field
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/model.Machine'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List Machines
+      tags:
+      - Machines
+    post:
+      consumes:
+      - application/json
+      description: Create a new machine
+      parameters:
+      - description: Machine data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateMachineRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Machine'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create Machine
+      tags:
+      - Machines
+  /api/machines/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a machine by its ID
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete Machine
+      tags:
+      - Machines
+    get:
+      consumes:
+      - application/json
+      description: Get a single machine by its ID
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Machine'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get Machine by ID
+      tags:
+      - Machines
+    put:
+      consumes:
+      - application/json
+      description: Update an existing machine
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Machine update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateMachineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Machine'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update Machine
+      tags:
+      - Machines
+  /api/machines/{id}/action/{action}:
+    post:
+      consumes:
+      - application/json
+      description: Perform a remote action on a machine (e.g. restart, shutdown)
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Action name (restart, shutdown, etc.)
+        in: path
+        name: action
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Remote Machine Action
+      tags:
+      - Machines
+  /api/machines/{id}/hardware:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated hardware telemetry history for a machine
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Sort field
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/model.MachineHardwareSnapshot'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get Hardware History
+      tags:
+      - Machines
+  /api/machines/{id}/heartbeat:
+    post:
+      consumes:
+      - application/json
+      description: Send heartbeat from a machine with hardware telemetry
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Heartbeat data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.HeartbeatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Machine Heartbeat
+      tags:
+      - Machines
+  /api/materials:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of materials
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.MaterialResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List materials
+      tags:
+      - Inventory
+    post:
+      consumes:
+      - application/json
+      description: Create a new material
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateMaterialRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.MaterialResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create material
+      tags:
+      - Inventory
+  /api/materials/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a material
+      parameters:
+      - description: Material ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete material
+      tags:
+      - Inventory
+    put:
+      consumes:
+      - application/json
+      description: Update an existing material
+      parameters:
+      - description: Material ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateMaterialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.MaterialResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update material
+      tags:
+      - Inventory
+  /api/reports/by-employee:
+    get:
+      consumes:
+      - application/json
+      description: Get report by employee
+      parameters:
+      - description: Start date
+        in: query
+        name: date_from
+        type: string
+      - description: End date
+        in: query
+        name: date_to
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.ByEmployeeRow'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Employee report
+      tags:
+      - Reports
+  /api/reports/by-machine:
+    get:
+      consumes:
+      - application/json
+      description: Get report by machine
+      parameters:
+      - description: Start date
+        in: query
+        name: date_from
+        type: string
+      - description: End date
+        in: query
+        name: date_to
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.ByMachineRow'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Machine report
+      tags:
+      - Reports
+  /api/reports/by-member:
+    get:
+      consumes:
+      - application/json
+      description: Get report by member
+      parameters:
+      - description: Start date
+        in: query
+        name: date_from
+        type: string
+      - description: End date
+        in: query
+        name: date_to
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.ByMemberRow'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Member report
+      tags:
+      - Reports
+  /api/reports/daily-revenue:
+    get:
+      consumes:
+      - application/json
+      description: Get daily revenue report
+      parameters:
+      - description: Start date
+        in: query
+        name: date_from
+        type: string
+      - description: End date
+        in: query
+        name: date_to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.DailyRevenueRow'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Daily revenue report
+      tags:
+      - Reports
+  /api/reports/monthly-revenue:
+    get:
+      consumes:
+      - application/json
+      description: Get monthly revenue report
+      parameters:
+      - description: Year
+        in: query
+        name: year
+        type: integer
+      - description: Month
+        in: query
+        name: month
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.MonthlyRevenueRow'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Monthly revenue report
+      tags:
+      - Reports
+  /api/reports/promotion-usage:
+    get:
+      consumes:
+      - application/json
+      description: Get promotion usage report
+      parameters:
+      - description: Start date
+        in: query
+        name: date_from
+        type: string
+      - description: End date
+        in: query
+        name: date_to
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.PromotionUsageRow'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Promotion usage report
+      tags:
+      - Reports
+  /api/reports/top-products:
+    get:
+      consumes:
+      - application/json
+      description: Get top products report
+      parameters:
+      - description: Start date
+        in: query
+        name: date_from
+        type: string
+      - description: End date
+        in: query
+        name: date_to
+        type: string
+      - description: Store ID
+        in: query
+        name: store_id
+        type: string
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.TopProductRow'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Top products report
+      tags:
+      - Reports
+  /api/settings:
+    get:
+      consumes:
+      - application/json
+      description: Get all settings
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SettingResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List settings
+      tags:
+      - Settings
+  /api/settings/{group}:
+    get:
+      consumes:
+      - application/json
+      description: Get settings grouped by name
+      parameters:
+      - description: Group name
+        in: path
+        name: group
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SettingResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get settings by group
+      tags:
+      - Settings
+    put:
+      consumes:
+      - application/json
+      description: Update settings by group
+      parameters:
+      - description: Group name
+        in: path
+        name: group
+        required: true
+        type: string
+      - description: Settings data
+        in: body
+        name: request
+        required: true
+        schema:
+          additionalProperties: true
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SettingResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update settings
+      tags:
+      - Settings
+  /api/shifts:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of shifts
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.ShiftResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List shifts
+      tags:
+      - Shifts
+  /api/shifts/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get a shift by its ID
+      parameters:
+      - description: Shift ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ShiftResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get shift by ID
+      tags:
+      - Shifts
+  /api/shifts/{id}/close:
+    post:
+      consumes:
+      - application/json
+      description: Close an existing shift
+      parameters:
+      - description: Shift ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CloseShiftRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ShiftResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Close shift
+      tags:
+      - Shifts
+  /api/shifts/{id}/handover:
+    post:
+      consumes:
+      - application/json
+      description: Handover a shift to another user
+      parameters:
+      - description: Shift ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.HandoverRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ShiftResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Handover shift
+      tags:
+      - Shifts
+  /api/shifts/open:
+    post:
+      consumes:
+      - application/json
+      description: Open a new shift
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.OpenShiftRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ShiftResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Open shift
+      tags:
+      - Shifts
+  /api/stock-transactions:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of stock transactions
+      parameters:
+      - description: Filter by material ID
+        in: query
+        name: material_id
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.StockTransactionResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List stock transactions
+      tags:
+      - StockTransactions
+    post:
+      consumes:
+      - application/json
+      description: Create a new stock transaction
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateStockTransactionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.StockTransactionResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create stock transaction
+      tags:
+      - StockTransactions
+  /api/stores:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of stores
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Sort field
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/model.Store'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List Stores
+      tags:
+      - Stores
+    post:
+      consumes:
+      - application/json
+      description: Create a new store
+      parameters:
+      - description: Store data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateStoreRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Store'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create Store
+      tags:
+      - Stores
+  /api/stores/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a store by its ID
+      parameters:
+      - description: Store ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete Store
+      tags:
+      - Stores
+    get:
+      consumes:
+      - application/json
+      description: Get a single store by its ID
+      parameters:
+      - description: Store ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Store'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get Store by ID
+      tags:
+      - Stores
+    put:
+      consumes:
+      - application/json
+      description: Update an existing store
+      parameters:
+      - description: Store ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Store update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateStoreRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Store'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update Store
+      tags:
+      - Stores
+  /api/suppliers:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of suppliers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.SupplierResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List suppliers
+      tags:
+      - Suppliers
+    post:
+      consumes:
+      - application/json
+      description: Create a new supplier
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateSupplierRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SupplierResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create supplier
+      tags:
+      - Suppliers
+  /api/suppliers/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a supplier
+      parameters:
+      - description: Supplier ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete supplier
+      tags:
+      - Suppliers
+    put:
+      consumes:
+      - application/json
+      description: Update an existing supplier
+      parameters:
+      - description: Supplier ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateSupplierRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SupplierResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update supplier
+      tags:
+      - Suppliers
+  /api/units:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of measurement units
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.UnitResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List units
+      tags:
+      - Units
+  /api/warehouses:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of warehouses
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.WarehouseResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List warehouses
+      tags:
+      - Warehouses
+    post:
+      consumes:
+      - application/json
+      description: Create a new warehouse
+      parameters:
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateWarehouseRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.WarehouseResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create warehouse
+      tags:
+      - Warehouses
+  /api/warehouses/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a warehouse
+      parameters:
+      - description: Warehouse ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete warehouse
+      tags:
+      - Warehouses
+    put:
+      consumes:
+      - application/json
+      description: Update an existing warehouse
+      parameters:
+      - description: Warehouse ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateWarehouseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.WarehouseResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update warehouse
+      tags:
+      - Warehouses
+  /bookings:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of bookings with optional filters
+      parameters:
+      - in: query
+        name: date_from
+        type: string
+      - in: query
+        name: date_to
+        type: string
+      - in: query
+        name: machine_id
+        type: string
+      - in: query
+        name: order
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      - in: query
+        name: search
+        type: string
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.BookingResponse'
+                        type: array
+                    type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List bookings
+      tags:
+      - Bookings
+    post:
+      consumes:
+      - application/json
+      description: Create a new machine booking for a member or walk-in customer
+      parameters:
+      - description: Booking details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateBookingRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.BookingResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create booking
+      tags:
+      - Bookings
+  /bookings/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Soft delete a booking by ID
+      parameters:
+      - description: Booking ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete booking
+      tags:
+      - Bookings
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific booking
+      parameters:
+      - description: Booking ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.BookingResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get booking by ID
+      tags:
+      - Bookings
+    put:
+      consumes:
+      - application/json
+      description: Update the details of an existing booking
+      parameters:
+      - description: Booking ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Booking details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateBookingRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.BookingResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update booking
+      tags:
+      - Bookings
+  /bookings/{id}/cancel:
+    post:
+      consumes:
+      - application/json
+      description: Cancel a booking before check-in
+      parameters:
+      - description: Booking ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.BookingResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Cancel booking
+      tags:
+      - Bookings
+  /bookings/{id}/check-in:
+    post:
+      consumes:
+      - application/json
+      description: Mark a booking as checked in when the customer arrives
+      parameters:
+      - description: Booking ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.BookingResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Check-in booking
+      tags:
+      - Bookings
+  /bookings/{id}/no-show:
+    post:
+      consumes:
+      - application/json
+      description: Mark a booking as no-show when the customer did not arrive
+      parameters:
+      - description: Booking ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.BookingResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: No-show booking
+      tags:
+      - Bookings
+  /categories:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all product categories
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.CategoryResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List all categories
+      tags:
+      - Categories
+    post:
+      consumes:
+      - application/json
+      description: Create a new product category
+      parameters:
+      - description: Category data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CategoryResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a new category
+      tags:
+      - Categories
+  /categories/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a product category by ID
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a category
+      tags:
+      - Categories
+    get:
+      consumes:
+      - application/json
+      description: Get a single product category by its ID
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CategoryResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get category by ID
+      tags:
+      - Categories
+    put:
+      consumes:
+      - application/json
+      description: Update an existing product category by ID
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Category update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateCategoryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CategoryResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update a category
+      tags:
+      - Categories
+  /combos:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of combos with optional search and sorting
+      parameters:
+      - in: query
+        name: order
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      - in: query
+        name: search
+        type: string
+      - in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.ComboResponse'
+                        type: array
+                    type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List combos
+      tags:
+      - Combos
+    post:
+      consumes:
+      - application/json
+      description: Create a new combo with the provided details
+      parameters:
+      - description: Combo details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateComboRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ComboResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create combo
+      tags:
+      - Combos
+  /combos/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Soft delete a combo by ID
+      parameters:
+      - description: Combo ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete combo
+      tags:
+      - Combos
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific combo
+      parameters:
+      - description: Combo ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ComboResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get combo by ID
+      tags:
+      - Combos
+    put:
+      consumes:
+      - application/json
+      description: Update the details of an existing combo
+      parameters:
+      - description: Combo ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Combo details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateComboRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ComboResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update combo
+      tags:
+      - Combos
+  /combos/{id}/activate:
+    post:
+      consumes:
+      - application/json
+      description: Activate a purchased combo on a specific machine
+      parameters:
+      - description: Purchase ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Activation details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.ActivateComboRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ComboPurchaseResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Activate combo
+      tags:
+      - Combos
+  /combos/{id}/purchase:
+    post:
+      consumes:
+      - application/json
+      description: Purchase a combo for a member or walk-in customer
+      parameters:
+      - description: Combo ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Purchase details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.PurchaseComboRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ComboPurchaseResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Purchase combo
+      tags:
+      - Combos
+  /curfew:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of curfew policies with optional filters
+      parameters:
+      - in: query
+        name: day_of_week
+        type: integer
+      - in: query
+        name: order
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      - in: query
+        name: search
+        type: string
+      - in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.CurfewResponse'
+                        type: array
+                    type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List curfew policies
+      tags:
+      - Curfew
+    post:
+      consumes:
+      - application/json
+      description: Create a new curfew policy
+      parameters:
+      - description: Curfew policy details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateCurfewRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CurfewResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create curfew policy
+      tags:
+      - Curfew
+  /curfew/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Soft delete a curfew policy by ID
+      parameters:
+      - description: Curfew policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete curfew policy
+      tags:
+      - Curfew
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific curfew policy
+      parameters:
+      - description: Curfew policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CurfewResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get curfew policy by ID
+      tags:
+      - Curfew
+    put:
+      consumes:
+      - application/json
+      description: Update the details of an existing curfew policy
+      parameters:
+      - description: Curfew policy ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Curfew policy details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateCurfewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CurfewResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update curfew policy
+      tags:
+      - Curfew
+  /curfew/override:
+    post:
+      consumes:
+      - application/json
+      description: Override a curfew policy for a specific member
+      parameters:
+      - description: Override details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.OverrideCurfewRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CurfewResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Override curfew
+      tags:
+      - Curfew
+  /lucky-spin/rewards:
+    get:
+      consumes:
+      - application/json
+      description: Get the list of available lucky spin rewards
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.LuckySpinRewardResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get lucky spin rewards
+      tags:
+      - LuckySpin
+  /lucky-spin/spin:
+    post:
+      consumes:
+      - application/json
+      description: Perform a lucky spin to win a random reward
+      parameters:
+      - description: Spin details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.SpinRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SpinResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Spin the wheel
+      tags:
+      - LuckySpin
+  /member-tiers:
+    get:
+      consumes:
+      - application/json
+      description: Get all available member tiers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.TierResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List member tiers
+      tags:
+      - MemberTiers
+    post:
+      consumes:
+      - application/json
+      description: Create a new member tier
+      parameters:
+      - description: Tier details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateTierRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.TierResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a member tier
+      tags:
+      - MemberTiers
+  /member-tiers/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a member tier by ID
+      parameters:
+      - description: Tier ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a member tier
+      tags:
+      - MemberTiers
+    put:
+      consumes:
+      - application/json
+      description: Update an existing member tier
+      parameters:
+      - description: Tier ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated tier details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateTierRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.TierResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update a member tier
+      tags:
+      - MemberTiers
+  /members:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of members
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Sort field
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.MemberResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List members
+      tags:
+      - Members
+    post:
+      consumes:
+      - application/json
+      description: Create a new member record
+      parameters:
+      - description: Member details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.MemberResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a new member
+      tags:
+      - Members
+  /members/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a member by ID
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a member
+      tags:
+      - Members
+    get:
+      consumes:
+      - application/json
+      description: Get a single member by their ID
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.MemberResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get member by ID
+      tags:
+      - Members
+    put:
+      consumes:
+      - application/json
+      description: Update an existing member's details
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated member details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateMemberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.MemberResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update a member
+      tags:
+      - Members
+  /members/{id}/combos:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of combo purchases for a member
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Sort field
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.ComboPurchaseResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get member combo purchases
+      tags:
+      - Members
+  /members/{id}/refund:
+    post:
+      consumes:
+      - application/json
+      description: Refund funds from a member's account
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Refund details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.RefundRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.MemberResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Refund member balance
+      tags:
+      - Members
+  /members/{id}/sessions:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of play sessions for a member
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Sort field
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.SessionResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get member sessions
+      tags:
+      - Members
+  /members/{id}/topup:
+    post:
+      consumes:
+      - application/json
+      description: Add funds to a member's account
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Topup details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.TopupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.MemberResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Topup member balance
+      tags:
+      - Members
+  /members/{id}/transactions:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of transactions for a member
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Sort field
+        in: query
+        name: sort
+        type: string
+      - description: Sort order (asc/desc)
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.MemberTransactionResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get member transactions
+      tags:
+      - Members
+  /orders:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of orders for the current store
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.OrderResponse'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List orders
+      tags:
+      - Orders
+    post:
+      consumes:
+      - application/json
+      description: Create a new order for the current store
+      parameters:
+      - description: Order data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.OrderResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a new order
+      tags:
+      - Orders
+  /orders/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete an order by ID
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete an order
+      tags:
+      - Orders
+    get:
+      consumes:
+      - application/json
+      description: Get a single order by its ID
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.OrderResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get order by ID
+      tags:
+      - Orders
+    put:
+      consumes:
+      - application/json
+      description: Update an existing order by ID
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Order update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.OrderResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update an order
+      tags:
+      - Orders
+  /orders/{id}/pay:
+    post:
+      consumes:
+      - application/json
+      description: Process payment for an order
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Payment data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.PayRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PaymentResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Pay an order
+      tags:
+      - Orders
+  /orders/{id}/split:
+    post:
+      consumes:
+      - application/json
+      description: Split an order into multiple orders
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Split order data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.SplitOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.OrderResponse'
+                  type: array
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Split an order
+      tags:
+      - Orders
+  /orders/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: Update the status of an order
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Status update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.OrderResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update order status
+      tags:
+      - Orders
+  /printers:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all printers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.PrinterResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List all printers
+      tags:
+      - Printers
+    post:
+      consumes:
+      - application/json
+      description: Create a new printer
+      parameters:
+      - description: Printer data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreatePrinterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PrinterResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a new printer
+      tags:
+      - Printers
+  /printers/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a printer by ID
+      parameters:
+      - description: Printer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a printer
+      tags:
+      - Printers
+    get:
+      consumes:
+      - application/json
+      description: Get a single printer by its ID
+      parameters:
+      - description: Printer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PrinterResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get printer by ID
+      tags:
+      - Printers
+    put:
+      consumes:
+      - application/json
+      description: Update an existing printer by ID
+      parameters:
+      - description: Printer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Printer update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdatePrinterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PrinterResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update a printer
+      tags:
+      - Printers
+  /printers/{id}/test:
+    post:
+      consumes:
+      - application/json
+      description: Send a test print job to the printer
+      parameters:
+      - description: Printer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Test printer connection
+      tags:
+      - Printers
+  /products:
+    get:
+      consumes:
+      - application/json
+      description: Get a list of all products, optionally filtered by category
+      parameters:
+      - description: Filter by category ID
+        in: query
+        name: category_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.ProductResponse'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List all products
+      tags:
+      - Products
+    post:
+      consumes:
+      - application/json
+      description: Create a new product
+      parameters:
+      - description: Product data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateProductRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ProductResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create a new product
+      tags:
+      - Products
+  /products/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a product by ID
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a product
+      tags:
+      - Products
+    get:
+      consumes:
+      - application/json
+      description: Get a single product by its ID
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ProductResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get product by ID
+      tags:
+      - Products
+    put:
+      consumes:
+      - application/json
+      description: Update an existing product by ID
+      parameters:
+      - description: Product ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Product update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateProductRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ProductResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update a product
+      tags:
+      - Products
+  /promotions:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of promotions with optional filters
+      parameters:
+      - in: query
+        name: is_active
+        type: boolean
+      - in: query
+        name: order
+        type: string
+      - in: query
+        name: page
+        type: integer
+      - in: query
+        name: page_size
+        type: integer
+      - in: query
+        name: search
+        type: string
+      - in: query
+        name: sort
+        type: string
+      - in: query
+        name: type
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.PromotionResponse'
+                        type: array
+                    type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List promotions
+      tags:
+      - Promotions
+    post:
+      consumes:
+      - application/json
+      description: Create a new promotion with conditions and rewards
+      parameters:
+      - description: Promotion details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreatePromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PromotionResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create promotion
+      tags:
+      - Promotions
+  /promotions/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Soft delete a promotion by ID
+      parameters:
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete promotion
+      tags:
+      - Promotions
+    get:
+      consumes:
+      - application/json
+      description: Get detailed information about a specific promotion
+      parameters:
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PromotionResponse'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get promotion by ID
+      tags:
+      - Promotions
+    put:
+      consumes:
+      - application/json
+      description: Update the details of an existing promotion
+      parameters:
+      - description: Promotion ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Promotion details
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdatePromotionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PromotionResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update promotion
+      tags:
+      - Promotions
+  /sessions/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Get details of a specific session
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SessionDetail'
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Get session by ID
+      tags:
+      - Sessions
+  /sessions/{id}/end:
+    post:
+      consumes:
+      - application/json
+      description: End an active play session and calculate charges
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.EndSessionResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: End a session
+      tags:
+      - Sessions
+  /sessions/{id}/switch-machine:
+    post:
+      consumes:
+      - application/json
+      description: Move an active session to a different machine
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New machine details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.SwitchMachineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SessionDetail'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Switch machine for a session
+      tags:
+      - Sessions
+  /sessions/active:
+    get:
+      consumes:
+      - application/json
+      description: Get all currently active play sessions
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.SessionDetail'
+                  type: array
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List active sessions
+      tags:
+      - Sessions
+  /sessions/calculate-cost:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: Machine ID
+        in: query
+        name: machine_id
+        required: true
+        type: string
+      - description: Member ID (for discount calculation)
+        in: query
+        name: member_id
+        type: string
+      - description: Session duration in minutes
+        in: query
+        name: duration_minutes
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.CostBreakdown'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Calculate session cost
+      tags:
+      - Sessions
+  /sessions/start:
+    post:
+      consumes:
+      - application/json
+      description: Start a new play session for a member on a machine
+      parameters:
+      - description: Session start details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.StartRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SessionDetail'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Start a session
+      tags:
+      - Sessions
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

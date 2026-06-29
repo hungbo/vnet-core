@@ -1,80 +1,44 @@
 {
-  "$schema": "https://opencode.ai/opencode.schema.json",
-  "name": "VNET Core",
-  "description": "Hệ thống Quản lý Phòng Game Toàn Diện (Open Source)",
-  "techStack": {
-    "backend": {
-      "language": "Go",
-      "framework": "Gin/Echo/Fiber",
-      "database": "PostgreSQL",
-      "cache": "Redis",
-      "realtime": "WebSocket (gorilla/websocket)"
+  "$schema": "https://opencode.ai/config.json",
+
+  "command": {
+    "dev-backend": {
+      "template": "Start the backend dev server. In `backend/`, run `air` (hot-reload) or `go run ./cmd/server`.",
+      "description": "Dev backend (Go/Gin via Air)"
     },
-    "admin": {
-      "framework": "Vue 3 + TypeScript",
-      "build": "Vite",
-      "state": "Pinia",
-      "ui": "Element Plus"
+    "dev-admin": {
+      "template": "Start the Vue 3 admin dev server. In `admin/`, run `pnpm dev` (Vite on :3000, proxies /api → localhost:8080).",
+      "description": "Dev admin (Vue 3/Soybean)"
     },
-    "desktop": {
-      "framework": "Wails",
-      "frontend": "Vue 3"
-    }
-  },
-  "commands": {
-    "dev": {
-      "backend": {
-        "command": "go run ./cmd/server",
-        "workdir": "backend"
-      },
-      "admin": {
-        "command": "npm run dev",
-        "workdir": "admin"
-      },
-      "client": {
-        "command": "wails dev",
-        "workdir": "client"
-      }
+    "test-backend": {
+      "template": "Run all Go backend tests: `go test ./...` from `backend/`.",
+      "description": "Test Go backend"
     },
-    "build": {
-      "backend": {
-        "command": "go build -o bin/server ./cmd/server",
-        "workdir": "backend"
-      },
-      "admin": {
-        "command": "npm run build",
-        "workdir": "admin"
-      },
-      "client": {
-        "command": "wails build",
-        "workdir": "client"
-      }
+    "lint-backend": {
+      "template": "Run golangci-lint on the Go backend: `golangci-lint run` from `backend/`.",
+      "description": "Lint Go backend"
     },
-    "lint": {
-      "command": "golangci-lint run",
-      "workdir": "backend"
-    },
-    "test": {
-      "command": "go test ./...",
-      "workdir": "backend"
+    "lint-admin": {
+      "template": "Lint and type-check the Vue 3 admin: `pnpm lint` then `pnpm typecheck` from `admin/`.",
+      "description": "Lint + typecheck admin"
     },
     "migrate": {
-      "command": "go run ./cmd/migrate",
-      "workdir": "backend"
+      "template": "Run database migrations: `go run ./cmd/migrate` from `backend/`.",
+      "description": "DB migrations"
+    },
+    "seed": {
+      "template": "Seed database with default accounts (admin/admin123, manager/admin123, staff/admin123): `go run ./cmd/seed` from `backend/`.",
+      "description": "Seed DB accounts"
+    },
+    "build-server": {
+      "template": "Build production server binary with embedded admin UI. Run `bash scripts/build-server.sh` from project root. Accepts $VERSION as arg.",
+      "description": "Build server + embed admin"
+    },
+    "build-admin": {
+      "template": "Build the admin frontend for production: `pnpm build` from `admin/`.",
+      "description": "Build admin (production)"
     }
   },
-  "context": [
-    {
-      "path": "PLAN.md",
-      "description": "Project plan and feature documentation"
-    }
-  ],
-  "customInstructions": "VNET Core là hệ thống quản lý phòng game mã nguồn mở. Gồm: VNET Core (tính tiền hội viên), VNET F&B (POS), VNET Up (update game). Backend Go, Admin Vue 3, Desktop client Wails. VNET Cloud Hub (central SaaS sync) và VNET Mobile (gamer app) là sản phẩm riêng biệt không nằm trong repo này.",
-  "rules": [
-    "Tuân thủ kiến trúc Go backend + Vue 3 admin + Wails client",
-    "Sử dụng GORM cho database operations",
-    "API response format: { code, message, data }",
-    "JWT cho authentication, middleware cho phân quyền",
-    "WebSocket cho real-time order và machine status"
-  ]
+
+  "instructions": ["AGENTS.md"]
 }
