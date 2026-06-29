@@ -47,6 +47,17 @@ export const useChatStore = defineStore('chat', () => {
         updateMessageStatus(parsed.id, parsed.status)
       } catch {}
     })
+    EventsOn('vnet:room:read', (data: string) => {
+      try {
+        const parsed = JSON.parse(data)
+        if (parsed.room_id === roomId.value) {
+          messages.value.forEach(m => {
+            m.distributed = true
+            m.seen = true
+          })
+        }
+      } catch {}
+    })
   }
 
   async function loadSupportConv(uid?: string) {

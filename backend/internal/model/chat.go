@@ -20,14 +20,15 @@ type ChatParticipant struct {
 }
 
 type ChatMessage struct {
-	ID              string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	RoomID  string    `gorm:"type:uuid;not null;index:idx_chat_messages_conv" json:"room_id"`
-	SenderType      string    `gorm:"type:varchar(20);not null" json:"sender_type"`
-	SenderID        string    `gorm:"type:uuid;not null" json:"sender_id"`
-	Message         string    `gorm:"type:text;not null" json:"message"`
-	MessageType     string    `gorm:"type:varchar(20);default:text" json:"message_type"`
-	Status          string    `gorm:"type:varchar(20);default:sent" json:"status"`
-	CreatedAt       time.Time `gorm:"default:now()" json:"created_at,omitempty"`
+	ID             string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	RoomID         string    `gorm:"type:uuid;not null;index:idx_chat_messages_conv" json:"room_id"`
+	SenderType     string    `gorm:"type:varchar(20);not null" json:"sender_type"`
+	SenderID       string    `gorm:"type:uuid;not null" json:"sender_id"`
+	SenderUsername string    `gorm:"type:varchar(100)" json:"sender_username"`
+	Message        string    `gorm:"type:text;not null" json:"message"`
+	MessageType    string    `gorm:"type:varchar(20);default:text" json:"message_type"`
+	Status         string    `gorm:"type:varchar(20);default:sent" json:"status"`
+	CreatedAt      time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }
 
 type ServiceFeedback struct {

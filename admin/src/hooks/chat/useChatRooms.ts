@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue';
 import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import client from '@/api/client';
-import { chatUnreadCount } from '@/hooks/chat/chatState';
+import { chatUnreadCount, roomUnreadCounts } from '@/hooks/chat/chatState';
 
 export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, messagesLoaded: Ref<boolean>) {
   const rooms = ref<any[]>([]);
@@ -55,7 +55,10 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
     try {
       const res: any = await client.get('/chat/rooms');
       const items = Array.isArray(res) ? res : res?.items || [];
-      rooms.value = items.map(mapRoom);
+      rooms.value = items.map((room: any) => ({
+        ...mapRoom(room),
+        unreadCount: (room.unread_count || 0) + (roomUnreadCounts.value[room.id] || 0),
+      }));
       updateUnreadCount();
     } catch {
       // ignore
@@ -67,7 +70,9 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
       _id: msg.id,
       content: msg.message,
       senderId: msg.sender_id,
-      username: msg.sender_type === 'admin' ? 'Admin' : 'Hội viên',
+      username: msg.sender_username
+        ? `${msg.sender_type} - ${msg.sender_username}`
+        : (msg.sender_type === 'admin' ? 'Admin' : 'Hội viên'),
       date: dayjs(msg.created_at).format('DD/MM/YYYY'),
       timestamp: dayjs(msg.created_at).format('HH:mm:ss'),
       createdAt: msg.created_at,

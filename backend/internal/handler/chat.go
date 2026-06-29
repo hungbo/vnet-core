@@ -202,6 +202,11 @@ func (h *ChatHandler) MarkRoomMessagesRead(c *gin.Context) {
 		response.InternalError(c, "Failed to mark read")
 		return
 	}
+	if userID := middleware.GetUserID(c); userID != "" {
+		if err := h.svc.MarkRead(id, userID); err != nil {
+			log.Printf("[Chat] MarkRead: %v", err)
+		}
+	}
 	response.Success(c, map[string]int64{"updated": count})
 }
 

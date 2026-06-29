@@ -8,7 +8,7 @@ import { useWebSocketStore } from '@/store/modules/ws';
 import client from '@/api/client';
 import { useChatRooms } from '@/hooks/chat/useChatRooms';
 import { useChatWs } from '@/hooks/chat/useChatWs';
-import { isChatOpen, chatUnreadCount } from '@/hooks/chat/chatState';
+import { isChatOpen, chatUnreadCount, roomUnreadCounts } from '@/hooks/chat/chatState';
 
 const authStore = useAuthStore();
 const wsStore = useWebSocketStore();
@@ -30,8 +30,8 @@ const convs = useChatRooms(messages, currentRoomId, messagesLoaded);
 const { rooms, showNewRoomDialog, roomForm, users, saving,
   fetchRooms, onFetchMessages, fetchMembers, handleCreateRoom,
   deleteRoom, deleteAllRooms } = convs;
-const { wsChatHandler, wsStatusHandler, wsRoomDeleted, wsRoomsCleared, wsRoomNew, sortMessages, mapMessage } = useChatWs(
-  currentRoomId, messages, fetchRooms,
+const { wsChatHandler, wsStatusHandler, wsRoomDeleted, wsRoomsCleared, wsRoomNew, wsRoomRead, sortMessages, mapMessage } = useChatWs(
+  currentRoomId, messages, rooms, fetchRooms,
 );
 // ── vue-advanced-chat config ──
 const autoScroll = {
@@ -65,7 +65,7 @@ async function onSendMessage($event: any) {
     if (postRes?.id) {
       messages.value = sortMessages([...messages.value, {
         _id: postRes.id, content, senderId: currentUserId.value,
-        username: 'Admin', date: new Date().toLocaleDateString('vi-VN'),
+        username: authStore.userInfo?.username ? `admin - ${authStore.userInfo.username}` : 'Admin', date: new Date().toLocaleDateString('vi-VN'),
         timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
         createdAt: new Date().toISOString(), saved: true, distributed: false, seen: false,
         disableActions: true, messageType: 'text', senderType: 'admin',
@@ -99,6 +99,7 @@ onMounted(() => {
   fetchRooms();
   wsStore.on('chat:message', wsChatHandler);
   wsStore.on('message:status:updated', wsStatusHandler);
+  wsStore.on('room:read', wsRoomRead);
   wsStore.on('room:deleted', wsRoomDeleted);
   wsStore.on('rooms:cleared', wsRoomsCleared);
   wsStore.on('room:new', wsRoomNew);
@@ -107,6 +108,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   wsStore.off('chat:message', wsChatHandler);
   wsStore.off('message:status:updated', wsStatusHandler);
+  wsStore.off('room:read', wsRoomRead);
   wsStore.off('room:deleted', wsRoomDeleted);
   wsStore.off('rooms:cleared', wsRoomsCleared);
   wsStore.off('room:new', wsRoomNew);
@@ -127,10 +129,12 @@ watch(currentRoomId, async (newId) => {
   if (!newId) return;
   try {
     await client.put(`/chat/rooms/${newId}/read`);
-    const readRoom = rooms.value.find((r: any) => r.roomId === newId);
-    if (readRoom?.unreadCount) {
-      chatUnreadCount.value = Math.max(0, chatUnreadCount.value - readRoom.unreadCount);
-    }
+    const count = roomUnreadCounts.value[newId] || 0;
+    roomUnreadCounts.value[newId] = 0;
+    chatUnreadCount.value = Math.max(0, chatUnreadCount.value - count);
+    const room = rooms.value.find((r: any) => r.roomId === newId);
+    if (room) room.unreadCount = 0;
+    fetchRooms();
   } catch {
     // ignore
   }
@@ -153,7 +157,8 @@ watch(currentRoomId, async (newId) => {
       :room-actions="JSON.stringify(roomActions)"
       :show-add-room="false" :show-search="false" :show-files="false" :show-audio="false" :show-emojis="false"
       :show-reaction-emojis="false" :show-new-messages-divider="false" :auto-scroll="JSON.stringify(autoScroll)"
-      :styles="JSON.stringify(chatStyles)" height="100%" :room-id="currentRoomId" @send-message="onSendMessage"
+      :username-options="JSON.stringify({ minUsers: 1, currentUser: true })" :styles="JSON.stringify(chatStyles)"
+      height="100%" :room-id="currentRoomId" @send-message="onSendMessage"
       @fetch-messages="onFetchMessages" @room-action-handler="onRoomAction" />
   </div>
 

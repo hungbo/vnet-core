@@ -1,10 +1,12 @@
 import dayjs from 'dayjs';
 import type { Ref } from 'vue';
-import { isChatOpen } from '@/hooks/chat/chatState';
+import client from '@/api/client';
+import { isChatOpen, chatUnreadCount, roomUnreadCounts } from '@/hooks/chat/chatState';
 
 export function useChatWs(
   currentRoomId: Ref<string>,
   messages: Ref<any[]>,
+  rooms: Ref<any[]>,
   fetchRooms: () => Promise<void>,
 ) {
   function mapMessage(msg: any) {
@@ -12,7 +14,9 @@ export function useChatWs(
       _id: msg.id,
       content: msg.message,
       senderId: msg.sender_id,
-      username: msg.sender_type === 'admin' ? 'Admin' : 'Hội viên',
+      username: msg.sender_username
+        ? `${msg.sender_type} - ${msg.sender_username}`
+        : (msg.sender_type === 'admin' ? 'Admin' : 'Hội viên'),
       date: dayjs(msg.created_at).format('DD/MM/YYYY'),
       timestamp: dayjs(msg.created_at).format('HH:mm:ss'),
       createdAt: msg.created_at,
@@ -39,15 +43,19 @@ export function useChatWs(
     }
   }
 
-  const wsChatHandler = (msg: any) => {
+  const wsChatHandler = async (msg: any) => {
     if (msg.room_id === currentRoomId.value && isChatOpen.value) {
       if (!messages.value.some((m: any) => m._id === msg.id)) {
         messages.value = sortMessages([...messages.value, mapMessage(msg)]);
       }
+      try { await client.put(`/chat/rooms/${currentRoomId.value}/read`); } catch {}
     } else {
       playNotificationSound();
+      roomUnreadCounts.value[msg.room_id] = (roomUnreadCounts.value[msg.room_id] || 0) + 1;
+      chatUnreadCount.value += 1;
+      const room = rooms.value.find((r: any) => r.roomId === msg.room_id);
+      if (room) room.unreadCount = (room.unreadCount || 0) + 1;
     }
-    fetchRooms();
   };
 
   const wsStatusHandler = (data: any) => {
@@ -81,5 +89,14 @@ export function useChatWs(
     fetchRooms();
   };
 
-  return { wsChatHandler, wsStatusHandler, wsRoomDeleted, wsRoomsCleared, wsRoomNew, sortMessages, mapMessage };
+  const wsRoomRead = (data: any) => {
+    if (data.room_id !== currentRoomId.value) return;
+    messages.value = messages.value.map((m: any) => ({
+      ...m,
+      distributed: true,
+      seen: true,
+    }));
+  };
+
+  return { wsChatHandler, wsStatusHandler, wsRoomDeleted, wsRoomsCleared, wsRoomNew, wsRoomRead, sortMessages, mapMessage };
 }

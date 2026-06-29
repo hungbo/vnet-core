@@ -54,9 +54,10 @@ type ParticipantInfo struct {
 
 type MessageResponse struct {
 	ID             string    `json:"id"`
-	RoomID string    `json:"room_id"`
+	RoomID         string    `json:"room_id"`
 	SenderType     string    `json:"sender_type"`
 	SenderID       string    `json:"sender_id"`
+	SenderUsername string    `json:"sender_username"`
 	Message        string    `json:"message"`
 	MessageType    string    `json:"message_type"`
 	Status         string    `json:"status"`
@@ -66,9 +67,10 @@ type MessageResponse struct {
 func messageResponseFromModel(m *model.ChatMessage) MessageResponse {
 	return MessageResponse{
 		ID:             m.ID,
-		RoomID: m.RoomID,
+		RoomID:         m.RoomID,
 		SenderType:     m.SenderType,
 		SenderID:       m.SenderID,
+		SenderUsername: m.SenderUsername,
 		Message:        m.Message,
 		MessageType:    m.MessageType,
 		Status:         m.Status,
@@ -120,6 +122,8 @@ func (s *ChatService) ListRooms(participantID string, participantType string, pa
 					s.db.Model(&model.ChatMessage{}).Where("room_id = ?", room.ID).Count(&unreadCount)
 				}
 			}
+		} else {
+			s.db.Model(&model.ChatMessage{}).Where("room_id = ? AND status != ?", room.ID, "read").Count(&unreadCount)
 		}
 
 		result[i] = RoomResponse{
@@ -303,10 +307,24 @@ func (s *ChatService) SendMessage(req *SendMessageRequest) (*MessageResponse, er
 		msgType = "text"
 	}
 
+	username := ""
+	if req.SenderType == "admin" {
+		var user model.User
+		if err := s.db.Select("username").First(&user, "id = ?", req.SenderID).Error; err == nil {
+			username = user.Username
+		}
+	} else if req.SenderType == "member" {
+		var member model.Member
+		if err := s.db.Select("username").First(&member, "id = ?", req.SenderID).Error; err == nil {
+			username = member.Username
+		}
+	}
+
 	msg := model.ChatMessage{
-		RoomID: req.RoomID,
+		RoomID:         req.RoomID,
 		SenderType:     req.SenderType,
 		SenderID:       req.SenderID,
+		SenderUsername: username,
 		Message:        req.Message,
 		MessageType:    msgType,
 	}

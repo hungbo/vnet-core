@@ -85,8 +85,8 @@ func TestChatService_GetMessages(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "chat_messages" WHERE room_id = \$1 ORDER BY created_at DESC,created_at desc LIMIT \$2`).
 		WithArgs("conv1", 20).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "room_id", "sender_type", "sender_id", "message", "message_type", "created_at"}).
-			AddRow("msg1", "conv1", "staff", "u1", "Hello", "text", testNow))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "room_id", "sender_type", "sender_id", "sender_username", "message", "message_type", "created_at"}).
+			AddRow("msg1", "conv1", "staff", "u1", "", "Hello", "text", testNow))
 
 	result, total, page, pageSize, err := svc.GetMessages("conv1", pagination.Params{Page: 1, PageSize: 20, Sort: "created_at", Order: "desc"})
 	require.NoError(t, err)
