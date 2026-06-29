@@ -1,0 +1,15 @@
+packages:
+  - 'packages/*'
+allowBuilds:
+  '@parcel/watcher': false
+  core-js: set this to true or false
+  core-js-pure: set this to true or false
+  es5-ext: set this to true or false
+  esbuild: false
+  simple-git-hooks: false
+  typeit: set this to true or false
+  unrs-resolver: set this to true or false
+  vue-demi: false
+shamefullyHoist: true
+ignoreWorkspaceRootCheck: true
+linkWorkspacePackages: true
