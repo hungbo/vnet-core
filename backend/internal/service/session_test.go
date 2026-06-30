@@ -68,7 +68,7 @@ func TestSessionService_GetActiveSessions(t *testing.T) {
 		WithArgs("mem1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name"}).AddRow("mem1", "Test Member"))
 
-	result, err := svc.GetActiveSessions("s1")
+	result, err := svc.GetActiveSessions()
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, "M-001", result[0].MachineCode)

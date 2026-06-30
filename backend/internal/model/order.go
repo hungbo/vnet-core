@@ -14,7 +14,6 @@ type Order struct {
 	OrderType      string     `gorm:"type:varchar(20);default:product;index" json:"order_type"`
 	MemberID       *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"member_id"`
 	MachineID      *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"machine_id"`
-	StoreID        *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	TableNumber    string     `gorm:"type:varchar(10)" json:"table_number"`
 	TotalAmount    int64      `gorm:"not null" json:"total_amount"`
 	DiscountAmount int64      `gorm:"default:0" json:"discount_amount"`
@@ -37,7 +36,6 @@ type OrderItem struct {
 	UnitPrice   int64     `gorm:"not null" json:"unit_price"`
 	Options     string    `gorm:"type:jsonb" json:"options"`
 	Subtotal    int64     `gorm:"not null" json:"subtotal"`
-	StoreID     *string   `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	Status      string    `gorm:"type:varchar(20);default:pending" json:"status"`
 	Note        string    `gorm:"type:text" json:"note"`
 	CreatedAt   time.Time `gorm:"default:now()" json:"created_at,omitempty"`

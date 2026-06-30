@@ -250,7 +250,6 @@ const local: App.I18n.Schema = {
     vnet_transactions: 'Giao dịch',
     vnet_settings: 'Cài đặt',
     vnet_audit: 'Nhật ký hoạt động',
-    vnet_stores: 'Cửa hàng',
     vnet_backups: 'Sao lưu',
     vnet_management: 'Quản lý',
     vnet_business: 'Kinh doanh',
@@ -684,6 +683,7 @@ const local: App.I18n.Schema = {
       name: 'Tên nhóm',
       color: 'Màu sắc',
       colorPlaceholder: 'VD: #1890ff',
+      pricePerHour: 'Giá/giờ',
       sortOrder: 'Thứ tự',
       description: 'Mô tả',
       create: 'Tạo nhóm',
@@ -1144,16 +1144,10 @@ const local: App.I18n.Schema = {
       billing: 'Tính giờ',
       printing: 'Máy in',
       invoice: 'Hóa đơn',
-      storeName: 'Tên cửa hàng',
       address: 'Địa chỉ',
       phone: 'Số điện thoại',
       email: 'Email',
       timezone: 'Múi giờ',
-      pricing: 'Giá',
-      pricePerHour: 'Giá mỗi giờ (VNĐ)',
-      pricePerMinute: 'Giá mỗi phút (VNĐ)',
-      minMinutes: 'Phút tối thiểu',
-      hourlyDiscount: 'Giảm giờ theo giờ',
       limits: 'Giới hạn',
       maxBookingsPerDay: 'Giới hạn đặt chỗ / ngày',
       maxBookingsPerMember: 'Giới hạn đặt chỗ / hội viên',
@@ -1207,34 +1201,10 @@ const local: App.I18n.Schema = {
         promotion: 'khuyến mãi',
         booking: 'đặt chỗ',
         user: 'người dùng',
-        role: 'vai trò',
-        store: 'cửa hàng'
+        role: 'vai trò'
       },
       messages: {
         loadError: 'Lỗi tải nhật ký'
-      }
-    },
-    stores: {
-      title: 'Cửa hàng',
-      searchPlaceholder: 'Tìm kiếm...',
-      add: 'Thêm cửa hàng',
-      edit: 'Sửa cửa hàng',
-      name: 'Tên',
-      code: 'Mã',
-      phone: 'SĐT',
-      address: 'Địa chỉ',
-      isActive: 'Kích hoạt',
-      form: {
-        nameRequired: 'Vui lòng nhập tên',
-        codeRequired: 'Vui lòng nhập mã'
-      },
-      messages: {
-        addSuccess: 'Thêm thành công',
-        editSuccess: 'Cập nhật thành công',
-        deleteConfirm: 'Bạn có chắc muốn xóa cửa hàng này?',
-        deleteSuccess: 'Xóa thành công',
-        loadError: 'Lỗi tải dữ liệu',
-        saveError: 'Lỗi lưu dữ liệu'
       }
     },
     combos: {

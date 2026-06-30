@@ -24,7 +24,6 @@ type Handlers struct {
 	Printer       *PrinterHandler
 	Inventory     *InventoryHandler
 	Shift         *ShiftHandler
-	Store         *StoreHandler
 	Settings      *SettingsHandler
 	Audit         *AuditHandler
 	Backup        *BackupHandler
@@ -41,7 +40,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 	chatSvc := service.NewChatService(db, wsHub, auditSvc)
 	chatSvc.HubRoomSync()
 	return &Handlers{Upload: NewUploadHandler(cfg.Server.UploadDir, cfg.Server.MaxFileSize),
-		Auth:      NewAuthHandler(service.NewAuthService(db, jwtManager, auditSvc), service.NewSessionService(db, wsHub, auditSvc)),
+		Auth:      NewAuthHandler(db, service.NewAuthService(db, jwtManager, auditSvc), service.NewSessionService(db, wsHub, auditSvc)),
 		Route:     NewRouteHandler(service.NewRouteService()),
 		Member:    NewMemberHandler(service.NewMemberService(db, auditSvc)),
 		Machine:   NewMachineHandler(service.NewMachineService(db, wsHub, auditSvc)),
@@ -56,7 +55,6 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Printer:   NewPrinterHandler(service.NewPrinterService(db, auditSvc)),
 		Inventory: NewInventoryHandler(invSvc),
 		Shift:     NewShiftHandler(service.NewShiftService(db, auditSvc)),
-		Store:     NewStoreHandler(service.NewStoreService(db, auditSvc)),
 		Settings:  NewSettingsHandler(service.NewSettingsService(db, auditSvc)),
 		Audit:     NewAuditHandler(auditSvc),
 		Backup:    NewBackupHandler(service.NewBackupService(db, auditSvc)),

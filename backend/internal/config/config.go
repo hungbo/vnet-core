@@ -12,7 +12,6 @@ type Config struct {
 	Database DatabaseConfig
 	Redis    RedisConfig
 	JWT      JWTConfig
-	Store    StoreConfig
 }
 
 type ServerConfig struct {
@@ -95,10 +94,6 @@ func Load() *Config {
 			AccessTokenTTL:  getEnvDuration("JWT_ACCESS_TTL", 24*time.Hour),
 			RefreshTokenTTL: getEnvDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
 			Issuer:          getEnv("JWT_ISSUER", "vnet"),
-		},
-		Store: StoreConfig{
-			DefaultStoreID:   int64(getEnvInt("DEFAULT_STORE_ID", 1)),
-			DefaultStoreName: getEnv("DEFAULT_STORE_NAME", "Main Store"),
 		},
 	}
 }

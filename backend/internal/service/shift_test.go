@@ -71,7 +71,7 @@ func TestShiftService_OpenShift_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
 	mock.ExpectCommit()
 
-	result, err := svc.OpenShift(&OpenShiftRequest{OpeningBalance: 500000}, testUserID, testStoreID)
+	result, err := svc.OpenShift(&OpenShiftRequest{OpeningBalance: 500000}, testUserID)
 	require.NoError(t, err)
 	assert.Equal(t, "open", result.Status)
 	assert.Equal(t, int64(500000), result.OpeningBalance)
@@ -86,7 +86,7 @@ func TestShiftService_OpenShift_AlreadyOpen(t *testing.T) {
 		WithArgs(testUserID, "open", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status"}).AddRow("s1", testUserID, "open"))
 
-	_, err := svc.OpenShift(&OpenShiftRequest{}, testUserID, testStoreID)
+	_, err := svc.OpenShift(&OpenShiftRequest{}, testUserID)
 	assert.Error(t, err)
 	assert.Equal(t, "user already has an open shift", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())

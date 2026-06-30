@@ -25,7 +25,7 @@ func NewSessionHandler(svc *service.SessionService) *SessionHandler {
 // @Router /sessions/active [get]
 // @Security BearerAuth
 func (h *SessionHandler) ListActive(c *gin.Context) {
-	sessions, err := h.svc.GetActiveSessions("")
+	sessions, err := h.svc.GetActiveSessions()
 	if err != nil {
 		response.InternalError(c, "Failed to fetch active sessions")
 		return

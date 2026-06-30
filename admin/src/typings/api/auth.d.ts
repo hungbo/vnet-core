@@ -14,7 +14,6 @@ declare namespace Api {
       phone: string;
       avatar_url: string;
       role: string;
-      store_id: string;
       permissions: string[];
     }
   }

@@ -29,8 +29,7 @@ func NewOrderHandler(svc *service.OrderService) *OrderHandler {
 // @Router /orders [get]
 func (h *OrderHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
-	storeID := middleware.GetStoreID(c)
-	result, total, page, pageSize, err := h.svc.List(*params, storeID)
+	result, total, page, pageSize, err := h.svc.List(*params)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch orders")
 		return
@@ -75,8 +74,7 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 	userID := middleware.GetUserID(c)
-	storeID := middleware.GetStoreID(c)
-	result, err := h.svc.Create(req, userID, storeID)
+	result, err := h.svc.Create(req, userID, "")
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -171,8 +169,7 @@ func (h *OrderHandler) CreateTopup(c *gin.Context) {
 		return
 	}
 	userID := middleware.GetUserID(c)
-	storeID := middleware.GetStoreID(c)
-	result, err := h.svc.CreateTopupOrder(req, userID, storeID)
+	result, err := h.svc.CreateTopupOrder(req, userID, "")
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

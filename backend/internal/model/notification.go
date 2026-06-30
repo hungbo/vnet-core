@@ -8,6 +8,5 @@ type MemberNotification struct {
 	Title     string    `gorm:"type:varchar(255);not null" json:"title"`
 	Body      string    `gorm:"type:text" json:"body"`
 	IsRead    bool      `gorm:"default:false" json:"is_read"`
-	StoreID   *string   `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id,omitempty"`
 	CreatedAt time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }

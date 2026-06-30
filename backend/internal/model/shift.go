@@ -5,7 +5,6 @@ import "time"
 type Shift struct {
 	ID             string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	UserID         string     `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"user_id"`
-	StoreID        *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	StartedAt      time.Time  `gorm:"type:timestamptz;not null" json:"started_at"`
 	EndedAt        *time.Time `gorm:"type:timestamptz" json:"ended_at"`
 	Status         string     `gorm:"type:varchar(20);default:open" json:"status"`

@@ -9,7 +9,6 @@ import (
 
 type Claims struct {
 	UserID      string   `json:"user_id"`
-	StoreID     string   `json:"store_id"`
 	Username    string   `json:"username"`
 	Role        string   `json:"role"`
 	RoleID      string   `json:"role_id"`
@@ -33,10 +32,9 @@ func New(secret string, accessTTL, refreshTTL time.Duration, issuer string) *Man
 	}
 }
 
-func (m *Manager) GenerateAccessToken(userID, storeID, username, role, roleID string, permissions []string) (string, error) {
+func (m *Manager) GenerateAccessToken(userID, username, role, roleID string, permissions []string) (string, error) {
 	claims := &Claims{
 		UserID:      userID,
-		StoreID:     storeID,
 		Username:    username,
 		Role:        role,
 		RoleID:      roleID,

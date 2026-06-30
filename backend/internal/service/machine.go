@@ -62,24 +62,6 @@ type UpdateMachineGroupRequest struct {
 	SortOrder   *int    `json:"sort_order"`
 }
 
-type CreateMachinePriceRequest struct {
-	MachineGroupID *string `json:"machine_group_id"`
-	MemberGroupID  *string `json:"member_group_id"`
-	PricePerHour   int64   `json:"price_per_hour" binding:"required"`
-	MinDuration    int     `json:"min_duration"`
-	EffectiveFrom  string  `json:"effective_from" binding:"required"`
-	EffectiveTo    string  `json:"effective_to"`
-}
-
-type UpdateMachinePriceRequest struct {
-	MachineGroupID *string `json:"machine_group_id"`
-	MemberGroupID  *string `json:"member_group_id"`
-	PricePerHour   *int64  `json:"price_per_hour"`
-	MinDuration    *int    `json:"min_duration"`
-	EffectiveFrom  *string `json:"effective_from"`
-	EffectiveTo    *string `json:"effective_to"`
-}
-
 type CreateMachineAssetRequest struct {
 	MachineID string  `json:"machine_id" binding:"required"`
 	AssetType string  `json:"asset_type" binding:"required"`
@@ -99,9 +81,9 @@ type UpdateMachineAssetRequest struct {
 	Notes     *string `json:"notes"`
 }
 
-func (s *MachineService) List(params pagination.Params, storeID string) (*pagination.Result, error) {
+func (s *MachineService) List(params pagination.Params) (*pagination.Result, error) {
 	var machines []model.Machine
-	query := s.db.Where("store_id = ?", storeID)
+	query := s.db.Model(&model.Machine{})
 	var total int64
 	if err := query.Model(&model.Machine{}).Count(&total).Error; err != nil {
 		return nil, err
@@ -134,15 +116,10 @@ func (s *MachineService) GetByCode(code string) (*model.Machine, error) {
 	return &machine, nil
 }
 
-func (s *MachineService) Create(req *CreateMachineRequest, storeID string) (*model.Machine, error) {
-	var storeIDPtr *string
-	if storeID != "" {
-		storeIDPtr = &storeID
-	}
+func (s *MachineService) Create(req *CreateMachineRequest) (*model.Machine, error) {
 	machine := model.Machine{
 		MachineCode: req.MachineCode,
 		GroupID:     req.GroupID,
-		StoreID:     storeIDPtr,
 		CPUName:     req.CPUName,
 		RAMGB:       req.RAMGB,
 		GPUName:     req.GPUName,
@@ -302,24 +279,19 @@ func (s *MachineService) RemoteAction(id, action string, payload interface{}) er
 	return nil
 }
 
-func (s *MachineService) ListGroups(storeID string) ([]model.MachineGroup, error) {
+func (s *MachineService) ListGroups() ([]model.MachineGroup, error) {
 	var groups []model.MachineGroup
-	if err := s.db.Where("store_id = ?", storeID).Order("sort_order asc").Find(&groups).Error; err != nil {
+	if err := s.db.Order("sort_order asc").Find(&groups).Error; err != nil {
 		return nil, err
 	}
 	return groups, nil
 }
 
-func (s *MachineService) CreateGroup(req *CreateMachineGroupRequest, storeID string) (*model.MachineGroup, error) {
-	var storeIDPtr *string
-	if storeID != "" {
-		storeIDPtr = &storeID
-	}
+func (s *MachineService) CreateGroup(req *CreateMachineGroupRequest) (*model.MachineGroup, error) {
 	group := model.MachineGroup{
 		Name:        req.Name,
 		Description: req.Description,
 		Color:       req.Color,
-		StoreID:     storeIDPtr,
 		SortOrder:   req.SortOrder,
 	}
 	if err := s.db.Create(&group).Error; err != nil {
@@ -385,100 +357,6 @@ func (s *MachineService) DeleteGroup(id string) error {
 		EntityType: "machine_group",
 		EntityID:   group.ID,
 		Metadata:   map[string]interface{}{"name": group.Name},
-	})
-	return nil
-}
-
-func (s *MachineService) ListPrices(machineGroupID string) ([]model.MachinePrice, error) {
-	var prices []model.MachinePrice
-	query := s.db
-	if machineGroupID != "" {
-		query = query.Where("machine_group_id = ?", machineGroupID)
-	}
-	if err := query.Find(&prices).Error; err != nil {
-		return nil, err
-	}
-	return prices, nil
-}
-
-func (s *MachineService) CreatePrice(req *CreateMachinePriceRequest) (*model.MachinePrice, error) {
-	price := model.MachinePrice{
-		MachineGroupID: req.MachineGroupID,
-		MemberGroupID:  req.MemberGroupID,
-		PricePerHour:   req.PricePerHour,
-		MinDuration:    req.MinDuration,
-		EffectiveFrom:  req.EffectiveFrom,
-		EffectiveTo:    req.EffectiveTo,
-	}
-	if err := s.db.Create(&price).Error; err != nil {
-		return nil, err
-	}
-	_ = s.audit.Log(&LogAuditRequest{
-		Action:     "create",
-		EntityType: "machine_price",
-		EntityID:   price.ID,
-		Metadata:   map[string]interface{}{"price_per_hour": price.PricePerHour, "machine_group_id": price.MachineGroupID},
-	})
-	return &price, nil
-}
-
-func (s *MachineService) UpdatePrice(id string, req *UpdateMachinePriceRequest) (*model.MachinePrice, error) {
-	var price model.MachinePrice
-	if err := s.db.Where("id = ?", id).First(&price).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("machine price not found")
-		}
-		return nil, err
-	}
-	updates := map[string]interface{}{}
-	if req.MachineGroupID != nil {
-		updates["machine_group_id"] = *req.MachineGroupID
-	}
-	if req.MemberGroupID != nil {
-		updates["member_group_id"] = *req.MemberGroupID
-	}
-	if req.PricePerHour != nil {
-		updates["price_per_hour"] = *req.PricePerHour
-	}
-	if req.MinDuration != nil {
-		updates["min_duration"] = *req.MinDuration
-	}
-	if req.EffectiveFrom != nil {
-		updates["effective_from"] = *req.EffectiveFrom
-	}
-	if req.EffectiveTo != nil {
-		updates["effective_to"] = *req.EffectiveTo
-	}
-	if len(updates) > 0 {
-		if err := s.db.Model(&price).Updates(updates).Error; err != nil {
-			return nil, err
-		}
-		_ = s.audit.Log(&LogAuditRequest{
-			Action:     "update",
-			EntityType: "machine_price",
-			EntityID:   price.ID,
-			Metadata:   map[string]interface{}{"price_per_hour": price.PricePerHour, "machine_group_id": price.MachineGroupID},
-		})
-	}
-	return &price, nil
-}
-
-func (s *MachineService) DeletePrice(id string) error {
-	var price model.MachinePrice
-	if err := s.db.Where("id = ?", id).First(&price).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("machine price not found")
-		}
-		return err
-	}
-	if err := s.db.Delete(&price).Error; err != nil {
-		return err
-	}
-	_ = s.audit.Log(&LogAuditRequest{
-		Action:     "delete",
-		EntityType: "machine_price",
-		EntityID:   price.ID,
-		Metadata:   map[string]interface{}{"price_per_hour": price.PricePerHour, "machine_group_id": price.MachineGroupID},
 	})
 	return nil
 }

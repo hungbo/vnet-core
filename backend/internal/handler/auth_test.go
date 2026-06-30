@@ -38,7 +38,8 @@ func newTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 func setupAuthHandler(db *gorm.DB) (*AuthHandler, *jwt.Manager) {
 	jwtMgr := jwt.New("test-secret", 1*time.Hour, 7*24*time.Hour, "vnet-test")
 	authSvc := service.NewAuthService(db, jwtMgr, service.NewAuditService(db))
-	return NewAuthHandler(authSvc), jwtMgr
+	sessionSvc := service.NewSessionService(db, nil, service.NewAuditService(db))
+	return NewAuthHandler(db, authSvc, sessionSvc), jwtMgr
 }
 
 func TestAuthHandler_Login_Success(t *testing.T) {
@@ -132,7 +133,7 @@ func TestAuthHandler_Me_Success(t *testing.T) {
 	db, mock := newTestDB(t)
 	handler, jwtMgr := setupAuthHandler(db)
 
-	token, _ := jwtMgr.GenerateAccessToken("u1", "", "admin", "admin", "", []string{})
+	token, _ := jwtMgr.GenerateAccessToken("u1", "admin", "admin", "", []string{})
 
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 ORDER BY "users"."id" LIMIT \$2`).
 		WithArgs("u1", 1).
@@ -182,7 +183,7 @@ func TestAuthHandler_ChangePassword_Success(t *testing.T) {
 	db, mock := newTestDB(t)
 	handler, jwtMgr := setupAuthHandler(db)
 
-	token, _ := jwtMgr.GenerateAccessToken("u1", "", "admin", "admin", "", []string{})
+	token, _ := jwtMgr.GenerateAccessToken("u1", "admin", "admin", "", []string{})
 	oldHash, _ := utils.HashPassword("oldpass")
 
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 ORDER BY "users"."id" LIMIT \$2`).

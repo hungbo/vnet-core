@@ -21,6 +21,7 @@ const formRef = ref<FormInstance>();
 const form = ref({
   name: '',
   color: '',
+  price_per_hour: 0,
   sort_order: 0,
   description: ''
 });
@@ -43,6 +44,13 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
           ? h(ElTag, { color: row.color, style: 'color:#fff;border:none' }, () => row.color)
           : (h('span', '-') as any)
     },
+    {
+      prop: 'price_per_hour',
+      label: $t('vnetPages.machineGroups.pricePerHour'),
+      width: 130,
+      align: 'center',
+      formatter: (row: any) => (row.price_per_hour != null ? `${row.price_per_hour.toLocaleString()}đ/h` : '-')
+    },
     { prop: 'sort_order', label: $t('vnetPages.machineGroups.sortOrder'), width: 100, align: 'center' },
     { prop: 'description', label: $t('vnetPages.machineGroups.description'), minWidth: 200 }
   ]
@@ -55,7 +63,7 @@ function searchData() {
 function openCreate() {
   isEdit.value = false;
   editingId.value = null;
-  form.value = { name: '', color: '', sort_order: 0, description: '' };
+  form.value = { name: '', color: '', price_per_hour: 0, sort_order: 0, description: '' };
   dialogVisible.value = true;
 }
 
@@ -65,6 +73,7 @@ function openEdit(row: any) {
   form.value = {
     name: row.name || '',
     color: row.color || '',
+    price_per_hour: row.price_per_hour ?? 0,
     sort_order: row.sort_order ?? 0,
     description: row.description || ''
   };
@@ -172,6 +181,9 @@ async function handleDelete(row: any) {
               />
             </template>
           </ElInput>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.machineGroups.pricePerHour')" prop="price_per_hour">
+          <ElInputNumber v-model="form.price_per_hour" :min="0" :max="999999" style="width: 100%" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.machineGroups.sortOrder')" prop="sort_order">
           <ElInputNumber v-model="form.sort_order" :min="0" :max="999" style="width: 100%" />

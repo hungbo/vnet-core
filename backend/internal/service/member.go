@@ -29,7 +29,6 @@ type CreateMemberRequest struct {
 	IDCardNumber string     `json:"id_card_number"`
 	DateOfBirth  *time.Time `json:"date_of_birth"`
 	GroupID      string     `json:"group_id"`
-	StoreID      string     `json:"store_id"`
 	Notes        string     `json:"notes"`
 }
 
@@ -88,7 +87,6 @@ type MemberResponse struct {
 	TotalPlayedHours    int          `json:"total_played_hours"`
 	Group               *GroupResponse `json:"group"`
 	GroupID             *string      `json:"group_id"`
-	StoreID             *string      `json:"store_id"`
 	Notes               string       `json:"notes"`
 	ParentConsentFileURL string     `json:"parent_consent_file_url"`
 	IsActive            bool         `json:"is_active"`
@@ -122,7 +120,6 @@ type MemberTransactionResponse struct {
 	PaymentMethod   string    `json:"payment_method"`
 	ReferenceID     string    `json:"reference_id"`
 	Description     string    `json:"description"`
-	StoreID         *string   `json:"store_id"`
 	CreatedBy       *string   `json:"created_by"`
 	CreatedAt       time.Time `json:"created_at"`
 }
@@ -140,7 +137,6 @@ type SessionResponse struct {
 	DurationMinutes  *int       `json:"duration_minutes"`
 	TotalCost        *int64     `json:"total_cost"`
 	IsOvernight      bool       `json:"is_overnight"`
-	StoreID          *string    `json:"store_id"`
 	IsActive         bool       `json:"is_active"`
 	CreatedAt        time.Time  `json:"created_at"`
 }
@@ -179,7 +175,6 @@ func toMemberResponse(m *model.Member, groupResp *GroupResponse) *MemberResponse
 		TotalPlayedHours:    m.TotalPlayedHours,
 		GroupID:             m.GroupID,
 		Group:               groupResp,
-		StoreID:             m.StoreID,
 		Notes:               m.Notes,
 		ParentConsentFileURL: m.ParentConsentFileURL,
 		IsActive:            m.IsActive,
@@ -213,7 +208,6 @@ func toTransactionResponse(t *model.MemberTransaction) *MemberTransactionRespons
 		PaymentMethod:   t.PaymentMethod,
 		ReferenceID:     func() string { if t.ReferenceID != nil { return *t.ReferenceID }; return "" }(),
 		Description:     t.Description,
-		StoreID:         t.StoreID,
 		CreatedBy:       t.CreatedBy,
 		CreatedAt:       t.CreatedAt,
 	}
@@ -233,41 +227,18 @@ func toSessionResponse(s *model.MachineSession) *SessionResponse {
 		DurationMinutes:  s.DurationMinutes,
 		TotalCost:        s.TotalCost,
 		IsOvernight:      s.IsOvernight,
-		StoreID:          s.StoreID,
 		IsActive:         s.IsActive,
 		CreatedAt:        s.CreatedAt,
 	}
 }
 
-func (s *MemberService) List(params pagination.Params, storeID string) ([]*MemberResponse, int64, int, int, error) {
-	query := s.db.Model(&model.Member{}).Where("store_id = ?", storeID)
+func (s *MemberService) List(params pagination.Params) ([]*MemberResponse, int64, int, int, error) {
+	query := s.db.Model(&model.Member{})
 
 	if params.Search != "" {
 		search := "%" + params.Search + "%"
 		query = query.Where("full_name ILIKE ? OR phone ILIKE ? OR username ILIKE ?", search, search, search)
 	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, 0, 0, err
-	}
-
-	var members []model.Member
-	if err := pagination.Apply(query, &params).Find(&members).Error; err != nil {
-		return nil, 0, 0, 0, err
-	}
-
-	result := make([]*MemberResponse, len(members))
-	for i := range members {
-		groupResp := s.loadGroup(members[i].GroupID)
-		result[i] = toMemberResponse(&members[i], groupResp)
-	}
-
-	return result, total, params.Page, params.PageSize, nil
-}
-
-func (s *MemberService) ListByStore(storeID string, params pagination.Params) ([]*MemberResponse, int64, int, int, error) {
-	query := s.db.Model(&model.Member{}).Where("store_id = ?", storeID)
 
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -338,10 +309,6 @@ func (s *MemberService) Create(req *CreateMemberRequest) (*MemberResponse, error
 			return nil, errors.New("no default member group found. Please create at least one group first.")
 		}
 		member.GroupID = &defaultGroup.ID
-	}
-
-	if req.StoreID != "" {
-		member.StoreID = &req.StoreID
 	}
 
 	if err := s.db.Create(&member).Error; err != nil {
@@ -511,11 +478,6 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string, store
 		transactionType = "topup"
 	}
 
-	var storeIDPtr *string
-	if storeID != "" {
-		storeIDPtr = &storeID
-	}
-
 	transaction := model.MemberTransaction{
 		MemberID:        member.ID,
 		TransactionType: transactionType,
@@ -526,7 +488,6 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string, store
 		BonusAfter:      bonusAfter,
 		PaymentMethod:   req.PaymentMethod,
 		Description:     req.Description,
-		StoreID:         storeIDPtr,
 		CreatedBy:       &userID,
 	}
 
@@ -604,11 +565,6 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string, sto
 		transactionType = "refund"
 	}
 
-	var storeIDPtr *string
-	if storeID != "" {
-		storeIDPtr = &storeID
-	}
-
 	transaction := model.MemberTransaction{
 		MemberID:        member.ID,
 		TransactionType: transactionType,
@@ -618,7 +574,6 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string, sto
 		BonusBefore:     bonusBefore,
 		BonusAfter:      bonusAfter,
 		Description:     req.Description,
-		StoreID:         storeIDPtr,
 		CreatedBy:       &userID,
 	}
 

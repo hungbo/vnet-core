@@ -9,7 +9,6 @@ type PrinterConfig struct {
 	IPAddress   string     `gorm:"type:varchar(45)" json:"ip_address"`
 	Port        int        `gorm:"default:9100" json:"port"`
 	IsDefault   bool       `gorm:"default:false" json:"is_default"`
-	StoreID     *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	CreatedAt   time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
 	DeletedAt   *time.Time `gorm:"index" json:"deleted_at,omitempty"`
 }

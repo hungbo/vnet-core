@@ -250,7 +250,6 @@ const local: App.I18n.Schema = {
     vnet_transactions: '交易',
     vnet_settings: '设置',
     vnet_audit: '审计日志',
-    vnet_stores: '门店',
     vnet_backups: '备份',
     vnet_management: '管理',
     vnet_business: '业务',
@@ -683,7 +682,8 @@ const local: App.I18n.Schema = {
       title: '机器组',
       name: '名称',
       color: '颜色',
-      colorPlaceholder: '例如: #1890ff',
+      colorPlaceholder: '例如 #1890ff',
+      pricePerHour: '每小时价格',
       sortOrder: '排序',
       description: '描述',
       create: '创建组',
@@ -1144,16 +1144,10 @@ const local: App.I18n.Schema = {
       billing: '计费设置',
       printing: '打印设置',
       invoice: '发票设置',
-      storeName: '门店名称',
       address: '地址',
       phone: '电话',
       email: '邮箱',
       timezone: '时区',
-      pricing: '定价',
-      pricePerHour: '每小时价格 (VND)',
-      pricePerMinute: '每分钟价格 (VND)',
-      minMinutes: '最少分钟数',
-      hourlyDiscount: '按小时折扣',
       limits: '限制',
       maxBookingsPerDay: '每日最大预订数',
       maxBookingsPerMember: '每会员最大预订数',
@@ -1207,34 +1201,10 @@ const local: App.I18n.Schema = {
         promotion: '促销',
         booking: '预订',
         user: '用户',
-        role: '角色',
-        store: '门店'
+        role: '角色'
       },
       messages: {
         loadError: '加载日志失败'
-      }
-    },
-    stores: {
-      title: '门店管理',
-      searchPlaceholder: '搜索...',
-      add: '添加门店',
-      edit: '编辑门店',
-      name: '名称',
-      code: '编码',
-      phone: '电话',
-      address: '地址',
-      isActive: '启用',
-      form: {
-        nameRequired: '请输入名称',
-        codeRequired: '请输入编码'
-      },
-      messages: {
-        addSuccess: '添加成功',
-        editSuccess: '更新成功',
-        deleteConfirm: '确定删除此门店？',
-        deleteSuccess: '删除成功',
-        loadError: '加载数据失败',
-        saveError: '保存失败'
       }
     },
     combos: {

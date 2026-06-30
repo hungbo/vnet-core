@@ -32,8 +32,7 @@ func NewMemberHandler(svc *service.MemberService) *MemberHandler {
 // @Security BearerAuth
 func (h *MemberHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
-	storeID := middleware.GetStoreID(c)
-	result, total, page, pageSize, err := h.svc.List(*params, storeID)
+	result, total, page, pageSize, err := h.svc.List(*params)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch members")
 		return
@@ -76,9 +75,6 @@ func (h *MemberHandler) Create(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
 		return
-	}
-	if req.StoreID == "" {
-		req.StoreID = middleware.GetStoreID(c)
 	}
 	result, err := h.svc.Create(&req)
 	if err != nil {
@@ -177,8 +173,7 @@ func (h *MemberHandler) Topup(c *gin.Context) {
 		return
 	}
 	userID := middleware.GetUserID(c)
-	storeID := middleware.GetStoreID(c)
-	result, err := h.svc.Topup(id, &req, userID, storeID)
+	result, err := h.svc.Topup(id, &req, userID, "")
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -205,8 +200,7 @@ func (h *MemberHandler) Refund(c *gin.Context) {
 		return
 	}
 	userID := middleware.GetUserID(c)
-	storeID := middleware.GetStoreID(c)
-	result, err := h.svc.Refund(id, &req, userID, storeID)
+	result, err := h.svc.Refund(id, &req, userID, "")
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

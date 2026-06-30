@@ -79,9 +79,8 @@ func (h *ShiftHandler) OpenShift(c *gin.Context) {
 	}
 
 	userID := c.GetString(middleware.ContextKeyUserID)
-	storeID := middleware.GetStoreID(c)
 
-	result, err := h.svc.OpenShift(&req, userID, storeID)
+	result, err := h.svc.OpenShift(&req, userID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

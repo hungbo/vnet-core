@@ -281,11 +281,6 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, store
 			Phone:        req.CustomerPhone,
 			IsActive:     true,
 		}
-		if storeID != "" {
-			storeStr := storeID
-			member.StoreID = &storeStr
-		}
-
 		if err := s.db.Create(&member).Error; err != nil {
 			return nil, err
 		}
@@ -326,10 +321,6 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, store
 			ReferenceID:     &purchase.ID,
 			Description:     fmt.Sprintf("Purchase combo: %s", combo.Name),
 			CreatedAt:       time.Now(),
-		}
-		if storeID != "" {
-			storeStr := storeID
-			trans.StoreID = &storeStr
 		}
 		if userID != "" {
 			trans.CreatedBy = &userID
@@ -410,10 +401,6 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest, st
 		RemainingMinutes: remainingMinutes,
 		StartedAt:        now,
 		IsActive:         true,
-	}
-	if storeID != "" {
-		storeStr := storeID
-		session.StoreID = &storeStr
 	}
 
 	if err := s.db.Create(&session).Error; err != nil {

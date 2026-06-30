@@ -12,7 +12,6 @@ import (
 
 const (
 	ContextKeyUserID      = "user_id"
-	ContextKeyStoreID     = "store_id"
 	ContextKeyUsername    = "username"
 	ContextKeyRole        = "role"
 	ContextKeyRoleID      = "role_id"
@@ -36,7 +35,6 @@ func AuthRequired(jwtManager *jwt.Manager) gin.HandlerFunc {
 		}
 
 		c.Set(ContextKeyUserID, claims.UserID)
-		c.Set(ContextKeyStoreID, claims.StoreID)
 		c.Set(ContextKeyUsername, claims.Username)
 		c.Set(ContextKeyRole, claims.Role)
 		c.Set(ContextKeyRoleID, claims.RoleID)
@@ -80,37 +78,8 @@ func PermissionRequired(permission string) gin.HandlerFunc {
 	}
 }
 
-func StoreContext() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		storeID := c.GetHeader("X-Store-ID")
-		if storeID != "" {
-			c.Set("store_id", storeID)
-		}
-
-		if _, exists := c.Get("store_id"); !exists {
-			c.Set("store_id", "")
-		}
-
-		c.Next()
-	}
-}
-
 func GetUserID(c *gin.Context) string {
 	if v, exists := c.Get(ContextKeyUserID); exists {
-		if id, ok := v.(string); ok {
-			return id
-		}
-	}
-	return ""
-}
-
-func GetStoreID(c *gin.Context) string {
-	if v, exists := c.Get(ContextKeyStoreID); exists {
-		if id, ok := v.(string); ok {
-			return id
-		}
-	}
-	if v, exists := c.Get("store_id"); exists {
 		if id, ok := v.(string); ok {
 			return id
 		}

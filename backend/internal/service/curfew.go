@@ -34,7 +34,6 @@ type CurfewResponse struct {
 	CurfewEnd       string  `json:"curfew_end"`
 	MaxMinorHours   int     `json:"max_minor_hours"`
 	IsActive        bool    `json:"is_active"`
-	StoreID         *string `json:"store_id"`
 	OverrideByAdmin *string `json:"override_by_admin"`
 	OverrideReason  string  `json:"override_reason"`
 	OverrideAt      *string `json:"override_at"`
@@ -238,7 +237,6 @@ func curfewToResponse(p model.CurfewPolicy) CurfewResponse {
 		CurfewEnd:       p.CurfewEnd,
 		MaxMinorHours:   p.MaxMinorHours,
 		IsActive:        p.IsActive,
-		StoreID:         p.StoreID,
 		OverrideByAdmin: p.OverrideByAdmin,
 		OverrideReason:  p.OverrideReason,
 		CreatedAt:       p.CreatedAt.Format(time.RFC3339),

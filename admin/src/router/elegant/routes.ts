@@ -801,15 +801,6 @@ export const generatedRoutes = [
         }
       },
       {
-        name: 'vnet_stores',
-        path: '/vnet/stores',
-        component: 'view.vnet_stores',
-        meta: {
-          title: 'vnet_stores',
-          i18nKey: 'route.vnet_stores'
-        }
-      },
-      {
         name: 'vnet_suppliers',
         path: '/vnet/suppliers',
         component: 'view.vnet_suppliers',

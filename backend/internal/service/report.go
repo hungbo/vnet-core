@@ -90,7 +90,6 @@ type TransactionListParams struct {
 	DateTo          string `form:"date_to"`
 	TransactionType string `form:"transaction_type"`
 	Search          string `form:"search"`
-	StoreID         string `form:"store_id"`
 }
 
 type ReportParams struct {
@@ -98,7 +97,6 @@ type ReportParams struct {
 	DateTo   string `form:"date_to"`
 	Year     int    `form:"year"`
 	Month    int    `form:"month"`
-	StoreID  string `form:"store_id"`
 	Limit    int    `form:"limit"`
 }
 
@@ -254,9 +252,6 @@ func (s *ReportService) ByMember(params ReportParams) ([]ByMemberRow, error) {
 			orderQuery = orderQuery.Where("created_at <= ?", t.Add(24*time.Hour))
 		}
 	}
-	if params.StoreID != "" {
-		orderQuery = orderQuery.Where("store_id = ?", params.StoreID)
-	}
 	orderQuery = orderQuery.Group("member_id").Order("total_spent desc")
 	if params.Limit > 0 {
 		orderQuery = orderQuery.Limit(params.Limit)
@@ -334,10 +329,6 @@ func (s *ReportService) ByMachine(params ReportParams) ([]ByMachineRow, error) {
 			query = query.Where("started_at <= ?", t.Add(24*time.Hour))
 		}
 	}
-	if params.StoreID != "" {
-		query = query.Where("store_id = ?", params.StoreID)
-	}
-
 	query = query.Group("machine_id").Order("total_sales desc")
 
 	if params.Limit > 0 {
@@ -375,10 +366,6 @@ func (s *ReportService) ByEmployee(params ReportParams) ([]ByEmployeeRow, error)
 			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
 		}
 	}
-	if params.StoreID != "" {
-		query = query.Where("store_id = ?", params.StoreID)
-	}
-
 	query = query.Group("created_by").Order("total_sales desc")
 
 	if params.Limit > 0 {
@@ -415,10 +402,6 @@ func (s *ReportService) TopProducts(params ReportParams) ([]TopProductRow, error
 			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
 		}
 	}
-	if params.StoreID != "" {
-		query = query.Where("store_id = ?", params.StoreID)
-	}
-
 	query = query.Group("product_id, product_name").Order("total_sales desc")
 
 	if params.Limit > 0 {
@@ -449,10 +432,6 @@ func (s *ReportService) PromotionUsage(params ReportParams) ([]PromotionUsageRow
 			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
 		}
 	}
-	if params.StoreID != "" {
-		query = query.Where("store_id = ?", params.StoreID)
-	}
-
 	query = query.Group("promotion_id").Order("usage_count desc")
 
 	if params.Limit > 0 {
@@ -511,10 +490,6 @@ func (s *ReportService) ListTransactions(params *TransactionListParams) ([]Trans
 		search := "%" + params.Search + "%"
 		query = query.Where("members.full_name ILIKE ? OR members.phone ILIKE ? OR members.username ILIKE ?", search, search, search)
 	}
-	if params.StoreID != "" {
-		query = query.Where("member_transactions.store_id = ?", params.StoreID)
-	}
-
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err

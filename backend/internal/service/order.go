@@ -47,7 +47,6 @@ type CreateTopupOrderRequest struct {
 	MemberID    string `json:"member_id"`
 	Amount      int64  `json:"amount"`
 	MachineCode string `json:"machine_code"`
-	StoreID     string `json:"store_id"`
 }
 
 type OrderItemRequest struct {
@@ -83,7 +82,6 @@ type OrderResponse struct {
 	OrderType      string              `json:"order_type,omitempty"`
 	MemberID       *string             `json:"member_id"`
 	MachineID      *string             `json:"machine_id"`
-	StoreID        *string             `json:"store_id"`
 	TableNumber    string              `json:"table_number"`
 	TotalAmount    int64               `json:"total_amount"`
 	DiscountAmount int64               `json:"discount_amount"`
@@ -127,8 +125,8 @@ type PaymentResponse struct {
 	CreatedAt     time.Time  `json:"created_at"`
 }
 
-func (s *OrderService) List(params pagination.Params, storeID string) ([]OrderResponse, int64, int, int, error) {
-	query := s.db.Model(&model.Order{}).Where("store_id = ? AND deleted_at IS NULL", storeID)
+func (s *OrderService) List(params pagination.Params) ([]OrderResponse, int64, int, int, error) {
+	query := s.db.Model(&model.Order{}).Where("deleted_at IS NULL")
 
 	if params.OrderType != "" {
 		query = query.Where("order_type = ?", params.OrderType)
@@ -239,9 +237,6 @@ func (s *OrderService) CreateTopupOrder(req CreateTopupOrderRequest, createdBy, 
 	}
 	if req.MemberID != "" {
 		order.MemberID = &req.MemberID
-	}
-	if storeID != "" {
-		order.StoreID = &storeID
 	}
 	if req.MachineCode != "" {
 		var machine model.Machine
@@ -403,10 +398,6 @@ func (s *OrderService) Create(req CreateOrderRequest, createdBy string, storeID 
 	if req.MachineID != "" {
 		order.MachineID = &req.MachineID
 	}
-	if storeID != "" {
-		order.StoreID = &storeID
-	}
-
 	tx := s.db.Begin()
 
 	if err := tx.Create(&order).Error; err != nil {
@@ -416,7 +407,6 @@ func (s *OrderService) Create(req CreateOrderRequest, createdBy string, storeID 
 
 	for i := range orderItems {
 		orderItems[i].OrderID = order.ID
-		orderItems[i].StoreID = order.StoreID
 		if err := tx.Create(&orderItems[i]).Error; err != nil {
 			tx.Rollback()
 			return nil, err
@@ -594,7 +584,6 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 				BalanceAfter:    balanceAfter,
 				PaymentMethod:   order.PaymentMethod,
 				Description:     "Nạp tiền qua đơn hàng " + order.OrderCode,
-				StoreID:         order.StoreID,
 				CreatedBy:       &updatedBy,
 			}
 			if err := tx.Create(&transaction).Error; err != nil {
@@ -676,7 +665,6 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 				BalanceAfter:    balanceAfter,
 				PaymentMethod:   order.PaymentMethod,
 				Description:     "Nạp tiền qua đơn hàng " + order.OrderCode,
-				StoreID:         order.StoreID,
 				CreatedBy:       &updatedBy,
 			}
 			if err := tx.Create(&transaction).Error; err != nil {
@@ -973,7 +961,6 @@ func (s *OrderService) Split(id string, req SplitOrderRequest) (*OrderResponse, 
 		Status:      "pending",
 		MemberID:    originalOrder.MemberID,
 		MachineID:   originalOrder.MachineID,
-		StoreID:     originalOrder.StoreID,
 		TableNumber: originalOrder.TableNumber,
 		TotalAmount: splitTotal,
 		FinalAmount: splitTotal,
@@ -988,7 +975,6 @@ func (s *OrderService) Split(id string, req SplitOrderRequest) (*OrderResponse, 
 
 	for i := range newOrderItems {
 		newOrderItems[i].OrderID = newOrder.ID
-		newOrderItems[i].StoreID = newOrder.StoreID
 		if err := tx.Create(&newOrderItems[i]).Error; err != nil {
 			tx.Rollback()
 			return nil, err
@@ -1228,7 +1214,6 @@ func toOrderResponse(o *model.Order, items []model.OrderItem) OrderResponse {
 		OrderType:      o.OrderType,
 		MemberID:       o.MemberID,
 		MachineID:      o.MachineID,
-		StoreID:        o.StoreID,
 		TableNumber:    o.TableNumber,
 		TotalAmount:    o.TotalAmount,
 		DiscountAmount: o.DiscountAmount,

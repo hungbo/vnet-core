@@ -2,7 +2,6 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
-	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/pagination"
@@ -35,8 +34,7 @@ func NewMachineHandler(svc *service.MachineService) *MachineHandler {
 // @Router       /api/machines [get]
 func (h *MachineHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
-	storeID := middleware.GetStoreID(c)
-	result, err := h.svc.List(*params, storeID)
+	result, err := h.svc.List(*params)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch machines")
 		return
@@ -82,8 +80,7 @@ func (h *MachineHandler) Create(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
-	storeID := middleware.GetStoreID(c)
-	result, err := h.svc.Create(&req, storeID)
+	result, err := h.svc.Create(&req)
 	if err != nil {
 		handleCreateError(c, err)
 		return
@@ -160,6 +157,25 @@ func (h *MachineHandler) Heartbeat(c *gin.Context) {
 		return
 	}
 	if err := h.svc.Heartbeat(id, req.CPUTemp, req.GPUTemp, req.IP, req.MAC); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+func (h *MachineHandler) HeartbeatByCode(c *gin.Context) {
+	code := c.Param("code")
+	var req service.HeartbeatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	machine, err := h.svc.GetByCode(code)
+	if err != nil {
+		response.NotFound(c, "Machine not found")
+		return
+	}
+	if err := h.svc.Heartbeat(machine.ID, req.CPUTemp, req.GPUTemp, req.IP, req.MAC); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
@@ -249,8 +265,7 @@ func (h *MachineHandler) RemoteAction(c *gin.Context) {
 // @Failure      500   {object}  response.Response
 // @Router       /api/machine-groups [get]
 func (h *MachineHandler) ListGroups(c *gin.Context) {
-	storeID := middleware.GetStoreID(c)
-	groups, err := h.svc.ListGroups(storeID)
+	groups, err := h.svc.ListGroups()
 	if err != nil {
 		response.InternalError(c, "Failed to fetch machine groups")
 		return
@@ -275,8 +290,7 @@ func (h *MachineHandler) CreateGroup(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
-	storeID := middleware.GetStoreID(c)
-	result, err := h.svc.CreateGroup(&req, storeID)
+	result, err := h.svc.CreateGroup(&req)
 	if err != nil {
 		handleCreateError(c, err)
 		return
@@ -327,101 +341,6 @@ func (h *MachineHandler) UpdateGroup(c *gin.Context) {
 func (h *MachineHandler) DeleteGroup(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.DeleteGroup(id); err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-	response.Success(c, nil)
-}
-
-// ListPrices
-// @Summary      List Machine Prices
-// @Description  Get machine prices, optionally filtered by machine group
-// @Tags         MachinePrices
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        machine_group_id  query  string  false  "Filter by machine group ID"
-// @Success      200               {object}  response.Response{data=[]model.MachinePrice}
-// @Failure      500               {object}  response.Response
-// @Router       /api/machine-prices [get]
-func (h *MachineHandler) ListPrices(c *gin.Context) {
-	machineGroupID := c.Query("machine_group_id")
-	prices, err := h.svc.ListPrices(machineGroupID)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch machine prices")
-		return
-	}
-	response.Success(c, prices)
-}
-
-// CreatePrice
-// @Summary      Create Machine Price
-// @Description  Create a new machine price entry
-// @Tags         MachinePrices
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        body  body  service.CreateMachinePriceRequest  true  "Machine price data"
-// @Success      201   {object}  response.Response{data=model.MachinePrice}
-// @Failure      400   {object}  response.Response
-// @Router       /api/machine-prices [post]
-func (h *MachineHandler) CreatePrice(c *gin.Context) {
-	var req service.CreateMachinePriceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		handleValidationError(c, err)
-		return
-	}
-	result, err := h.svc.CreatePrice(&req)
-	if err != nil {
-		handleCreateError(c, err)
-		return
-	}
-	response.Created(c, result)
-}
-
-// UpdatePrice
-// @Summary      Update Machine Price
-// @Description  Update an existing machine price
-// @Tags         MachinePrices
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id    path  string                        true  "Machine Price ID"
-// @Param        body  body  service.UpdateMachinePriceRequest  true  "Machine price update data"
-// @Success      200   {object}  response.Response{data=model.MachinePrice}
-// @Failure      400   {object}  response.Response
-// @Failure      404   {object}  response.Response
-// @Router       /api/machine-prices/{id} [put]
-func (h *MachineHandler) UpdatePrice(c *gin.Context) {
-	id := c.Param("id")
-	var req service.UpdateMachinePriceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		handleValidationError(c, err)
-		return
-	}
-	result, err := h.svc.UpdatePrice(id, &req)
-	if err != nil {
-		handleCreateError(c, err)
-		return
-	}
-	response.Success(c, result)
-}
-
-// DeletePrice
-// @Summary      Delete Machine Price
-// @Description  Delete a machine price by its ID
-// @Tags         MachinePrices
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        id    path  string  true  "Machine Price ID"
-// @Success      200   {object}  response.Response
-// @Failure      400   {object}  response.Response
-// @Failure      404   {object}  response.Response
-// @Router       /api/machine-prices/{id} [delete]
-func (h *MachineHandler) DeletePrice(c *gin.Context) {
-	id := c.Param("id")
-	if err := h.svc.DeletePrice(id); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}

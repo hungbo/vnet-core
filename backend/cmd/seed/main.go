@@ -29,14 +29,14 @@ func main() {
 
 func runMigrations(db *gorm.DB) error {
 	return db.AutoMigrate(
-		&model.Store{}, &model.User{}, &model.Role{}, &model.Permission{},
+		&model.User{}, &model.Role{}, &model.Permission{},
 		&model.UserRole{}, &model.RolePermission{}, &model.Member{}, &model.MemberGroup{},
 		&model.Machine{}, &model.MachineGroup{}, &model.Category{}, &model.Product{},
 		&model.Order{}, &model.OrderItem{}, &model.Payment{},
 		&model.MachineSession{}, &model.Combo{}, &model.ComboPurchase{},
 		&model.MachineBooking{}, &model.Promotion{}, &model.PromotionCondition{}, &model.PromotionReward{},
 		&model.SystemSetting{}, &model.AuditLog{},
-		&model.MachinePrice{}, &model.TimeBasedPricing{}, &model.MachineAsset{}, &model.MachineHardwareSnapshot{},
+		&model.MachineAsset{}, &model.MachineHardwareSnapshot{},
 		&model.ComboItem{}, &model.Shift{}, &model.CashHandover{},
 		&model.ProductOptionGroup{}, &model.ProductOption{}, &model.ProductIngredient{},
 		&model.PrinterConfig{}, &model.ProductPrinterMapping{},
@@ -53,11 +53,6 @@ func runMigrations(db *gorm.DB) error {
 }
 
 func seed(db *gorm.DB) error {
-	store := model.Store{Name: "Main Store", Code: "MAIN", Address: "Default", IsActive: true}
-	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Where("code = ?", "MAIN").FirstOrCreate(&store).Error; err != nil {
-		return err
-	}
-
 	hash, _ := utils.HashPassword("admin123")
 
 	adminRole := model.Role{}
@@ -104,7 +99,6 @@ func seed(db *gorm.DB) error {
 		Username:     "admin",
 		PasswordHash: hash,
 		FullName:     "Admin",
-		StoreID:      &store.ID,
 		IsActive:     true,
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Where("username = ?", "admin").FirstOrCreate(&admin).Error; err != nil {
@@ -115,7 +109,6 @@ func seed(db *gorm.DB) error {
 		Username:     "manager",
 		PasswordHash: hash,
 		FullName:     "Manager",
-		StoreID:      &store.ID,
 		IsActive:     true,
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Where("username = ?", "manager").FirstOrCreate(&manager).Error; err != nil {
@@ -126,7 +119,6 @@ func seed(db *gorm.DB) error {
 		Username:     "staff",
 		PasswordHash: hash,
 		FullName:     "Staff",
-		StoreID:      &store.ID,
 		IsActive:     true,
 	}
 	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Where("username = ?", "staff").FirstOrCreate(&staff).Error; err != nil {
@@ -148,10 +140,6 @@ func seed(db *gorm.DB) error {
 	db.Model(&staffRole).Association("Permissions").Replace(&memberPerms)
 
 	settings := []model.SystemSetting{
-		{GroupName: "billing", Key: "rounding_mode", Value: `{"mode": "round_up", "interval_minutes": 60}`, Description: "Cách làm tròn giờ chơi"},
-		{GroupName: "billing", Key: "grace_period_minutes", Value: `{"value": 10}`, Description: "Số phút ân hạn"},
-		{GroupName: "billing", Key: "min_billing_unit", Value: `{"minutes": 30}`, Description: "Đơn vị tính tiền tối thiểu"},
-		{GroupName: "billing", Key: "no_show_cancel_minutes", Value: `{"value": 30}`, Description: "Tự động hủy booking"},
 		{GroupName: "topup", Key: "presets", Value: `{"values": [5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000]}`, Description: "Mệnh giá nạp tiền"},
 	}
 	for _, s := range settings {
@@ -165,6 +153,14 @@ func seed(db *gorm.DB) error {
 	}
 	for _, g := range groups {
 		db.Clauses(clause.OnConflict{DoNothing: true}).Where("name = ?", g.Name).FirstOrCreate(&g)
+	}
+
+	machineGroups := []model.MachineGroup{
+		{Name: "VIP", Color: "#FFD700", PricePerHour: 15000, SortOrder: 1},
+		{Name: "Thường", Color: "#909399", PricePerHour: 5000, SortOrder: 2},
+	}
+	for _, mg := range machineGroups {
+		db.Clauses(clause.OnConflict{DoNothing: true}).Where("name = ?", mg.Name).FirstOrCreate(&mg)
 	}
 
 	fmt.Println("Seed data completed!")

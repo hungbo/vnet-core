@@ -4,7 +4,6 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/response"
 )
@@ -68,7 +67,6 @@ func (h *ReportHandler) MonthlyRevenue(c *gin.Context) {
 // @Produce json
 // @Param date_from query string false "Start date"
 // @Param date_to query string false "End date"
-// @Param store_id query string false "Store ID"
 // @Param limit query int false "Limit"
 // @Success 200 {object} response.Response{data=[]service.ByMemberRow}
 // @Failure 500 {object} response.Response
@@ -91,7 +89,6 @@ func (h *ReportHandler) ByMember(c *gin.Context) {
 // @Produce json
 // @Param date_from query string false "Start date"
 // @Param date_to query string false "End date"
-// @Param store_id query string false "Store ID"
 // @Param limit query int false "Limit"
 // @Success 200 {object} response.Response{data=[]service.ByMachineRow}
 // @Failure 500 {object} response.Response
@@ -114,7 +111,6 @@ func (h *ReportHandler) ByMachine(c *gin.Context) {
 // @Produce json
 // @Param date_from query string false "Start date"
 // @Param date_to query string false "End date"
-// @Param store_id query string false "Store ID"
 // @Param limit query int false "Limit"
 // @Success 200 {object} response.Response{data=[]service.ByEmployeeRow}
 // @Failure 500 {object} response.Response
@@ -137,7 +133,6 @@ func (h *ReportHandler) ByEmployee(c *gin.Context) {
 // @Produce json
 // @Param date_from query string false "Start date"
 // @Param date_to query string false "End date"
-// @Param store_id query string false "Store ID"
 // @Param limit query int false "Limit"
 // @Success 200 {object} response.Response{data=[]service.TopProductRow}
 // @Failure 500 {object} response.Response
@@ -160,7 +155,6 @@ func (h *ReportHandler) TopProducts(c *gin.Context) {
 // @Produce json
 // @Param date_from query string false "Start date"
 // @Param date_to query string false "End date"
-// @Param store_id query string false "Store ID"
 // @Param limit query int false "Limit"
 // @Success 200 {object} response.Response{data=[]service.PromotionUsageRow}
 // @Failure 500 {object} response.Response
@@ -186,7 +180,6 @@ func parseReportParams(c *gin.Context) service.ReportParams {
 		DateTo:   c.Query("date_to"),
 		Year:     parseIntSafe(c.Query("year")),
 		Month:    parseIntSafe(c.Query("month")),
-		StoreID:  c.Query("store_id"),
 		Limit:    limit,
 	}
 }
@@ -217,7 +210,6 @@ func (h *ReportHandler) ListTransactions(c *gin.Context) {
 		DateTo:          c.Query("date_to"),
 		TransactionType: c.Query("transaction_type"),
 		Search:          c.Query("search"),
-		StoreID:         middleware.GetStoreID(c),
 	}
 
 	results, total, err := h.svc.ListTransactions(params)

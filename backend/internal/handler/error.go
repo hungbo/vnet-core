@@ -40,7 +40,6 @@ var validationFieldLabels = map[string]string{
 	"CategoryID":        "Danh mục",
 	"ProductID":         "Sản phẩm",
 	"ParentID":          "Danh mục cha",
-	"StoreID":           "Cửa hàng",
 	"OrderID":           "Đơn hàng",
 	"PrinterID":         "Máy in",
 	"ComboID":           "Combo",

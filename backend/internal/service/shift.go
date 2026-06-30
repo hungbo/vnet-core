@@ -21,7 +21,6 @@ func NewShiftService(db *gorm.DB, audit *AuditService) *ShiftService {
 type ShiftResponse struct {
 	ID             string  `json:"id"`
 	UserID         string  `json:"user_id"`
-	StoreID        *string `json:"store_id"`
 	StartedAt      string  `json:"started_at"`
 	EndedAt        *string `json:"ended_at"`
 	Status         string  `json:"status"`
@@ -97,21 +96,16 @@ func (s *ShiftService) GetByID(id string) (*ShiftResponse, error) {
 	return &result, nil
 }
 
-func (s *ShiftService) OpenShift(req *OpenShiftRequest, userID string, storeID string) (*ShiftResponse, error) {
+func (s *ShiftService) OpenShift(req *OpenShiftRequest, userID string) (*ShiftResponse, error) {
 	var activeShift model.Shift
 	if err := s.db.Where("user_id = ? AND status = ?", userID, "open").First(&activeShift).Error; err == nil {
 		return nil, errors.New("user already has an open shift")
 	}
 
 	now := time.Now()
-	var storeIDStr *string
-	if storeID != "" {
-		storeIDStr = &storeID
-	}
 
 	shift := model.Shift{
 		UserID:         userID,
-		StoreID:        storeIDStr,
 		StartedAt:      now,
 		Status:         "open",
 		OpeningBalance: req.OpeningBalance,
@@ -150,8 +144,8 @@ func (s *ShiftService) CloseShift(id string, req *CloseShiftRequest) (*ShiftResp
 
 	var expectedTotal int64
 	s.db.Model(&model.Order{}).
-		Where("store_id = ? AND status = ? AND created_at >= ? AND created_at <= ?",
-			shift.StoreID, "paid", shift.StartedAt, time.Now()).
+		Where("status = ? AND created_at >= ? AND created_at <= ?",
+			"paid", shift.StartedAt, time.Now()).
 		Select("COALESCE(SUM(final_amount), 0)").
 		Scan(&expectedTotal)
 
@@ -238,7 +232,6 @@ func shiftToResponse(s model.Shift) ShiftResponse {
 	return ShiftResponse{
 		ID:             s.ID,
 		UserID:         s.UserID,
-		StoreID:        s.StoreID,
 		StartedAt:      s.StartedAt.Format("2006-01-02T15:04:05Z07:00"),
 		EndedAt:        endedAt,
 		Status:         s.Status,

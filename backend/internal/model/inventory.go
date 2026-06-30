@@ -35,7 +35,6 @@ type StockTransaction struct {
 	SupplierID      *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"supplier_id"`
 	WarehouseID     *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"warehouse_id"`
 	Description     string    `gorm:"type:text" json:"description"`
-	StoreID         *string   `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	CreatedBy       *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"created_by"`
 	CreatedAt       time.Time `gorm:"default:now();index" json:"created_at,omitempty"`
 }

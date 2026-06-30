@@ -70,18 +70,16 @@ func TestAuthRequired_ValidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	jwtManager := jwt.New("test-secret", 1*time.Hour, 7*24*time.Hour, "test")
-	token, _ := jwtManager.GenerateAccessToken("u1", "s1", "admin", "admin", "r1", []string{"*"})
+	token, _ := jwtManager.GenerateAccessToken("u1", "admin", "admin", "r1", []string{"*"})
 
 	router := gin.New()
 	router.Use(AuthRequired(jwtManager))
 	router.GET("/test", func(c *gin.Context) {
 		userID, _ := c.Get("user_id")
-		storeID, _ := c.Get("store_id")
 		username, _ := c.Get("username")
 		role, _ := c.Get("role")
 		c.JSON(http.StatusOK, gin.H{
 			"user_id":  userID,
-			"store_id": storeID,
 			"username": username,
 			"role":     role,
 		})
@@ -98,10 +96,8 @@ func TestAuthRequired_ValidToken(t *testing.T) {
 	if !ok {
 		// If it's a plain JSON response (not wrapped)
 		assert.Equal(t, "u1", resp["user_id"])
-		assert.Equal(t, "s1", resp["store_id"])
 	} else {
 		assert.Equal(t, "u1", data["user_id"])
-		assert.Equal(t, "s1", data["store_id"])
 		assert.Equal(t, "admin", data["username"])
 		assert.Equal(t, "admin", data["role"])
 	}
@@ -207,38 +203,4 @@ func TestPermissionRequired_NoPermissionsData(t *testing.T) {
 	assert.Equal(t, 403, resp.Code)
 }
 
-func TestStoreContext_SetsHeader(t *testing.T) {
-	gin.SetMode(gin.TestMode)
 
-	router := gin.New()
-	router.Use(StoreContext())
-	router.GET("/test", func(c *gin.Context) {
-		storeID, _ := c.Get("store_id")
-		c.JSON(http.StatusOK, gin.H{"store_id": storeID})
-	})
-
-	w := performRequest(router.ServeHTTP, "GET", "/test", map[string]string{
-		"X-Store-ID": "store-123",
-	})
-
-	var resp map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.Equal(t, "store-123", resp["store_id"])
-}
-
-func TestStoreContext_DefaultsToEmpty(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	router := gin.New()
-	router.Use(StoreContext())
-	router.GET("/test", func(c *gin.Context) {
-		storeID, _ := c.Get("store_id")
-		c.JSON(http.StatusOK, gin.H{"store_id": storeID})
-	})
-
-	w := performRequest(router.ServeHTTP, "GET", "/test", nil)
-
-	var resp map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	assert.Equal(t, "", resp["store_id"])
-}

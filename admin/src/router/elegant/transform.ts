@@ -253,7 +253,6 @@ const routeMap: RouteMap = {
   "vnet_settings": "/vnet/settings",
   "vnet_shifts": "/vnet/shifts",
   "vnet_stock-transactions": "/vnet/stock-transactions",
-  "vnet_stores": "/vnet/stores",
   "vnet_suppliers": "/vnet/suppliers",
   "vnet_transactions": "/vnet/transactions",
   "vnet_warehouses": "/vnet/warehouses"

@@ -59,25 +59,23 @@ type SessionDetail struct {
 	DurationMinutes  *int       `json:"duration_minutes"`
 	TotalCost        *int64     `json:"total_cost"`
 	IsOvernight      bool       `json:"is_overnight"`
-	StoreID          *string    `json:"store_id"`
 	IsActive         bool       `json:"is_active"`
 	CreatedAt        time.Time  `json:"created_at"`
-}
 
-type CostItem struct {
-	Label  string `json:"label"`
-	Amount int64  `json:"amount"`
+	// Snapshot fields (populated when session ends)
+	MachineGroupID   *string `json:"machine_group_id,omitempty"`
+	MemberGroupID    *string `json:"member_group_id,omitempty"`
+	MachineGroupName string  `json:"machine_group_name,omitempty"`
+	PricePerHour     int64   `json:"price_per_hour,omitempty"`
+	BilledMinutes    int     `json:"billed_minutes,omitempty"`
 }
 
 type CostBreakdown struct {
-	MachineGroupName    string     `json:"machine_group_name"`
-	BasePricePerHour    int64      `json:"base_price_per_hour"`
-	DurationMinutes     int        `json:"duration_minutes"`
-	BilledMinutes       int        `json:"billed_minutes"`
-	GraceMinutes        int        `json:"grace_minutes"`
-	TierDiscountPercent float64    `json:"tier_discount_percent"`
-	FinalCost           int64      `json:"final_cost"`
-	BreakdownItems      []CostItem `json:"breakdown_items"`
+	MachineGroupName string `json:"machine_group_name"`
+	PricePerHour     int64  `json:"price_per_hour"`
+	DurationMinutes  int    `json:"duration_minutes"`
+	BilledMinutes    int    `json:"billed_minutes"`
+	FinalCost        int64  `json:"final_cost"`
 }
 
 func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error) {
@@ -108,7 +106,6 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 		MemberID:  &member.ID,
 		StartedAt: utils.VietnamTime(),
 		IsActive:  true,
-		StoreID:   machine.StoreID,
 	}
 
 	if req.ComboPurchaseID != "" {
@@ -227,6 +224,20 @@ func (s *SessionService) EndSession(id string) (*EndSessionResponse, error) {
 	session.DurationMinutes = &durationMinutes
 	session.TotalCost = &costBreakdown.FinalCost
 	session.IsActive = false
+
+	// Snapshot pricing data at end time for audit
+	session.MachineCode = machine.MachineCode
+	session.MachineGroupID = machine.GroupID
+	session.MachineGroupName = costBreakdown.MachineGroupName
+	session.PricePerHour = costBreakdown.PricePerHour
+	session.BilledMinutes = costBreakdown.BilledMinutes
+	if memberID != "" {
+		var member model.Member
+		if err := tx.Where("id = ?", memberID).First(&member).Error; err == nil {
+			session.MemberGroupID = member.GroupID
+		}
+	}
+
 	if err := tx.Save(&session).Error; err != nil {
 		tx.Rollback()
 		return nil, err
@@ -264,7 +275,6 @@ func (s *SessionService) EndSession(id string) (*EndSessionResponse, error) {
 			BalanceAfter:    balanceAfter,
 			ReferenceID:     &session.ID,
 			Description:     "Session fee for " + machine.MachineCode,
-			StoreID:         machine.StoreID,
 		}
 		if err := tx.Create(&transaction).Error; err != nil {
 			tx.Rollback()
@@ -400,13 +410,9 @@ func (s *SessionService) SwitchMachine(sessionID, newMachineID string) (*Session
 	return newSession, nil
 }
 
-func (s *SessionService) GetActiveSessions(storeID string) ([]SessionDetail, error) {
+func (s *SessionService) GetActiveSessions() ([]SessionDetail, error) {
 	var sessions []model.MachineSession
-	query := s.db.Where("is_active = ?", true)
-	if storeID != "" {
-		query = query.Where("store_id = ?", storeID)
-	}
-	if err := query.Find(&sessions).Error; err != nil {
+	if err := s.db.Where("is_active = ?", true).Find(&sessions).Error; err != nil {
 		return nil, err
 	}
 
@@ -477,137 +483,28 @@ func (s *SessionService) CalculateCost(machineID string, memberID string, durati
 		return nil, errors.New("machine not found")
 	}
 
-	var groupName string
+	pricePerHour := int64(0)
+	groupName := ""
 	if machine.GroupID != nil {
 		var group model.MachineGroup
 		if err := s.db.Where("id = ?", *machine.GroupID).First(&group).Error; err == nil {
 			groupName = group.Name
+			pricePerHour = group.PricePerHour
 		}
-	}
-
-	var discountPercent float64
-	var memberGroupID string
-	if memberID != "" {
-		var member model.Member
-		if err := s.db.Where("id = ?", memberID).First(&member).Error; err == nil && member.GroupID != nil {
-			memberGroupID = *member.GroupID
-			var group model.MemberGroup
-			if err := s.db.Where("id = ?", *member.GroupID).First(&group).Error; err == nil {
-				discountPercent = group.DiscountPercent
-			}
-		}
-	}
-
-	var basePrice int64
-	var machinePrice model.MachinePrice
-	priceQuery := s.db.Where("(machine_group_id = ? OR machine_group_id IS NULL)", machine.GroupID)
-	if memberGroupID != "" {
-		priceQuery = priceQuery.Where("(member_group_id = ? OR member_group_id IS NULL)", memberGroupID)
-	} else {
-		priceQuery = priceQuery.Where("member_group_id IS NULL")
-	}
-	priceQuery = priceQuery.Where("effective_from <= CURRENT_DATE").
-		Where("(effective_to IS NULL OR effective_to >= CURRENT_DATE)").
-		Order("member_group_id NULLS LAST, effective_from DESC")
-	if err := priceQuery.First(&machinePrice).Error; err == nil {
-		basePrice = machinePrice.PricePerHour
-	}
-
-	var timeBasedPrice int64
-	if machine.GroupID != nil {
-		now := utils.VietnamTime()
-		currentDay := int(now.Weekday())
-		currentTime := now.Format("15:04")
-		var timeBased model.TimeBasedPricing
-		if err := s.db.Where("machine_group_id = ? AND day_of_week = ? AND start_time <= ? AND end_time > ? AND is_active = ?",
-			*machine.GroupID, currentDay, currentTime, currentTime, true).
-			First(&timeBased).Error; err == nil {
-			timeBasedPrice = timeBased.PricePerHour
-		}
-	}
-
-	effectivePrice := basePrice
-	if timeBasedPrice > 0 {
-		effectivePrice = timeBasedPrice
-	}
-
-	graceMinutes := 0
-	var graceSetting model.SystemSetting
-	if err := s.db.Where("group_name = ? AND key = ?", "session", "grace_period_minutes").First(&graceSetting).Error; err == nil {
-		graceMinutes = parseIntFromJSON(graceSetting.Value)
-	}
-
-	roundingMode := "none"
-	var roundSetting model.SystemSetting
-	if err := s.db.Where("group_name = ? AND key = ?", "session", "rounding_mode").First(&roundSetting).Error; err == nil {
-		roundingMode = strings.Trim(roundSetting.Value, "\"")
 	}
 
 	billedMinutes := durationMinutes
-	if durationMinutes <= graceMinutes {
-		billedMinutes = 0
-	} else if graceMinutes > 0 {
-		billedMinutes = durationMinutes - graceMinutes
-	}
-
-	switch roundingMode {
-	case "up_15":
-		if billedMinutes > 0 {
-			billedMinutes = int(math.Ceil(float64(billedMinutes)/15) * 15)
-		}
-	case "up_30":
-		if billedMinutes > 0 {
-			billedMinutes = int(math.Ceil(float64(billedMinutes)/30) * 30)
-		}
-	case "up_60":
-		if billedMinutes > 0 {
-			billedMinutes = int(math.Ceil(float64(billedMinutes)/60) * 60)
-		}
-	case "nearest_15":
-		if billedMinutes > 0 {
-			billedMinutes = int(math.Round(float64(billedMinutes)/15) * 15)
-		}
-	case "nearest_30":
-		if billedMinutes > 0 {
-			billedMinutes = int(math.Round(float64(billedMinutes)/30) * 30)
-		}
-	case "nearest_60":
-		if billedMinutes > 0 {
-			billedMinutes = int(math.Round(float64(billedMinutes)/60) * 60)
-		}
-	}
-
 	cost := int64(0)
 	if billedMinutes > 0 {
-		cost = int64(math.Ceil(float64(billedMinutes) * float64(effectivePrice) / 60.0))
-	}
-
-	discountAmount := int64(0)
-	if discountPercent > 0 {
-		discountAmount = int64(math.Ceil(float64(cost) * discountPercent / 100.0))
-	}
-
-	finalCost := cost - discountAmount
-
-	items := []CostItem{
-		{Label: "Base price", Amount: cost},
-	}
-	if graceMinutes > 0 && billedMinutes < durationMinutes {
-		items = append(items, CostItem{Label: "Grace period", Amount: 0})
-	}
-	if discountAmount > 0 {
-		items = append(items, CostItem{Label: "Tier discount", Amount: -discountAmount})
+		cost = int64(math.Ceil(float64(billedMinutes) * float64(pricePerHour) / 60.0))
 	}
 
 	return &CostBreakdown{
-		MachineGroupName:    groupName,
-		BasePricePerHour:    effectivePrice,
-		DurationMinutes:     durationMinutes,
-		BilledMinutes:       billedMinutes,
-		GraceMinutes:        graceMinutes,
-		TierDiscountPercent: discountPercent,
-		FinalCost:           finalCost,
-		BreakdownItems:      items,
+		MachineGroupName: groupName,
+		PricePerHour:     pricePerHour,
+		DurationMinutes:  durationMinutes,
+		BilledMinutes:    billedMinutes,
+		FinalCost:        cost,
 	}, nil
 }
 
@@ -627,22 +524,15 @@ func toSessionDetail(s *model.MachineSession, machineCode string, memberName str
 		DurationMinutes:  s.DurationMinutes,
 		TotalCost:        s.TotalCost,
 		IsOvernight:      s.IsOvernight,
-		StoreID:          s.StoreID,
 		IsActive:         s.IsActive,
 		CreatedAt:        s.CreatedAt,
+
+		MachineGroupID:   s.MachineGroupID,
+		MemberGroupID:    s.MemberGroupID,
+		MachineGroupName: s.MachineGroupName,
+		PricePerHour:     s.PricePerHour,
+		BilledMinutes:    s.BilledMinutes,
 	}
 }
 
-func parseIntFromJSON(val string) int {
-	val = strings.TrimSpace(val)
-	val = strings.Trim(val, "\"")
-	n := 0
-	for _, c := range val {
-		if c >= '0' && c <= '9' {
-			n = n*10 + int(c-'0')
-		} else {
-			break
-		}
-	}
-	return n
-}
+

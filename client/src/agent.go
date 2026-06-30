@@ -63,7 +63,7 @@ func runHeartbeat(ctx context.Context, cfg *Config) {
 				Timestamp:   time.Now().UTC().Format(time.RFC3339),
 			}
 			data, _ := json.Marshal(payload)
-			url := fmt.Sprintf("%s/api/machines/%s/heartbeat", cfg.ServerURL, cfg.MachineCode)
+			url := fmt.Sprintf("%s/api/machines/by-code/%s/heartbeat", cfg.ServerURL, cfg.MachineCode)
 			resp, err := httpClient.Post(url, "application/json", bytes.NewReader(data))
 			if err != nil {
 				log.Printf("heartbeat: %v", err)
@@ -94,7 +94,7 @@ func runMonitor(ctx context.Context, cfg *Config) {
 				Timestamp:   time.Now().UTC().Format(time.RFC3339),
 			}
 			data, _ := json.Marshal(payload)
-			url := fmt.Sprintf("%s/api/machines/%s/snapshots", cfg.ServerURL, cfg.MachineCode)
+			url := fmt.Sprintf("%s/api/machines/by-code/%s/snapshots", cfg.ServerURL, cfg.MachineCode)
 			resp, err := httpClient.Post(url, "application/json", bytes.NewReader(data))
 			if err != nil {
 				log.Printf("monitor: %v", err)

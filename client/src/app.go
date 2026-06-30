@@ -11,13 +11,12 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 type LoginRequest struct {
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	MachineID string `json:"machine_id,omitempty"`
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	MachineCode string `json:"machine_code,omitempty"`
 }
 
 type LoginResponse struct {
@@ -33,23 +32,6 @@ type UserInfo struct {
 	FullName string `json:"full_name"`
 	Role     string `json:"role"`
 	StoreID  string `json:"store_id"`
-}
-
-type SessionInfo struct {
-	ID               string     `json:"id"`
-	MachineID        string     `json:"machine_id"`
-	MachineCode      string     `json:"machine_code"`
-	MemberID         string     `json:"member_id"`
-	Status           string     `json:"status"`
-	StartedAt        time.Time  `json:"started_at"`
-	EndedAt          *time.Time `json:"ended_at"`
-	DurationMinutes  *int       `json:"duration_minutes"`
-	RemainingMinutes *int       `json:"remaining_minutes"`
-	ComboType        string     `json:"combo_type"`
-	SlotEnd          *time.Time `json:"slot_end"`
-	TotalCost        *int64     `json:"total_cost"`
-	IsActive         bool       `json:"is_active"`
-	ComboName        string     `json:"combo_name"`
 }
 
 type OrderItemRequest struct {
@@ -216,9 +198,9 @@ func (a *App) connectWS() {
 
 func (a *App) Login(username, password string) (string, error) {
 	req := LoginRequest{
-		Username:  username,
-		Password:  password,
-		MachineID: a.machineCode,
+		Username:    username,
+		Password:    password,
+		MachineCode: a.machineCode,
 	}
 
 	data, err := a.doRequest("POST", "/api/auth/member-login", req)
@@ -249,9 +231,9 @@ func (a *App) Login(username, password string) (string, error) {
 
 func (a *App) LoginAdmin(username, password string) (string, error) {
 	req := LoginRequest{
-		Username:  username,
-		Password:  password,
-		MachineID: a.machineCode,
+		Username:    username,
+		Password:    password,
+		MachineCode: a.machineCode,
 	}
 
 	data, err := a.doRequest("POST", "/api/auth/login", req)
@@ -346,29 +328,12 @@ func (a *App) GetMemberInfo() (string, error) {
 }
 
 func (a *App) GetSession() (string, error) {
-	data, err := a.doRequest("GET", "/api/sessions/active", nil)
+	data, err := a.doRequest("GET", "/api/sessions/me", nil)
 	if err != nil {
 		return "", err
 	}
 
-	var paginated PaginatedData
-	if err := json.Unmarshal(data, &paginated); err != nil {
-		return string(data), nil
-	}
-
-	var sessions []SessionInfo
-	if err := json.Unmarshal(paginated.Items, &sessions); err != nil {
-		return string(paginated.Items), nil
-	}
-
-	for _, s := range sessions {
-		if s.MemberID == a.userID && s.IsActive {
-			sessionData, _ := json.Marshal(s)
-			return string(sessionData), nil
-		}
-	}
-
-	return "null", nil
+	return string(data), nil
 }
 
 func (a *App) GetMenu(categoryId string) (string, error) {

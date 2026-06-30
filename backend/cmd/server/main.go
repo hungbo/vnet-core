@@ -50,11 +50,10 @@ func main() {
 	)
 
 	if err := db.AutoMigrate(
-		&model.Store{},
 		&model.User{}, &model.Role{}, &model.Permission{},
 		&model.UserRole{}, &model.RolePermission{},
 		&model.Member{}, &model.MemberGroup{}, &model.MemberTransaction{}, &model.MemberAttendance{},
-		&model.Machine{}, &model.MachineGroup{}, &model.MachinePrice{}, &model.TimeBasedPricing{},
+		&model.Machine{}, &model.MachineGroup{},
 		&model.MachineAsset{}, &model.MachineHardwareSnapshot{},
 		&model.MachineSession{},
 		&model.Combo{}, &model.ComboItem{}, &model.ComboPurchase{},

@@ -1,21 +1,25 @@
 package handler
 
 import (
+	"log"
+
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/response"
+	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
-	svc          *service.AuthService
-	sessionSvc   *service.SessionService
+	db         *gorm.DB
+	svc        *service.AuthService
+	sessionSvc *service.SessionService
 }
 
-func NewAuthHandler(svc *service.AuthService, sessionSvc *service.SessionService) *AuthHandler {
+func NewAuthHandler(db *gorm.DB, svc *service.AuthService, sessionSvc *service.SessionService) *AuthHandler {
 	_ = model.Permission{}
-	return &AuthHandler{svc: svc, sessionSvc: sessionSvc}
+	return &AuthHandler{db: db, svc: svc, sessionSvc: sessionSvc}
 }
 
 // Login
@@ -95,13 +99,20 @@ func (h *AuthHandler) MemberLogin(c *gin.Context) {
 		return
 	}
 
-	if req.MachineID != "" && result.User.Role != "admin" {
-		session, err := h.sessionSvc.StartSession(&service.StartRequest{
-			MachineID: req.MachineID,
-			MemberID:  result.User.ID,
-		})
-		if err == nil && session != nil {
-			result.SessionID = session.ID
+	if req.MachineCode != "" && result.User.Role != "admin" {
+		var machine model.Machine
+		if err := h.db.Where("machine_code = ? AND is_active = ?", req.MachineCode, true).First(&machine).Error; err != nil {
+			log.Printf("session auto-start: machine not found for code %q: %v", req.MachineCode, err)
+		} else {
+			session, err := h.sessionSvc.StartSession(&service.StartRequest{
+				MachineID: machine.ID,
+				MemberID:  result.User.ID,
+			})
+			if err != nil {
+				log.Printf("session auto-start failed for member %s on machine %s: %v", result.User.ID, req.MachineCode, err)
+			} else if session != nil {
+				result.SessionID = session.ID
+			}
 		}
 	}
 

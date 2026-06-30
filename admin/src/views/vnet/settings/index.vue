@@ -72,22 +72,6 @@ onMounted(() => {
             </ElFormItem>
           </ElForm>
         </ElTabPane>
-        <ElTabPane :label="$t('vnetPages.settings.pricing')" name="pricing">
-          <ElForm :model="settings" label-width="180px" label-position="left">
-            <ElFormItem :label="$t('vnetPages.settings.pricePerHour')">
-              <ElInputNumber v-model="settings.hourly_rate" :min="0" :precision="0" style="width: 100%" />
-            </ElFormItem>
-            <ElFormItem :label="$t('vnetPages.settings.pricePerMinute')">
-              <ElInputNumber v-model="settings.minute_rate" :min="0" :precision="0" style="width: 100%" />
-            </ElFormItem>
-            <ElFormItem :label="$t('vnetPages.settings.minMinutes')">
-              <ElInputNumber v-model="settings.min_minutes" :min="0" style="width: 100%" />
-            </ElFormItem>
-            <ElFormItem :label="$t('vnetPages.settings.hourlyDiscount')">
-              <ElInputNumber v-model="settings.hourly_discount" :min="0" :precision="0" style="width: 100%" />
-            </ElFormItem>
-          </ElForm>
-        </ElTabPane>
         <ElTabPane :label="$t('vnetPages.settings.limits')" name="limits">
           <ElForm :model="settings" label-width="180px" label-position="left">
             <ElFormItem :label="$t('vnetPages.settings.maxBookingsPerDay')">

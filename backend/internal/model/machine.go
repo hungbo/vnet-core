@@ -7,7 +7,7 @@ type MachineGroup struct {
 	Name        string     `gorm:"type:varchar(50);not null;uniqueIndex" json:"name"`
 	Description string     `gorm:"type:text" json:"description"`
 	Color       string     `gorm:"type:varchar(7)" json:"color"`
-	StoreID     *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
+	PricePerHour int64     `gorm:"not null;default:0" json:"price_per_hour"`
 	SortOrder   int        `gorm:"default:0" json:"sort_order"`
 	CreatedAt   time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
 	DeletedAt   *time.Time `gorm:"index" json:"deleted_at,omitempty"`
@@ -17,7 +17,6 @@ type Machine struct {
 	ID            string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	MachineCode   string     `gorm:"type:varchar(20);not null;uniqueIndex" json:"machine_code"`
 	GroupID       *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"group_id"`
-	StoreID       *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	Status        string     `gorm:"type:varchar(20);default:offline;index" json:"status"`
 	CPUName       string     `gorm:"type:varchar(100)" json:"cpu_name"`
 	RAMGB         int        `gorm:"column:ram_gb" json:"ram_gb"`

@@ -15,7 +15,15 @@ type MachineSession struct {
 	DurationMinutes  *int       `gorm:"column:duration_minutes" json:"duration_minutes"`
 	TotalCost        *int64     `json:"total_cost"`
 	IsOvernight      bool       `gorm:"default:false" json:"is_overnight"`
-	StoreID          *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	IsActive         bool       `gorm:"default:true;index" json:"is_active"`
+
+	// Snapshot fields — frozen at session end for audit
+	MachineGroupID   *string `gorm:"type:uuid" json:"machine_group_id,omitempty"`
+	MemberGroupID    *string `gorm:"type:uuid" json:"member_group_id,omitempty"`
+	MachineCode      string  `gorm:"type:varchar(20)" json:"machine_code,omitempty"`
+	MachineGroupName string  `gorm:"type:varchar(50)" json:"machine_group_name,omitempty"`
+	PricePerHour     int64   `gorm:"default:0" json:"price_per_hour"`
+	BilledMinutes    int     `gorm:"default:0" json:"billed_minutes"`
+
 	CreatedAt        time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
 }

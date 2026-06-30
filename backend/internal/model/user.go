@@ -10,7 +10,6 @@ type User struct {
 	Email        string     `gorm:"type:varchar(100)" json:"email"`
 	Phone        string     `gorm:"type:varchar(20)" json:"phone"`
 	AvatarURL    string     `gorm:"type:text" json:"avatar_url"`
-	StoreID      *string    `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	IsActive     bool       `gorm:"default:true" json:"is_active"`
 	LastLoginAt  *time.Time `gorm:"type:timestamptz" json:"last_login_at"`
 	CreatedAt    time.Time  `gorm:"default:now()" json:"created_at,omitempty"`

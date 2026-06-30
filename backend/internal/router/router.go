@@ -15,8 +15,6 @@ import (
 )
 
 func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *config.Config) {
-	r.Use(middleware.StoreContext())
-
 	h := handler.NewHandlers(db, jwtManager, wsHub, cfg)
 
 	uploadsDir := cfg.Server.UploadDir
@@ -49,6 +47,8 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 			auth.POST("/qr-login", h.Auth.QRLogin)
 			auth.POST("/member-login", h.Auth.MemberLogin)
 		}
+
+		api.POST("/machines/by-code/:code/heartbeat", h.Machine.HeartbeatByCode)
 
 		protected := api.Group("")
 		protected.Use(middleware.AuthRequired(jwtManager))
@@ -108,14 +108,6 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				machineGroups.POST("", h.Machine.CreateGroup)
 				machineGroups.PUT("/:id", h.Machine.UpdateGroup)
 				machineGroups.DELETE("/:id", h.Machine.DeleteGroup)
-			}
-
-			machinePrices := protected.Group("/machine-prices")
-			{
-				machinePrices.GET("", h.Machine.ListPrices)
-				machinePrices.POST("", h.Machine.CreatePrice)
-				machinePrices.PUT("/:id", h.Machine.UpdatePrice)
-				machinePrices.DELETE("/:id", h.Machine.DeletePrice)
 			}
 
 			machineAssets := protected.Group("/machine-assets")
@@ -278,15 +270,6 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				reports.GET("/by-employee", h.Report.ByEmployee)
 				reports.GET("/top-products", h.Report.TopProducts)
 				reports.GET("/promotion-usage", h.Report.PromotionUsage)
-			}
-
-			stores := protected.Group("/stores")
-			{
-				stores.GET("", h.Store.List)
-				stores.GET("/:id", h.Store.GetByID)
-				stores.POST("", h.Store.Create)
-				stores.PUT("/:id", h.Store.Update)
-				stores.DELETE("/:id", h.Store.Delete)
 			}
 
 			settings := protected.Group("/settings")

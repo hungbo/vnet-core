@@ -15,7 +15,7 @@ func newTestManager(t *testing.T) *Manager {
 func TestGenerateAndValidateAccessToken(t *testing.T) {
 	m := newTestManager(t)
 
-	token, err := m.GenerateAccessToken("user-1", "store-1", "admin", "R_SUPER", "role-1", []string{"*", "read", "write"})
+	token, err := m.GenerateAccessToken("user-1", "admin", "R_SUPER", "role-1", []string{"*", "read", "write"})
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -23,7 +23,6 @@ func TestGenerateAndValidateAccessToken(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "user-1", claims.UserID)
-	assert.Equal(t, "store-1", claims.StoreID)
 	assert.Equal(t, "admin", claims.Username)
 	assert.Equal(t, "R_SUPER", claims.Role)
 	assert.Equal(t, "role-1", claims.RoleID)
@@ -44,7 +43,6 @@ func TestGenerateAndValidateRefreshToken(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "user-1", claims.UserID)
-	assert.Empty(t, claims.StoreID)
 	assert.Empty(t, claims.Username)
 	assert.Empty(t, claims.Role)
 	assert.Empty(t, claims.RoleID)
@@ -54,7 +52,7 @@ func TestGenerateAndValidateRefreshToken(t *testing.T) {
 func TestValidateToken_Expired(t *testing.T) {
 	m := New("test-secret", -1*time.Hour, -1*time.Hour, "vnet-test")
 
-	token, err := m.GenerateAccessToken("user-1", "", "admin", "R_SUPER", "", nil)
+	token, err := m.GenerateAccessToken("user-1", "admin", "R_SUPER", "", nil)
 	require.NoError(t, err)
 
 	_, err = m.ValidateToken(token)
@@ -66,7 +64,7 @@ func TestValidateToken_InvalidSignature(t *testing.T) {
 	m1 := New("secret-1", 1*time.Hour, 168*time.Hour, "vnet")
 	m2 := New("secret-2", 1*time.Hour, 168*time.Hour, "vnet")
 
-	token, err := m1.GenerateAccessToken("user-1", "", "admin", "R_SUPER", "", nil)
+	token, err := m1.GenerateAccessToken("user-1", "admin", "R_SUPER", "", nil)
 	require.NoError(t, err)
 
 	_, err = m2.ValidateToken(token)
@@ -91,7 +89,7 @@ func TestDifferentInstancesSameSecret(t *testing.T) {
 	m1 := New("shared-secret", 1*time.Hour, 168*time.Hour, "vnet")
 	m2 := New("shared-secret", 1*time.Hour, 168*time.Hour, "vnet")
 
-	token, err := m1.GenerateAccessToken("user-1", "", "admin", "R_SUPER", "", []string{"read"})
+	token, err := m1.GenerateAccessToken("user-1", "admin", "R_SUPER", "", []string{"read"})
 	require.NoError(t, err)
 
 	claims, err := m2.ValidateToken(token)

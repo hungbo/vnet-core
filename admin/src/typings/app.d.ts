@@ -1198,7 +1198,6 @@ declare namespace App {
           billing: string;
           printing: string;
           invoice: string;
-          storeName: string;
           address: string;
           phone: string;
           email: string;
@@ -1243,29 +1242,6 @@ declare namespace App {
           time: string;
           messages: {
             loadError: string;
-          };
-        };
-        stores: {
-          title: string;
-          searchPlaceholder: string;
-          add: string;
-          edit: string;
-          name: string;
-          code: string;
-          phone: string;
-          address: string;
-          isActive: string;
-          form: {
-            nameRequired: string;
-            codeRequired: string;
-          };
-          messages: {
-            addSuccess: string;
-            editSuccess: string;
-            deleteConfirm: string;
-            deleteSuccess: string;
-            loadError: string;
-            saveError: string;
           };
         };
         combos: {

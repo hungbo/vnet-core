@@ -77,7 +77,6 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   vnet_settings: () => import("@/views/vnet/settings/index.vue"),
   vnet_shifts: () => import("@/views/vnet/shifts/index.vue"),
   "vnet_stock-transactions": () => import("@/views/vnet/stock-transactions/index.vue"),
-  vnet_stores: () => import("@/views/vnet/stores/index.vue"),
   vnet_suppliers: () => import("@/views/vnet/suppliers/index.vue"),
   vnet_transactions: () => import("@/views/vnet/transactions/index.vue"),
   vnet_warehouses: () => import("@/views/vnet/warehouses/index.vue"),

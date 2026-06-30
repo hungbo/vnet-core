@@ -61,7 +61,6 @@ type EInvoiceConfig struct {
 	APISecret string    `gorm:"type:text" json:"api_secret"`
 	Endpoint  string    `gorm:"type:text" json:"endpoint"`
 	IsActive  bool      `gorm:"default:false" json:"is_active"`
-	StoreID   *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"store_id"`
 	CreatedAt time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }
 

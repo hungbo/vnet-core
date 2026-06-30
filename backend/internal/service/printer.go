@@ -26,7 +26,6 @@ type PrinterResponse struct {
 	IPAddress   string  `json:"ip_address"`
 	Port        int     `json:"port"`
 	IsDefault   bool    `json:"is_default"`
-	StoreID     *string `json:"store_id"`
 	CreatedAt   string  `json:"created_at"`
 }
 
@@ -36,7 +35,6 @@ type CreatePrinterRequest struct {
 	IPAddress   string  `json:"ip_address"`
 	Port        int     `json:"port"`
 	IsDefault   bool    `json:"is_default"`
-	StoreID     *string `json:"store_id"`
 }
 
 type UpdatePrinterRequest struct {
@@ -45,7 +43,6 @@ type UpdatePrinterRequest struct {
 	IPAddress   *string `json:"ip_address"`
 	Port        *int    `json:"port"`
 	IsDefault   *bool   `json:"is_default"`
-	StoreID     *string `json:"store_id"`
 }
 
 func (s *PrinterService) List() ([]PrinterResponse, error) {
@@ -81,7 +78,6 @@ func (s *PrinterService) Create(req *CreatePrinterRequest) (*PrinterResponse, er
 		IPAddress:   req.IPAddress,
 		Port:        req.Port,
 		IsDefault:   req.IsDefault,
-		StoreID:     req.StoreID,
 	}
 
 	if printer.Port == 0 {
@@ -137,10 +133,6 @@ func (s *PrinterService) Update(id string, req *UpdatePrinterRequest) (*PrinterR
 		}
 		updates["is_default"] = *req.IsDefault
 	}
-	if req.StoreID != nil {
-		updates["store_id"] = *req.StoreID
-	}
-
 	if len(updates) > 0 {
 		if err := s.db.Model(&printer).Updates(updates).Error; err != nil {
 			return nil, err
@@ -226,7 +218,6 @@ func printerToResponse(p model.PrinterConfig) PrinterResponse {
 		IPAddress:   p.IPAddress,
 		Port:        p.Port,
 		IsDefault:   p.IsDefault,
-		StoreID:     p.StoreID,
 		CreatedAt:   p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }

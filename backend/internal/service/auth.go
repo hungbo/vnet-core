@@ -32,14 +32,13 @@ type LoginResponse struct {
 }
 
 type UserResponse struct {
-	ID        string   `json:"id"`
-	Username  string   `json:"username"`
-	FullName  string   `json:"full_name"`
-	Email     string   `json:"email"`
-	Phone     string   `json:"phone"`
-	AvatarURL string   `json:"avatar_url"`
-	Role      string   `json:"role"`
-	StoreID   string   `json:"store_id"`
+	ID          string   `json:"id"`
+	Username    string   `json:"username"`
+	FullName    string   `json:"full_name"`
+	Email       string   `json:"email"`
+	Phone       string   `json:"phone"`
+	AvatarURL   string   `json:"avatar_url"`
+	Role        string   `json:"role"`
 	Permissions []string `json:"permissions"`
 }
 
@@ -63,7 +62,6 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 	var permissions []string
 	var roleName string
 	var roleID string
-	var storeID string
 
 	if len(user.Roles) > 0 {
 		roleName = user.Roles[0].Name
@@ -74,11 +72,8 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 			}
 		}
 	}
-	if user.StoreID != nil {
-		storeID = *user.StoreID
-	}
 
-	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, storeID, user.Username, roleName, roleID, permissions)
+	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.Username, roleName, roleID, permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +96,6 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 			Phone:       user.Phone,
 			AvatarURL:   user.AvatarURL,
 			Role:        roleName,
-			StoreID:     storeID,
 			Permissions: permissions,
 		},
 	}, nil
@@ -117,38 +111,28 @@ func (s *AuthService) QRLogin(req *QRLoginRequest) (*LoginResponse, error) {
 		return nil, errors.New("invalid or inactive member QR code")
 	}
 
-	memberStoreID := ""
-	if member.StoreID != nil {
-		memberStoreID = *member.StoreID
-	}
-	accessToken, err := s.jwtManager.GenerateAccessToken(member.ID, memberStoreID, member.FullName, "member", "", []string{"member.access"})
+	accessToken, err := s.jwtManager.GenerateAccessToken(member.ID, member.FullName, "member", "", []string{"member.access"})
 	if err != nil {
 		return nil, err
 	}
 	refreshToken, _ := s.jwtManager.GenerateRefreshToken(member.ID)
 
-	storeID := ""
-	if member.StoreID != nil {
-		storeID = *member.StoreID
-	}
-
 	return &LoginResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		User: &UserResponse{
-			ID:        member.ID,
-			Username:  member.Username,
-			FullName:  member.FullName,
-			Role:      "member",
-			StoreID:   storeID,
+			ID:       member.ID,
+			Username: member.Username,
+			FullName: member.FullName,
+			Role:     "member",
 		},
 	}, nil
 }
 
 type MemberLoginRequest struct {
-	Username  string `json:"username" binding:"required"`
-	Password  string `json:"password" binding:"required"`
-	MachineID string `json:"machine_id"`
+	Username    string `json:"username" binding:"required"`
+	Password    string `json:"password" binding:"required"`
+	MachineCode string `json:"machine_code"`
 }
 
 type MemberLoginResponse struct {
@@ -171,17 +155,12 @@ func (s *AuthService) MemberLogin(req *MemberLoginRequest) (*MemberLoginResponse
 		return nil, errors.New("invalid username or password")
 	}
 
-	storeID := ""
-	if member.StoreID != nil {
-		storeID = *member.StoreID
-	}
-
 	role := member.Role
 	if role == "" {
 		role = "member"
 	}
 
-	accessToken, err := s.jwtManager.GenerateAccessToken(member.ID, storeID, member.Username, role, "", []string{"member.access"})
+	accessToken, err := s.jwtManager.GenerateAccessToken(member.ID, member.Username, role, "", []string{"member.access"})
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +174,6 @@ func (s *AuthService) MemberLogin(req *MemberLoginRequest) (*MemberLoginResponse
 			Username: member.Username,
 			FullName: member.FullName,
 			Role:     role,
-			StoreID:  storeID,
 		},
 	}, nil
 }
@@ -228,7 +206,7 @@ func (s *AuthService) RefreshToken(req *RefreshRequest) (*LoginResponse, error) 
 		}
 	}
 
-	accessToken, err := s.jwtManager.GenerateAccessToken(claims.UserID, claims.StoreID, user.Username, roleName, roleID, permissions)
+	accessToken, err := s.jwtManager.GenerateAccessToken(claims.UserID, user.Username, roleName, roleID, permissions)
 	if err != nil {
 		return nil, err
 	}
@@ -254,10 +232,6 @@ func (s *AuthService) GetCurrentUser(userID string) (*UserResponse, error) {
 
 	var permissions []string
 	var roleName string
-	storeID := ""
-	if user.StoreID != nil {
-		storeID = *user.StoreID
-	}
 	if len(user.Roles) > 0 {
 		roleName = user.Roles[0].Name
 		for _, role := range user.Roles {
@@ -275,7 +249,6 @@ func (s *AuthService) GetCurrentUser(userID string) (*UserResponse, error) {
 		Phone:       user.Phone,
 		AvatarURL:   user.AvatarURL,
 		Role:        roleName,
-		StoreID:     storeID,
 		Permissions: permissions,
 	}, nil
 }

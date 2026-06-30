@@ -246,7 +246,6 @@ func (h *InventoryHandler) CreateStockTransaction(c *gin.Context) {
 		return
 	}
 
-	_ = middleware.GetStoreID(c)
 	userID := middleware.GetUserID(c)
 
 	result, err := h.svc.CreateStockTransaction(&req, userID)

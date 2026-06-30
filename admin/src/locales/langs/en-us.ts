@@ -250,7 +250,6 @@ const local: App.I18n.Schema = {
     vnet_transactions: 'Transactions',
     vnet_settings: 'Settings',
     vnet_audit: 'Audit Logs',
-    vnet_stores: 'Stores',
     vnet_backups: 'Backups',
     vnet_management: 'Management',
     vnet_business: 'Business',
@@ -684,6 +683,7 @@ const local: App.I18n.Schema = {
       name: 'Name',
       color: 'Color',
       colorPlaceholder: 'e.g. #1890ff',
+      pricePerHour: 'Price/Hour',
       sortOrder: 'Sort Order',
       description: 'Description',
       create: 'Create Group',
@@ -1144,16 +1144,10 @@ const local: App.I18n.Schema = {
       billing: 'Billing',
       printing: 'Printing',
       invoice: 'Invoice',
-      storeName: 'Store Name',
       address: 'Address',
       phone: 'Phone Number',
       email: 'Email',
       timezone: 'Timezone',
-      pricing: 'Pricing',
-      pricePerHour: 'Price per Hour (VND)',
-      pricePerMinute: 'Price per Minute (VND)',
-      minMinutes: 'Min Minutes',
-      hourlyDiscount: 'Hourly Discount',
       limits: 'Limits',
       maxBookingsPerDay: 'Max Bookings / Day',
       maxBookingsPerMember: 'Max Bookings / Member',
@@ -1207,34 +1201,10 @@ const local: App.I18n.Schema = {
         promotion: 'promotion',
         booking: 'booking',
         user: 'user',
-        role: 'role',
-        store: 'store'
+        role: 'role'
       },
       messages: {
         loadError: 'Error loading logs'
-      }
-    },
-    stores: {
-      title: 'Stores',
-      searchPlaceholder: 'Search...',
-      add: 'Add Store',
-      edit: 'Edit Store',
-      name: 'Name',
-      code: 'Code',
-      phone: 'Phone',
-      address: 'Address',
-      isActive: 'Active',
-      form: {
-        nameRequired: 'Please enter name',
-        codeRequired: 'Please enter code'
-      },
-      messages: {
-        addSuccess: 'Added successfully',
-        editSuccess: 'Updated successfully',
-        deleteConfirm: 'Are you sure you want to delete this store?',
-        deleteSuccess: 'Deleted successfully',
-        loadError: 'Error loading data',
-        saveError: 'Error saving data'
       }
     },
     combos: {

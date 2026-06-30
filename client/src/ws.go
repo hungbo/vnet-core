@@ -38,7 +38,11 @@ func NewWSClient(ctx context.Context, baseURL, token string, machineCode string)
 		handlers:    make(map[string]WSHandler),
 	}
 
-	c.On("session:updated", func(msg WSMessage) {
+	c.On("session:started", func(msg WSMessage) {
+		runtime.EventsEmit(ctx, "vnet:session:updated", string(msg.Payload))
+	})
+
+	c.On("session:ended", func(msg WSMessage) {
 		runtime.EventsEmit(ctx, "vnet:session:updated", string(msg.Payload))
 	})
 
