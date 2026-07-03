@@ -118,8 +118,8 @@ export function RestartMachine() {
   return window['go']['main']['App']['RestartMachine']();
 }
 
-export function RestoreSession(arg1, arg2, arg3, arg4, arg5, arg6) {
-  return window['go']['main']['App']['RestoreSession'](arg1, arg2, arg3, arg4, arg5, arg6);
+export function RestoreSession(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['RestoreSession'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SendRoomMessage(arg1, arg2) {

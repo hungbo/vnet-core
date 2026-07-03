@@ -729,6 +729,15 @@ export const generatedRoutes = [
         }
       },
       {
+        name: 'vnet_notifications',
+        path: '/vnet/notifications',
+        component: 'view.vnet_notifications',
+        meta: {
+          title: 'vnet_notifications',
+          i18nKey: 'route.vnet_notifications'
+        }
+      },
+      {
         name: 'vnet_orders',
         path: '/vnet/orders',
         component: 'view.vnet_orders',

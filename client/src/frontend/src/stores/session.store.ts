@@ -86,7 +86,7 @@ export const useSessionStore = defineStore('session', () => {
 		try {
 			const s = JSON.parse(saved)
 			if (!s.token) return false
-			await api().RestoreSession(s.token, s.userId || '', '', s.displayName || '', s.role || 'member', '')
+			await api().RestoreSession(s.token, s.userId || '', '', s.displayName || '', s.role || 'member')
 			token.value = s.token
 			userID.value = s.userId || ''
 			role.value = s.role || 'member'

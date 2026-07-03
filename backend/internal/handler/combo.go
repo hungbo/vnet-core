@@ -169,7 +169,7 @@ func (h *ComboHandler) Purchase(c *gin.Context) {
 
 	userID := c.GetString(middleware.ContextKeyUserID)
 
-	result, err := h.svc.Purchase(id, &req, "", userID)
+	result, err := h.svc.Purchase(id, &req, userID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -199,7 +199,7 @@ func (h *ComboHandler) Activate(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.Activate(id, &req, "")
+	result, err := h.svc.Activate(id, &req)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

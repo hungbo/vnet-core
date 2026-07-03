@@ -150,7 +150,7 @@ func TestComboService_Purchase_CreatesMember(t *testing.T) {
 		CustomerName:  "John",
 		CustomerPhone: "0123456789",
 		PaymentMethod: "cash",
-	}, "s1", "u1")
+	}, "u1")
 	require.NoError(t, err)
 	assert.Equal(t, "p1", result.ID)
 	assert.Equal(t, int64(50000), result.Price)

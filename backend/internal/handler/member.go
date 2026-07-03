@@ -173,7 +173,7 @@ func (h *MemberHandler) Topup(c *gin.Context) {
 		return
 	}
 	userID := middleware.GetUserID(c)
-	result, err := h.svc.Topup(id, &req, userID, "")
+	result, err := h.svc.Topup(id, &req, userID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -200,7 +200,7 @@ func (h *MemberHandler) Refund(c *gin.Context) {
 		return
 	}
 	userID := middleware.GetUserID(c)
-	result, err := h.svc.Refund(id, &req, userID, "")
+	result, err := h.svc.Refund(id, &req, userID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

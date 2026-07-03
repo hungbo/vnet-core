@@ -59,7 +59,7 @@ export function RequestTopup(arg1:number):Promise<string>;
 
 export function RestartMachine():Promise<string>;
 
-export function RestoreSession(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string,arg6:string):Promise<void>;
+export function RestoreSession(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<void>;
 
 export function SendRoomMessage(arg1:string,arg2:string):Promise<string>;
 

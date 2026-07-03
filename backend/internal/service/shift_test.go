@@ -98,8 +98,8 @@ func TestShiftService_CloseShift_Success(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "shifts" WHERE id = \$1 ORDER BY "shifts"."id" LIMIT \$2`).
 		WithArgs("s1", 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status", "opening_balance", "store_id", "started_at", "notes"}).
-			AddRow("s1", testUserID, "open", int64(500000), &testStoreID, testNow, ""))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status", "opening_balance", "started_at", "notes"}).
+			AddRow("s1", testUserID, "open", int64(500000), testNow, ""))
 
 	mock.ExpectQuery(`SELECT COALESCE\(SUM\(final_amount\), 0\) FROM "orders"`).
 		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(200000)))

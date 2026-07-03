@@ -31,7 +31,6 @@ type UserInfo struct {
 	Username string `json:"username"`
 	FullName string `json:"full_name"`
 	Role     string `json:"role"`
-	StoreID  string `json:"store_id"`
 }
 
 type OrderItemRequest struct {
@@ -61,7 +60,6 @@ type App struct {
 	username    string
 	fullName    string
 	role        string
-	storeID     string
 	machineCode string
 	locker      *ScreenLocker
 	wsClient    *WSClient
@@ -218,7 +216,6 @@ func (a *App) Login(username, password string) (string, error) {
 	a.username = resp.User.Username
 	a.fullName = resp.User.FullName
 	a.role = resp.User.Role
-	a.storeID = resp.User.StoreID
 
 	if err := a.locker.Lock(); err != nil {
 		log.Printf("lock screen error: %v", err)
@@ -251,7 +248,6 @@ func (a *App) LoginAdmin(username, password string) (string, error) {
 	a.username = resp.User.Username
 	a.fullName = resp.User.FullName
 	a.role = resp.User.Role
-	a.storeID = resp.User.StoreID
 
 	a.connectWS()
 
@@ -265,20 +261,18 @@ func (a *App) Logout() error {
 	a.username = ""
 	a.fullName = ""
 	a.role = ""
-	a.storeID = ""
 	if a.wsCancel != nil {
 		a.wsCancel()
 	}
 	return nil
 }
 
-func (a *App) RestoreSession(token, userID, username, fullName, role, storeID string) error {
+func (a *App) RestoreSession(token, userID, username, fullName, role string) error {
 	a.token = token
 	a.userID = userID
 	a.username = username
 	a.fullName = fullName
 	a.role = role
-	a.storeID = storeID
 	a.connectWS()
 	return nil
 }

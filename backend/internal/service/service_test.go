@@ -59,9 +59,8 @@ func intPtr(i int) *int {
 }
 
 var (
-	testUUID     = "550e8400-e29b-41d4-a716-446655440000"
-	testStoreID  = "660e8400-e29b-41d4-a716-446655440001"
-	testUserID   = "770e8400-e29b-41d4-a716-446655440002"
+	testUUID   = "550e8400-e29b-41d4-a716-446655440000"
+	testUserID = "770e8400-e29b-41d4-a716-446655440002"
 	testNow      = time.Date(2025, 6, 15, 10, 30, 0, 0, time.UTC)
 	testNowStr   = "2025-06-15T10:30:00Z"
 	deletedAtPtr = &time.Time{}

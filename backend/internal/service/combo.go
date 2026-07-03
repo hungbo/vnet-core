@@ -253,7 +253,7 @@ func (s *ComboService) Delete(id string) error {
 	return nil
 }
 
-func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, storeID string, userID string) (*ComboPurchaseResponse, error) {
+func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userID string) (*ComboPurchaseResponse, error) {
 	var combo model.Combo
 	if err := s.db.Where("id = ? AND deleted_at IS NULL AND is_active = ?", comboID, true).First(&combo).Error; err != nil {
 		return nil, errors.New("combo not found or inactive")
@@ -355,7 +355,7 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, store
 	return &result, nil
 }
 
-func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest, storeID string) (*ComboPurchaseResponse, error) {
+func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*ComboPurchaseResponse, error) {
 	var purchase model.ComboPurchase
 	if err := s.db.Where("id = ?", purchaseID).First(&purchase).Error; err != nil {
 		return nil, errors.New("purchase not found")

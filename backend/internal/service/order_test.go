@@ -35,7 +35,7 @@ func TestOrderService_Create_NoStock(t *testing.T) {
 		Items: []OrderItemRequest{
 			{ProductID: "prod-1", Quantity: 2},
 		},
-	}, "user-1", "store-1")
+	}, "user-1")
 	require.NoError(t, err)
 	assert.Equal(t, int64(20000), result.TotalAmount)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -67,7 +67,7 @@ func TestOrderService_Create_WithBOMAndOptions(t *testing.T) {
 		Items: []OrderItemRequest{
 			{ProductID: "prod-1", Quantity: 2},
 		},
-	}, "user-1", "store-1")
+	}, "user-1")
 	require.NoError(t, err)
 	assert.Equal(t, int64(60000), result.TotalAmount)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -115,7 +115,7 @@ func TestOrderService_Create_WithOptions(t *testing.T) {
 				Options:   `[{"option_id":"opt-cheese-001","quantity":1}]`,
 			},
 		},
-	}, "user-1", "store-1")
+	}, "user-1")
 	require.NoError(t, err)
 	assert.Equal(t, int64(25000), result.TotalAmount)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -137,7 +137,7 @@ func TestOrderService_Create_ProductNotFound(t *testing.T) {
 		Items: []OrderItemRequest{
 			{ProductID: "nonexistent", Quantity: 1},
 		},
-	}, "user-1", "store-1")
+	}, "user-1")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "không tìm thấy sản phẩm")
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -185,7 +185,7 @@ func TestOrderService_Create_WithOptionsAndBOM(t *testing.T) {
 				Options:   `[{"option_id":"opt-extra-001","quantity":1}]`,
 			},
 		},
-	}, "user-1", "store-1")
+	}, "user-1")
 	require.NoError(t, err)
 	assert.Equal(t, int64(25000), result.TotalAmount)
 	assert.NoError(t, mock.ExpectationsWereMet())

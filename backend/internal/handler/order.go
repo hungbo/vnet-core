@@ -74,7 +74,7 @@ func (h *OrderHandler) Create(c *gin.Context) {
 		return
 	}
 	userID := middleware.GetUserID(c)
-	result, err := h.svc.Create(req, userID, "")
+	result, err := h.svc.Create(req, userID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -169,7 +169,7 @@ func (h *OrderHandler) CreateTopup(c *gin.Context) {
 		return
 	}
 	userID := middleware.GetUserID(c)
-	result, err := h.svc.CreateTopupOrder(req, userID, "")
+	result, err := h.svc.CreateTopupOrder(req, userID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

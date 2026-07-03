@@ -441,7 +441,7 @@ func (s *MemberService) ResetPassword(id string, newPassword string) error {
 	return nil
 }
 
-func (s *MemberService) Topup(id string, req *TopupRequest, userID string, storeID string) (*MemberResponse, error) {
+func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*MemberResponse, error) {
 	if req.Amount <= 0 {
 		return nil, errors.New("amount must be positive")
 	}
@@ -520,7 +520,7 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string, store
 	return s.GetByID(id)
 }
 
-func (s *MemberService) Refund(id string, req *RefundRequest, userID string, storeID string) (*MemberResponse, error) {
+func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*MemberResponse, error) {
 	if req.Amount <= 0 {
 		return nil, errors.New("amount must be positive")
 	}

@@ -99,6 +99,7 @@ declare module "@elegant-router/types" {
     "vnet_machines": "/vnet/machines";
     "vnet_member-groups": "/vnet/member-groups";
     "vnet_members": "/vnet/members";
+    "vnet_notifications": "/vnet/notifications";
     "vnet_orders": "/vnet/orders";
     "vnet_products": "/vnet/products";
     "vnet_promotions": "/vnet/promotions";
@@ -241,6 +242,7 @@ declare module "@elegant-router/types" {
     | "vnet_machines"
     | "vnet_member-groups"
     | "vnet_members"
+    | "vnet_notifications"
     | "vnet_orders"
     | "vnet_products"
     | "vnet_promotions"

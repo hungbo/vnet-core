@@ -86,7 +86,7 @@ func (h *BookingHandler) Create(c *gin.Context) {
 
 	userID := c.GetString(middleware.ContextKeyUserID)
 
-	result, err := h.svc.Create(&req, "", userID)
+	result, err := h.svc.Create(&req, userID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

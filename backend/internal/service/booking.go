@@ -136,7 +136,7 @@ func (s *BookingService) GetByID(id string) (*BookingResponse, error) {
 	return &result, nil
 }
 
-func (s *BookingService) Create(req *CreateBookingRequest, storeID string, userID string) (*BookingResponse, error) {
+func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*BookingResponse, error) {
 	bookedFrom, err := time.Parse(time.RFC3339, req.BookedFrom)
 	if err != nil {
 		return nil, errors.New("invalid booked_from format, use RFC3339")

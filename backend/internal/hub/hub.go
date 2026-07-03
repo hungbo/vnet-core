@@ -32,7 +32,6 @@ type Client struct {
 	conn        *websocket.Conn
 	send        chan []byte
 	ClientType  ClientType
-	storeID     string
 	machineCode string
 	UserID      string
 }

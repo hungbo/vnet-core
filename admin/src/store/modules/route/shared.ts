@@ -346,7 +346,6 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     vnet_promotions: 'mdi:tag-multiple',
     vnet_reports: 'carbon:report',
     vnet_settings: 'carbon:settings',
-    vnet_stores: 'carbon:store',
     vnet_backups: 'mdi:backup-restore',
     vnet_audit: 'mdi:clipboard-text-outline',
     'vnet_machine-groups': 'carbon:data-center',
@@ -397,7 +396,7 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
       key: 'vnet_system',
       i18nKey: 'route.vnet_system',
       icon: 'carbon:settings',
-      children: ['vnet_settings', 'vnet_stores', 'vnet_backups', 'vnet_audit']
+      children: ['vnet_settings', 'vnet_backups', 'vnet_audit']
     }
   ];
 

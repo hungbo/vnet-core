@@ -61,7 +61,7 @@ func TestBookingService_Create_Success(t *testing.T) {
 		CustomerPhone: "0123456789",
 		BookedFrom:    testRFC3339Time,
 		BookedTo:      "2026-06-25T12:00:00+07:00",
-	}, "s1", "u1")
+	}, "u1")
 	require.NoError(t, err)
 	assert.Equal(t, "John", result.CustomerName)
 	assert.Equal(t, "pending", result.Status)
@@ -78,7 +78,7 @@ func TestBookingService_Create_InvalidTimeFormat(t *testing.T) {
 		CustomerPhone: "0123456789",
 		BookedFrom:    "invalid-time",
 		BookedTo:      "2026-06-25T12:00:00+07:00",
-	}, "s1", "u1")
+	}, "u1")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid booked_from")
 	assert.NoError(t, mock.ExpectationsWereMet())

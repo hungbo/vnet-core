@@ -220,7 +220,7 @@ func (s *OrderService) GetByID(id string) (*OrderResponse, error) {
 	return &result, nil
 }
 
-func (s *OrderService) CreateTopupOrder(req CreateTopupOrderRequest, createdBy, storeID string) (*OrderResponse, error) {
+func (s *OrderService) CreateTopupOrder(req CreateTopupOrderRequest, createdBy string) (*OrderResponse, error) {
 	if req.Amount <= 0 {
 		return nil, errors.New("số tiền phải lớn hơn 0")
 	}
@@ -279,7 +279,7 @@ func (s *OrderService) CreateTopupOrder(req CreateTopupOrderRequest, createdBy, 
 	return &result, nil
 }
 
-func (s *OrderService) Create(req CreateOrderRequest, createdBy string, storeID string) (*OrderResponse, error) {
+func (s *OrderService) Create(req CreateOrderRequest, createdBy string) (*OrderResponse, error) {
 	if len(req.Items) == 0 {
 		return nil, errors.New("đơn hàng phải có ít nhất một sản phẩm")
 	}

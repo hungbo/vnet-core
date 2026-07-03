@@ -53,11 +53,6 @@ type JWTConfig struct {
 	Issuer           string
 }
 
-type StoreConfig struct {
-	DefaultStoreID   int64
-	DefaultStoreName string
-}
-
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{

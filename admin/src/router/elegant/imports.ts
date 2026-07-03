@@ -69,6 +69,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   vnet_machines: () => import("@/views/vnet/machines/index.vue"),
   "vnet_member-groups": () => import("@/views/vnet/member-groups/index.vue"),
   vnet_members: () => import("@/views/vnet/members/index.vue"),
+  vnet_notifications: () => import("@/views/vnet/notifications/index.vue"),
   vnet_orders: () => import("@/views/vnet/orders/index.vue"),
   vnet_products: () => import("@/views/vnet/products/index.vue"),
   vnet_promotions: () => import("@/views/vnet/promotions/index.vue"),
