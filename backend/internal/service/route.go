@@ -210,6 +210,12 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Meta:      RouteMeta{Title: "vnet_audit", I18nKey: "route.vnet_audit", RequiredPermission: "client.admin"},
 		},
 		{
+			Name:      "vnet_notifications",
+			Path:      "/vnet/notifications",
+			Component: "view.vnet_notifications",
+			Meta:      RouteMeta{Title: "vnet_notifications", I18nKey: "route.vnet_notifications", RequiredPermission: "client.admin"},
+		},
+		{
 			Name:      "vnet_backups",
 			Path:      "/vnet/backups",
 			Component: "view.vnet_backups",

@@ -27,11 +27,12 @@ type Handlers struct {
 	Settings      *SettingsHandler
 	Audit         *AuditHandler
 	Backup        *BackupHandler
-	Chat          *ChatHandler
-	Report        *ReportHandler
-	SystemManage  *SystemManageHandler
-	Upload        *UploadHandler
-	Notification  *NotificationHandler
+	Chat              *ChatHandler
+	Report            *ReportHandler
+	SystemManage      *SystemManageHandler
+	Upload            *UploadHandler
+	Notification      *NotificationHandler
+	NotificationAdmin *NotificationAdminHandler
 }
 
 func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *config.Config) *Handlers {
@@ -61,6 +62,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Chat:      NewChatHandler(chatSvc),
 		Report:       NewReportHandler(service.NewReportService(db)),
 		SystemManage: NewSystemManageHandler(service.NewSystemManageService(db, auditSvc)),
-		Notification: NewNotificationHandler(service.NewNotificationService(db, auditSvc)),
+		Notification:      NewNotificationHandler(service.NewNotificationService(db, auditSvc)),
+		NotificationAdmin: NewNotificationAdminHandler(service.NewNotificationAdminService(db, auditSvc)),
 	}
 }

@@ -251,6 +251,7 @@ const local: App.I18n.Schema = {
     vnet_settings: 'Settings',
     vnet_audit: 'Audit Logs',
     vnet_backups: 'Backups',
+    vnet_notifications: 'Notifications',
     vnet_management: 'Management',
     vnet_business: 'Business',
     vnet_operations: 'Operations',
@@ -1284,6 +1285,30 @@ const local: App.I18n.Schema = {
       comboPurchase: 'Combo Purchase',
       messages: {
         loadError: 'Failed to load transactions'
+      }
+    },
+    notifications: {
+      pageTitle: 'Notifications',
+      type: 'Type',
+      title: 'Title',
+      content: 'Content',
+      createdAt: 'Created At',
+      dispatch: 'Dispatch',
+      add: 'Add Notification',
+      edit: 'Edit Notification',
+      searchPlaceholder: 'Search notifications...',
+      form: {
+        typeRequired: 'Please select notification type',
+        titleRequired: 'Please enter title'
+      },
+      messages: {
+        addSuccess: 'Notification created successfully',
+        editSuccess: 'Notification updated successfully',
+        saveError: 'Failed to save notification',
+        deleteConfirm: 'Are you sure you want to delete this notification?',
+        deleteSuccess: 'Notification deleted successfully',
+        dispatchConfirm: 'Send this notification to all members?',
+        dispatchSuccess: 'Notification dispatched to {count} members'
       }
     }
   }

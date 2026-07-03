@@ -251,6 +251,7 @@ const local: App.I18n.Schema = {
     vnet_settings: 'Cài đặt',
     vnet_audit: 'Nhật ký hoạt động',
     vnet_backups: 'Sao lưu',
+    vnet_notifications: 'Thông báo',
     vnet_management: 'Quản lý',
     vnet_business: 'Kinh doanh',
     vnet_operations: 'Vận hành',
@@ -1284,6 +1285,30 @@ const local: App.I18n.Schema = {
       comboPurchase: 'Mua combo',
       messages: {
         loadError: 'Lỗi tải lịch sử giao dịch'
+      }
+    },
+    notifications: {
+      pageTitle: 'Thông báo',
+      type: 'Loại',
+      title: 'Tiêu đề',
+      content: 'Nội dung',
+      createdAt: 'Ngày tạo',
+      dispatch: 'Gửi',
+      add: 'Thêm thông báo',
+      edit: 'Sửa thông báo',
+      searchPlaceholder: 'Tìm thông báo...',
+      form: {
+        typeRequired: 'Vui lòng chọn loại thông báo',
+        titleRequired: 'Vui lòng nhập tiêu đề'
+      },
+      messages: {
+        addSuccess: 'Tạo thông báo thành công',
+        editSuccess: 'Cập nhật thông báo thành công',
+        saveError: 'Lỗi lưu thông báo',
+        deleteConfirm: 'Bạn có chắc muốn xoá thông báo này?',
+        deleteSuccess: 'Xoá thông báo thành công',
+        dispatchConfirm: 'Gửi thông báo này tới tất cả hội viên?',
+        dispatchSuccess: 'Đã gửi thông báo tới {count} hội viên'
       }
     }
   }

@@ -251,6 +251,7 @@ const local: App.I18n.Schema = {
     vnet_settings: '设置',
     vnet_audit: '审计日志',
     vnet_backups: '备份',
+    vnet_notifications: '通知',
     vnet_management: '管理',
     vnet_business: '业务',
     vnet_operations: '运营',
@@ -1284,6 +1285,30 @@ const local: App.I18n.Schema = {
       comboPurchase: '购买套餐',
       messages: {
         loadError: '加载交易记录失败'
+      }
+    },
+    notifications: {
+      pageTitle: '通知',
+      type: '类型',
+      title: '标题',
+      content: '内容',
+      createdAt: '创建时间',
+      dispatch: '发送',
+      add: '添加通知',
+      edit: '编辑通知',
+      searchPlaceholder: '搜索通知...',
+      form: {
+        typeRequired: '请选择通知类型',
+        titleRequired: '请输入标题'
+      },
+      messages: {
+        addSuccess: '创建通知成功',
+        editSuccess: '更新通知成功',
+        saveError: '保存通知失败',
+        deleteConfirm: '确定要删除此通知吗？',
+        deleteSuccess: '删除通知成功',
+        dispatchConfirm: '将此通知发送给所有会员？',
+        dispatchSuccess: '已发送通知给 {count} 名会员'
       }
     }
   }

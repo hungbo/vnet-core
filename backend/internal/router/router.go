@@ -314,6 +314,16 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				notifications.PUT("/read-all", h.Notification.MarkAllRead)
 			}
 
+			adminNotifications := protected.Group("/admin/notifications")
+			{
+				adminNotifications.GET("", h.NotificationAdmin.List)
+				adminNotifications.GET("/:id", h.NotificationAdmin.GetByID)
+				adminNotifications.POST("", h.NotificationAdmin.Create)
+				adminNotifications.PUT("/:id", h.NotificationAdmin.Update)
+				adminNotifications.DELETE("/:id", h.NotificationAdmin.Delete)
+				adminNotifications.POST("/:id/dispatch", h.NotificationAdmin.Dispatch)
+			}
+
 			systemManage := protected.Group("/systemManage")
 			{
 				systemManage.GET("/getUserList", h.SystemManage.GetUserList)

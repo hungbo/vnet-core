@@ -632,6 +632,7 @@ func (s *SystemManageService) GetMenuList(params *SystemListParams) (*PaginatedR
 				{Name: "vnet_backups", Path: "/vnet/backups", Icon: "ic:round-backup", Order: 23, I18nKey: "route.vnet_backups"},
 				{Name: "vnet_machine-groups", Path: "/vnet/machine-groups", Icon: "carbon:data-center", Order: 24, I18nKey: "route.vnet_machine-groups"},
 				{Name: "vnet_member-groups", Path: "/vnet/member-groups", Icon: "carbon:user-multiple", Order: 25, I18nKey: "route.vnet_member-groups"},
+			{Name: "vnet_notifications", Path: "/vnet/notifications", Icon: "ic:round-notifications", Order: 26, I18nKey: "route.vnet_notifications"},
 			},
 		},
 		{
@@ -726,6 +727,7 @@ func (s *SystemManageService) GetAllPages() ([]string, error) {
 		"vnet_backups",
 		"vnet_machine-groups",
 		"vnet_member-groups",
+		"vnet_notifications",
 		"system_user",
 		"system_role",
 		"system_menu",
@@ -764,6 +766,7 @@ func (s *SystemManageService) GetMenuTree() ([]*MenuTreeResponse, error) {
 						{ID: "vnet_backups", Label: "Backups", PID: "vnet"},
 						{ID: "vnet_machine-groups", Label: "Machine Groups", PID: "vnet"},
 						{ID: "vnet_member-groups", Label: "Member Groups", PID: "vnet"},
+					{ID: "vnet_notifications", Label: "Notifications", PID: "vnet"},
 					},
 				},
 				{
