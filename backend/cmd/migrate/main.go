@@ -43,6 +43,13 @@ var migrations = []migration{
 	// gửi cùng lúc.
 	{name: "attendance_one_per_day", sql: "CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_member_day ON member_attendances (member_id, checkin_date)"},
 
+	// Bỏ trạng thái máy "maintenance". Nó chưa bao giờ được code đặt hay đọc —
+	// chỉ là một lựa chọn trên giao diện — nhưng quán nào đã lỡ đặt tay qua API
+	// thì cột đang giữ một giá trị mà từ nay API từ chối, và máy đó không khớp
+	// nhãn nào trên trang quản trị. Đưa về offline: heartbeat kế tiếp sẽ tự
+	// chuyển sang available.
+	{name: "drop_machine_status_maintenance", sql: "UPDATE machines SET status = 'offline' WHERE status = 'maintenance'"},
+
 	// Một đơn hàng chỉ được đánh giá một lần. Chỉ mục PHẦN: đánh giá không gắn
 	// đơn (nhận xét chung về dịch vụ) thì gửi bao nhiêu lần cũng được.
 	{name: "feedback_one_per_order", sql: "CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_order ON service_feedbacks (order_id) WHERE order_id IS NOT NULL"},

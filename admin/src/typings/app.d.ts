@@ -777,7 +777,6 @@ declare namespace App {
             offline: string;
             available: string;
             inUse: string;
-            maintenance: string;
           };
           form: {
             code: string;

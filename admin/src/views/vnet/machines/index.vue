@@ -254,8 +254,7 @@ function statusType(status: string): any {
   const map: Record<string, string> = {
     offline: 'danger',
     available: 'success',
-    in_use: 'warning',
-    maintenance: 'info'
+    in_use: 'warning'
   };
   return map[status] || 'info';
 }
@@ -264,8 +263,7 @@ function statusLabel(status: string) {
   const map: Record<string, string> = {
     offline: $t('vnetPages.machines.statusLabels.offline'),
     available: $t('vnetPages.machines.statusLabels.available'),
-    in_use: $t('vnetPages.machines.statusLabels.inUse'),
-    maintenance: $t('vnetPages.machines.statusLabels.maintenance')
+    in_use: $t('vnetPages.machines.statusLabels.inUse')
   };
   return map[status] || status;
 }

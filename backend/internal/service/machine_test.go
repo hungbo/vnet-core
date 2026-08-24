@@ -100,10 +100,10 @@ func TestMachineService_Update_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	status := "maintenance"
+	status := "available"
 	result, err := svc.Update("m1", &UpdateMachineRequest{Status: &status})
 	require.NoError(t, err)
-	assert.Equal(t, "maintenance", result.Status)
+	assert.Equal(t, "available", result.Status)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

@@ -48,7 +48,17 @@ type UpdateMachineRequest struct {
 	GPUName   *string `json:"gpu_name"`
 	StorageGB *int    `json:"storage_gb"`
 	OSInfo    *string `json:"os_info"`
-	Status    *string `json:"status"`
+	// Ba trạng thái, không hơn.
+	//
+	// omitempty vì đây là bản vá từng phần: bỏ trống nghĩa là không đổi trạng
+	// thái, và oneof chỉ chạy khi có giá trị. Không có ràng buộc này thì
+	// {"status":"abcxyz"} ghi thẳng vào cột: máy đó rơi ra ngoài mọi phép so
+	// sánh — không bị chặn mở phiên vì nó không phải "in_use", và trang quản
+	// trị hiện chuỗi thô vì không có nhãn nào khớp.
+	//
+	// "maintenance" từng nằm trong danh sách nhưng chưa bao giờ là trạng thái
+	// thật: không dòng code nào đặt hay đọc nó, chỉ có một nhãn trên giao diện.
+	Status *string `json:"status" binding:"omitempty,oneof=offline available in_use"`
 }
 
 type HeartbeatRequest struct {

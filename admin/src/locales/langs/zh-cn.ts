@@ -859,8 +859,7 @@ const local: App.I18n.Schema = {
       statusLabels: {
         offline: '离线',
         available: '可用',
-        inUse: '使用中',
-        maintenance: '维护中'
+        inUse: '使用中'
       },
       form: {
         code: '机器编码',

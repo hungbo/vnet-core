@@ -862,8 +862,7 @@ const local: App.I18n.Schema = {
       statusLabels: {
         offline: 'Ngoại tuyến',
         available: 'Sẵn sàng',
-        inUse: 'Đang sử dụng',
-        maintenance: 'Bảo trì'
+        inUse: 'Đang sử dụng'
       },
       form: {
         code: 'Mã máy',

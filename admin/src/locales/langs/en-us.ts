@@ -862,8 +862,7 @@ const local: App.I18n.Schema = {
       statusLabels: {
         offline: 'Offline',
         available: 'Available',
-        inUse: 'In Use',
-        maintenance: 'Maintenance'
+        inUse: 'In Use'
       },
       form: {
         code: 'Machine Code',
