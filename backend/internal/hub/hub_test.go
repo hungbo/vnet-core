@@ -236,6 +236,47 @@ func TestJoinRoomByUserID_BoQuaUserIDRong(t *testing.T) {
 	assert.Len(t, nen.send, 0)
 }
 
+// Client bị loại vì nghẽn phải rời phòng chat cùng lúc. Bỏ sót là để lại một
+// channel ĐÃ ĐÓNG trong h.rooms, và lần PublishToRoom kế tiếp panic "send on
+// closed channel" — select/default không đỡ được cho channel đã đóng.
+func TestRemoveClient_AlsoLeavesRooms(t *testing.T) {
+	h := New(nil)
+
+	nghen := newTestClient(h, ClientTypeClient, "PC-01", 0) // buffer 0 → luôn nghẽn
+	song := newTestClient(h, ClientTypeClient, "PC-02", 1)
+
+	h.JoinRoom(nghen, "room-1")
+	h.JoinRoom(song, "room-1")
+
+	// Broadcast loại client nghẽn và đóng channel của nó.
+	h.Broadcast(Event{Type: "rooms:cleared"})
+
+	h.mu.RLock()
+	_, conTrongPhong := h.rooms["room-1"][nghen]
+	h.mu.RUnlock()
+	require.False(t, conTrongPhong, "client bị loại vẫn còn nằm trong phòng")
+
+	// Không có dòng trên thì đây là chỗ nổ.
+	assert.NotPanics(t, func() {
+		h.PublishToRoom("room-1", Event{Type: "chat:message"}, "")
+	})
+	assert.Len(t, song.send, 1, "client còn sống vẫn phải nhận được tin")
+}
+
+// Phòng rỗng sau khi người cuối rời thì phải biến mất, không để lại map rỗng.
+func TestRemoveClient_DonPhongRong(t *testing.T) {
+	h := New(nil)
+	c := newTestClient(h, ClientTypeClient, "PC-01", 0)
+	h.JoinRoom(c, "room-1")
+
+	h.Broadcast(Event{Type: "rooms:cleared"})
+
+	h.mu.RLock()
+	_, con := h.rooms["room-1"]
+	h.mu.RUnlock()
+	assert.False(t, con, "phòng rỗng phải bị xoá khỏi h.rooms")
+}
+
 func TestOriginAllowed(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -188,10 +188,14 @@ func (h *Hub) PublishToRoom(roomID string, event Event, skipUserID string) {
 		return
 	}
 
+	// defer chứ không RUnlock thủ công ở cuối: hàm này gửi vào channel của người
+	// khác, và bất kỳ panic nào ở giữa cũng không được phép bỏ lại khoá đọc —
+	// mất khoá là cả hub đứng chứ không chỉ hỏng một tin nhắn.
 	h.mu.RLock()
+	defer h.mu.RUnlock()
+
 	members := h.rooms[roomID]
 	if len(members) == 0 {
-		h.mu.RUnlock()
 		return
 	}
 
@@ -204,7 +208,6 @@ func (h *Hub) PublishToRoom(roomID string, event Event, skipUserID string) {
 		default:
 		}
 	}
-	h.mu.RUnlock()
 }
 
 func (h *Hub) HandleWS(c *gin.Context) {
@@ -257,6 +260,26 @@ func (h *Hub) HandleWS(c *gin.Context) {
 func (h *Hub) removeClient(client *Client) {
 	h.mu.Lock()
 	delete(h.clients, client)
+
+	// Gỡ khỏi mọi phòng chat NGAY TẠI ĐÂY, không để người gọi tự nhớ.
+	//
+	// Trước đây chỉ nhánh readPump gọi LeaveAllRooms; hai nhánh loại client
+	// nghẽn trong Broadcast và BroadcastToType thì không. Client bị loại vẫn
+	// nằm lại trong h.rooms với channel ĐÃ ĐÓNG, và lần PublishToRoom sau đó
+	// panic "send on closed channel" — select/default không đỡ được, gửi vào
+	// channel đã đóng luôn panic.
+	//
+	// Hậu quả nặng hơn một cú panic: PublishToRoom mở RLock mà không defer, nên
+	// panic bỏ lại khoá đọc đang giữ và toàn bộ hub đứng — mọi WebSocket mới
+	// treo ở h.mu.Lock(). Vòng lặp gửi cũng đứt giữa chừng, nên vài client kịp
+	// nhận còn số còn lại thì không.
+	for roomID, members := range h.rooms {
+		delete(members, client)
+		if len(members) == 0 {
+			delete(h.rooms, roomID)
+		}
+	}
+
 	// Chỉ gỡ ĐÚNG client này khỏi danh sách của mã máy. Các kết nối khác cùng mã
 	// (dịch vụ nền, hoặc một lần nối lại vừa đăng ký) phải được giữ nguyên.
 	if client.machineCode != "" {
@@ -457,7 +480,6 @@ func (h *Hub) readPump(client *Client) {
 		if h.onDisconnect != nil {
 			h.onDisconnect(client)
 		}
-		h.LeaveAllRooms(client)
 		h.removeClient(client)
 		client.conn.Close()
 	}()
