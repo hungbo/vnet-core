@@ -475,7 +475,7 @@ func (a *App) ShowWindow() {
 // Token đưa qua STDIN chứ không qua tham số dòng lệnh: tham số hiện nguyên văn
 // trong Task Manager, ai ngồi máy cũng đọc được.
 func (a *App) OpenWindow(mode string) error {
-	if mode != "order" && mode != "support" {
+	if mode != "order" && mode != "support" && mode != "topup" {
 		return fmt.Errorf("cửa sổ %q không hợp lệ", mode)
 	}
 

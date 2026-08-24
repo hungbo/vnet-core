@@ -1,5 +1,14 @@
 <template>
-	<el-dialog v-model="visible" title="Nạp tiền" width="380px" :close-on-click-modal="false" @close="$emit('close')">
+	<!--
+		Một thân, hai lớp vỏ. Mở từ thanh dock thì là hộp thoại; mở thành cửa sổ
+		riêng thì el-dialog là sai — một hộp thoại nổi giữa cửa sổ trống, lại còn
+		nút X của riêng nó bên cạnh nút X của hệ điều hành.
+
+		Dùng <component :is> chứ không chép đôi khối markup: hai bản chép rồi sẽ
+		lệch nhau, mà lệch ở đây là màn hình nạp tiền của khách.
+	-->
+	<component :is="standalone ? 'div' : 'el-dialog'" v-bind="voBoc" @close="$emit('close')">
+		<h2 v-if="standalone" class="standalone-title">Nạp tiền</h2>
 		<div class="balance-info" v-if="memberInfo">
 			<div class="info-row">
 				<span>Số dư hiện tại</span>
@@ -39,17 +48,23 @@
 			<strong>{{ formatCurrency(finalAmount) }}</strong>
 		</div>
 
-		<el-button
-			type="warning"
-			size="large"
-			style="width: 100%; margin-top: 8px;"
-			:loading="sending"
-			@click="handleRequest"
-		>
-			Gửi yêu cầu nạp tiền
-		</el-button>
-		<p class="hint">Nhân viên quầy sẽ xác nhận sau khi nhận tiền</p>
-	</el-dialog>
+		<template v-if="daGui">
+			<div class="da-gui">Đã gửi yêu cầu nạp {{ formatCurrency(finalAmount) }}</div>
+			<p class="hint">Nhân viên quầy sẽ xác nhận sau khi nhận tiền. Đóng cửa sổ này được rồi.</p>
+		</template>
+		<template v-else>
+			<el-button
+				type="warning"
+				size="large"
+				style="width: 100%; margin-top: 8px;"
+				:loading="sending"
+				@click="handleRequest"
+			>
+				Gửi yêu cầu nạp tiền
+			</el-button>
+			<p class="hint">Nhân viên quầy sẽ xác nhận sau khi nhận tiền</p>
+		</template>
+	</component>
 </template>
 
 <script setup lang="ts">
@@ -59,13 +74,25 @@ import { ElMessage } from 'element-plus'
 declare const window: any
 const api = () => window.go?.main?.App
 
+const props = defineProps<{ standalone?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const visible = ref(true)
+
+// Thuộc tính của lớp vỏ, tách ra để thẻ <component> không phải mang theo cả
+// modelValue lẫn title khi nó chỉ là một thẻ div.
+const voBoc = computed(() =>
+	props.standalone
+		? { class: 'topup-standalone' }
+		: { modelValue: visible.value, title: 'Nạp tiền', width: '380px', closeOnClickModal: false }
+)
 const presets = ref<number[]>([])
 const selectedAmount = ref<number | null>(null)
 const customAmount = ref(50000)
 const sending = ref(false)
+// Chỉ có ý nghĩa ở dạng cửa sổ riêng: hộp thoại gửi xong là đóng, còn cửa sổ thì
+// nằm nguyên đó với cái nút vẫn bấm được — bấm hai lần là hai yêu cầu nạp tiền.
+const daGui = ref(false)
 const memberInfo = ref<any>(null)
 
 const finalAmount = computed(() => selectedAmount.value || customAmount.value)
@@ -83,6 +110,7 @@ async function handleRequest() {
 	try {
 		await api().RequestTopup(finalAmount.value)
 		ElMessage.success('Yêu cầu nạp tiền đã gửi! Admin sẽ xác nhận sau.')
+		daGui.value = true
 		emit('close')
 	} catch (e) {
 		ElMessage.error(String(e))
@@ -107,6 +135,38 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* Dạng cửa sổ riêng: căn giữa một cột hẹp thay vì kéo giãn form ra hết bề
+   ngang màn hình — mấy ô chọn mệnh giá mà dài 1300px thì không bấm nổi. */
+.topup-standalone {
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 4px;
+	max-width: 420px;
+	margin: 0 auto;
+	padding: 24px;
+	background: var(--vnet-bg);
+	color: var(--vnet-text);
+}
+
+.standalone-title {
+	margin: 0 0 12px;
+	font-size: 20px;
+	font-weight: 600;
+	text-align: center;
+}
+
+.da-gui {
+	margin-top: 8px;
+	padding: 14px;
+	border-radius: 8px;
+	text-align: center;
+	font-weight: 600;
+	color: var(--vnet-success);
+	background: var(--vnet-surface-2);
+}
+
 .balance-info {
 	background: #f8f9fa;
 	border-radius: 8px;

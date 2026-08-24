@@ -23,6 +23,7 @@ var assets embed.FS
 //	vnet-client.exe                    thanh điều khiển dán mép phải màn hình
 //	vnet-client.exe --window order     cửa sổ thực đơn, tách rời
 //	vnet-client.exe --window support   cửa sổ hỗ trợ, tách rời
+//	vnet-client.exe --window topup     cửa sổ nạp tiền, tách rời
 //	vnet-client.exe --service          tiến trình nền chạy như dịch vụ Windows
 //
 // Cửa sổ phụ phải là tiến trình riêng vì Wails v2 KHÔNG hỗ trợ đa cửa sổ: mọi
@@ -290,8 +291,11 @@ func centeredGeometry(screenW, screenH, minW, minH int) (w, h, x, y int) {
 // hiện cửa sổ hỗ trợ lên trên khi có tin nhắn tới — không phải viết IPC riêng.
 func runChildWindow(mode string) {
 	title := "VNET · Gọi món"
-	if mode == "support" {
+	switch mode {
+	case "support":
 		title = "VNET · Hỗ trợ"
+	case "topup":
+		title = "VNET · Nạp tiền"
 	}
 
 	app := NewApp()

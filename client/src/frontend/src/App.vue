@@ -6,6 +6,7 @@
 	-->
 	<div v-if="windowMode" class="app-container child-window">
 		<ServiceMenu v-if="windowMode === 'order'" standalone />
+		<TopupDialog v-else-if="windowMode === 'topup'" standalone />
 		<ChatWidget v-else fullPage standalone />
 	</div>
 
@@ -29,11 +30,6 @@
 				v-else-if="currentView === 'settings'"
 				@back="currentView = 'dashboard'"
 				@logout="handleLogout"
-			/>
-
-			<TopupDialog
-				v-if="showTopup"
-				@close="showTopup = false"
 			/>
 
 			<AttendanceDialog
@@ -72,14 +68,12 @@ const session = useSessionStore()
 const chat = useChatStore()
 const currentView = ref('dashboard')
 const windowMode = ref('')
-const showTopup = ref(false)
 const showAttendance = ref(false)
 const showFeedback = ref(false)
 
 // Ba mục này là hộp thoại chồng lên màn hình chính chứ không phải trang riêng,
 // nên không đổi currentView.
 const OVERLAYS: Record<string, (v: boolean) => void> = {
-	topup: v => (showTopup.value = v),
 	attendance: v => (showAttendance.value = v),
 	feedback: v => (showFeedback.value = v),
 }
@@ -88,7 +82,7 @@ const OVERLAYS: Record<string, (v: boolean) => void> = {
 // thanh 360px, và cửa sổ hỗ trợ phải nổi lên trên được khi khách đang chơi game
 // toàn màn hình. Wails v2 không tạo được cửa sổ thứ hai nên đây là một tiến
 // trình .exe nữa; bấm lần hai chỉ đánh thức cửa sổ đang chạy.
-const EXTERNAL_WINDOWS: Record<string, string> = { order: 'order', chat: 'support' }
+const EXTERNAL_WINDOWS: Record<string, string> = { order: 'order', chat: 'support', topup: 'topup' }
 
 function navigateTo(view: string) {
 	const overlay = OVERLAYS[view]
@@ -145,7 +139,6 @@ async function canhBaoTaiKhoanMacDinh() {
 async function handleLogout() {
 	await session.logout()
 	currentView.value = 'dashboard'
-	showTopup.value = false
 	showAttendance.value = false
 	showFeedback.value = false
 }
