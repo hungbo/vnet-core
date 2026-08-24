@@ -553,7 +553,7 @@ const local: App.I18n.Schema = {
     },
     pwd: {
       required: 'Vui lòng nhập mật khẩu',
-      invalid: '6-18 ký tự, bao gồm chữ cái, số và dấu gạch dưới'
+      invalid: '6-18 ký tự, không chứa dấu cách'
     },
     confirmPwd: {
       required: 'Vui lòng nhập lại mật khẩu',
