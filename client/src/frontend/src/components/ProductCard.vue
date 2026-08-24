@@ -1,5 +1,10 @@
 <template>
-	<button class="product-card" :class="[color]" @click="$emit('select', product)">
+	<button
+		class="product-card"
+		:class="[color, { 'het-hang': hetHang }]"
+		:disabled="hetHang"
+		@click="$emit('select', product)"
+	>
 		<!--
 			Bản cũ chỉ hiện product.icon, mà bảng products không có cột icon nào —
 			ô ảnh vì thế luôn rỗng ở mọi món. Ưu tiên ảnh thật, còn icon giữ lại làm
@@ -16,20 +21,31 @@
 		<div v-if="!product.image_url || broken" class="product-icon">{{ product.icon || '🍽️' }}</div>
 		<div class="product-name">{{ product.name }}</div>
 		<div class="product-price" v-if="product.price">{{ formatCurrency(product.price) }}</div>
+		<div v-if="hetHang" class="nhan-het">Hết hàng</div>
+		<div v-else-if="theoDoiKho" class="con-lai">còn {{ soConLai }}</div>
 	</button>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 // Ảnh hỏng thì rơi về icon chứ không để lại một ô trắng: máy trạm hay chạy khi
 // máy chủ vừa đổi địa chỉ, và lúc đó mọi ảnh đều 404.
 const broken = ref(false)
 
-defineProps<{
+const props = defineProps<{
 	product: any
 	color?: string
 }>()
+
+// CHỈ xét tồn kho khi has_stock bật.
+//
+// Món nấu từ nguyên liệu mà không bật cờ này luôn được máy chủ trả về
+// current_stock = 0 (xem loadProductStock bên backend). Lấy số 0 đó ra mà khoá
+// là khoá nhầm gần hết thực đơn trong khi kho vẫn đầy.
+const theoDoiKho = computed(() => props.product?.has_stock === true)
+const soConLai = computed(() => Math.floor(Number(props.product?.current_stock ?? 0)))
+const hetHang = computed(() => theoDoiKho.value && soConLai.value <= 0)
 
 const emit = defineEmits<{
 	select: [product: any]
@@ -53,6 +69,34 @@ function formatCurrency(n: number) {
 	background: var(--vnet-surface);
 	transition: all .2s;
 	font-family: inherit;
+}
+
+/* Hết hàng vẫn hiện chứ không ẩn: khách cần biết quán có bán món đó, chỉ là
+   hôm nay tạm hết. Ẩn đi thì món biến mất rồi hiện lại luân phiên, trông như
+   lỗi giao diện. */
+.product-card.het-hang {
+	opacity: .45;
+	cursor: not-allowed;
+}
+
+.product-card.het-hang:hover {
+	transform: none;
+	box-shadow: none;
+	border-color: var(--vnet-border);
+}
+
+.nhan-het {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--vnet-danger, #f56c6c);
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	padding: 1px 8px;
+}
+
+.con-lai {
+	font-size: 11px;
+	color: var(--vnet-text-muted);
 }
 
 .product-card:hover {

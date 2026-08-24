@@ -804,13 +804,15 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			tx.Rollback()
 			return nil, err
 		}
-		if err := s.deductStockForOrder(tx, order.ID, order.OrderCode); err != nil {
+		khoDaDoi, err := s.deductStockForOrder(tx, order.ID, order.OrderCode)
+		if err != nil {
 			tx.Rollback()
 			return nil, err
 		}
 		if err := tx.Commit().Error; err != nil {
 			return nil, err
 		}
+		phatTonKhoDoi(s.hub, khoDaDoi...)
 
 	case "completed":
 		now := time.Now()
@@ -838,8 +840,11 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			tx.Rollback()
 			return nil, err
 		}
+		var khoDaDoi []string
 		if order.Status == "confirmed" && order.OrderType != model.OrderTypeTopup {
-			if err := s.restoreStockForOrder(tx, order.ID, order.OrderCode); err != nil {
+			var err error
+			khoDaDoi, err = s.restoreStockForOrder(tx, order.ID, order.OrderCode)
+			if err != nil {
 				tx.Rollback()
 				return nil, err
 			}
@@ -847,6 +852,7 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 		if err := tx.Commit().Error; err != nil {
 			return nil, err
 		}
+		phatTonKhoDoi(s.hub, khoDaDoi...)
 	}
 
 afterUpdate:
@@ -878,14 +884,27 @@ type itemStockUpdate struct {
 	currentStock float64
 }
 
+// stockOp là chiều của một lượt tính kho.
+//
+// Hai chiều dùng CHUNG một phép phân nhánh trong computeDeductions, cố ý. Trước
+// đây chiều hoàn có vòng lặp riêng với điều kiện riêng, và hai bên lệch nhau:
+// chiều trừ bỏ qua cột thô của món có công thức còn chiều hoàn thì cộng vào —
+// mỗi lần huỷ đơn là sinh tồn kho từ hư không.
+type stockOp int
+
+const (
+	stockOpDeduct stockOp = iota
+	stockOpRestore
+)
+
 // computeDeductions tính phần tồn kho phải trừ cho một đơn.
 //
 // Đọc bằng chính giao dịch sẽ ghi và khoá dòng sản phẩm: bản cũ đọc bằng kết
 // nối ngoài giao dịch rồi mới ghi trong giao dịch, nên hai đơn cùng lúc đều
 // thấy tồn kho cũ và bán vượt số hàng thực có.
 //
-// enforceStock bật khi trừ kho (thiếu hàng phải báo lỗi) và tắt khi hoàn kho.
-func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, enforceStock bool) ([]itemDeductionSet, []itemStockUpdate, error) {
+// op quyết định chiều: trừ kho (thiếu hàng phải báo lỗi) hay hoàn kho.
+func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, op stockOp) ([]itemDeductionSet, []itemStockUpdate, error) {
 	var deductions []itemDeductionSet
 	var stockUpdates []itemStockUpdate
 
@@ -893,6 +912,15 @@ func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, e
 	if db == nil {
 		db = s.db
 	}
+
+	// Phần đã hứa trừ trong CHÍNH lượt tính này, cộng dồn theo sản phẩm.
+	//
+	// Không có nó thì một sản phẩm nằm ở hai dòng order_items sẽ được tính hai
+	// lần từ cùng một mốc tồn kho: lệnh UPDATE sau ghi đè lệnh trước nên trừ
+	// thiếu, và phép kiểm "đủ hàng" cũng đọc mốc cũ nên cho qua cả khi tổng hai
+	// dòng vượt tồn. Nhánh nguyên liệu không dính vì DeductItemsStock đã tự cộng
+	// dồn theo IngredientID.
+	daHua := map[string]float64{}
 
 	for _, item := range items {
 		var product model.Product
@@ -904,28 +932,29 @@ func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, e
 			return nil, nil, fmt.Errorf("không tìm thấy sản phẩm %s", item.ProductID)
 		}
 
-		// Self-managed stock
-		if product.HasStock && product.CurrentStock > 0 {
-			newStock := product.CurrentStock - float64(item.Quantity)
-			if newStock < 0 {
-				if enforceStock {
-					// Bản cũ lặng lẽ cắt về 0 và vẫn cho đơn đi tiếp, khiến sổ
-					// sách khớp còn hàng trong kho thì không.
-					return nil, nil, fmt.Errorf("sản phẩm %s không đủ tồn kho (còn %.2f, cần %d)",
-						product.Name, product.CurrentStock, item.Quantity)
-				}
-				newStock = 0
-			}
-			stockUpdates = append(stockUpdates, itemStockUpdate{
-				productID:    item.ProductID,
-				currentStock: newStock,
-			})
+		// Định lượng đọc TRƯỚC, và đọc bằng chính giao dịch đang ghi.
+		//
+		// Trước: đọc bằng s.db (kết nối khác trong pool) nên không thấy thứ mà
+		// giao dịch này vừa ghi, và không cùng ảnh chụp với dòng products vừa
+		// khoá. Lỗi đọc còn bị nuốt, mà từ giờ "không có định lượng" là một
+		// nhánh rẽ chứ không còn vô hại — nuốt lỗi thành bán tự do.
+		var pms []model.ProductIngredient
+		if err := db.Where("product_id = ?", item.ProductID).Find(&pms).Error; err != nil {
+			return nil, nil, fmt.Errorf("không đọc được định lượng sản phẩm %s: %w", product.Name, err)
 		}
 
-		// BOM ingredients
-		var pms []model.ProductIngredient
-		s.db.Where("product_id = ?", item.ProductID).Find(&pms)
-		if len(pms) > 0 {
+		// Kho của một sản phẩm là MỘT trong hai nguồn, không bao giờ cả hai.
+		//
+		// Đây đúng là quy ước mà loadProductStock dùng để hiển thị: món có công
+		// thức thì tồn kho là min(tồn nguyên liệu / định mức), cột current_stock
+		// thô bị bỏ qua hoàn toàn. Chỗ này trước đây lệch khỏi quy ước đó nên
+		// sinh hai lỗi cùng lúc — trừ hai lần cho món có công thức, và điều kiện
+		// CurrentStock > 0 che mất phép kiểm khi tồn đúng bằng 0.
+		switch {
+		case len(pms) > 0:
+			// Món chế biến: trừ ở nguyên liệu. DeductItemsStock là nơi chặn khi
+			// thiếu. KHÔNG đụng cột thô — quán nhập nguyên liệu chứ không nhập
+			// thành phẩm, nên con số đó không ai nạp và không ai nhìn.
 			deds := make([]StockDeductionItem, 0, len(pms))
 			for _, pm := range pms {
 				deds = append(deds, StockDeductionItem{
@@ -934,15 +963,46 @@ func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, e
 				})
 			}
 			deductions = append(deductions, itemDeductionSet{productID: item.ProductID, deds: deds})
+
+		case product.HasStock:
+			// Hàng bán thẳng, kho tự quản.
+			if op == stockOpRestore {
+				conLai := product.CurrentStock + daHua[item.ProductID] + float64(item.Quantity)
+				daHua[item.ProductID] += float64(item.Quantity)
+				stockUpdates = append(stockUpdates, itemStockUpdate{
+					productID:    item.ProductID,
+					currentStock: conLai,
+				})
+				break
+			}
+
+			conLai := product.CurrentStock - daHua[item.ProductID]
+			newStock := conLai - float64(item.Quantity)
+			if newStock < 0 {
+				// Bản cũ lặng lẽ cắt về 0 và vẫn cho đơn đi tiếp, khiến sổ
+				// sách khớp còn hàng trong kho thì không.
+				return nil, nil, fmt.Errorf("sản phẩm %s không đủ tồn kho (còn %.2f, cần %d)",
+					product.Name, conLai, item.Quantity)
+			}
+			daHua[item.ProductID] += float64(item.Quantity)
+			stockUpdates = append(stockUpdates, itemStockUpdate{
+				productID:    item.ProductID,
+				currentStock: newStock,
+			})
+
+		default:
+			// Không định lượng, không bật has_stock: sản phẩm này không theo dõi
+			// tồn kho, bán bao nhiêu cũng được. Giữ nguyên hành vi cũ.
 		}
 
-		// Option ingredients
+		// Nguyên liệu của tuỳ chọn nằm NGOÀI switch: topping trừ theo nguyên
+		// liệu bất kể món gốc quản kho kiểu gì.
 		if item.Options != "" && item.Options != "null" {
 			var opts []OrderOption
 			if err := json.Unmarshal([]byte(item.Options), &opts); err == nil {
 				for _, opt := range opts {
 					var po model.ProductOption
-					if err := s.db.Where("id = ? AND product_id = ?", opt.OptionID, item.ProductID).First(&po).Error; err != nil {
+					if err := db.Where("id = ? AND product_id = ?", opt.OptionID, item.ProductID).First(&po).Error; err != nil {
 						continue
 					}
 					if po.IngredientID != nil {
@@ -962,55 +1022,63 @@ func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, e
 	return deductions, stockUpdates, nil
 }
 
-func (s *OrderService) deductStockForOrder(tx *gorm.DB, orderID string, orderCode string) error {
+// Trả về id của mọi sản phẩm có tồn kho vừa đổi — cả hàng bán thẳng lẫn nguyên
+// liệu — để người gọi phát stock:changed SAU khi commit.
+func (s *OrderService) deductStockForOrder(tx *gorm.DB, orderID string, orderCode string) ([]string, error) {
 	items := s.loadOrderItems(orderID)
-	deductions, stockUpdates, err := s.computeDeductions(tx, items, true)
+	deductions, stockUpdates, err := s.computeDeductions(tx, items, stockOpDeduct)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var daDoi []string
 	for _, d := range deductions {
 		if err := s.inv.DeductItemsStock(tx, d.deds, d.productID, orderID, orderCode); err != nil {
-			return err
+			return nil, err
+		}
+		for _, ded := range d.deds {
+			daDoi = append(daDoi, ded.IngredientID)
 		}
 	}
 
 	for _, u := range stockUpdates {
 		if err := tx.Model(&model.Product{}).Where("id = ?", u.productID).Update("current_stock", u.currentStock).Error; err != nil {
-			return err
+			return nil, err
 		}
+		daDoi = append(daDoi, u.productID)
 	}
 
-	return nil
+	return daDoi, nil
 }
 
-func (s *OrderService) restoreStockForOrder(tx *gorm.DB, orderID string, orderCode string) error {
+func (s *OrderService) restoreStockForOrder(tx *gorm.DB, orderID string, orderCode string) ([]string, error) {
 	items := s.loadOrderItems(orderID)
-	deductions, _, err := s.computeDeductions(tx, items, false)
+	deductions, stockUpdates, err := s.computeDeductions(tx, items, stockOpRestore)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var daDoi []string
 	for _, d := range deductions {
 		if err := s.inv.RestoreItemsStock(tx, d.deds, d.productID, orderID, orderCode); err != nil {
-			return err
+			return nil, err
+		}
+		for _, ded := range d.deds {
+			daDoi = append(daDoi, ded.IngredientID)
 		}
 	}
 
-	for _, item := range items {
-		var product model.Product
-		if err := tx.Where("id = ?", item.ProductID).First(&product).Error; err != nil {
-			return err
+	// Áp thẳng stockUpdates thay vì lặp lại phép phân nhánh ở đây. Vòng lặp cũ
+	// đọc lại products KHÔNG khoá dòng, nên hai lần huỷ đồng thời đọc cùng một
+	// giá trị rồi ghi đè nhau — đúng lỗi mà chiều trừ đã chống bằng FOR UPDATE.
+	for _, u := range stockUpdates {
+		if err := tx.Model(&model.Product{}).Where("id = ?", u.productID).Update("current_stock", u.currentStock).Error; err != nil {
+			return nil, err
 		}
-		if product.HasStock {
-			restored := product.CurrentStock + float64(item.Quantity)
-			if err := tx.Model(&model.Product{}).Where("id = ?", item.ProductID).Update("current_stock", restored).Error; err != nil {
-				return err
-			}
-		}
+		daDoi = append(daDoi, u.productID)
 	}
 
-	return nil
+	return daDoi, nil
 }
 
 func (s *OrderService) Split(id string, req SplitOrderRequest) (*OrderResponse, error) {
@@ -1160,8 +1228,11 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 
 	// Paying straight from pending skips the confirm step, so the stock it
 	// would have deducted has to be deducted here.
+	var khoDaDoi []string
 	if order.Status == "pending" {
-		if err := s.deductStockForOrder(tx, order.ID, order.OrderCode); err != nil {
+		var err error
+		khoDaDoi, err = s.deductStockForOrder(tx, order.ID, order.OrderCode)
+		if err != nil {
 			tx.Rollback()
 			return nil, err
 		}
@@ -1187,6 +1258,7 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
+	phatTonKhoDoi(s.hub, khoDaDoi...)
 
 	items := s.loadOrderItems(order.ID)
 	result := toOrderResponse(&order, items)

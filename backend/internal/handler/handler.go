@@ -45,7 +45,7 @@ type Handlers struct {
 
 func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *config.Config) *Handlers {
 	auditSvc := service.NewAuditService(db)
-	invSvc := service.NewInventoryService(db, auditSvc)
+	invSvc := service.NewInventoryService(db, auditSvc).WithHub(wsHub)
 	chatSvc := service.NewChatService(db, wsHub, auditSvc)
 	chatSvc.HubRoomSync()
 	curfewSvc := service.NewCurfewService(db, auditSvc)
@@ -66,12 +66,12 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Promotion:         NewPromotionHandler(service.NewPromotionService(db, auditSvc).WithHub(wsHub)),
 		Curfew:            NewCurfewHandler(curfewSvc),
 		Category:          NewCategoryHandler(service.NewCategoryService(db, auditSvc)),
-		Product:           NewProductHandler(service.NewProductService(db, auditSvc)),
+		Product:           NewProductHandler(service.NewProductService(db, auditSvc).WithHub(wsHub)),
 		Order:             NewOrderHandler(service.NewOrderService(db, wsHub, auditSvc, invSvc)),
 		Printer:           NewPrinterHandler(service.NewPrinterService(db, auditSvc)),
 		Receipt:           NewReceiptHandler(service.NewReceiptService(db, auditSvc)),
 		Card:              NewCardHandler(service.NewCardService(db, auditSvc).WithHub(wsHub)),
-		InventoryCount:    NewInventoryCountHandler(service.NewInventoryCountService(db, auditSvc)),
+		InventoryCount:    NewInventoryCountHandler(service.NewInventoryCountService(db, auditSvc).WithHub(wsHub)),
 		Attendance:        NewAttendanceHandler(service.NewAttendanceService(db, auditSvc)),
 		WebsiteBlock:      NewWebsiteBlockHandler(service.NewWebsiteBlockService(db, auditSvc), machineSvc),
 		AppUpdate:         NewAppUpdateHandler(service.NewAppUpdateService(db, auditSvc), machineSvc),

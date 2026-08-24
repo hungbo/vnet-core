@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { h, nextTick, onMounted, ref } from 'vue';
+import { h, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
+import { useWebSocketStore } from '@/store/modules/ws';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
@@ -239,10 +240,23 @@ async function fetchUnits() {
   } catch (_) {}
 }
 
+// Tồn kho đổi ở nơi khác — máy trạm đặt món, nhân viên nhập kho, chốt phiên
+// kiểm kê — thì cột "Tồn kho" phải đổi theo, không đợi ai bấm nút làm mới.
+const wsStore = useWebSocketStore();
+
+function onStockChanged() {
+  getData();
+}
+
 onMounted(() => {
   fetchCategories();
   fetchUnits();
   fetchSuppliers();
+  wsStore.on('stock:changed', onStockChanged);
+});
+
+onBeforeUnmount(() => {
+  wsStore.off('stock:changed', onStockChanged);
 });
 
 async function fetchProductIngredients(productId: string) {

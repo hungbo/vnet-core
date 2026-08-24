@@ -6,9 +6,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ValidUnits = map[string]string{
@@ -36,10 +38,19 @@ var ValidUnits = map[string]string{
 type InventoryService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewInventoryService(db *gorm.DB, audit *AuditService) *InventoryService {
 	return &InventoryService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để nhập/xuất/điều chỉnh kho báo tồn kho đổi ngay lúc nó
+// đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là thực đơn trên máy trạm và
+// bảng sản phẩm trên trang quản trị giữ số cũ tới khi tự tải lại.
+func (s *InventoryService) WithHub(h *hub.Hub) *InventoryService {
+	s.hub = h
+	return s
 }
 
 type SupplierResponse struct {
@@ -335,6 +346,8 @@ func (s *InventoryService) CreateStockTransaction(req *CreateStockTransactionReq
 		return nil, err
 	}
 
+	phatTonKhoDoi(s.hub, *req.ProductID)
+
 	s.audit.Log(&LogAuditRequest{
 		Action:     "create",
 		EntityType: "stock_transaction",
@@ -479,7 +492,14 @@ func (s *InventoryService) DeductItemsStock(tx *gorm.DB, items []StockDeductionI
 	for _, ingredientID := range ingredientIDs {
 		totalQty := deductions[ingredientID]
 		var ingredient model.Product
-		if err := tx.Where("id = ?", ingredientID).First(&ingredient).Error; err != nil {
+		// Khoá dòng nguyên liệu, cùng lý do và cùng cách với dòng sản phẩm ở
+		// computeDeductions. Thiếu chỗ này thì hàng bán thẳng chống được hai đơn
+		// cùng lúc, còn món chế biến thì không — hai đơn đọc cùng một mốc rồi
+		// ghi đè nhau, và cả hai đều đi qua phép kiểm "đủ nguyên liệu".
+		//
+		// Thứ tự khoá theo ingredientIDs đã sort ở trên nên không sinh chu trình.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", ingredientID).First(&ingredient).Error; err != nil {
 			return fmt.Errorf("không tìm thấy nguyên liệu %s", ingredientID)
 		}
 
@@ -540,7 +560,14 @@ func (s *InventoryService) RestoreItemsStock(tx *gorm.DB, items []StockDeduction
 	for _, ingredientID := range ingredientIDs {
 		totalQty := deductions[ingredientID]
 		var ingredient model.Product
-		if err := tx.Where("id = ?", ingredientID).First(&ingredient).Error; err != nil {
+		// Khoá dòng nguyên liệu, cùng lý do và cùng cách với dòng sản phẩm ở
+		// computeDeductions. Thiếu chỗ này thì hàng bán thẳng chống được hai đơn
+		// cùng lúc, còn món chế biến thì không — hai đơn đọc cùng một mốc rồi
+		// ghi đè nhau, và cả hai đều đi qua phép kiểm "đủ nguyên liệu".
+		//
+		// Thứ tự khoá theo ingredientIDs đã sort ở trên nên không sinh chu trình.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", ingredientID).First(&ingredient).Error; err != nil {
 			return fmt.Errorf("không tìm thấy nguyên liệu %s", ingredientID)
 		}
 

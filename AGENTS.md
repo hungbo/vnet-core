@@ -251,6 +251,15 @@ so `golangci-lint run` uses defaults.
     the counter on no machine at all, and who usually holds several sockets at once because the client
     opens its child windows as separate processes.
 
+    **When the number is derived, push a signal instead of the number.** Stock is the counterpart case:
+    `current_stock` in the API is not the raw column — for a dish with a recipe it is
+    `min(ingredient stock / per-unit amount)`, so deducting *one* ingredient changes the serving count of
+    *every* dish using it (`product.go:352-383`). Recomputing that fan-out at the emit site is a second
+    implementation of the derivation, and a wrong one shows a wrong number nobody will catch. So
+    `stock:changed` carries only the ids of the raw products touched and the client re-fetches. It is
+    still self-healing, and `Broadcast` is correct here where `SendToUser` was correct for balance —
+    stock is not private, and every open menu needs it.
+
 31. **The machine key is optional, and that is a deliberate trade.** `Create` no longer issues one;
     `VerifyAgentToken` passes any machine whose `agent_token` is empty, so a client plugs in and runs.
     Pressing "Cấp khoá" turns the requirement on **for that machine only**. The cost is real: without a

@@ -37,6 +37,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ArrowLeft } from '@element-plus/icons-vue'
+import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { useOrderStore } from '../stores/order.store'
 import ProductCard from '../components/ProductCard.vue'
 import CartPanel from '../components/CartPanel.vue'
@@ -65,6 +66,18 @@ onMounted(async () => {
 		if (data) categories.value = JSON.parse(data)
 	} catch {}
 	loadProducts()
+
+	// Máy khác trong quán đặt món cuối, hoặc nhân viên nhập kho — thực đơn phải
+	// đổi theo mà không cần khách bấm gì.
+	//
+	// Không nạp lại ngay sau khi khách đặt: kho bị trừ lúc nhân viên XÁC NHẬN
+	// đơn, không phải lúc đặt, nên nạp lúc đó chỉ đọc lại đúng con số cũ. Sự
+	// kiện dưới đây mới về đúng thời điểm.
+	//
+	// Nạp lại cả danh sách chứ không vá từng món theo id trong gói tin: tồn kho
+	// mà máy chủ trả về là giá trị suy diễn từ nguyên liệu, nên trừ một nguyên
+	// liệu làm đổi số suất của nhiều món khác nhau. Hỏi lại thì luôn đúng.
+	EventsOn('vnet:stock:changed', () => loadProducts())
 })
 </script>
 

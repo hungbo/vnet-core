@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
@@ -25,10 +26,19 @@ import (
 type InventoryCountService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewInventoryCountService(db *gorm.DB, audit *AuditService) *InventoryCountService {
 	return &InventoryCountService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để chốt phiên kiểm kê báo tồn kho đổi ngay lúc nó
+// đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là thực đơn trên máy trạm và
+// bảng sản phẩm trên trang quản trị giữ số cũ tới khi tự tải lại.
+func (s *InventoryCountService) WithHub(h *hub.Hub) *InventoryCountService {
+	s.hub = h
+	return s
 }
 
 const (
@@ -169,6 +179,7 @@ func (s *InventoryCountService) RemoveLine(sessionID, productID string) error {
 // Commit chốt phiên: sinh phiếu điều chỉnh cho từng dòng lệch và sửa tồn kho.
 func (s *InventoryCountService) Commit(sessionID, actorID string) (*CountSessionResponse, error) {
 	var adjusted int
+	var daDoi []string
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		// Khoá phiên: hai người bấm chốt cùng lúc sẽ điều chỉnh kho hai lần.
 		var session model.InventoryCountSession
@@ -228,6 +239,7 @@ func (s *InventoryCountService) Commit(sessionID, actorID string) (*CountSession
 				return err
 			}
 			adjusted++
+			daDoi = append(daDoi, product.ID)
 		}
 
 		now := time.Now()
@@ -242,6 +254,9 @@ func (s *InventoryCountService) Commit(sessionID, actorID string) (*CountSession
 	if err != nil {
 		return nil, err
 	}
+
+	// db.Transaction đã commit khi trả về nil, nên phát ở đây là an toàn.
+	phatTonKhoDoi(s.hub, daDoi...)
 
 	s.log("commit_inventory_count", sessionID, actorID, map[string]interface{}{
 		"adjusted_products": adjusted,

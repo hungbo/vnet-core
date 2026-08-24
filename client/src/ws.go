@@ -84,6 +84,12 @@ func NewWSClient(ctx context.Context, baseURL, token string, machineCode string)
 		runtime.EventsEmit(ctx, "vnet:session:ended", string(msg.Payload))
 	})
 
+	// Tồn kho vừa đổi ở đâu đó trong quán. Gói tin chỉ mang danh sách id, thực
+	// đơn tự hỏi lại máy chủ — xem chú thích phatTonKhoDoi bên backend.
+	c.On("stock:changed", func(msg WSMessage) {
+		runtime.EventsEmit(ctx, "vnet:stock:changed", string(msg.Payload))
+	})
+
 	c.On("chat:message", func(msg WSMessage) {
 		runtime.EventsEmit(ctx, "vnet:chat:message", string(msg.Payload))
 	})

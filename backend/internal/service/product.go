@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
@@ -13,10 +14,19 @@ import (
 type ProductService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewProductService(db *gorm.DB, audit *AuditService) *ProductService {
 	return &ProductService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để tạo và sửa sản phẩm báo tồn kho đổi ngay lúc nó
+// đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là thực đơn trên máy trạm và
+// bảng sản phẩm trên trang quản trị giữ số cũ tới khi tự tải lại.
+func (s *ProductService) WithHub(h *hub.Hub) *ProductService {
+	s.hub = h
+	return s
 }
 
 type ProductOptionResponse struct {
@@ -279,6 +289,13 @@ func (s *ProductService) Update(id string, req *UpdateProductRequest) (*ProductR
 	if len(updates) > 0 {
 		if err := s.db.Model(&product).Updates(updates).Error; err != nil {
 			return nil, err
+		}
+		// Sửa sản phẩm có thể đổi thẳng tồn kho, hoặc đổi has_stock — cả hai đều
+		// làm con số trên thực đơn khác đi.
+		_, doiTon := updates["current_stock"]
+		_, doiCo := updates["has_stock"]
+		if doiTon || doiCo {
+			phatTonKhoDoi(s.hub, id)
 		}
 	}
 
