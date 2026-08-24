@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
@@ -14,10 +15,22 @@ import (
 type BookingService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewBookingService(db *gorm.DB, audit *AuditService) *BookingService {
 	return &BookingService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để thanh toán và huỷ đặt chỗ báo số dư mới cho máy trạm
+// ngay lúc nó đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là màn hình khách
+// giữ số cũ cho tới khi tự tải lại.
+//
+// Nối rời thay vì thêm tham số cho constructor: giữ nguyên chữ ký thì mọi test
+// dựng service không phải sửa, và hub vẫn nil được trong test.
+func (s *BookingService) WithHub(h *hub.Hub) *BookingService {
+	s.hub = h
+	return s
 }
 
 type BookingListRequest struct {
@@ -247,6 +260,11 @@ func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*Book
 		}
 	}()
 
+	// Số dư sau khi trừ cọc, mang ra ngoài khối để còn báo cho máy trạm sau khi
+	// commit. Báo bên trong transaction là hứa một con số có thể bị rollback.
+	var hvSoDu string
+	var soDuSau, thuongSau int64
+
 	var depositTx *model.MemberTransaction
 	if booking.DepositAmount > 0 && memberID != nil {
 		var member model.Member
@@ -281,6 +299,7 @@ func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*Book
 			tx.Rollback()
 			return nil, err
 		}
+		hvSoDu, soDuSau, thuongSau = *memberID, balanceAfter, member.BonusBalance
 		booking.DepositTransactionID = &depositTx.ID
 	}
 
@@ -292,6 +311,8 @@ func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*Book
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
+
+	phatSoDuMoi(s.hub, hvSoDu, soDuSau, thuongSau)
 
 	result := bookingToResponse(booking)
 	result.MachineCode = s.machineCode(booking.MachineID)
@@ -444,6 +465,9 @@ func (s *BookingService) Cancel(id string) (*BookingResponse, error) {
 
 	tx := s.db.Begin()
 
+	var hvSoDu string
+	var soDuSau, thuongSau int64
+
 	// Refund only what was actually taken. DepositTransactionID is set when the
 	// deposit was charged to a member's balance; a cash deposit from a walk-in
 	// never touched the ledger and is settled at the counter.
@@ -474,6 +498,7 @@ func (s *BookingService) Cancel(id string) (*BookingResponse, error) {
 			tx.Rollback()
 			return nil, err
 		}
+		hvSoDu, soDuSau, thuongSau = *booking.MemberID, balanceAfter, member.BonusBalance
 	}
 
 	now := time.Now()
@@ -488,6 +513,8 @@ func (s *BookingService) Cancel(id string) (*BookingResponse, error) {
 	}
 
 	tx.Commit()
+
+	phatSoDuMoi(s.hub, hvSoDu, soDuSau, thuongSau)
 
 	booking.Status = "cancelled"
 	booking.CancelAt = &now

@@ -400,6 +400,40 @@ func (h *Hub) IsMachineOnline(machineCode string) bool {
 //
 // Máy trạm không kết nối KHÔNG phải lỗi: khách có thể vừa tắt máy, và phía quản
 // trị vẫn phải nhận được sự kiện.
+// SendToUser gửi tới MỌI kết nối của một tài khoản, bất kể tài khoản đó đang
+// ngồi máy nào — hoặc không ngồi máy nào cả.
+//
+// Sinh ra cho sự kiện số dư. SendToMachine cần mã máy, mà những đường đổi số dư
+// như nạp tiền hay hoàn tiền chỉ biết member_id: nhân viên nạp cho khách đang
+// đứng ở quầy, chưa vào phiên nào, thì không có mã máy để mà gửi.
+//
+// "Mọi kết nối" là chủ ý: máy trạm mở cửa sổ phụ thành tiến trình riêng nên một
+// tài khoản thường có vài WebSocket cùng lúc, và cái nào cũng đang vẽ số dư lên
+// màn hình.
+func (h *Hub) SendToUser(userID string, event Event) {
+	if h == nil || userID == "" {
+		return
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("[WS] SendToUser marshal error: %v", err)
+		return
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for client := range h.clients {
+		if client.UserID != userID {
+			continue
+		}
+		select {
+		case client.send <- data:
+		default:
+		}
+	}
+}
+
 func (h *Hub) SendToAdminsAndMachine(machineCode string, event Event) {
 	if h == nil {
 		return

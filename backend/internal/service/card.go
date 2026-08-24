@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
@@ -38,10 +39,22 @@ import (
 type CardService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewCardService(db *gorm.DB, audit *AuditService) *CardService {
 	return &CardService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để nạp thẻ cào, thẻ quà tặng báo số dư mới cho máy trạm
+// ngay lúc nó đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là màn hình khách
+// giữ số cũ cho tới khi tự tải lại.
+//
+// Nối rời thay vì thêm tham số cho constructor: giữ nguyên chữ ký thì mọi test
+// dựng service không phải sửa, và hub vẫn nil được trong test.
+func (s *CardService) WithHub(h *hub.Hub) *CardService {
+	s.hub = h
+	return s
 }
 
 // Bảng chữ cái sinh mã: bỏ 0/O/1/I/L để nhân viên đọc số điện thoại cho khách
@@ -267,6 +280,11 @@ func (s *CardService) RedeemTopupCard(req *RedeemTopupCardRequest, actorID strin
 		"serial": res.Serial, "member_id": req.MemberID,
 		"face_value": res.FaceValue, "bonus_value": res.BonusValue,
 	})
+
+	// Nạp thẻ cào là nạp tiền: vẽ lại số dư VÀ báo cho khách biết đã vào.
+	phatSoDuMoi(s.hub, req.MemberID, res.BalanceAfter, res.BonusAfter)
+	phatNapTien(s.hub, req.MemberID, res.FaceValue+res.BonusValue)
+
 	return &res, nil
 }
 

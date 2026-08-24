@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/utils"
@@ -18,10 +19,22 @@ import (
 type ComboService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewComboService(db *gorm.DB, audit *AuditService) *ComboService {
 	return &ComboService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để mua gói giờ báo số dư mới cho máy trạm
+// ngay lúc nó đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là màn hình khách
+// giữ số cũ cho tới khi tự tải lại.
+//
+// Nối rời thay vì thêm tham số cho constructor: giữ nguyên chữ ký thì mọi test
+// dựng service không phải sửa, và hub vẫn nil được trong test.
+func (s *ComboService) WithHub(h *hub.Hub) *ComboService {
+	s.hub = h
+	return s
 }
 
 type ComboListRequest struct {
@@ -419,6 +432,11 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 
 	if err := payTx.Commit().Error; err != nil {
 		return nil, err
+	}
+
+	// Chỉ khi trả bằng số dư mới có gì để báo; trả tiền mặt thì số dư đứng yên.
+	if req.PaymentMethod == PaymentMethodBalance {
+		phatSoDuMoi(s.hub, memberID, balanceAfter, member.BonusBalance)
 	}
 
 	auditMetadata := map[string]interface{}{

@@ -277,6 +277,42 @@ func TestRemoveClient_DonPhongRong(t *testing.T) {
 	assert.False(t, con, "phòng rỗng phải bị xoá khỏi h.rooms")
 }
 
+// Số dư đổi thì mọi màn hình của chính người đó phải đổi theo — kể cả khi họ
+// không ngồi máy nào (nhân viên nạp tiền ở quầy).
+func TestSendToUser_ReachesEveryConnectionAndNobodyElse(t *testing.T) {
+	h := New(nil)
+
+	dock := newTestClient(h, ClientTypeClient, "PC-01", 1)
+	cuaSoChat := newTestClient(h, ClientTypeClient, "PC-01", 1)
+	khachKhac := newTestClient(h, ClientTypeClient, "PC-02", 1)
+	quanTri := newTestClient(h, ClientTypeAdmin, "", 1)
+
+	h.mu.Lock()
+	dock.UserID = "member-1"
+	cuaSoChat.UserID = "member-1"
+	khachKhac.UserID = "member-2"
+	quanTri.UserID = "admin-1"
+	h.mu.Unlock()
+
+	h.SendToUser("member-1", Event{Type: "balance:updated"})
+
+	assert.Len(t, dock.send, 1)
+	assert.Len(t, cuaSoChat.send, 1)
+	assert.Len(t, khachKhac.send, 0, "số dư là chuyện riêng, không được lọt sang hội viên khác")
+	assert.Len(t, quanTri.send, 0, "SendToUser không phát kèm cho quản trị")
+}
+
+// userID rỗng là kết nối của tiến trình nền. Không chặn thì mọi kết nối như thế
+// nhận được số dư của người lạ.
+func TestSendToUser_BoQuaUserIDRong(t *testing.T) {
+	h := New(nil)
+	nen := newTestClient(h, ClientTypeClient, "PC-01", 1)
+
+	h.SendToUser("", Event{Type: "balance:updated"})
+
+	assert.Len(t, nen.send, 0)
+}
+
 func TestOriginAllowed(t *testing.T) {
 	tests := []struct {
 		name    string

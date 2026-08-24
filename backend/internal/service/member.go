@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/utils"
@@ -14,10 +15,22 @@ import (
 type MemberService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewMemberService(db *gorm.DB, audit *AuditService) *MemberService {
 	return &MemberService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để nạp tiền, hoàn tiền báo số dư mới cho máy trạm
+// ngay lúc nó đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là màn hình khách
+// giữ số cũ cho tới khi tự tải lại.
+//
+// Nối rời thay vì thêm tham số cho constructor: giữ nguyên chữ ký thì mọi test
+// dựng service không phải sửa, và hub vẫn nil được trong test.
+func (s *MemberService) WithHub(h *hub.Hub) *MemberService {
+	s.hub = h
+	return s
 }
 
 type CreateMemberRequest struct {
@@ -538,6 +551,12 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 		Metadata:   map[string]interface{}{"amount": req.Amount, "method": req.PaymentMethod},
 	})
 
+	// Nhân viên nạp ở quầy, khách đang nhìn màn hình máy trạm. Không có hai
+	// dòng này thì con số trên máy khách đứng yên cho tới lần tự tải lại — mà
+	// khách chưa vào phiên thì không có nhịp nào để mà tải lại.
+	phatSoDuMoi(s.hub, id, balanceAfter, bonusAfter)
+	phatNapTien(s.hub, id, req.Amount)
+
 	return s.GetByID(id)
 }
 
@@ -623,6 +642,9 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*M
 		UserID:     &userID,
 		Metadata:   map[string]interface{}{"amount": req.Amount, "is_bonus": req.IsBonus},
 	})
+
+	// Rút tiền ra thì không bắn toast "nạp tiền" — chỉ vẽ lại số dư.
+	phatSoDuMoi(s.hub, id, balanceAfter, bonusAfter)
 
 	return s.GetByID(id)
 }

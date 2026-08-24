@@ -241,6 +241,16 @@ so `golangci-lint run` uses defaults.
     values, not deltas: a dropped event then heals on the next tick with no resync path to write.
     Target the machine only — this fires once a minute per session, and nothing in the admin listens.
 
+    The same duty falls on **every** path that moves a member's balance, not just the timer. For a long
+    while only `ChargeTick` and `processTopupOrder` pushed anything; topup, refund, booking deposit,
+    booking cancellation, combo purchase and topup-card redemption all changed the number in silence,
+    because `MemberService` and four others were never given the hub. Staff topping a customer up at the
+    counter is the worst case: the customer is not in a session, so there is no next tick to heal it and
+    the screen keeps the old figure indefinitely. Emit through `phatSoDuMoi` after the commit, and use
+    `hub.SendToUser` rather than `SendToMachine` — a balance belongs to a person, who may be standing at
+    the counter on no machine at all, and who usually holds several sockets at once because the client
+    opens its child windows as separate processes.
+
 31. **The machine key is optional, and that is a deliberate trade.** `Create` no longer issues one;
     `VerifyAgentToken` passes any machine whose `agent_token` is empty, so a client plugs in and runs.
     Pressing "Cấp khoá" turns the requirement on **for that machine only**. The cost is real: without a

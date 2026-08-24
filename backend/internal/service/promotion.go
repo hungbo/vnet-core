@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
@@ -15,10 +16,22 @@ import (
 type PromotionService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewPromotionService(db *gorm.DB, audit *AuditService) *PromotionService {
 	return &PromotionService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để thưởng khuyến mãi báo số dư mới cho máy trạm
+// ngay lúc nó đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là màn hình khách
+// giữ số cũ cho tới khi tự tải lại.
+//
+// Nối rời thay vì thêm tham số cho constructor: giữ nguyên chữ ký thì mọi test
+// dựng service không phải sửa, và hub vẫn nil được trong test.
+func (s *PromotionService) WithHub(h *hub.Hub) *PromotionService {
+	s.hub = h
+	return s
 }
 
 type PromotionListRequest struct {
@@ -698,6 +711,7 @@ func (s *PromotionService) applyReward(memberID string, reward *model.LuckySpinR
 			}
 			s.db.Create(&trans)
 			s.db.Model(&member).Update("bonus_balance", member.BonusBalance+int64(amount))
+			phatSoDuMoi(s.hub, memberID, member.Balance, member.BonusBalance+int64(amount))
 			s.audit.Log(&LogAuditRequest{
 				Action:     "apply_reward",
 				EntityType: "member",
@@ -725,6 +739,7 @@ func (s *PromotionService) applyReward(memberID string, reward *model.LuckySpinR
 			}
 			s.db.Create(&trans)
 			s.db.Model(&member).Update("balance", member.Balance+int64(amount))
+			phatSoDuMoi(s.hub, memberID, member.Balance+int64(amount), member.BonusBalance)
 			s.audit.Log(&LogAuditRequest{
 				Action:     "apply_reward",
 				EntityType: "member",
