@@ -1,8 +1,8 @@
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
-import { SetupStoreId } from '@/enum';
 import { getWsUrl } from '@/service/ws/config';
 import { localStg } from '@/utils/storage';
+import { SetupStoreId } from '@/enum';
 
 type WsHandler = (data: any) => void;
 
@@ -45,7 +45,9 @@ export const useWebSocketStore = defineStore(SetupStoreId.Ws, () => {
         const msg = JSON.parse(event.data);
         lastEvent.value = msg.type || '';
         emit(msg.type, msg.data || msg.payload);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     };
 
     ws.onclose = () => {
@@ -79,7 +81,7 @@ export const useWebSocketStore = defineStore(SetupStoreId.Ws, () => {
   function scheduleReconnect() {
     if (reconnectTimer) return;
     const maxDelay = 60000;
-    const delay = Math.min(1000 * Math.pow(2, reconnectAttempt.value), maxDelay);
+    const delay = Math.min(1000 * 2 ** reconnectAttempt.value, maxDelay);
     reconnectAttempt.value++;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -94,16 +96,21 @@ export const useWebSocketStore = defineStore(SetupStoreId.Ws, () => {
     handlers.get(event)!.push(handler);
   }
 
-  function off(event: string, handler?: WsHandler) {
-    if (!handler) {
-      handlers.delete(event);
-      return;
-    }
+  /**
+   * Gỡ đúng MỘT handler.
+   *
+   * `handler` là bắt buộc, không phải tuỳ chọn. Bản cũ cho phép gọi
+   * `off('order:new')` trần và khi đó xoá SẠCH danh sách của sự kiện đó — ba
+   * trang đang gọi kiểu này, nên chỉ cần vào rồi rời trang Đơn hàng một lần là
+   * mọi handler khác của `order:new` chết theo, kể cả handler toàn cục. Bắt buộc
+   * tham số để TypeScript chỉ ra đúng mọi chỗ sai thay vì hỏng lặng lẽ lúc chạy.
+   */
+  function off(event: string, handler: WsHandler) {
     const list = handlers.get(event);
-    if (list) {
-      const idx = list.indexOf(handler);
-      if (idx >= 0) list.splice(idx, 1);
-    }
+    if (!list) return;
+    const idx = list.indexOf(handler);
+    if (idx >= 0) list.splice(idx, 1);
+    if (list.length === 0) handlers.delete(event);
   }
 
   function emit(event: string, data: any) {

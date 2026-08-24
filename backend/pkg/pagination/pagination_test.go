@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func TestGetParams_Defaults(t *testing.T) {
@@ -133,4 +134,73 @@ func TestParseInt(t *testing.T) {
 		got, _ := parseInt(tt.input, tt.fallback)
 		assert.Equal(t, tt.want, got, "parseInt(%q, %d)", tt.input, tt.fallback)
 	}
+}
+
+func TestSafeSort_RejectsInjection(t *testing.T) {
+	cases := []struct {
+		name string
+		sort string
+	}{
+		{"statement terminator", "id;DROP TABLE users--"},
+		{"subquery", "(select 1)"},
+		{"comment", "id--"},
+		{"quotes", "id' OR '1'='1"},
+		{"whitespace", "id desc, name"},
+		{"comma", "id,name"},
+		{"parens", "count(*)"},
+		{"uppercase", "ID"},
+		{"leading digit", "1id"},
+		{"empty", ""},
+		{"two dots", "a.b.c"},
+		{"trailing dot", "id."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, "id", SafeSort(tc.sort, "id"))
+		})
+	}
+}
+
+func TestSafeSort_AllowsPlainColumns(t *testing.T) {
+	for _, sort := range []string{"id", "created_at", "order_code", "_x", "users.created_at"} {
+		assert.Equal(t, sort, SafeSort(sort, "id"))
+	}
+}
+
+func TestSafeOrder(t *testing.T) {
+	assert.Equal(t, "asc", SafeOrder("asc"))
+	assert.Equal(t, "asc", SafeOrder("ASC"))
+	assert.Equal(t, "asc", SafeOrder("  asc  "))
+	assert.Equal(t, "desc", SafeOrder("desc"))
+	assert.Equal(t, "desc", SafeOrder(""))
+	assert.Equal(t, "desc", SafeOrder("asc,name"))
+	assert.Equal(t, "desc", SafeOrder("asc; DROP TABLE users"))
+}
+
+func TestGetParams_SanitizesSortAndOrder(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/?sort=id%3BDROP+TABLE+users--&order=asc%2Cname", nil)
+
+	p := GetParams(c)
+
+	assert.Equal(t, "id", p.Sort)
+	assert.Equal(t, "desc", p.Order)
+}
+
+// Apply re-validates because services also construct Params directly.
+func TestApply_SanitizesDirectlyBuiltParams(t *testing.T) {
+	db, _ := gorm.Open(nil)
+
+	applied := Apply(db, &Params{
+		Page:     1,
+		PageSize: 20,
+		Sort:     "id; DROP TABLE users--",
+		Order:    "asc,name",
+	})
+
+	orderBy, ok := applied.Statement.Clauses["ORDER BY"].Expression.(clause.OrderBy)
+	assert.True(t, ok)
+	assert.Len(t, orderBy.Columns, 1)
+	assert.Equal(t, "id desc", orderBy.Columns[0].Column.Name)
 }

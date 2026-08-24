@@ -1,6 +1,12 @@
 <template>
 	<div class="timer-section" v-if="role !== 'admin'">
 		<div v-if="session" class="timer-card">
+			<!--
+				Tên nằm NGAY TRÊN đồng hồ chứ không ở thanh tiêu đề: khách nhìn
+				vào con số đếm ngược, và cần thấy ngay nó đang đếm cho ai — máy
+				dùng chung thì đăng nhập nhầm tài khoản là chuyện thường.
+			-->
+			<div v-if="name" class="timer-name">{{ name }}</div>
 			<div class="timer-value" :class="{ warn: timerWarn }">{{ formattedTime }}</div>
 			<div class="timer-label">{{ timerLabel }}</div>
 			<div v-if="session.combo_name" class="combo-badge">
@@ -8,6 +14,7 @@
 			</div>
 		</div>
 		<div v-else class="timer-card idle">
+			<div v-if="name" class="timer-name">{{ name }}</div>
 			<div class="timer-value">--:--:--</div>
 			<div class="timer-label">Chưa có phiên chơi</div>
 		</div>
@@ -26,6 +33,7 @@ const props = defineProps<{
 	role: string
 	session: any
 	now: number
+	name?: string
 }>()
 
 function formatDuration(seconds: number): string {
@@ -40,6 +48,9 @@ const timerLabel = computed(() => {
 	if (!props.session) return ''
 	if (props.session.combo_type === 'fixed_slot' && props.session.slot_end) return 'Khung giờ kết thúc sau'
 	if (props.session.combo_type === 'prepaid' && props.session.remaining_minutes) return 'Còn lại'
+	// Số dư còn mua được bao nhiêu thời gian. Máy chủ đã tính sẵn mốc hết tiền
+	// nên ở đây chỉ việc đếm ngược tới đó.
+	if (props.session.affordable_until) return 'Số dư còn chơi được'
 	return 'Đã chơi'
 })
 
@@ -49,11 +60,10 @@ const timerWarn = computed(() => {
 		const remain = new Date(props.session.slot_end).getTime() - props.now
 		return remain > 0 && remain < 300000
 	}
-	if (props.session.remaining_minutes) {
-		const remainSec = getRemainingSeconds()
-		return remainSec > 0 && remainSec < 300
-	}
-	return false
+	// Nhánh trả theo giờ trước đây KHÔNG BAO GIỜ cảnh báo vì getRemainingSeconds
+	// trả 0 — khách hết tiền mà không hề được báo trước.
+	const remainSec = getRemainingSeconds()
+	return remainSec > 0 && remainSec < 300
 })
 
 function getRemainingSeconds(): number {
@@ -67,6 +77,10 @@ function getRemainingSeconds(): number {
 
 	if (props.session.combo_type === 'prepaid' && props.session.remaining_minutes) {
 		return props.session.remaining_minutes * 60 - elapsed
+	}
+
+	if (props.session.affordable_until) {
+		return Math.floor((new Date(props.session.affordable_until).getTime() - props.now) / 1000)
 	}
 
 	return 0
@@ -85,6 +99,12 @@ const formattedTime = computed(() => {
 		return formatDuration(remain)
 	}
 
+	if (props.session.affordable_until) {
+		return formatDuration(Math.max(0, getRemainingSeconds()))
+	}
+
+	// Máy không có giá (chưa gán nhóm) thì không có gì để đếm ngược — quay về
+	// đếm lên như cũ.
 	const start = new Date(props.session.started_at).getTime()
 	const diff = Math.floor((props.now - start) / 1000)
 	return formatDuration(diff)
@@ -93,12 +113,14 @@ const formattedTime = computed(() => {
 
 <style scoped>
 .timer-card {
-	width: 320px;
+	/* Rộng bằng thanh, không cố định 320px: thanh chỉ 360px nên con số cứng đó
+	   vừa tràn vừa lệch với lưới nút bên dưới. */
+	width: 100%;
 	padding: 24px;
-	background: #fff;
+	background: var(--vnet-surface);
 	border-radius: 16px;
 	text-align: center;
-	box-shadow: 0 2px 12px rgba(0,0,0,.06);
+	box-shadow: var(--vnet-shadow);
 }
 
 .timer-card.idle {
@@ -107,7 +129,18 @@ const formattedTime = computed(() => {
 
 .timer-card.admin-card {
 	background: linear-gradient(135deg, #667eea, #764ba2);
-	color: #fff;
+	color: var(--vnet-surface);
+}
+
+.timer-name {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--vnet-text);
+	margin-bottom: 4px;
+	/* Tên dài phải cắt bằng ba chấm, không được đẩy đồng hồ xuống dòng. */
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .timer-value {
@@ -118,12 +151,12 @@ const formattedTime = computed(() => {
 }
 
 .timer-value.warn {
-	color: #e6a23c;
+	color: var(--vnet-warning);
 }
 
 .timer-label {
 	font-size: 13px;
-	color: #909399;
+	color: var(--vnet-text-muted);
 	margin-top: 4px;
 }
 

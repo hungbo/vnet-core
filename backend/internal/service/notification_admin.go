@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
@@ -9,11 +10,12 @@ import (
 
 type NotificationAdminService struct {
 	db    *gorm.DB
+	hub   *hub.Hub
 	audit *AuditService
 }
 
-func NewNotificationAdminService(db *gorm.DB, audit *AuditService) *NotificationAdminService {
-	return &NotificationAdminService{db: db, audit: audit}
+func NewNotificationAdminService(db *gorm.DB, wsHub *hub.Hub, audit *AuditService) *NotificationAdminService {
+	return &NotificationAdminService{db: db, hub: wsHub, audit: audit}
 }
 
 type NotificationResponse struct {
@@ -155,6 +157,10 @@ func (s *NotificationAdminService) Dispatch(notificationID string) (int, error) 
 	if len(memberIDs) == 0 {
 		return 0, nil
 	}
+	// Two rows per member, deliberately: NotificationRecipient is the dispatch
+	// ledger (who this was sent to), MemberNotification is the member's own
+	// copy and is what GET /api/notifications reads. Dispatch used to write
+	// only the former, which nothing reads, so members never saw anything.
 	batchSize := 500
 	inserted := 0
 	for i := 0; i < len(memberIDs); i += batchSize {
@@ -162,18 +168,46 @@ func (s *NotificationAdminService) Dispatch(notificationID string) (int, error) 
 		if end > len(memberIDs) {
 			end = len(memberIDs)
 		}
-		recipients := make([]model.NotificationRecipient, 0, end-i)
-		for _, mid := range memberIDs[i:end] {
+
+		chunk := memberIDs[i:end]
+		recipients := make([]model.NotificationRecipient, 0, len(chunk))
+		inbox := make([]model.MemberNotification, 0, len(chunk))
+		for _, mid := range chunk {
 			recipients = append(recipients, model.NotificationRecipient{
 				NotificationID: notificationID,
 				RecipientID:    mid,
 			})
+			inbox = append(inbox, model.MemberNotification{
+				MemberID: mid,
+				Title:    n.Title,
+				Body:     n.Content,
+			})
 		}
-		if err := s.db.Create(&recipients).Error; err != nil {
+
+		tx := s.db.Begin()
+		if err := tx.Create(&recipients).Error; err != nil {
+			tx.Rollback()
 			return inserted, err
 		}
-		inserted += len(recipients)
+		if err := tx.Create(&inbox).Error; err != nil {
+			tx.Rollback()
+			return inserted, err
+		}
+		if err := tx.Commit().Error; err != nil {
+			return inserted, err
+		}
+		inserted += len(chunk)
 	}
+
+	// The desktop client already listens for this; nothing ever sent it.
+	s.hub.Broadcast(hub.Event{
+		Type: "notification:new",
+		Data: map[string]interface{}{
+			"notification_id": notificationID,
+			"title":           n.Title,
+			"body":            n.Content,
+		},
+	})
 	s.audit.Log(&LogAuditRequest{
 		Action:     "dispatch",
 		EntityType: "notification",

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/vnet/core/internal/model"
+	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
 )
@@ -53,9 +54,8 @@ func (p *SystemListParams) Normalize() {
 	if p.Sort == "" {
 		p.Sort = "created_at"
 	}
-	if p.Order == "" {
-		p.Order = "desc"
-	}
+	p.Sort = pagination.SafeSort(p.Sort, "created_at")
+	p.Order = pagination.SafeOrder(p.Order)
 }
 
 type PaginatedRecords struct {
@@ -66,18 +66,21 @@ type PaginatedRecords struct {
 }
 
 type UserManageResponse struct {
-	ID          string   `json:"id"`
-	UserName    string   `json:"userName"`
-	UserGender  string   `json:"userGender,omitempty"`
-	NickName    string   `json:"nickName,omitempty"`
-	UserPhone   string   `json:"userPhone,omitempty"`
-	UserEmail   string   `json:"userEmail,omitempty"`
-	UserRoles   []string `json:"userRoles"`
-	Status      string   `json:"status,omitempty"`
-	CreateBy    string   `json:"createBy,omitempty"`
-	CreateTime  string   `json:"createTime,omitempty"`
-	UpdateBy    string   `json:"updateBy,omitempty"`
-	UpdateTime  string   `json:"updateTime,omitempty"`
+	ID         string   `json:"id"`
+	UserName   string   `json:"userName"`
+	UserGender string   `json:"userGender,omitempty"`
+	NickName   string   `json:"nickName,omitempty"`
+	UserPhone  string   `json:"userPhone,omitempty"`
+	UserEmail  string   `json:"userEmail,omitempty"`
+	UserRoles  []string `json:"userRoles"`
+	Status     string   `json:"status,omitempty"`
+	CreateBy   string   `json:"createBy,omitempty"`
+	CreateTime string   `json:"createTime,omitempty"`
+	UpdateBy   string   `json:"updateBy,omitempty"`
+	UpdateTime string   `json:"updateTime,omitempty"`
+	// last_login_at ĐƯỢC ghi ở AuthService.Login nhưng chưa API nào trả ra, nên
+	// không cách nào biết tài khoản nào lâu rồi không ai dùng.
+	LastLoginTime string `json:"lastLoginTime,omitempty"`
 }
 
 type RoleManageResponse struct {
@@ -121,9 +124,9 @@ type UpdateUserRequest struct {
 }
 
 type CreateRoleRequest struct {
-	RoleName string   `json:"roleName"`
-	RoleCode string   `json:"roleCode"`
-	RoleDesc string   `json:"roleDesc"`
+	RoleName string `json:"roleName"`
+	RoleCode string `json:"roleCode"`
+	RoleDesc string `json:"roleDesc"`
 }
 
 type UpdateRoleRequest struct {
@@ -135,24 +138,24 @@ type UpdateRoleRequest struct {
 }
 
 type MenuManageResponse struct {
-	ID          string                `json:"id"`
-	ParentID    string                `json:"parentId"`
-	MenuType    string                `json:"menuType"`
-	MenuName    string                `json:"menuName"`
-	RouteName   string                `json:"routeName"`
-	RoutePath   string                `json:"routePath"`
-	Component   string                `json:"component"`
-	Icon        string                `json:"icon"`
-	IconType    string                `json:"iconType"`
-	Status      string                `json:"status"`
-	HideInMenu  bool                  `json:"hideInMenu"`
-	Order       int                   `json:"order"`
-	I18nKey     string                `json:"i18nKey"`
-	Children    []*MenuManageResponse `json:"children,omitempty"`
-	CreateBy    string                `json:"createBy"`
-	CreateTime  string                `json:"createTime"`
-	UpdateBy    string                `json:"updateBy"`
-	UpdateTime  string                `json:"updateTime"`
+	ID         string                `json:"id"`
+	ParentID   string                `json:"parentId"`
+	MenuType   string                `json:"menuType"`
+	MenuName   string                `json:"menuName"`
+	RouteName  string                `json:"routeName"`
+	RoutePath  string                `json:"routePath"`
+	Component  string                `json:"component"`
+	Icon       string                `json:"icon"`
+	IconType   string                `json:"iconType"`
+	Status     string                `json:"status"`
+	HideInMenu bool                  `json:"hideInMenu"`
+	Order      int                   `json:"order"`
+	I18nKey    string                `json:"i18nKey"`
+	Children   []*MenuManageResponse `json:"children,omitempty"`
+	CreateBy   string                `json:"createBy"`
+	CreateTime string                `json:"createTime"`
+	UpdateBy   string                `json:"updateBy"`
+	UpdateTime string                `json:"updateTime"`
 }
 
 type MenuTreeResponse struct {
@@ -173,17 +176,21 @@ func toUserManageResponse(user *model.User) *UserManageResponse {
 		status = "2"
 	}
 
-	return &UserManageResponse{
-		ID:          user.ID,
-		UserName:    user.Username,
-		NickName:    user.FullName,
-		UserPhone:   user.Phone,
-		UserEmail:   user.Email,
-		UserRoles:   roles,
-		Status:      status,
-		CreateTime:  user.CreatedAt.Format(time.RFC3339),
-		UpdateTime:  user.UpdatedAt.Format(time.RFC3339),
+	resp := &UserManageResponse{
+		ID:         user.ID,
+		UserName:   user.Username,
+		NickName:   user.FullName,
+		UserPhone:  user.Phone,
+		UserEmail:  user.Email,
+		UserRoles:  roles,
+		Status:     status,
+		CreateTime: user.CreatedAt.Format(time.RFC3339),
+		UpdateTime: user.UpdatedAt.Format(time.RFC3339),
 	}
+	if user.LastLoginAt != nil {
+		resp.LastLoginTime = user.LastLoginAt.Format(time.RFC3339)
+	}
+	return resp
 }
 
 func toRoleManageResponse(role *model.Role) *RoleManageResponse {
@@ -565,8 +572,14 @@ func (s *SystemManageService) DeleteRole(id string) error {
 		return err
 	}
 
+	// Tài khoản bị xoá là xoá MỀM, nên dòng trong user_roles vẫn còn. Đếm thẳng
+	// user_roles sẽ báo "vai trò còn người dùng" vì một tài khoản đã xoá — vai
+	// trò đó không bao giờ xoá được nữa mà người vận hành không hiểu vì sao.
 	var userCount int64
-	s.db.Model(&model.UserRole{}).Where("role_id = ?", id).Count(&userCount)
+	s.db.Model(&model.UserRole{}).
+		Joins("JOIN users ON users.id = user_roles.user_id AND users.deleted_at IS NULL").
+		Where("user_roles.role_id = ?", id).
+		Count(&userCount)
 	if userCount > 0 {
 		return errors.New("cannot delete role with assigned users")
 	}
@@ -595,20 +608,20 @@ func (s *SystemManageService) GetMenuList(params *SystemListParams) (*PaginatedR
 		Icon     string
 		Order    int
 		Children []struct {
-			Name   string
-			Path   string
-			Icon   string
-			Order  int
+			Name    string
+			Path    string
+			Icon    string
+			Order   int
 			I18nKey string
 		}
 	}{
 		{
 			Name: "vnet", Path: "/vnet", Icon: "ant-design:appstore-outlined", Order: 1,
 			Children: []struct {
-				Name   string
-				Path   string
-				Icon   string
-				Order  int
+				Name    string
+				Path    string
+				Icon    string
+				Order   int
 				I18nKey string
 			}{
 				{Name: "vnet_dashboard", Path: "/vnet/dashboard", Icon: "ic:round-dashboard", Order: 1, I18nKey: "route.vnet_dashboard"},
@@ -618,7 +631,6 @@ func (s *SystemManageService) GetMenuList(params *SystemListParams) (*PaginatedR
 				{Name: "vnet_orders", Path: "/vnet/orders", Icon: "ic:round-receipt", Order: 6, I18nKey: "route.vnet_orders"},
 				{Name: "vnet_products", Path: "/vnet/products", Icon: "ic:round-inventory", Order: 7, I18nKey: "route.vnet_products"},
 				{Name: "vnet_categories", Path: "/vnet/categories", Icon: "ic:round-category", Order: 8, I18nKey: "route.vnet_categories"},
-				{Name: "vnet_warehouses", Path: "/vnet/warehouses", Icon: "ic:round-warehouse", Order: 9, I18nKey: "route.vnet_warehouses"},
 				{Name: "vnet_suppliers", Path: "/vnet/suppliers", Icon: "ic:round-business", Order: 11, I18nKey: "route.vnet_suppliers"},
 				{Name: "vnet_stock-transactions", Path: "/vnet/stock-transactions", Icon: "ic:round-swap-vert", Order: 12, I18nKey: "route.vnet_stock-transactions"},
 				{Name: "vnet_combos", Path: "/vnet/combos", Icon: "ic:round-discount", Order: 13, I18nKey: "route.vnet_combos"},
@@ -632,16 +644,25 @@ func (s *SystemManageService) GetMenuList(params *SystemListParams) (*PaginatedR
 				{Name: "vnet_backups", Path: "/vnet/backups", Icon: "ic:round-backup", Order: 23, I18nKey: "route.vnet_backups"},
 				{Name: "vnet_machine-groups", Path: "/vnet/machine-groups", Icon: "carbon:data-center", Order: 24, I18nKey: "route.vnet_machine-groups"},
 				{Name: "vnet_member-groups", Path: "/vnet/member-groups", Icon: "carbon:user-multiple", Order: 25, I18nKey: "route.vnet_member-groups"},
-			{Name: "vnet_notifications", Path: "/vnet/notifications", Icon: "ic:round-notifications", Order: 26, I18nKey: "route.vnet_notifications"},
+				{Name: "vnet_notifications", Path: "/vnet/notifications", Icon: "ic:round-notifications", Order: 26, I18nKey: "route.vnet_notifications"},
+				{Name: "vnet_printers", Path: "/vnet/printers", Icon: "ic:round-print", Order: 27, I18nKey: "route.vnet_printers"},
+				{Name: "vnet_cards", Path: "/vnet/cards", Icon: "ic:round-card-giftcard", Order: 28, I18nKey: "route.vnet_cards"},
+				{Name: "vnet_inventory-counts", Path: "/vnet/inventory-counts", Icon: "ic:round-fact-check", Order: 29, I18nKey: "route.vnet_inventory-counts"},
+				{Name: "vnet_attendance", Path: "/vnet/attendance", Icon: "ic:round-event-available", Order: 30, I18nKey: "route.vnet_attendance"},
+				{Name: "vnet_website-blocking", Path: "/vnet/website-blocking", Icon: "ic:round-block", Order: 31, I18nKey: "route.vnet_website-blocking"},
+				{Name: "vnet_app-updates", Path: "/vnet/app-updates", Icon: "ic:round-system-update", Order: 32, I18nKey: "route.vnet_app-updates"},
+				{Name: "vnet_curfew", Path: "/vnet/curfew", Icon: "ic:round-nightlight", Order: 33, I18nKey: "route.vnet_curfew"},
+				{Name: "vnet_feedback", Path: "/vnet/feedback", Icon: "ic:round-star-rate", Order: 35, I18nKey: "route.vnet_feedback"},
+				{Name: "vnet_machine-assets", Path: "/vnet/machine-assets", Icon: "ic:round-inventory-2", Order: 34, I18nKey: "route.vnet_machine-assets"},
 			},
 		},
 		{
 			Name: "system", Path: "/system", Icon: "carbon:cloud-service-management", Order: 9,
 			Children: []struct {
-				Name   string
-				Path   string
-				Icon   string
-				Order  int
+				Name    string
+				Path    string
+				Icon    string
+				Order   int
 				I18nKey string
 			}{
 				{Name: "system_user", Path: "/system/user", Icon: "carbon:user-admin", Order: 1, I18nKey: "route.system_user"},
@@ -683,7 +704,7 @@ func (s *SystemManageService) GetMenuList(params *SystemListParams) (*PaginatedR
 			allMenus = append(allMenus, childMenu)
 		}
 
-    allMenus = append(allMenus, parent)
+		allMenus = append(allMenus, parent)
 	}
 
 	offset := (params.Current - 1) * params.Size
@@ -714,7 +735,6 @@ func (s *SystemManageService) GetAllPages() ([]string, error) {
 		"vnet_products",
 		"vnet_categories",
 		"vnet_suppliers",
-		"vnet_warehouses",
 		"vnet_stock-transactions",
 		"vnet_combos",
 		"vnet_shifts",
@@ -725,6 +745,15 @@ func (s *SystemManageService) GetAllPages() ([]string, error) {
 		"vnet_settings",
 		"vnet_audit",
 		"vnet_backups",
+		"vnet_printers",
+		"vnet_cards",
+		"vnet_inventory-counts",
+		"vnet_attendance",
+		"vnet_website-blocking",
+		"vnet_app-updates",
+		"vnet_curfew",
+		"vnet_feedback",
+		"vnet_machine-assets",
 		"vnet_machine-groups",
 		"vnet_member-groups",
 		"vnet_notifications",
@@ -753,7 +782,6 @@ func (s *SystemManageService) GetMenuTree() ([]*MenuTreeResponse, error) {
 						{ID: "vnet_products", Label: "Products", PID: "vnet"},
 						{ID: "vnet_categories", Label: "Categories", PID: "vnet"},
 						{ID: "vnet_suppliers", Label: "Suppliers", PID: "vnet"},
-						{ID: "vnet_warehouses", Label: "Warehouses", PID: "vnet"},
 						{ID: "vnet_stock-transactions", Label: "Stock", PID: "vnet"},
 						{ID: "vnet_combos", Label: "Combos", PID: "vnet"},
 						{ID: "vnet_shifts", Label: "Shifts", PID: "vnet"},
@@ -766,7 +794,7 @@ func (s *SystemManageService) GetMenuTree() ([]*MenuTreeResponse, error) {
 						{ID: "vnet_backups", Label: "Backups", PID: "vnet"},
 						{ID: "vnet_machine-groups", Label: "Machine Groups", PID: "vnet"},
 						{ID: "vnet_member-groups", Label: "Member Groups", PID: "vnet"},
-					{ID: "vnet_notifications", Label: "Notifications", PID: "vnet"},
+						{ID: "vnet_notifications", Label: "Notifications", PID: "vnet"},
 					},
 				},
 				{
@@ -780,4 +808,93 @@ func (s *SystemManageService) GetMenuTree() ([]*MenuTreeResponse, error) {
 			},
 		},
 	}, nil
+}
+
+// --- phân quyền cho vai trò ---------------------------------------------------
+//
+// Trước đây bảng role_permissions chỉ được ghi đúng một lần bởi cmd/seed. Cài
+// xong rồi thì không đổi được quyền của vai trò nào nữa: CreateRole/UpdateRole/
+// DeleteRole đã viết đủ nhưng không có handler, và trang Vai trò của Soybean là
+// bản mẫu — bấm Lưu chỉ hiện thông báo thành công rồi không gửi gì.
+
+type PermissionResponse struct {
+	ID     string `json:"id"`
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Module string `json:"module"`
+}
+
+func (s *SystemManageService) GetAllPermissions() ([]PermissionResponse, error) {
+	var perms []model.Permission
+	if err := s.db.Order("module, code").Find(&perms).Error; err != nil {
+		return nil, err
+	}
+	out := make([]PermissionResponse, len(perms))
+	for i, p := range perms {
+		out[i] = PermissionResponse{ID: p.ID, Code: p.Code, Name: p.Name, Module: p.Module}
+	}
+	return out, nil
+}
+
+// GetRolePermissions trả về ID các quyền vai trò đang có, để màn hình tick sẵn.
+func (s *SystemManageService) GetRolePermissions(roleID string) ([]string, error) {
+	var role model.Role
+	if err := s.db.Preload("Permissions").Where("id = ?", roleID).First(&role).Error; err != nil {
+		return nil, errors.New("role not found")
+	}
+	ids := make([]string, len(role.Permissions))
+	for i, p := range role.Permissions {
+		ids[i] = p.ID
+	}
+	return ids, nil
+}
+
+func (s *SystemManageService) UpdateRolePermissions(roleID string, permissionIDs []string) error {
+	var role model.Role
+	if err := s.db.Where("id = ?", roleID).First(&role).Error; err != nil {
+		return errors.New("role not found")
+	}
+
+	var perms []model.Permission
+	if len(permissionIDs) > 0 {
+		if err := s.db.Where("id IN ?", permissionIDs).Find(&perms).Error; err != nil {
+			return err
+		}
+		if len(perms) != len(permissionIDs) {
+			return errors.New("có mã quyền không tồn tại")
+		}
+	}
+
+	// Replace với danh sách rỗng là cách gỡ sạch quyền — đúng ý khi người dùng
+	// bỏ tick hết, nên KHÔNG chặn trường hợp rỗng.
+	if err := s.db.Model(&role).Association("Permissions").Replace(&perms); err != nil {
+		return err
+	}
+
+	// Quyền nằm trong JWT, nên đổi quyền chỉ có hiệu lực ở lần đăng nhập (hoặc
+	// làm mới token) sau. Ghi vào nhật ký để lúc truy vết còn biết mốc thời gian.
+	codes := make([]string, len(perms))
+	for i, p := range perms {
+		codes[i] = p.Code
+	}
+	s.audit.Log(&LogAuditRequest{
+		Action:     "update_permissions",
+		EntityType: "role",
+		EntityID:   roleID,
+		Metadata: map[string]interface{}{
+			"role":        role.Name,
+			"permissions": codes,
+			"note":        "có hiệu lực ở lần đăng nhập kế tiếp vì quyền nằm trong token",
+		},
+	})
+	return nil
+}
+
+func (s *SystemManageService) BatchDeleteRoles(ids []string) error {
+	for _, id := range ids {
+		if err := s.DeleteRole(id); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -1,7 +1,7 @@
 <script setup lang="tsx">
 import { ref } from 'vue';
 import { enableStatusRecord } from '@/constants/business';
-import { fetchGetRoleList } from '@/service/api';
+import { fetchBatchDeleteRole, fetchDeleteRole, fetchGetRoleList } from '@/service/api';
 import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { $t } from '@/locales';
 import RoleOperateDrawer from './modules/role-operate-drawer.vue';
@@ -61,10 +61,10 @@ const { columns, columnChecks, data, loading, getData, getDataByPage, mobilePagi
       width: 130,
       formatter: row => (
         <div class="flex-center">
-          <ElButton type="primary" plain size="small" onClick={() => edit(row.id)}>
+          <ElButton type="primary" plain size="small" onClick={() => edit(row.id as unknown as string)}>
             {$t('common.edit')}
           </ElButton>
-          <ElPopconfirm title={$t('common.confirmDelete')} onConfirm={() => handleDelete(row.id)}>
+          <ElPopconfirm title={$t('common.confirmDelete')} onConfirm={() => handleDelete(row.id as unknown as string)}>
             {{
               reference: () => (
                 <ElButton type="danger" plain size="small">
@@ -92,19 +92,17 @@ const {
 } = useTableOperate(data, 'id', getData);
 
 async function handleBatchDelete() {
-  // eslint-disable-next-line no-console
-  console.log(checkedRowKeys.value);
-  // request
-
+  if (!checkedRowKeys.value.length) return;
+  const { error } = await fetchBatchDeleteRole(checkedRowKeys.value.map(String));
+  if (error) return;
   onBatchDeleted();
 }
 
-function handleDelete(id: number) {
-  // request
-
-  // eslint-disable-next-line no-console
-  console.log(id);
-
+async function handleDelete(id: string) {
+  const { error } = await fetchDeleteRole(String(id));
+  // Backend từ chối xoá vai trò còn người dùng — báo lỗi đã hiện sẵn ở tầng
+  // request, ở đây chỉ cần không giả vờ là đã xoá.
+  if (error) return;
   onDeleted();
 }
 
@@ -112,7 +110,7 @@ function resetSearchParams() {
   searchParams.value = getInitSearchParams();
 }
 
-function edit(id: number) {
+function edit(id: string) {
   handleEdit(id);
 }
 </script>

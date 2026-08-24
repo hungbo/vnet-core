@@ -11,6 +11,7 @@ type Shift struct {
 	OpeningBalance int64      `gorm:"default:0" json:"opening_balance"`
 	ClosingBalance *int64     `gorm:"column:closing_balance" json:"closing_balance"`
 	ExpectedTotal  *int64     `gorm:"column:expected_total" json:"expected_total"`
+	Discrepancy    *int64     `gorm:"column:discrepancy" json:"discrepancy"`
 	Notes          string     `gorm:"type:text" json:"notes"`
 	CreatedAt      time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
 }

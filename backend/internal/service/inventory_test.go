@@ -13,7 +13,7 @@ func TestInventoryService_ListSuppliers(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewInventoryService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "suppliers" WHERE deleted_at IS NULL ORDER BY name asc`).
+	mock.ExpectQuery(`SELECT \* FROM "suppliers" WHERE "suppliers"\."deleted_at" IS NULL ORDER BY name asc`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("s1", "Supplier A"))
 
 	result, err := svc.ListSuppliers()
@@ -41,7 +41,7 @@ func TestInventoryService_UpdateSupplier_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewInventoryService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "suppliers" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "suppliers"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "suppliers" WHERE id = \$1 AND "suppliers"\."deleted_at" IS NULL ORDER BY "suppliers"."id" LIMIT \$2`).
 		WithArgs("s1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("s1", "Old"))
 
@@ -50,7 +50,7 @@ func TestInventoryService_UpdateSupplier_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	mock.ExpectQuery(`SELECT \* FROM "suppliers" WHERE id = \$1 AND "suppliers"."id" = \$2 ORDER BY "suppliers"."id" LIMIT \$3`).
+	mock.ExpectQuery(`SELECT \* FROM "suppliers" WHERE id = \$1 AND "suppliers"\."deleted_at" IS NULL AND "suppliers"\."id" = \$2 ORDER BY "suppliers"\."id" LIMIT \$3`).
 		WithArgs("s1", "s1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("s1", "Updated"))
 
@@ -65,7 +65,7 @@ func TestInventoryService_DeleteSupplier_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewInventoryService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "suppliers" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "suppliers"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "suppliers" WHERE id = \$1 AND "suppliers"\."deleted_at" IS NULL ORDER BY "suppliers"."id" LIMIT \$2`).
 		WithArgs("s1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("s1"))
 
@@ -79,37 +79,9 @@ func TestInventoryService_DeleteSupplier_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestInventoryService_ListWarehouses(t *testing.T) {
-	db, mock := newMockDB(t)
-	svc := NewInventoryService(db, NewAuditService(db))
-
-	mock.ExpectQuery(`SELECT \* FROM "warehouses" WHERE deleted_at IS NULL ORDER BY name asc`).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("w1", "Main WH"))
-
-	result, err := svc.ListWarehouses()
-	require.NoError(t, err)
-	assert.Len(t, result, 1)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestInventoryService_CreateWarehouse(t *testing.T) {
-	db, mock := newMockDB(t)
-	svc := NewInventoryService(db, NewAuditService(db))
-
-	mock.ExpectBegin()
-	mock.ExpectQuery(`INSERT INTO "warehouses"`).
-		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
-	mock.ExpectCommit()
-
-	result, err := svc.CreateWarehouse(&CreateWarehouseRequest{Name: "Main WH"})
-	require.NoError(t, err)
-	assert.Equal(t, "Main WH", result.Name)
-	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
 func TestInventoryService_ListUnits(t *testing.T) {
 	result := ListUnits()
-	assert.Len(t, result, 9)
+	assert.Len(t, result, len(ValidUnits))
 	assert.Equal(t, "bich", result[0].ID)
 }
 
@@ -118,7 +90,7 @@ func TestInventoryService_DeductItemsStock_Success(t *testing.T) {
 	svc := NewInventoryService(db, NewAuditService(db))
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("ing-1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "current_stock", "has_stock"}).
 			AddRow("ing-1", "Coffee Beans", float64(100), true))
@@ -144,7 +116,7 @@ func TestInventoryService_DeductItemsStock_MultipleIngredients(t *testing.T) {
 	svc := NewInventoryService(db, NewAuditService(db))
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("ing-1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "current_stock", "has_stock"}).
 			AddRow("ing-1", "Coffee Beans", float64(100), true))
@@ -155,7 +127,7 @@ func TestInventoryService_DeductItemsStock_MultipleIngredients(t *testing.T) {
 	mock.ExpectExec(`UPDATE "products" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("ing-2", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "current_stock", "has_stock"}).
 			AddRow("ing-2", "Milk", float64(200), true))
@@ -182,7 +154,7 @@ func TestInventoryService_DeductItemsStock_GroupsSameIngredient(t *testing.T) {
 	svc := NewInventoryService(db, NewAuditService(db))
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("ing-1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "current_stock", "has_stock"}).
 			AddRow("ing-1", "Coffee Beans", float64(100), true))
@@ -209,7 +181,7 @@ func TestInventoryService_DeductItemsStock_InsufficientStock(t *testing.T) {
 	svc := NewInventoryService(db, NewAuditService(db))
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("ing-1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "current_stock", "has_stock"}).
 			AddRow("ing-1", "Coffee Beans", float64(5), true))
@@ -230,7 +202,7 @@ func TestInventoryService_DeductItemsStock_IngredientNotFound(t *testing.T) {
 	svc := NewInventoryService(db, NewAuditService(db))
 
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("nonexistent", 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 	mock.ExpectRollback()

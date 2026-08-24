@@ -38,10 +38,14 @@ type ByMemberRow struct {
 }
 
 type ByMachineRow struct {
-	MachineID   string `json:"machine_id"`
-	MachineName string `json:"machine_name"`
-	TotalSales  int64  `json:"total_sales"`
-	UsageHours  int64  `json:"usage_hours"`
+	MachineID string `json:"machine_id"`
+	// Máy không có tên riêng, chỉ có mã (model.Machine). Trường cũ tên
+	// machine_name khiến giao diện dựng hai cột "Máy" và "Tên máy" trong đó một
+	// cột luôn trống.
+	MachineCode  string  `json:"machine_code"`
+	TotalSales   int64   `json:"total_sales"`
+	UsageHours   float64 `json:"usage_hours"`
+	SessionCount int64   `json:"session_count"`
 }
 
 type ByEmployeeRow struct {
@@ -109,8 +113,8 @@ type txRevenueRow struct {
 func (s *ReportService) txRevenueQuery(dateFrom, dateTo string, dateExpr string) ([]txRevenueRow, error) {
 	var results []txRevenueRow
 	query := s.db.Table("member_transactions").
-		Select(dateExpr+" as date, COALESCE(SUM(amount), 0) as amount, COUNT(*) as count").
-		Where("transaction_type IN ('topup', 'session_fee')")
+		Select(dateExpr + " as date, COALESCE(SUM(amount), 0) as amount, COUNT(*) as count").
+		Where("transaction_type IN ('topup', 'topup_bonus', 'session_fee', 'combo_purchase', 'refund', 'refund_bonus')")
 
 	if dateFrom != "" {
 		if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
@@ -316,7 +320,9 @@ func (s *ReportService) ByMachine(params ReportParams) ([]ByMachineRow, error) {
 	var results []ByMachineRow
 
 	query := s.db.Model(&model.MachineSession{}).
-		Select("machine_id, COUNT(*) as usage_hours, COALESCE(SUM(total_cost), 0) as total_sales").
+		// COUNT(*) đếm số phiên chứ không phải số giờ; giờ thực nằm ở duration_minutes.
+		Select("machine_id, ROUND(COALESCE(SUM(duration_minutes), 0) / 60.0, 2) as usage_hours, " +
+			"COALESCE(SUM(total_cost), 0) as total_sales, COUNT(*) as session_count").
 		Where("ended_at IS NOT NULL")
 
 	if params.DateFrom != "" {
@@ -341,8 +347,11 @@ func (s *ReportService) ByMachine(params ReportParams) ([]ByMachineRow, error) {
 
 	for i := range results {
 		var machine model.Machine
-		if err := s.db.Select("machine_code").Where("id = ?", results[i].MachineID).First(&machine).Error; err == nil {
-			results[i].MachineName = machine.MachineCode
+		// Unscoped: máy đã gỡ khỏi danh sách vẫn phải hiện mã trong báo cáo cũ —
+		// nếu không, doanh thu của nó thành một dòng không tên.
+		if err := s.db.Unscoped().Select("machine_code").
+			Where("id = ?", results[i].MachineID).First(&machine).Error; err == nil {
+			results[i].MachineCode = machine.MachineCode
 		}
 	}
 
@@ -419,7 +428,8 @@ func (s *ReportService) PromotionUsage(params ReportParams) ([]PromotionUsageRow
 	var results []PromotionUsageRow
 
 	query := s.db.Model(&model.Order{}).
-		Select("COALESCE(promotion_id, '') as promotion_id, COUNT(*) as usage_count, COALESCE(SUM(discount_amount), 0) as discount_given").
+		// promotion_id là uuid: phải ép về text trước khi COALESCE với chuỗi rỗng.
+		Select("COALESCE(promotion_id::text, '') as promotion_id, COUNT(*) as usage_count, COALESCE(SUM(discount_amount), 0) as discount_given").
 		Where("discount_amount > 0 AND status = ?", "completed")
 
 	if params.DateFrom != "" {
@@ -444,7 +454,7 @@ func (s *ReportService) PromotionUsage(params ReportParams) ([]PromotionUsageRow
 
 	for i := range results {
 		var promo model.Promotion
-		if err := 		s.db.Select("name").Where("id = ?", results[i].PromotionID).First(&promo).Error; err == nil {
+		if err := s.db.Select("name").Where("id = ?", results[i].PromotionID).First(&promo).Error; err == nil {
 			results[i].PromotionName = promo.Name
 		}
 	}

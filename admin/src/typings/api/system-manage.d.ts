@@ -28,6 +28,14 @@ declare namespace Api {
     /** all role */
     type AllRole = Pick<Role, 'id' | 'roleName' | 'roleCode'>;
 
+    /** một mã quyền hệ thống */
+    type Permission = {
+      id: string;
+      code: string;
+      name: string;
+      module: string;
+    };
+
     /**
      * user gender
      *

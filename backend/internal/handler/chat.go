@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
+	"github.com/vnet/core/pkg/jwt"
 	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/response"
 )
@@ -22,15 +23,14 @@ func NewChatHandler(svc *service.ChatService) *ChatHandler {
 func (h *ChatHandler) ListRooms(c *gin.Context) {
 	participantID := c.Query("participant_id")
 	participantType := c.Query("participant_type")
-	if participantID == "" {
+
+	// Members are always scoped to themselves: honouring the query params here
+	// would let one member list another member's rooms.
+	if middleware.GetKind(c) != jwt.KindStaff {
 		participantID = middleware.GetUserID(c)
-		role := c.GetString(middleware.ContextKeyRole)
-		if role == "" || role == "member" {
-			participantType = "member"
-		} else {
-			participantID = ""
-			participantType = ""
-		}
+		participantType = "member"
+	} else if participantID == "" {
+		participantType = ""
 	}
 
 	log.Printf("[Chat] ListRooms: participantID=%s type=%s", participantID, participantType)
@@ -47,8 +47,50 @@ func (h *ChatHandler) ListRooms(c *gin.Context) {
 	response.Paginated(c, rooms, total, page, pageSize)
 }
 
+// ensureRoomAccess authorises a room-scoped request. Staff act as support
+// agents and reach every room; a member reaches only rooms they belong to.
+// It reports whether the caller may proceed and writes the response otherwise.
+func (h *ChatHandler) ensureRoomAccess(c *gin.Context, roomID string) bool {
+	if middleware.GetKind(c) == jwt.KindStaff {
+		return true
+	}
+
+	if roomID == "" {
+		response.NotFound(c, "Room not found")
+		return false
+	}
+
+	ok, err := h.svc.IsParticipant(roomID, middleware.GetUserID(c))
+	if err != nil {
+		response.InternalError(c, "Failed to verify room access")
+		return false
+	}
+	if !ok {
+		response.Forbidden(c, "Access denied")
+		return false
+	}
+	return true
+}
+
+// ensureMessageAccess applies the same rule to routes addressed by message ID.
+func (h *ChatHandler) ensureMessageAccess(c *gin.Context, messageID string) bool {
+	if middleware.GetKind(c) == jwt.KindStaff {
+		return true
+	}
+
+	roomID, err := h.svc.RoomOfMessage(messageID)
+	if err != nil {
+		response.NotFound(c, "Message not found")
+		return false
+	}
+	return h.ensureRoomAccess(c, roomID)
+}
+
 func (h *ChatHandler) GetMessages(c *gin.Context) {
 	roomID := c.Param("id")
+	if !h.ensureRoomAccess(c, roomID) {
+		return
+	}
 	params := pagination.GetParams(c)
 	log.Printf("[Chat] GetMessages: roomID=%s page=%d size=%d", roomID, params.Page, params.PageSize)
 
@@ -68,6 +110,13 @@ func (h *ChatHandler) CreateRoom(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
+	// A member may only open a room for themselves; staff open rooms on behalf
+	// of whoever they are helping.
+	if middleware.GetKind(c) != jwt.KindStaff {
+		req.ParticipantID = middleware.GetUserID(c)
+		req.ParticipantType = "member"
+	}
+
 	result, err := h.svc.CreateRoom(&req)
 	if err != nil {
 		response.BadRequest(c, err.Error())
@@ -95,11 +144,11 @@ func (h *ChatHandler) ensureRoom(senderID, senderType string) (string, error) {
 
 func (h *ChatHandler) SendMessage(c *gin.Context) {
 	var input struct {
-		RoomID string `json:"room_id"`
-		SenderType     string `json:"sender_type"`
-		SenderID       string `json:"sender_id"`
-		Message        string `json:"message"`
-		MessageType    string `json:"message_type"`
+		RoomID      string `json:"room_id"`
+		SenderType  string `json:"sender_type"`
+		SenderID    string `json:"sender_id"`
+		Message     string `json:"message"`
+		MessageType string `json:"message_type"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		log.Printf("[Chat] SendMessage bind error: %v", err)
@@ -113,11 +162,18 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	if input.SenderType == "" {
-		input.SenderType = "admin"
-	}
-	if input.SenderID == "" {
+	// Members may only speak as themselves; the fields are advisory for staff
+	// but would otherwise let a member post as an admin or as someone else.
+	if middleware.GetKind(c) != jwt.KindStaff {
+		input.SenderType = "member"
 		input.SenderID = middleware.GetUserID(c)
+	} else {
+		if input.SenderType == "" {
+			input.SenderType = "admin"
+		}
+		if input.SenderID == "" {
+			input.SenderID = middleware.GetUserID(c)
+		}
 	}
 	if input.MessageType == "" {
 		input.MessageType = "text"
@@ -138,12 +194,18 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		return
 	}
 
+	// The room id arrives in the body, so it is authorised like any other
+	// room-scoped request before a message lands in it.
+	if !h.ensureRoomAccess(c, roomID) {
+		return
+	}
+
 	req := service.SendMessageRequest{
-		RoomID: roomID,
-		SenderType:     input.SenderType,
-		SenderID:       input.SenderID,
-		Message:        input.Message,
-		MessageType:    input.MessageType,
+		RoomID:      roomID,
+		SenderType:  input.SenderType,
+		SenderID:    input.SenderID,
+		Message:     input.Message,
+		MessageType: input.MessageType,
 	}
 
 	result, err := h.svc.SendMessage(&req)
@@ -179,6 +241,9 @@ func (h *ChatHandler) DeleteAllRooms(c *gin.Context) {
 
 func (h *ChatHandler) MarkMessageDelivered(c *gin.Context) {
 	id := c.Param("id")
+	if !h.ensureMessageAccess(c, id) {
+		return
+	}
 	if err := h.svc.MarkMessageDelivered(id); err != nil {
 		response.InternalError(c, "Failed to mark delivered")
 		return
@@ -188,6 +253,9 @@ func (h *ChatHandler) MarkMessageDelivered(c *gin.Context) {
 
 func (h *ChatHandler) MarkMessageRead(c *gin.Context) {
 	id := c.Param("id")
+	if !h.ensureMessageAccess(c, id) {
+		return
+	}
 	if err := h.svc.MarkMessageRead(id); err != nil {
 		response.InternalError(c, "Failed to mark read")
 		return
@@ -197,6 +265,9 @@ func (h *ChatHandler) MarkMessageRead(c *gin.Context) {
 
 func (h *ChatHandler) MarkRoomMessagesRead(c *gin.Context) {
 	id := c.Param("id")
+	if !h.ensureRoomAccess(c, id) {
+		return
+	}
 	count, err := h.svc.MarkRoomMessagesRead(id)
 	if err != nil {
 		response.InternalError(c, "Failed to mark read")

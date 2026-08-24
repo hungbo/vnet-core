@@ -18,24 +18,38 @@ client.interceptors.request.use(
   error => Promise.reject(error)
 );
 
+/** Error carrying the backend response code, so callers can react to a specific
+ * failure instead of matching on message text. */
+export interface ApiError extends Error {
+  /** Business code from the response envelope. */
+  code?: number;
+  /** HTTP status, when the request itself failed. */
+  status?: number;
+}
+
+function apiError(message: string, code?: number, status?: number): ApiError {
+  const err = new Error(message) as ApiError;
+  err.code = code;
+  err.status = status;
+  return err;
+}
+
 client.interceptors.response.use(
   response => {
     const { data } = response;
     if (data.code !== 0) {
-      return Promise.reject(new Error(data.message || 'Request failed'));
+      return Promise.reject(apiError(data.message || 'Request failed', data.code, response.status));
     }
     return data.data;
   },
   error => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    if (status === 401) {
       localStg.remove('token');
       window.location.href = '/login';
     }
-    const backendMessage = error.response?.data?.message;
-    if (backendMessage) {
-      return Promise.reject(new Error(backendMessage));
-    }
-    return Promise.reject(error);
+    const body = error.response?.data;
+    return Promise.reject(apiError(body?.message || error.message || 'Request failed', body?.code, status));
   }
 );
 

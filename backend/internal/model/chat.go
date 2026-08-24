@@ -1,22 +1,26 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type ChatRoom struct {
-	ID        string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	Title     string     `gorm:"type:varchar(200)" json:"title"`
-	IsGroup   bool       `gorm:"default:false" json:"is_group"`
-	CreatedAt time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
-	DeletedAt *time.Time `gorm:"index" json:"deleted_at,omitempty"`
+	ID        string         `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	Title     string         `gorm:"type:varchar(200)" json:"title"`
+	IsGroup   bool           `gorm:"default:false" json:"is_group"`
+	CreatedAt time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 type ChatParticipant struct {
-	ID               string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	RoomID   string     `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"room_id"`
-	ParticipantType  string     `gorm:"type:varchar(20);not null" json:"participant_type"`
-	ParticipantID    string     `gorm:"type:uuid;not null" json:"participant_id"`
-	LastReadAt       *time.Time `gorm:"type:timestamptz" json:"last_read_at"`
-	JoinedAt         time.Time  `gorm:"default:now()" json:"joined_at"`
+	ID              string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	RoomID          string     `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"room_id"`
+	ParticipantType string     `gorm:"type:varchar(20);not null" json:"participant_type"`
+	ParticipantID   string     `gorm:"type:uuid;not null" json:"participant_id"`
+	LastReadAt      *time.Time `gorm:"type:timestamptz" json:"last_read_at"`
+	JoinedAt        time.Time  `gorm:"default:now()" json:"joined_at"`
 }
 
 type ChatMessage struct {

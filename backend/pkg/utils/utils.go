@@ -3,6 +3,7 @@ package utils
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"strings"
@@ -114,4 +115,59 @@ func IsValidEmail(email string) bool {
 	}
 	dot := strings.LastIndex(domain, ".")
 	return dot > 0 && dot < len(domain)-1
+}
+
+// JSONDate là *time.Time nhưng chấp nhận thêm hai dạng mà giao diện thật sự
+// gửi, ngoài RFC3339 mà encoding/json đòi hỏi:
+//
+//	""            → không có ngày (nil)
+//	"2006-01-02"  → dạng ElDatePicker sinh ra với value-format="YYYY-MM-DD"
+//
+// Không có kiểu này, ô "Ngày sinh" trong hộp thoại Thêm hội viên hỏng theo CẢ
+// HAI hướng: bỏ trống thì gửi "" (json: cannot unmarshal), chọn ngày thì gửi
+// "2000-01-01" (thiếu phần giờ). Cả hai đều rơi vào cùng một câu trả lời
+// "Dữ liệu không hợp lệ" không nói field nào sai.
+type JSONDate struct {
+	Time *time.Time
+}
+
+func (d *JSONDate) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		d.Time = nil
+		return nil
+	}
+	// Phải giải mã qua string chứ không cắt dấu nháy khỏi byte thô: byte thô còn
+	// nguyên các chuỗi escape (\u00f4), nên "hôm qua" sẽ lọt vào bộ đọc dưới
+	// dạng "h\u00f4m qua" và hiện y như vậy trong thông báo lỗi cho người dùng.
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("ngày phải là chuỗi: %w", err)
+	}
+	if strings.TrimSpace(s) == "" {
+		d.Time = nil
+		return nil
+	}
+	s = strings.TrimSpace(s)
+
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		loc = time.UTC
+	}
+
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", "2006-01-02"} {
+		// Ngày sinh chỉ có ý nghĩa theo lịch địa phương: dựng ở UTC thì một
+		// người sinh 01/01 thành 31/12 và phép kiểm vị thành niên lệch một ngày.
+		if t, err := time.ParseInLocation(layout, s, loc); err == nil {
+			d.Time = &t
+			return nil
+		}
+	}
+	return fmt.Errorf("ngày %q không đọc được: cần YYYY-MM-DD hoặc RFC3339", s)
+}
+
+func (d JSONDate) MarshalJSON() ([]byte, error) {
+	if d.Time == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(d.Time)
 }

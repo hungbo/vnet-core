@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { h, reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
@@ -64,6 +64,26 @@ async function handleSave() {
     saving.value = false;
   }
 }
+
+async function handleDelete(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      $t('vnetPages.suppliers.messages.deleteConfirm', { name: row.name }),
+      $t('vnetPages.common.confirm'),
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  try {
+    await client.delete(`/suppliers/${row.id}`);
+    ElMessage.success($t('vnetPages.suppliers.messages.deleteSuccess'));
+    await getData();
+  } catch (e: any) {
+    // Backend chặn xoá nhà cung cấp còn hàng gắn vào — hiện nguyên văn lý do.
+    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
+}
 </script>
 
 <template>
@@ -75,6 +95,7 @@ async function handleSave() {
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
           />
@@ -82,9 +103,12 @@ async function handleSave() {
       </template>
       <ElTable v-loading="loading" :data="data" style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
-        <ElTableColumn :label="$t('vnetPages.common.action')" width="150" fixed="right">
+        <ElTableColumn :label="$t('vnetPages.common.action')" width="170" fixed="right">
           <template #default="{ row }">
             <ElButton size="small" @click="handleEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
+            <ElButton size="small" type="danger" @click="handleDelete(row)">
+              {{ $t('vnetPages.common.delete') }}
+            </ElButton>
           </template>
         </ElTableColumn>
       </ElTable>

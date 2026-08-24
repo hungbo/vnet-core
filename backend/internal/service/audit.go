@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	stdlog "log"
 	"fmt"
 	"strings"
 	"time"
@@ -40,7 +41,7 @@ type AuditLogResponse struct {
 	ID          string    `json:"id"`
 	Action      string    `json:"action"`
 	EntityType  string    `json:"entity_type"`
-	EntityID    string    `json:"entity_id"`
+	EntityID    *string   `json:"entity_id"`
 	UserID      *string   `json:"user_id"`
 	UserName    string    `json:"user_name"`
 	Description string    `json:"description"`
@@ -98,6 +99,15 @@ func (s *AuditService) GetByID(id string) (*model.AuditLog, error) {
 	return &log, nil
 }
 
+// optionalUUID biến chuỗi rỗng thành NULL. Không có nó, một EntityID rỗng làm
+// hỏng cả bản ghi nhật ký.
+func optionalUUID(v string) *string {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	return &v
+}
+
 func (s *AuditService) Log(req *LogAuditRequest) error {
 	metadata := ""
 	if req.Metadata != nil {
@@ -109,14 +119,21 @@ func (s *AuditService) Log(req *LogAuditRequest) error {
 	log := model.AuditLog{
 		Action:      req.Action,
 		EntityType:  req.EntityType,
-		EntityID:    req.EntityID,
+		EntityID:    optionalUUID(req.EntityID),
 		UserID:      req.UserID,
 		Description: description,
 		Metadata:    metadata,
 		IPAddress:   req.IPAddress,
 	}
 
-	return s.db.Create(&log).Error
+	// Nhật ký hỏng trong im lặng là cách chắc chắn nhất để không ai biết nó
+	// hỏng: mọi chỗ gọi đều bỏ qua giá trị trả về, nên phải kêu ra đây.
+	if err := s.db.Create(&log).Error; err != nil {
+		stdlog.Printf("[audit] không ghi được nhật ký action=%s entity=%s: %v",
+			req.Action, req.EntityType, err)
+		return err
+	}
+	return nil
 }
 
 func buildDescription(action, entityType string, metadata interface{}) string {
@@ -194,37 +211,36 @@ func buildDescription(action, entityType string, metadata interface{}) string {
 
 func entityLabel(entityType string) string {
 	labels := map[string]string{
-		"product_material": "nguyên liệu sản phẩm",
-		"member":           "hội viên",
-		"member_group":     "nhóm hội viên",
-		"machine":          "máy",
-		"machine_group":    "nhóm máy",
-		"machine_price":    "giá máy",
-		"machine_asset":    "thiết bị máy",
-		"combo":            "gói dịch vụ",
-		"combo_purchase":   "gói đã mua",
-		"machine_session":  "phiên chơi",
-		"machine_booking":  "đặt chỗ",
-		"promotion":        "khuyến mãi",
-		"lucky_spin_log":   "vòng quay",
-		"order":            "đơn hàng",
-		"product":          "sản phẩm",
-		"category":         "danh mục",
-		"material":         "nguyên liệu",
-		"supplier":         "nhà cung cấp",
-		"warehouse":        "kho",
+		"product_material":  "nguyên liệu sản phẩm",
+		"member":            "hội viên",
+		"member_group":      "nhóm hội viên",
+		"machine":           "máy",
+		"machine_group":     "nhóm máy",
+		"machine_price":     "giá máy",
+		"machine_asset":     "thiết bị máy",
+		"combo":             "gói dịch vụ",
+		"combo_purchase":    "gói đã mua",
+		"machine_session":   "phiên chơi",
+		"machine_booking":   "đặt chỗ",
+		"promotion":         "khuyến mãi",
+		"lucky_spin_log":    "vòng quay",
+		"order":             "đơn hàng",
+		"product":           "sản phẩm",
+		"category":          "danh mục",
+		"material":          "nguyên liệu",
+		"supplier":          "nhà cung cấp",
 		"stock_transaction": "nhập xuất kho",
-		"shift":            "ca làm việc",
-		"cash_handover":    "bàn giao tiền",
-		"store":            "cửa hàng",
-		"printer_config":   "máy in",
-		"system_setting":   "cài đặt",
-		"backup_log":       "sao lưu",
-		"curfew_policy":    "giới hạn tuổi",
-		"user":             "người dùng",
-		"role":             "vai trò",
-		"chat_room": "phòng",
-		"chat_message":     "tin nhắn",
+		"shift":             "ca làm việc",
+		"cash_handover":     "bàn giao tiền",
+		"store":             "cửa hàng",
+		"printer_config":    "máy in",
+		"system_setting":    "cài đặt",
+		"backup_log":        "sao lưu",
+		"curfew_policy":     "giới hạn tuổi",
+		"user":              "người dùng",
+		"role":              "vai trò",
+		"chat_room":         "phòng",
+		"chat_message":      "tin nhắn",
 	}
 	if label, ok := labels[entityType]; ok {
 		return label
@@ -234,36 +250,36 @@ func entityLabel(entityType string) string {
 
 func actionLabel(action string) string {
 	labels := map[string]string{
-		"create":         "Tạo",
-		"update":         "Cập nhật",
-		"delete":         "Xóa",
-		"topup":          "Nạp tiền",
-		"refund":         "Hoàn tiền",
-		"purchase":       "Mua",
-		"activate":       "Kích hoạt",
-		"start_session":  "Bắt đầu phiên",
-		"end_session":    "Kết thúc phiên",
-		"switch_machine": "Chuyển máy",
-		"check_in":       "Check-in",
-		"cancel":         "Hủy",
-		"no_show":        "Không đến",
-		"spin":           "Quay thưởng",
-		"apply_reward":   "Nhận thưởng",
-		"update_status":  "Cập nhật trạng thái",
-		"split":          "Tách đơn",
-		"pay":            "Thanh toán",
-		"heartbeat":      "Heartbeat",
-		"batch_delete":   "Xóa hàng loạt",
-		"open_shift":     "Mở ca",
-		"close_shift":    "Đóng ca",
-		"handover":       "Bàn giao ca",
-		"upsert":         "Cập nhật",
-		"restore":        "Phục hồi",
-		"override":       "Ghi đè",
+		"create":          "Tạo",
+		"update":          "Cập nhật",
+		"delete":          "Xóa",
+		"topup":           "Nạp tiền",
+		"refund":          "Hoàn tiền",
+		"purchase":        "Mua",
+		"activate":        "Kích hoạt",
+		"start_session":   "Bắt đầu phiên",
+		"end_session":     "Kết thúc phiên",
+		"switch_machine":  "Chuyển máy",
+		"check_in":        "Check-in",
+		"cancel":          "Hủy",
+		"no_show":         "Không đến",
+		"spin":            "Quay thưởng",
+		"apply_reward":    "Nhận thưởng",
+		"update_status":   "Cập nhật trạng thái",
+		"split":           "Tách đơn",
+		"pay":             "Thanh toán",
+		"heartbeat":       "Heartbeat",
+		"batch_delete":    "Xóa hàng loạt",
+		"open_shift":      "Mở ca",
+		"close_shift":     "Đóng ca",
+		"handover":        "Bàn giao ca",
+		"upsert":          "Cập nhật",
+		"restore":         "Phục hồi",
+		"override":        "Ghi đè",
 		"change_password": "Đổi mật khẩu",
-		"create_room": "Tạo phòng",
-		"send_message":   "Gửi tin nhắn",
-		"mark_read":      "Đánh dấu đã đọc",
+		"create_room":     "Tạo phòng",
+		"send_message":    "Gửi tin nhắn",
+		"mark_read":       "Đánh dấu đã đọc",
 	}
 	if label, ok := labels[action]; ok {
 		return label
@@ -302,17 +318,17 @@ func extractChanges(meta map[string]interface{}) string {
 	skipKeys := map[string]bool{"updated_at": true, "name": true, "username": true}
 	var parts []string
 	labelMap := map[string]string{
-		"full_name":      "tên",
-		"phone":          "SĐT",
-		"email":          "email",
-		"password_hash":  "mật khẩu",
-		"is_active":      "trạng thái",
-		"group_id":       "nhóm",
-		"notes":          "ghi chú",
-		"address":        "địa chỉ",
-		"price":          "giá",
-		"description":    "mô tả",
-		"status":         "trạng thái",
+		"full_name":     "tên",
+		"phone":         "SĐT",
+		"email":         "email",
+		"password_hash": "mật khẩu",
+		"is_active":     "trạng thái",
+		"group_id":      "nhóm",
+		"notes":         "ghi chú",
+		"address":       "địa chỉ",
+		"price":         "giá",
+		"description":   "mô tả",
+		"status":        "trạng thái",
 	}
 	for k, v := range meta {
 		if skipKeys[k] {

@@ -1,24 +1,24 @@
 <script setup lang="tsx">
 import { ref } from 'vue';
-import type { Ref } from 'vue';
-import { useBoolean } from '@sa/hooks';
 import { yesOrNoRecord } from '@/constants/common';
 import { enableStatusRecord, menuTypeRecord } from '@/constants/business';
-import { fetchGetAllPages, fetchGetMenuList } from '@/service/api';
-import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
+import { fetchGetMenuList } from '@/service/api';
+import { defaultTransform, useUIPaginatedTable } from '@/hooks/common/table';
 import { $t } from '@/locales';
 import SvgIcon from '@/components/custom/svg-icon.vue';
-import MenuOperateModal, { type OperateType } from './modules/menu-operate-modal.vue';
 
-const { bool: visible, setTrue: openModal } = useBoolean();
+// Trang này CHỈ ĐỂ XEM. Cây menu là hằng số trong backend
+// (internal/service/route.go + system_manage.go) — không có bảng menu nào trong
+// database để ghi. Bản mẫu của Soybean vẫn để đủ nút Thêm/Sửa/Xoá, bấm vào chỉ
+// hiện "cập nhật thành công" rồi không gửi gì: người vận hành tin là đã đổi
+// được menu trong khi không có gì xảy ra.
 
 const wrapperRef = ref<HTMLElement | null>(null);
 
-const { columns, columnChecks, data, loading, pagination, getData, getDataByPage } = useUIPaginatedTable({
+const { columns, columnChecks, data, loading, pagination, getData } = useUIPaginatedTable({
   api: () => fetchGetMenuList(),
   transform: response => defaultTransform(response),
   columns: () => [
-    { prop: 'selection', type: 'selection', width: 48 },
     { prop: 'id', label: $t('page.manage.menu.id') },
     {
       prop: 'menuType',
@@ -102,90 +102,9 @@ const { columns, columnChecks, data, loading, pagination, getData, getDataByPage
       }
     },
     { prop: 'parentId', label: $t('page.manage.menu.parentId'), width: 90 },
-    { prop: 'order', label: $t('page.manage.menu.order'), width: 60 },
-    {
-      prop: 'operate',
-      label: $t('common.operate'),
-      width: 270,
-      formatter: row => (
-        <div class="flex-center justify-end pr-10px">
-          {row.menuType === '1' && (
-            <ElButton type="primary" plain size="small" onClick={() => handleAddChildMenu(row)}>
-              {$t('page.manage.menu.addChildMenu')}
-            </ElButton>
-          )}
-          <ElButton type="primary" plain size="small" onClick={() => handleEdit(row)}>
-            {$t('common.edit')}
-          </ElButton>
-          <ElPopconfirm title={$t('common.confirmDelete')} onConfirm={() => handleDelete(row.id)}>
-            {{
-              reference: () => (
-                <ElButton type="danger" plain size="small">
-                  {$t('common.delete')}
-                </ElButton>
-              )
-            }}
-          </ElPopconfirm>
-        </div>
-      )
-    }
+    { prop: 'order', label: $t('page.manage.menu.order'), width: 60 }
   ]
 });
-
-const { checkedRowKeys, onBatchDeleted, onDeleted } = useTableOperate(data, 'id', getData);
-
-const operateType = ref<OperateType>('add');
-
-function handleAdd() {
-  operateType.value = 'add';
-  openModal();
-}
-
-async function handleBatchDelete() {
-  // request
-
-  onBatchDeleted();
-}
-
-function handleDelete(id: number) {
-  // eslint-disable-next-line no-console
-  console.log(id);
-  // request
-
-  onDeleted();
-}
-
-/** the edit menu data or the parent menu data when adding a child menu */
-const editingData: Ref<Api.SystemManage.Menu | null> = ref(null);
-
-function handleEdit(item: Api.SystemManage.Menu) {
-  operateType.value = 'edit';
-  editingData.value = { ...item };
-
-  openModal();
-}
-
-function handleAddChildMenu(item: Api.SystemManage.Menu) {
-  operateType.value = 'addChild';
-
-  editingData.value = { ...item };
-
-  openModal();
-}
-
-const allPages = ref<string[]>([]);
-
-async function getAllPages() {
-  const { data: pages } = await fetchGetAllPages();
-  allPages.value = pages || [];
-}
-
-function init() {
-  getAllPages();
-}
-
-// init
-init();
 </script>
 
 <template>
@@ -196,24 +115,18 @@ init();
           <p>{{ $t('page.manage.menu.title') }}</p>
           <TableHeaderOperation
             v-model:columns="columnChecks"
-            :disabled-delete="checkedRowKeys.length === 0"
             :loading="loading"
-            @add="handleAdd"
-            @delete="handleBatchDelete"
+            :show-add="false"
+            :show-delete="false"
             @refresh="getData"
           />
         </div>
       </template>
+      <ElAlert type="info" :closable="false" show-icon class="mb-12px">
+        {{ $t('page.manage.menu.readOnlyNote') }}
+      </ElAlert>
       <div class="h-[calc(100%-52px)]">
-        <ElTable
-          v-loading="loading"
-          height="100%"
-          border
-          class="sm:h-full"
-          :data="data"
-          row-key="id"
-          @selection-change="checkedRowKeys = $event"
-        >
+        <ElTable v-loading="loading" height="100%" border class="sm:h-full" :data="data" row-key="id">
           <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         </ElTable>
         <div class="mt-20px flex justify-end">
@@ -226,13 +139,6 @@ init();
           />
         </div>
       </div>
-      <MenuOperateModal
-        v-model:visible="visible"
-        :operate-type="operateType"
-        :row-data="editingData"
-        :all-pages="allPages"
-        @submitted="getDataByPage"
-      />
     </ElCard>
   </div>
 </template>

@@ -4,6 +4,8 @@ import { AdminLayout, LAYOUT_SCROLL_EL_ID } from '@sa/materials';
 import type { LayoutMode } from '@sa/materials';
 import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
+import { useWsNotify } from '@/hooks/common/ws-notify';
+import ChatWidget from '@/components/ChatWidget.vue';
 import GlobalHeader from '../modules/global-header/index.vue';
 import GlobalSider from '../modules/global-sider/index.vue';
 import GlobalTab from '../modules/global-tab/index.vue';
@@ -11,13 +13,16 @@ import GlobalContent from '../modules/global-content/index.vue';
 import GlobalFooter from '../modules/global-footer/index.vue';
 import ThemeDrawer from '../modules/theme-drawer/index.vue';
 import { setupMixMenuContext } from '../context';
-import ChatWidget from '@/components/ChatWidget.vue';
 
 defineOptions({ name: 'BaseLayout' });
 
 const appStore = useAppStore();
 const themeStore = useThemeStore();
 const { childLevelMenus, isActiveFirstLevelMenuHasChildren } = setupMixMenuContext();
+
+// Thông báo nổi cho đơn hàng / nạp tiền / phiên tự đóng / giới nghiêm. Gắn vào
+// layout để chạy ở mọi trang, không chỉ trang liên quan.
+useWsNotify();
 
 const GlobalMenu = defineAsyncComponent(() => import('../modules/global-menu/index.vue'));
 

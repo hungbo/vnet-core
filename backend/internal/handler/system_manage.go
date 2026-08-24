@@ -246,3 +246,169 @@ func (h *SystemManageHandler) GetMenuTree(c *gin.Context) {
 	}
 	response.Success(c, tree)
 }
+
+// @Summary Add role
+// @Description Create a system role
+// @Tags SystemManage
+// @Accept json
+// @Produce json
+// @Param body body service.CreateRoleRequest true "Role details"
+// @Success 201 {object} response.Response{data=service.RoleManageResponse}
+// @Router /systemManage/addRole [post]
+// @Security BearerAuth
+func (h *SystemManageHandler) AddRole(c *gin.Context) {
+	var req service.CreateRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	result, err := h.svc.CreateRole(&req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Created(c, result)
+}
+
+// @Summary Update role
+// @Description Update a system role
+// @Tags SystemManage
+// @Accept json
+// @Produce json
+// @Param body body service.UpdateRoleRequest true "Role details"
+// @Success 200 {object} response.Response{data=service.RoleManageResponse}
+// @Router /systemManage/updateRole [post]
+// @Security BearerAuth
+func (h *SystemManageHandler) UpdateRole(c *gin.Context) {
+	var req service.UpdateRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	result, err := h.svc.UpdateRole(&req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// @Summary Delete role
+// @Description Delete a system role
+// @Tags SystemManage
+// @Produce json
+// @Param id query string false "Role ID"
+// @Success 200 {object} response.Response
+// @Router /systemManage/deleteRole [delete]
+// @Security BearerAuth
+func (h *SystemManageHandler) DeleteRole(c *gin.Context) {
+	var body struct {
+		ID string `json:"id" form:"id"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		if err := c.ShouldBindQuery(&body); err != nil {
+			response.BadRequest(c, "id is required")
+			return
+		}
+	}
+	if body.ID == "" {
+		response.BadRequest(c, "id is required")
+		return
+	}
+	if err := h.svc.DeleteRole(body.ID); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// @Summary Batch delete roles
+// @Description Delete multiple system roles
+// @Tags SystemManage
+// @Accept json
+// @Produce json
+// @Param body body object true "Role IDs"
+// @Success 200 {object} response.Response
+// @Router /systemManage/batchDeleteRole [delete]
+// @Security BearerAuth
+func (h *SystemManageHandler) BatchDeleteRole(c *gin.Context) {
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	if err := h.svc.BatchDeleteRoles(body.IDs); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// @Summary Get all permissions
+// @Description List every permission code the system knows about
+// @Tags SystemManage
+// @Produce json
+// @Success 200 {object} response.Response{data=[]service.PermissionResponse}
+// @Router /systemManage/getAllPermissions [get]
+// @Security BearerAuth
+func (h *SystemManageHandler) GetAllPermissions(c *gin.Context) {
+	result, err := h.svc.GetAllPermissions()
+	if err != nil {
+		response.InternalError(c, "Failed to fetch permissions")
+		return
+	}
+	response.Success(c, result)
+}
+
+// @Summary Get a role's permissions
+// @Description List the permission IDs currently granted to a role
+// @Tags SystemManage
+// @Produce json
+// @Param roleId query string true "Role ID"
+// @Success 200 {object} response.Response{data=[]string}
+// @Router /systemManage/getRolePermissions [get]
+// @Security BearerAuth
+func (h *SystemManageHandler) GetRolePermissions(c *gin.Context) {
+	roleID := c.Query("roleId")
+	if roleID == "" {
+		response.BadRequest(c, "roleId is required")
+		return
+	}
+	result, err := h.svc.GetRolePermissions(roleID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// @Summary Replace a role's permissions
+// @Description Set the full permission list for a role
+// @Tags SystemManage
+// @Accept json
+// @Produce json
+// @Param body body object true "Role ID and permission IDs"
+// @Success 200 {object} response.Response
+// @Router /systemManage/updateRolePermissions [post]
+// @Security BearerAuth
+func (h *SystemManageHandler) UpdateRolePermissions(c *gin.Context) {
+	var body struct {
+		RoleID        string   `json:"roleId"`
+		PermissionIDs []string `json:"permissionIds"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	if body.RoleID == "" {
+		response.BadRequest(c, "roleId is required")
+		return
+	}
+	if err := h.svc.UpdateRolePermissions(body.RoleID, body.PermissionIDs); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}

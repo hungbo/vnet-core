@@ -93,7 +93,7 @@ type UpdateProductRequest struct {
 	Options      []ProductOptionItem `json:"options"`
 }
 
-func (s *ProductService) List(isRetail *bool, search string, page int, pageSize int) (*pagination.Result, error) {
+func (s *ProductService) List(isRetail *bool, categoryID, search string, page int, pageSize int) (*pagination.Result, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -101,9 +101,15 @@ func (s *ProductService) List(isRetail *bool, search string, page int, pageSize 
 		pageSize = 20
 	}
 
-	query := s.db.Where("deleted_at IS NULL")
+	query := s.db
 	if isRetail != nil {
 		query = query.Where("is_retail = ?", *isRetail)
+	}
+	// Tham số category_id có trong tài liệu Swagger và thực đơn máy trạm vẫn gửi
+	// lên, nhưng trước đây không ai đọc: mọi thẻ danh mục đều trả về nguyên cả
+	// thực đơn, nên nhìn qua tưởng là "quán chưa xếp món vào nhóm".
+	if categoryID != "" {
+		query = query.Where("category_id = ?", categoryID)
 	}
 	if search != "" {
 		query = query.Where("unaccent(name) ILIKE unaccent(?) OR unaccent(description) ILIKE unaccent(?)", "%"+search+"%", "%"+search+"%")
@@ -133,7 +139,7 @@ func (s *ProductService) List(isRetail *bool, search string, page int, pageSize 
 
 func (s *ProductService) GetByID(id string) (*ProductResponse, error) {
 	var product model.Product
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&product).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&product).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("không tìm thấy sản phẩm")
 		}
@@ -222,7 +228,7 @@ func (s *ProductService) Create(req *CreateProductRequest) (*ProductResponse, er
 
 func (s *ProductService) Update(id string, req *UpdateProductRequest) (*ProductResponse, error) {
 	var product model.Product
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&product).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&product).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("không tìm thấy sản phẩm")
 		}
@@ -320,7 +326,7 @@ func (s *ProductService) Update(id string, req *UpdateProductRequest) (*ProductR
 
 func (s *ProductService) Delete(id string) error {
 	var product model.Product
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&product).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&product).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("không tìm thấy sản phẩm")
 		}

@@ -1,7 +1,12 @@
 package handler
 
 import (
+	"errors"
+	"net/http"
+	"strings"
+
 	"github.com/gin-gonic/gin"
+	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/pagination"
@@ -156,7 +161,7 @@ func (h *MachineHandler) Heartbeat(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
-	if err := h.svc.Heartbeat(id, req.CPUTemp, req.GPUTemp, req.IP, req.MAC); err != nil {
+	if err := h.svc.Heartbeat(id, req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
@@ -165,6 +170,15 @@ func (h *MachineHandler) Heartbeat(c *gin.Context) {
 
 func (h *MachineHandler) HeartbeatByCode(c *gin.Context) {
 	code := c.Param("code")
+
+	// Đây là route ghi dữ liệu duy nhất nằm ngoài AuthRequired: máy trạm chưa
+	// đăng nhập được bằng tài khoản người. Thay vào đó mỗi máy có khoá riêng,
+	// cấp lúc tạo máy và ghi vào cấu hình máy trạm.
+	if err := h.svc.VerifyAgentToken(code, agentToken(c)); err != nil {
+		response.Unauthorized(c, err.Error())
+		return
+	}
+
 	var req service.HeartbeatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
@@ -175,7 +189,7 @@ func (h *MachineHandler) HeartbeatByCode(c *gin.Context) {
 		response.NotFound(c, "Machine not found")
 		return
 	}
-	if err := h.svc.Heartbeat(machine.ID, req.CPUTemp, req.GPUTemp, req.IP, req.MAC); err != nil {
+	if err := h.svc.Heartbeat(machine.ID, req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
@@ -233,25 +247,33 @@ func (h *MachineHandler) GetByCode(c *gin.Context) {
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id      path  string  true  "Machine ID"
-// @Param        action  path  string  true  "Action name (restart, shutdown, etc.)"
+// @Param        action  path  string  true  "Lệnh: lock, unlock, shutdown, restart, message"
 // @Success      200   {object}  response.Response
 // @Failure      400   {object}  response.Response
-// @Router       /api/machines/{id}/action/{action} [post]
+// @Failure      409   {object}  response.Response  "máy trạm chưa kết nối"
+// @Router       /api/machines/{id}/remote/{action} [post]
 func (h *MachineHandler) RemoteAction(c *gin.Context) {
 	id := c.Param("id")
 	action := c.Param("action")
 
 	var payload interface{}
-	if err := c.ShouldBindJSON(&payload); err == nil {
-	} else {
+	if err := c.ShouldBindJSON(&payload); err != nil {
 		payload = nil
 	}
 
-	if err := h.svc.RemoteAction(id, action, payload); err != nil {
+	result, err := h.svc.RemoteAction(id, action, payload, middleware.GetUserID(c))
+	switch {
+	case err == nil:
+		// Trả kèm kết quả chốt tiền khi lệnh làm kết thúc phiên (tắt máy, khởi
+		// động lại), để nhân viên thấy ngay đã thu bao nhiêu.
+		response.Success(c, result)
+	case errors.Is(err, service.ErrMachineOffline):
+		// 409 chứ không phải 400: lệnh hợp lệ, chỉ là máy chưa kết nối. Nhân
+		// viên cần phân biệt "gõ sai lệnh" với "máy đang tắt".
+		response.Error(c, http.StatusConflict, err.Error())
+	default:
 		response.BadRequest(c, err.Error())
-		return
 	}
-	response.Success(c, nil)
 }
 
 // ListGroups
@@ -413,7 +435,7 @@ func (h *MachineHandler) UpdateAsset(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
-	result, err := h.svc.UpdateAsset(id, &req)
+	result, err := h.svc.UpdateAsset(id, &req, middleware.GetUserID(c))
 	if err != nil {
 		handleCreateError(c, err)
 		return
@@ -440,4 +462,36 @@ func (h *MachineHandler) DeleteAsset(c *gin.Context) {
 		return
 	}
 	response.Success(c, nil)
+}
+
+// IssueAgentToken
+// @Summary      Cấp lại khoá máy trạm
+// @Description  Khoá THÔ chỉ trả về ở đây, một lần duy nhất. Khoá cũ mất hiệu lực ngay.
+// @Tags         Machines
+// @Produce      json
+// @Param        id  path  string  true  "Machine ID"
+// @Success      200  {object}  response.Response
+// @Router       /api/machines/{id}/agent-token [post]
+func (h *MachineHandler) IssueAgentToken(c *gin.Context) {
+	token, err := h.svc.IssueAgentToken(c.Param("id"), middleware.GetUserID(c))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"agent_token": token})
+}
+
+// agentToken bóc khoá máy trạm khỏi header. Máy trạm gửi X-Agent-Token; chấp
+// nhận cả Authorization: Bearer cho công cụ chỉ đặt được header chuẩn.
+// VerifyAgentToken cho middleware WebSocket kiểm khoá riêng của máy trạm.
+// Dùng lại đúng hàm mà heartbeat đang dùng, không dựng đường xác thực thứ hai.
+func (h *MachineHandler) VerifyAgentToken(machineCode, token string) error {
+	return h.svc.VerifyAgentToken(machineCode, token)
+}
+
+func agentToken(c *gin.Context) string {
+	if t := c.GetHeader("X-Agent-Token"); t != "" {
+		return t
+	}
+	return strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
 }

@@ -17,7 +17,23 @@ type MachineSession struct {
 	IsOvernight      bool       `gorm:"default:false" json:"is_overnight"`
 	IsActive         bool       `gorm:"default:true;index" json:"is_active"`
 
-	// Snapshot fields — frozen at session end for audit
+	// ChargedAmount là số tiền ĐÃ trừ cho phiên này.
+	//
+	// Đây là trạng thái duy nhất khiến việc trừ tiền theo phút idempotent: mỗi
+	// lượt tính hỏi "tới giờ đáng lẽ đã thu bao nhiêu" rồi chỉ thu phần chênh.
+	// Thiếu cột này thì mỗi lần khởi động lại máy chủ là trừ lại từ đầu.
+	ChargedAmount int64 `gorm:"default:0" json:"charged_amount"`
+
+	// AffordableUntil là thời điểm số dư cạn theo đơn giá đang áp dụng.
+	//
+	// Tính sẵn ở máy chủ để mọi màn hình — máy trạm, trang Phiên, Bảng điều
+	// khiển — chỉ việc đếm ngược tới một mốc, không màn hình nào phải tự tra giá
+	// và số dư. nil nghĩa là không giới hạn (máy chưa có giá).
+	AffordableUntil *time.Time `gorm:"type:timestamptz" json:"affordable_until"`
+
+	// Snapshot fields — frozen at session end for audit.
+	// PricePerHour là ngoại lệ: nay được ghi NGAY khi mở máy để màn hình biết
+	// đơn giá của phiên đang chạy.
 	MachineGroupID   *string `gorm:"type:uuid" json:"machine_group_id,omitempty"`
 	MemberGroupID    *string `gorm:"type:uuid" json:"member_group_id,omitempty"`
 	MachineCode      string  `gorm:"type:varchar(20)" json:"machine_code,omitempty"`
@@ -25,5 +41,5 @@ type MachineSession struct {
 	PricePerHour     int64   `gorm:"default:0" json:"price_per_hour"`
 	BilledMinutes    int     `gorm:"default:0" json:"billed_minutes"`
 
-	CreatedAt        time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
+	CreatedAt time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }

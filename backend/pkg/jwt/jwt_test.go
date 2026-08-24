@@ -15,7 +15,7 @@ func newTestManager(t *testing.T) *Manager {
 func TestGenerateAndValidateAccessToken(t *testing.T) {
 	m := newTestManager(t)
 
-	token, err := m.GenerateAccessToken("user-1", "admin", "R_SUPER", "role-1", []string{"*", "read", "write"})
+	token, err := m.GenerateAccessToken("user-1", "admin", "R_SUPER", "role-1", KindStaff, []string{"*", "read", "write"})
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -35,7 +35,7 @@ func TestGenerateAndValidateAccessToken(t *testing.T) {
 func TestGenerateAndValidateRefreshToken(t *testing.T) {
 	m := newTestManager(t)
 
-	token, err := m.GenerateRefreshToken("user-1")
+	token, err := m.GenerateRefreshToken("user-1", KindStaff)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -52,7 +52,7 @@ func TestGenerateAndValidateRefreshToken(t *testing.T) {
 func TestValidateToken_Expired(t *testing.T) {
 	m := New("test-secret", -1*time.Hour, -1*time.Hour, "vnet-test")
 
-	token, err := m.GenerateAccessToken("user-1", "admin", "R_SUPER", "", nil)
+	token, err := m.GenerateAccessToken("user-1", "admin", "R_SUPER", "", KindStaff, nil)
 	require.NoError(t, err)
 
 	_, err = m.ValidateToken(token)
@@ -64,7 +64,7 @@ func TestValidateToken_InvalidSignature(t *testing.T) {
 	m1 := New("secret-1", 1*time.Hour, 168*time.Hour, "vnet")
 	m2 := New("secret-2", 1*time.Hour, 168*time.Hour, "vnet")
 
-	token, err := m1.GenerateAccessToken("user-1", "admin", "R_SUPER", "", nil)
+	token, err := m1.GenerateAccessToken("user-1", "admin", "R_SUPER", "", KindStaff, nil)
 	require.NoError(t, err)
 
 	_, err = m2.ValidateToken(token)
@@ -89,7 +89,7 @@ func TestDifferentInstancesSameSecret(t *testing.T) {
 	m1 := New("shared-secret", 1*time.Hour, 168*time.Hour, "vnet")
 	m2 := New("shared-secret", 1*time.Hour, 168*time.Hour, "vnet")
 
-	token, err := m1.GenerateAccessToken("user-1", "admin", "R_SUPER", "", []string{"read"})
+	token, err := m1.GenerateAccessToken("user-1", "admin", "R_SUPER", "", KindStaff, []string{"read"})
 	require.NoError(t, err)
 
 	claims, err := m2.ValidateToken(token)

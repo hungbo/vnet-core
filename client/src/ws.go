@@ -27,6 +27,37 @@ type WSClient struct {
 	machineCode string
 	conn        *websocket.Conn
 	handlers    map[string]WSHandler
+
+	// agentToken khác rỗng nghĩa là nối bằng KHOÁ MÁY thay vì token người dùng.
+	// Tiến trình nền dùng đường này để giữ kết nối kể cả khi chưa ai đăng nhập —
+	// bản cũ chỉ nối sau khi khách đăng nhập, nên máy trống không nhận lệnh nào.
+	agentToken string
+}
+
+// NewAgentWSClient dựng một kết nối cho tiến trình nền: xác thực bằng khoá máy,
+// KHÔNG đăng ký handler nào cho giao diện (không có cửa sổ để mà phát sự kiện).
+func NewAgentWSClient(ctx context.Context, cfg *Config) *WSClient {
+	return &WSClient{
+		ctx:         ctx,
+		baseURL:     cfg.ServerURL,
+		machineCode: cfg.MachineCode,
+		agentToken:  cfg.AgentToken,
+		handlers:    make(map[string]WSHandler),
+	}
+}
+
+// Run nối và chạy tới khi context bị huỷ, tự nối lại khi rớt.
+func (c *WSClient) Run() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+		}
+		if err := c.Connect(c.ctx); err != nil {
+			return
+		}
+	}
 }
 
 func NewWSClient(ctx context.Context, baseURL, token string, machineCode string) *WSClient {
@@ -44,6 +75,13 @@ func NewWSClient(ctx context.Context, baseURL, token string, machineCode string)
 
 	c.On("session:ended", func(msg WSMessage) {
 		runtime.EventsEmit(ctx, "vnet:session:updated", string(msg.Payload))
+	})
+
+	// Máy chủ tự đóng phiên: hết tiền, hết khung giờ, hoặc giới nghiêm. Không có
+	// handler này thì đồng hồ trên máy chạy tiếp như chưa có gì xảy ra, cho tới
+	// khi khách tự tải lại.
+	c.On("session:auto-ended", func(msg WSMessage) {
+		runtime.EventsEmit(ctx, "vnet:session:ended", string(msg.Payload))
 	})
 
 	c.On("chat:message", func(msg WSMessage) {
@@ -83,6 +121,16 @@ func NewWSClient(ctx context.Context, baseURL, token string, machineCode string)
 		runtime.EventsEmit(ctx, "vnet:rooms:cleared")
 	})
 
+	// The backend has always sent these two; without handlers the client kept
+	// showing a room staff had just deleted, and missed rooms staff opened.
+	c.On("room:new", func(msg WSMessage) {
+		runtime.EventsEmit(ctx, "vnet:room:new", string(msg.Payload))
+	})
+
+	c.On("room:deleted", func(msg WSMessage) {
+		runtime.EventsEmit(ctx, "vnet:room:deleted", string(msg.Payload))
+	})
+
 	return c
 }
 
@@ -107,8 +155,20 @@ func (c *WSClient) Connect(ctx context.Context) error {
 	}
 
 	header := http.Header{}
-	header.Set("Authorization", "Bearer "+c.token)
-	log.Printf("[WS] token prefix: %s...", safePrefix(c.token, 20))
+	switch {
+	case c.agentToken != "":
+		header.Set("X-Agent-Token", c.agentToken)
+		log.Printf("[WS] nối bằng khoá máy %s", c.machineCode)
+	case c.token != "":
+		header.Set("Authorization", "Bearer "+c.token)
+		log.Printf("[WS] token prefix: %s...", safePrefix(c.token, 20))
+	default:
+		// Không gửi header nào cả. Khoá máy là tuỳ chọn, nên tiến trình nền của
+		// một máy chưa cấp khoá chỉ cần mã máy. Gửi "Bearer " rỗng thì máy chủ
+		// vẫn cho qua, nhưng nó nói dối về ý định và người đọc nhật ký sau này
+		// sẽ đi tìm xem token biến đâu mất.
+		log.Printf("[WS] nối bằng mã máy %s, không kèm khoá", c.machineCode)
+	}
 
 	for {
 		select {

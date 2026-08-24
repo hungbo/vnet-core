@@ -37,9 +37,12 @@ func newTestDB(t *testing.T) (*gorm.DB, sqlmock.Sqlmock) {
 
 func setupAuthHandler(db *gorm.DB) (*AuthHandler, *jwt.Manager) {
 	jwtMgr := jwt.New("test-secret", 1*time.Hour, 7*24*time.Hour, "vnet-test")
-	authSvc := service.NewAuthService(db, jwtMgr, service.NewAuditService(db))
+	// Mở phiên lúc đăng nhập nay nằm trong AuthService, nên handler chỉ cần
+	// service đó — nhưng service phải có SessionService, nếu không đăng nhập
+	// máy trạm không mở được phiên.
 	sessionSvc := service.NewSessionService(db, nil, service.NewAuditService(db))
-	return NewAuthHandler(db, authSvc, sessionSvc), jwtMgr
+	authSvc := service.NewAuthService(db, jwtMgr, service.NewAuditService(db)).WithSessions(sessionSvc)
+	return NewAuthHandler(authSvc), jwtMgr
 }
 
 func TestAuthHandler_Login_Success(t *testing.T) {
@@ -49,7 +52,7 @@ func TestAuthHandler_Login_Success(t *testing.T) {
 
 	hash, _ := utils.HashPassword("password123")
 
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1 ORDER BY "users"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"."id" LIMIT \$2`).
 		WithArgs("admin", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "password_hash", "is_active", "full_name"}).
 			AddRow("u1", "admin", hash, true, "Admin User"))
@@ -82,7 +85,7 @@ func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
 
 	hash, _ := utils.HashPassword("correctpass")
 
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1 ORDER BY "users"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"."id" LIMIT \$2`).
 		WithArgs("admin", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "password_hash", "is_active"}).
 			AddRow("u1", "admin", hash, true))
@@ -133,9 +136,9 @@ func TestAuthHandler_Me_Success(t *testing.T) {
 	db, mock := newTestDB(t)
 	handler, jwtMgr := setupAuthHandler(db)
 
-	token, _ := jwtMgr.GenerateAccessToken("u1", "admin", "admin", "", []string{})
+	token, _ := jwtMgr.GenerateAccessToken("u1", "admin", "admin", "", jwt.KindStaff, []string{})
 
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 ORDER BY "users"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"."id" LIMIT \$2`).
 		WithArgs("u1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name"}).
 			AddRow("u1", "admin", "Admin User"))
@@ -183,10 +186,10 @@ func TestAuthHandler_ChangePassword_Success(t *testing.T) {
 	db, mock := newTestDB(t)
 	handler, jwtMgr := setupAuthHandler(db)
 
-	token, _ := jwtMgr.GenerateAccessToken("u1", "admin", "admin", "", []string{})
+	token, _ := jwtMgr.GenerateAccessToken("u1", "admin", "admin", "", jwt.KindStaff, []string{})
 	oldHash, _ := utils.HashPassword("oldpass")
 
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 ORDER BY "users"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1 AND "users"\."deleted_at" IS NULL ORDER BY "users"."id" LIMIT \$2`).
 		WithArgs("u1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "password_hash"}).AddRow("u1", oldHash))
 

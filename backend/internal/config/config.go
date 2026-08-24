@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -15,15 +16,18 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host            string
-	Port            int
-	Mode            string
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	MaxUploadSize   int64
-	MaxFileSize     int64
-	UploadDir       string
-	AllowedOrigins  []string
+	Host           string
+	Port           int
+	Mode           string
+	ReadTimeout    time.Duration
+	WriteTimeout   time.Duration
+	MaxUploadSize  int64
+	MaxFileSize    int64
+	UploadDir      string
+	BackupDir      string
+	AllowedOrigins []string
+	// Số ngày giữ lại lịch sử phần cứng. 0 = giữ tất cả.
+	HardwareHistoryDays int
 }
 
 type DatabaseConfig struct {
@@ -47,24 +51,48 @@ type RedisConfig struct {
 }
 
 type JWTConfig struct {
-	Secret           string
-	AccessTokenTTL   time.Duration
-	RefreshTokenTTL  time.Duration
-	Issuer           string
+	Secret          string
+	AccessTokenTTL  time.Duration
+	RefreshTokenTTL time.Duration
+	Issuer          string
 }
 
+// ModeRelease is the GIN_MODE value that turns on the production guardrails.
+const ModeRelease = "release"
+
+// DefaultJWTSecret is the placeholder shipped in .env.example. Running in
+// release mode with this value still set is refused at startup.
+const DefaultJWTSecret = "change-me-in-production"
+
+// MinJWTSecretLen is the shortest secret accepted in release mode.
+const MinJWTSecretLen = 32
+
 func Load() *Config {
+	mode := getEnv("GIN_MODE", "debug")
+
+	// Wildcard CORS is convenient for local development but must be an
+	// explicit choice in production, never a default.
+	defaultOrigins := []string{"*"}
+	if mode == ModeRelease {
+		defaultOrigins = nil
+	}
+
 	return &Config{
 		Server: ServerConfig{
-			Host:            getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:            getEnvInt("SERVER_PORT", 8080),
-			Mode:            getEnv("GIN_MODE", "debug"),
-			ReadTimeout:     getEnvDuration("SERVER_READ_TIMEOUT", 30*time.Second),
-			WriteTimeout:    getEnvDuration("SERVER_WRITE_TIMEOUT", 30*time.Second),
-			MaxUploadSize:   getEnvInt64("MAX_UPLOAD_SIZE", 10<<20),
-			MaxFileSize:     getEnvInt64("MAX_FILE_SIZE", 5<<20),
-			UploadDir:       getEnv("UPLOAD_DIR", "uploads"),
-			AllowedOrigins:  getEnvSlice("ALLOWED_ORIGINS", []string{"*"}),
+			Host:          getEnv("SERVER_HOST", "0.0.0.0"),
+			Port:          getEnvInt("SERVER_PORT", 8080),
+			Mode:          mode,
+			ReadTimeout:   getEnvDuration("SERVER_READ_TIMEOUT", 30*time.Second),
+			WriteTimeout:  getEnvDuration("SERVER_WRITE_TIMEOUT", 30*time.Second),
+			MaxUploadSize: getEnvInt64("MAX_UPLOAD_SIZE", 10<<20),
+			MaxFileSize:   getEnvInt64("MAX_FILE_SIZE", 5<<20),
+			UploadDir:     getEnv("UPLOAD_DIR", "uploads"),
+			// Bảng lịch sử phần cứng nhận khoảng 5.800 dòng mỗi ngày cho mỗi
+			// máy. Bảy ngày là đủ để truy "máy nào hay nóng" mà không để bảng
+			// phình vô hạn; đặt 0 nếu muốn giữ tất cả.
+			HardwareHistoryDays: getEnvInt("HARDWARE_HISTORY_DAYS", 7),
+			BackupDir:           getEnv("BACKUP_DIR", "backups"),
+			AllowedOrigins:      getEnvSlice("ALLOWED_ORIGINS", defaultOrigins),
 		},
 		Database: DatabaseConfig{
 			Host:            getEnv("DB_HOST", "localhost"),
@@ -85,7 +113,7 @@ func Load() *Config {
 			DB:       getEnvInt("REDIS_DB", 0),
 		},
 		JWT: JWTConfig{
-			Secret:          getEnv("JWT_SECRET", "change-me-in-production"),
+			Secret:          getEnv("JWT_SECRET", DefaultJWTSecret),
 			AccessTokenTTL:  getEnvDuration("JWT_ACCESS_TTL", 24*time.Hour),
 			RefreshTokenTTL: getEnvDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
 			Issuer:          getEnv("JWT_ISSUER", "vnet"),
@@ -181,4 +209,30 @@ func trimSpace(s string) string {
 		end--
 	}
 	return s[start:end]
+}
+
+// Validate refuses to start a production server on development defaults.
+// Every check here is a setting that is safe locally and dangerous in release.
+func (c *Config) Validate() error {
+	if c.Server.Mode != ModeRelease {
+		return nil
+	}
+
+	if c.JWT.Secret == DefaultJWTSecret {
+		return errors.New("JWT_SECRET is still the development placeholder; set a real secret before running in release mode")
+	}
+	if len(c.JWT.Secret) < MinJWTSecretLen {
+		return fmt.Errorf("JWT_SECRET must be at least %d characters in release mode, got %d", MinJWTSecretLen, len(c.JWT.Secret))
+	}
+
+	if len(c.Server.AllowedOrigins) == 0 {
+		return errors.New("ALLOWED_ORIGINS must list the admin origins explicitly in release mode")
+	}
+	for _, origin := range c.Server.AllowedOrigins {
+		if origin == "*" {
+			return errors.New("ALLOWED_ORIGINS must not contain \"*\" in release mode")
+		}
+	}
+
+	return nil
 }

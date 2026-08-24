@@ -3,6 +3,8 @@ package service
 import (
 	"testing"
 
+	"github.com/vnet/core/internal/config"
+
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,7 +14,7 @@ import (
 
 func TestBackupService_List(t *testing.T) {
 	db, mock := newMockDB(t)
-	svc := NewBackupService(db, NewAuditService(db))
+	svc := NewBackupService(db, &config.DatabaseConfig{Host: "localhost", Port: 5432, User: "vnet", Name: "vnet"}, t.TempDir(), NewAuditService(db))
 
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "backup_logs"`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
@@ -33,7 +35,7 @@ func TestBackupService_List(t *testing.T) {
 
 func TestBackupService_Create(t *testing.T) {
 	db, mock := newMockDB(t)
-	svc := NewBackupService(db, NewAuditService(db))
+	svc := NewBackupService(db, &config.DatabaseConfig{Host: "localhost", Port: 5432, User: "vnet", Name: "vnet"}, t.TempDir(), NewAuditService(db))
 
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "backup_logs"`).
@@ -48,7 +50,7 @@ func TestBackupService_Create(t *testing.T) {
 
 func TestBackupService_Restore_NotFound(t *testing.T) {
 	db, mock := newMockDB(t)
-	svc := NewBackupService(db, NewAuditService(db))
+	svc := NewBackupService(db, &config.DatabaseConfig{Host: "localhost", Port: 5432, User: "vnet", Name: "vnet"}, t.TempDir(), NewAuditService(db))
 
 	mock.ExpectQuery(`SELECT \* FROM "backup_logs" WHERE id = \$1 ORDER BY "backup_logs"."id" LIMIT \$2`).
 		WithArgs("nonexistent", 1).
@@ -62,7 +64,7 @@ func TestBackupService_Restore_NotFound(t *testing.T) {
 
 func TestBackupService_Restore_NoFile(t *testing.T) {
 	db, mock := newMockDB(t)
-	svc := NewBackupService(db, NewAuditService(db))
+	svc := NewBackupService(db, &config.DatabaseConfig{Host: "localhost", Port: 5432, User: "vnet", Name: "vnet"}, t.TempDir(), NewAuditService(db))
 
 	mock.ExpectQuery(`SELECT \* FROM "backup_logs" WHERE id = \$1 ORDER BY "backup_logs"."id" LIMIT \$2`).
 		WithArgs("b1", 1).

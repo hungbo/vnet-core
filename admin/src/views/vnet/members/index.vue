@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { formatAmount } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -45,8 +46,28 @@ const form = ref({
   full_name: '',
   phone: '',
   email: '',
+  group_id: '',
+  date_of_birth: '',
+  id_card_number: '',
+  id_card_image_url: '',
+  parent_consent_file_url: '',
+  notes: '',
   is_active: true
 });
+
+// Tier discounts are applied by the backend from the member's group, and the
+// curfew rules need a date of birth. Neither could be entered before, so both
+// features were unreachable no matter how they were configured.
+const memberGroups = ref<any[]>([]);
+
+async function fetchMemberGroups() {
+  try {
+    const res: any = await client.get('/member-groups');
+    memberGroups.value = Array.isArray(res) ? res : res?.items || [];
+  } catch {
+    memberGroups.value = [];
+  }
+}
 
 const topupForm = ref({
   amount: 10000,
@@ -54,40 +75,74 @@ const topupForm = ref({
 });
 
 const rules: FormRules = {
-  username: [{ required: true, message: $t('vnetPages.members.form.usernameRequired'), trigger: 'blur' }],
-  password: [{ required: true, message: $t('vnetPages.members.form.passwordRequired'), trigger: 'blur' }]
+  username: [
+    {
+      required: true,
+      message: $t('vnetPages.members.form.usernameRequired'),
+      trigger: 'blur'
+    }
+  ],
+  password: [
+    {
+      required: true,
+      message: $t('vnetPages.members.form.passwordRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
 const topupRules: FormRules = {
-  amount: [{ required: true, message: $t('vnetPages.members.form.amountRequired'), trigger: 'blur' }],
-  payment_method: [{ required: true, message: $t('vnetPages.members.form.methodRequired'), trigger: 'change' }]
+  amount: [
+    {
+      required: true,
+      message: $t('vnetPages.members.form.amountRequired'),
+      trigger: 'blur'
+    }
+  ],
+  payment_method: [
+    {
+      required: true,
+      message: $t('vnetPages.members.form.methodRequired'),
+      trigger: 'change'
+    }
+  ]
 };
 
 const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
   api: ({ page, pageSize }) =>
-    client.get('/members', { params: { page, page_size: pageSize, search: search.value || undefined } }),
+    client.get('/members', {
+      params: {
+        page,
+        page_size: pageSize,
+        search: search.value || undefined
+      }
+    }),
   transform: vnetTransform,
   columns: () => [
     { prop: 'username', label: $t('vnetPages.members.username'), width: 120 },
-    { prop: 'full_name', label: $t('vnetPages.members.fullName'), minWidth: 160 },
+    {
+      prop: 'full_name',
+      label: $t('vnetPages.members.fullName'),
+      minWidth: 160
+    },
     { prop: 'phone', label: $t('vnetPages.members.phone'), width: 130 },
     {
       prop: 'balance',
       label: $t('vnetPages.members.balance'),
       width: 120,
-      formatter: (row: any) => row.balance?.toLocaleString() ?? ''
+      formatter: (row: any) => formatAmount(row.balance)
     },
     {
       prop: 'bonus_balance',
       label: $t('vnetPages.members.bonus'),
       width: 120,
-      formatter: (row: any) => row.bonus_balance?.toLocaleString() ?? ''
+      formatter: (row: any) => formatAmount(row.bonus_balance)
     },
     {
       prop: 'group',
       label: $t('vnetPages.members.group'),
       width: 100,
-      formatter: (row: any) => row.group?.name || '-'
+      formatter: (row: any) => row.group?.name || memberGroups.value.find(g => g.id === row.group_id)?.name || '-'
     },
     {
       prop: 'is_active',
@@ -108,7 +163,21 @@ function searchData() {
 function openCreate() {
   isEdit.value = false;
   editingId.value = null;
-  form.value = { username: '', password: '', full_name: '', phone: '', email: '', is_active: true };
+  form.value = {
+    username: '',
+    password: '',
+    full_name: '',
+    phone: '',
+    email: '',
+    group_id: '',
+    date_of_birth: '',
+    id_card_number: '',
+    id_card_image_url: '',
+    parent_consent_file_url: '',
+    notes: '',
+    is_active: true
+  };
+  fetchMemberGroups();
   dialogVisible.value = true;
 }
 
@@ -121,9 +190,109 @@ function openEdit(row: any) {
     phone: row.phone || '',
     email: row.email || '',
     password: '',
+    group_id: row.group_id || '',
+    date_of_birth: row.date_of_birth ? String(row.date_of_birth).slice(0, 10) : '',
+    id_card_number: row.id_card_number || '',
+    id_card_image_url: row.id_card_image_url || '',
+    parent_consent_file_url: row.parent_consent_file_url || '',
+    notes: row.notes || '',
     is_active: row.is_active ?? true
   };
+  fetchMemberGroups();
   dialogVisible.value = true;
+}
+
+// --- Ảnh giấy tờ --------------------------------------------------------------
+// Hai cột id_card_image_url và parent_consent_file_url lưu được từ đầu nhưng
+// KHÔNG DTO nào nhận, nên chúng luôn rỗng. Giấy đồng ý của phụ huynh gắn thẳng
+// với giới nghiêm: không có nó thì quán không chứng minh được vì sao cho trẻ vị
+// thành niên ngồi máy.
+
+// Tác vụ nền xếp lại hạng mỗi 15 phút. Sau khi quán vừa sửa ngưỡng chi tiêu của
+// một hạng, chờ 15 phút mới thấy kết quả là quá lâu — và không có cách nào biết
+// hàm đó có chạy hay không.
+const refreshingTiers = ref(false);
+
+async function handleRefreshTiers() {
+  try {
+    await ElMessageBox.confirm($t('vnetPages.members.refreshTiersConfirm'), $t('vnetPages.common.confirm'), {
+      type: 'info'
+    });
+  } catch {
+    return;
+  }
+  refreshingTiers.value = true;
+  try {
+    const res: any = await client.post('/members/refresh-tiers', {});
+    const moved = res?.moved ?? 0;
+    ElMessage.success(
+      moved > 0 ? $t('vnetPages.members.refreshTiersDone', { count: moved }) : $t('vnetPages.members.refreshTiersNone')
+    );
+    await getData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  } finally {
+    refreshingTiers.value = false;
+  }
+}
+
+const uploading = ref('');
+
+// total_played_minutes tính bằng PHÚT (cột cũ tên ...hours chưa bao giờ được
+// ghi); đổi sang "Xg Yp" cho dễ đọc.
+function formatPlayed(minutes: number | null | undefined) {
+  const m = minutes || 0;
+  if (m < 60) return `${m}p`;
+  return `${Math.floor(m / 60)}g ${m % 60}p`;
+}
+
+async function uploadDoc(field: 'id_card_image_url' | 'parent_consent_file_url', file: File) {
+  const body = new FormData();
+  body.append('file', file);
+  uploading.value = field;
+  try {
+    const res: any = await client.post('/upload', body, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    form.value[field] = res?.url || '';
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.members.form.uploadFailed'));
+  } finally {
+    uploading.value = '';
+  }
+  // Trả false để ElUpload không tự gửi thêm lần nữa.
+  return false;
+}
+
+// Hoàn tiền là mặt còn lại của nạp tiền và trước đây không có lối vào nào,
+// nên nhân viên phải sửa số dư bằng SQL khi cần trả lại tiền cho khách.
+const refundVisible = ref(false);
+const refunding = ref(false);
+const refundForm = ref({ amount: 0, is_bonus: false, description: '' });
+
+function openRefund(row: any) {
+  currentMember.value = row;
+  refundForm.value = { amount: 0, is_bonus: false, description: '' };
+  refundVisible.value = true;
+}
+
+async function handleRefund() {
+  if (!currentMember.value || refundForm.value.amount <= 0) return;
+  refunding.value = true;
+  try {
+    await client.post(`/members/${currentMember.value.id}/refund`, {
+      amount: refundForm.value.amount,
+      is_bonus: refundForm.value.is_bonus,
+      description: refundForm.value.description
+    });
+    ElMessage.success($t('vnetPages.members.refundSuccess'));
+    refundVisible.value = false;
+    getData();
+  } catch (e: any) {
+    ElMessage.error(e.message || $t('vnetPages.common.error'));
+  } finally {
+    refunding.value = false;
+  }
 }
 
 function openTopup(row: any) {
@@ -185,21 +354,35 @@ async function handleDelete(row: any) {
     await client.delete(`/members/${row.id}`);
     ElMessage.success($t('vnetPages.members.messages.deleteSuccess'));
     getData();
-  } catch {}
+  } catch (e: any) {
+    // ElMessageBox từ chối bằng chuỗi 'cancel'/'close' khi người dùng bấm Huỷ —
+    // đó không phải lỗi. Còn lại là backend từ chối (ràng buộc dữ liệu, quy tắc
+    // nghiệp vụ) và phải nói ra; `catch {}` rỗng làm nút bấm vào im lặng.
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
 }
 
 async function handleResetPassword(row: any) {
   try {
-    const { value } = await ElMessageBox.prompt($t('vnetPages.members.resetPasswordConfirm'), $t('vnetPages.common.confirm'), {
-      confirmButtonText: $t('vnetPages.common.confirm'),
-      cancelButtonText: $t('vnetPages.common.cancel'),
-      inputPattern: /.+/,
-      inputErrorMessage: $t('vnetPages.members.resetPasswordRequired'),
-      type: 'warning'
-    });
+    const { value } = await ElMessageBox.prompt(
+      $t('vnetPages.members.resetPasswordConfirm'),
+      $t('vnetPages.common.confirm'),
+      {
+        confirmButtonText: $t('vnetPages.common.confirm'),
+        cancelButtonText: $t('vnetPages.common.cancel'),
+        inputPattern: /.+/,
+        inputErrorMessage: $t('vnetPages.members.resetPasswordRequired'),
+        type: 'warning'
+      }
+    );
     await client.post(`/members/${row.id}/reset-password`, { password: value });
     ElMessage.success($t('vnetPages.members.messages.resetPasswordSuccess'));
-  } catch {}
+  } catch (e: any) {
+    // ElMessageBox từ chối bằng chuỗi 'cancel'/'close' khi người dùng bấm Huỷ —
+    // đó không phải lỗi. Còn lại là backend từ chối (ràng buộc dữ liệu, quy tắc
+    // nghiệp vụ) và phải nói ra; `catch {}` rỗng làm nút bấm vào im lặng.
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
 }
 
 function formatDate(date: string | null | undefined) {
@@ -284,7 +467,19 @@ async function handleTopup() {
           />
           <ElButton type="primary" @click="searchData">{{ $t('vnetPages.common.search') }}</ElButton>
         </div>
-        <TableHeaderOperation v-model:columns="columnChecks" :loading="loading" @add="openCreate" @refresh="getData" />
+        <TableHeaderOperation
+          v-model:columns="columnChecks"
+          :loading="loading"
+          :show-delete="false"
+          @add="openCreate"
+          @refresh="getData"
+        >
+          <template #prefix>
+            <ElButton :loading="refreshingTiers" @click="handleRefreshTiers">
+              {{ $t('vnetPages.members.refreshTiers') }}
+            </ElButton>
+          </template>
+        </TableHeaderOperation>
       </div>
 
       <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
@@ -297,6 +492,9 @@ async function handleTopup() {
               {{ $t('vnetPages.members.resetPassword') }}
             </ElButton>
             <ElButton size="small" type="success" @click="openTopup(row)">{{ $t('vnetPages.members.topUp') }}</ElButton>
+            <ElButton size="small" type="warning" plain @click="openRefund(row)">
+              {{ $t('vnetPages.members.refund') }}
+            </ElButton>
             <ElButton size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
@@ -335,6 +533,72 @@ async function handleTopup() {
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.members.form.email')" prop="email">
           <ElInput v-model="form.email" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.form.group')">
+          <ElSelect
+            v-model="form.group_id"
+            clearable
+            :placeholder="$t('vnetPages.members.form.noGroup')"
+            style="width: 100%"
+          >
+            <ElOption v-for="g in memberGroups" :key="g.id" :label="g.name" :value="g.id" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.form.dateOfBirth')">
+          <ElDatePicker v-model="form.date_of_birth" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.form.idCardNumber')">
+          <ElInput v-model="form.id_card_number" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.form.idCardImage')">
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+            <ElUpload
+              :show-file-list="false"
+              accept="image/*"
+              :before-upload="(f: File) => uploadDoc('id_card_image_url', f)"
+            >
+              <ElButton :loading="uploading === 'id_card_image_url'">
+                {{ $t('vnetPages.members.form.uploadImage') }}
+              </ElButton>
+            </ElUpload>
+            <template v-if="form.id_card_image_url">
+              <ElLink type="primary" :href="form.id_card_image_url" target="_blank" rel="noopener noreferrer">
+                {{ $t('vnetPages.members.form.viewFile') }}
+              </ElLink>
+              <ElButton link type="danger" @click="form.id_card_image_url = ''">
+                {{ $t('vnetPages.members.form.removeFile') }}
+              </ElButton>
+            </template>
+          </div>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.form.parentConsent')">
+          <div style="width: 100%">
+            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+              <ElUpload
+                :show-file-list="false"
+                accept="image/*"
+                :before-upload="(f: File) => uploadDoc('parent_consent_file_url', f)"
+              >
+                <ElButton :loading="uploading === 'parent_consent_file_url'">
+                  {{ $t('vnetPages.members.form.uploadImage') }}
+                </ElButton>
+              </ElUpload>
+              <template v-if="form.parent_consent_file_url">
+                <ElLink type="primary" :href="form.parent_consent_file_url" target="_blank" rel="noopener noreferrer">
+                  {{ $t('vnetPages.members.form.viewFile') }}
+                </ElLink>
+                <ElButton link type="danger" @click="form.parent_consent_file_url = ''">
+                  {{ $t('vnetPages.members.form.removeFile') }}
+                </ElButton>
+              </template>
+            </div>
+            <div style="font-size: 12px; color: #909399; margin-top: 4px">
+              {{ $t('vnetPages.members.form.parentConsentHint') }}
+            </div>
+          </div>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.form.notes')">
+          <ElInput v-model="form.notes" type="textarea" :rows="2" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.members.form.isActive')">
           <ElSwitch v-model="form.is_active" />
@@ -385,13 +649,26 @@ async function handleTopup() {
                 {{ detailMember?.email || '-' }}
               </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('vnetPages.members.balance')">
-                {{ detailMember?.balance?.toLocaleString() }}
+                {{ formatAmount(detailMember?.balance) }}
               </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('vnetPages.members.bonus')">
-                {{ detailMember?.bonus_balance?.toLocaleString() }}
+                {{ formatAmount(detailMember?.bonus_balance) }}
               </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('vnetPages.members.group')">
                 {{ detailMember?.group?.name || '-' }}
+              </ElDescriptionsItem>
+              <!--
+                Hai ô này trước đây không hiện được: total_played_hours và
+                last_visit_at khai trong model nhưng không nơi nào ghi, nên
+                luôn là 0 và rỗng.
+              -->
+              <ElDescriptionsItem :label="$t('vnetPages.members.playedTime')">
+                {{ formatPlayed(detailMember?.total_played_minutes) }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem :label="$t('vnetPages.members.lastVisit')">
+                {{
+                  detailMember?.last_visit_at ? formatDate(detailMember.last_visit_at) : $t('vnetPages.members.never')
+                }}
               </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('vnetPages.members.isActive')">
                 <ElTag :type="detailMember?.is_active ? 'success' : 'danger'" size="small">
@@ -410,7 +687,7 @@ async function handleTopup() {
             <ElTable v-loading="detailTxLoading" :data="detailTxList" border stripe style="width: 100%">
               <ElTableColumn prop="transaction_type" :label="$t('vnetPages.members.type')" width="100" />
               <ElTableColumn :label="$t('vnetPages.members.amount')" width="120">
-                <template #default="{ row }">{{ row.amount?.toLocaleString() }}</template>
+                <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
               </ElTableColumn>
               <ElTableColumn prop="payment_method" :label="$t('vnetPages.members.method')" width="120" />
               <ElTableColumn prop="reference_id" :label="$t('vnetPages.members.reference')" min-width="140" />
@@ -464,6 +741,25 @@ async function handleTopup() {
           </ElTabPane>
         </ElTabs>
       </ElCard>
+    </ElDialog>
+    <ElDialog v-model="refundVisible" :title="$t('vnetPages.members.refund')" width="420px">
+      <ElForm label-width="170px">
+        <ElFormItem :label="$t('vnetPages.members.refundAmount')">
+          <ElInputNumber v-model="refundForm.amount" :min="0" :step="10000" style="width: 100%" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.refundBonus')">
+          <ElSwitch v-model="refundForm.is_bonus" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.refundReason')">
+          <ElInput v-model="refundForm.description" type="textarea" :rows="2" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="refundVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
+        <ElButton type="warning" :loading="refunding" @click="handleRefund">
+          {{ $t('vnetPages.members.refund') }}
+        </ElButton>
+      </template>
     </ElDialog>
   </div>
 </template>

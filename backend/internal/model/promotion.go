@@ -1,18 +1,22 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type Promotion struct {
-	ID          string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	Name        string     `gorm:"type:varchar(200);not null" json:"name"`
-	Description string     `gorm:"type:text" json:"description"`
-	Type        string     `gorm:"type:varchar(20);not null" json:"type"`
-	Priority    int        `gorm:"default:0" json:"priority"`
-	IsActive    bool       `gorm:"default:true" json:"is_active"`
-	ValidFrom   *time.Time `gorm:"type:timestamptz" json:"valid_from"`
-	ValidTo     *time.Time `gorm:"type:timestamptz" json:"valid_to"`
-	CreatedAt   time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
-	DeletedAt   *time.Time `gorm:"index" json:"deleted_at,omitempty"`
+	ID          string         `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	Name        string         `gorm:"type:varchar(200);not null" json:"name"`
+	Description string         `gorm:"type:text" json:"description"`
+	Type        string         `gorm:"type:varchar(20);not null" json:"type"`
+	Priority    int            `gorm:"default:0" json:"priority"`
+	IsActive    bool           `gorm:"default:true" json:"is_active"`
+	ValidFrom   *time.Time     `gorm:"type:timestamptz" json:"valid_from"`
+	ValidTo     *time.Time     `gorm:"type:timestamptz" json:"valid_to"`
+	CreatedAt   time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 type PromotionCondition struct {

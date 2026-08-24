@@ -28,7 +28,7 @@ func TestPrinterService_GetByID_Found(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewPrinterService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "printer_configs"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND "printer_configs"\."deleted_at" IS NULL ORDER BY "printer_configs"."id" LIMIT \$2`).
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("p1", "Kitchen"))
 
@@ -42,7 +42,7 @@ func TestPrinterService_GetByID_NotFound(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewPrinterService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "printer_configs"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND "printer_configs"\."deleted_at" IS NULL ORDER BY "printer_configs"."id" LIMIT \$2`).
 		WithArgs("nonexistent", 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
@@ -120,7 +120,7 @@ func TestPrinterService_Update_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewPrinterService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "printer_configs"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND "printer_configs"\."deleted_at" IS NULL ORDER BY "printer_configs"."id" LIMIT \$2`).
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "ip_address"}).AddRow("p1", "Old", "192.168.1.1"))
 
@@ -129,7 +129,7 @@ func TestPrinterService_Update_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND "printer_configs"."id" = \$2 ORDER BY "printer_configs"."id" LIMIT \$3`).
+	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND "printer_configs"\."deleted_at" IS NULL AND "printer_configs"\."id" = \$2 ORDER BY "printer_configs"\."id" LIMIT \$3`).
 		WithArgs("p1", "p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "ip_address"}).AddRow("p1", "Updated", "192.168.1.2"))
 
@@ -146,7 +146,7 @@ func TestPrinterService_Delete_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewPrinterService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "printer_configs"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "printer_configs" WHERE id = \$1 AND "printer_configs"\."deleted_at" IS NULL ORDER BY "printer_configs"."id" LIMIT \$2`).
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("p1", "Test"))
 

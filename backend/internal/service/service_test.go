@@ -2,10 +2,15 @@ package service
 
 import (
 	"database/sql/driver"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -59,8 +64,8 @@ func intPtr(i int) *int {
 }
 
 var (
-	testUUID   = "550e8400-e29b-41d4-a716-446655440000"
-	testUserID = "770e8400-e29b-41d4-a716-446655440002"
+	testUUID     = "550e8400-e29b-41d4-a716-446655440000"
+	testUserID   = "770e8400-e29b-41d4-a716-446655440002"
 	testNow      = time.Date(2025, 6, 15, 10, 30, 0, 0, time.UTC)
 	testNowStr   = "2025-06-15T10:30:00Z"
 	deletedAtPtr = &time.Time{}
@@ -76,4 +81,31 @@ func newSQLMockRows(columns []string, rows ...[]driver.Value) *sqlmock.Rows {
 		r.AddRow(row...)
 	}
 	return r
+}
+
+// Soft delete must stay wired: every model that declares DeletedAt has to use
+// gorm.DeletedAt, otherwise GORM issues a physical DELETE and the hand-written
+// "deleted_at IS NULL" filters silently protect nothing.
+func TestModels_UseGormSoftDelete(t *testing.T) {
+	// Resolved from this file's own path so the check works no matter which
+	// directory the test binary is run from.
+	_, thisFile, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	modelDir := filepath.Join(filepath.Dir(thisFile), "..", "model")
+
+	files, err := filepath.Glob(filepath.Join(modelDir, "*.go"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+
+	for _, f := range files {
+		src, err := os.ReadFile(f)
+		require.NoError(t, err)
+		for i, line := range strings.Split(string(src), "\n") {
+			if !strings.Contains(line, "DeletedAt") {
+				continue
+			}
+			assert.Contains(t, line, "gorm.DeletedAt",
+				"%s:%d declares DeletedAt without gorm.DeletedAt", filepath.Base(f), i+1)
+		}
+	}
 }

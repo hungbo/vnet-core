@@ -235,18 +235,26 @@ const routeMap: RouteMap = {
   "system_user-detail": "/system/user-detail/:id",
   "user-center": "/user-center",
   "vnet": "/vnet",
+  "vnet_app-updates": "/vnet/app-updates",
+  "vnet_attendance": "/vnet/attendance",
   "vnet_audit": "/vnet/audit",
   "vnet_backups": "/vnet/backups",
   "vnet_bookings": "/vnet/bookings",
+  "vnet_cards": "/vnet/cards",
   "vnet_categories": "/vnet/categories",
   "vnet_combos": "/vnet/combos",
+  "vnet_curfew": "/vnet/curfew",
   "vnet_dashboard": "/vnet/dashboard",
+  "vnet_feedback": "/vnet/feedback",
+  "vnet_inventory-counts": "/vnet/inventory-counts",
+  "vnet_machine-assets": "/vnet/machine-assets",
   "vnet_machine-groups": "/vnet/machine-groups",
   "vnet_machines": "/vnet/machines",
   "vnet_member-groups": "/vnet/member-groups",
   "vnet_members": "/vnet/members",
   "vnet_notifications": "/vnet/notifications",
   "vnet_orders": "/vnet/orders",
+  "vnet_printers": "/vnet/printers",
   "vnet_products": "/vnet/products",
   "vnet_promotions": "/vnet/promotions",
   "vnet_reports": "/vnet/reports",
@@ -256,7 +264,7 @@ const routeMap: RouteMap = {
   "vnet_stock-transactions": "/vnet/stock-transactions",
   "vnet_suppliers": "/vnet/suppliers",
   "vnet_transactions": "/vnet/transactions",
-  "vnet_warehouses": "/vnet/warehouses"
+  "vnet_website-blocking": "/vnet/website-blocking"
 };
 
 /**

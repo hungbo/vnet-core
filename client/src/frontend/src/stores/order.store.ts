@@ -8,7 +8,6 @@ const api = () => window.go?.main?.App
 export const useOrderStore = defineStore('order', () => {
 	const cart = ref<{ id: string; name: string; price: number; qty: number }[]>([])
 	const ordering = ref(false)
-	const showCart = ref(false)
 
 	const cartTotal = computed(() => cart.value.reduce((sum, i) => sum + i.price * i.qty, 0))
 	const cartCount = computed(() => cart.value.reduce((sum, i) => sum + i.qty, 0))
@@ -46,7 +45,6 @@ export const useOrderStore = defineStore('order', () => {
 			await api().PlaceOrder(JSON.stringify(items))
 			ElMessage.success('Đã gửi đơn hàng!')
 			cart.value = []
-			showCart.value = false
 		} catch (e) {
 			ElMessage.error(String(e))
 		} finally {
@@ -54,5 +52,5 @@ export const useOrderStore = defineStore('order', () => {
 		}
 	}
 
-	return { cart, ordering, showCart, cartTotal, cartCount, addToCart, removeFromCart, updateQty, clearCart, placeOrder }
+	return { cart, ordering, cartTotal, cartCount, addToCart, removeFromCart, updateQty, clearCart, placeOrder }
 })

@@ -369,3 +369,23 @@ func (h *MemberHandler) DeleteGroup(c *gin.Context) {
 	}
 	response.Success(c, nil)
 }
+
+// RefreshTiers
+// @Summary      Xếp lại hạng hội viên ngay
+// @Description  Chạy lại phép so tổng chi tiêu với ngưỡng của từng hạng. Tác vụ
+// @Description  nền đã làm việc này mỗi 15 phút; endpoint cho phép chạy ngay sau
+// @Description  khi quán vừa sửa ngưỡng, thay vì chờ.
+// @Tags         Members
+// @Produce      json
+// @Success      200  {object}  response.Response
+// @Failure      500  {object}  response.Response
+// @Router       /api/members/refresh-tiers [post]
+// @Security     BearerAuth
+func (h *MemberHandler) RefreshTiers(c *gin.Context) {
+	moved, err := h.svc.RefreshTiers()
+	if err != nil {
+		response.InternalError(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"moved": moved})
+}

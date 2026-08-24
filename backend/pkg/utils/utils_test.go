@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -126,9 +127,9 @@ func TestRoundUp(t *testing.T) {
 
 func TestSplitFullName(t *testing.T) {
 	tests := []struct {
-		input       string
-		wantFirst   string
-		wantLast    string
+		input     string
+		wantFirst string
+		wantLast  string
 	}{
 		{"Nguyen Van A", "Nguyen Van", "A"},
 		{"Le Thi B", "Le Thi", "B"},
@@ -170,4 +171,87 @@ func TestIsValidEmail(t *testing.T) {
 	assert.False(t, IsValidEmail("user@domain"))
 	assert.True(t, IsValidEmail("user@domain.c"))
 	assert.True(t, IsValidEmail(strings.Repeat("a", 300)+"@b.com"))
+}
+
+// Ô "Ngày sinh" trong hộp thoại Thêm hội viên từng hỏng theo CẢ HAI hướng: bỏ
+// trống gửi "", chọn ngày gửi "2000-01-01", và *time.Time không đọc được dạng
+// nào trong hai dạng đó. Bảng dưới đây khoá lại đúng những gì client thật gửi.
+func TestJSONDateAcceptsWhatTheAdminActuallySends(t *testing.T) {
+	type payload struct {
+		D JSONDate `json:"d"`
+	}
+
+	cases := []struct {
+		raw     string
+		wantNil bool
+		wantYMD string
+	}{
+		{`{"d":""}`, true, ""},
+		{`{"d":null}`, true, ""},
+		{`{}`, true, ""},
+		{`{"d":"2000-01-01"}`, false, "2000-01-01"},
+		{`{"d":"2000-01-01T00:00:00+07:00"}`, false, "2000-01-01"},
+		{`{"d":"2000-01-01T00:00:00"}`, false, "2000-01-01"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.raw, func(t *testing.T) {
+			var p payload
+			if err := json.Unmarshal([]byte(c.raw), &p); err != nil {
+				t.Fatalf("không đọc được %s: %v", c.raw, err)
+			}
+			if c.wantNil {
+				if p.D.Time != nil {
+					t.Fatalf("mong nil, nhận %v", p.D.Time)
+				}
+				return
+			}
+			if p.D.Time == nil {
+				t.Fatal("mong có ngày, nhận nil")
+			}
+			// Ngày sinh phải giữ nguyên ngày theo lịch Việt Nam. Dựng ở UTC thì
+			// 01/01 thành 31/12 và phép kiểm vị thành niên lệch một ngày.
+			if got := p.D.Time.Format("2006-01-02"); got != c.wantYMD {
+				t.Fatalf("ngày = %s, mong %s", got, c.wantYMD)
+			}
+		})
+	}
+}
+
+func TestJSONDateRejectsGarbage(t *testing.T) {
+	var p struct {
+		D JSONDate `json:"d"`
+	}
+	if err := json.Unmarshal([]byte(`{"d":"hôm qua"}`), &p); err == nil {
+		t.Fatal("chuỗi rác phải bị từ chối, không được lặng lẽ thành nil")
+	}
+}
+
+// Chuỗi escape phải được giải mã trước khi đọc ngày. Bản đầu tôi cắt dấu nháy
+// khỏi byte JSON thô, nên "hôm qua" tới bộ đọc dưới dạng "hôm qua" và hiện
+// nguyên chuỗi escape đó trong thông báo lỗi cho người dùng.
+func TestJSONDateDecodesEscapedString(t *testing.T) {
+	var p struct {
+		D JSONDate `json:"d"`
+	}
+	err := json.Unmarshal([]byte(`{"d":"hôm qua"}`), &p)
+	if err == nil {
+		t.Fatal("chuỗi rác phải bị từ chối")
+	}
+	if !strings.Contains(err.Error(), "hôm qua") {
+		t.Fatalf("thông báo phải nêu giá trị đã giải mã, nhận: %v", err)
+	}
+}
+
+// Ô ngày để trắng rồi lỡ gõ dấu cách vẫn là "không có ngày".
+func TestJSONDateTreatsBlankAsEmpty(t *testing.T) {
+	var p struct {
+		D JSONDate `json:"d"`
+	}
+	if err := json.Unmarshal([]byte(`{"d":"   "}`), &p); err != nil {
+		t.Fatalf("chuỗi toàn khoảng trắng không được coi là lỗi: %v", err)
+	}
+	if p.D.Time != nil {
+		t.Fatalf("mong nil, nhận %v", p.D.Time)
+	}
 }

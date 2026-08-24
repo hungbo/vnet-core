@@ -21,28 +21,36 @@ func NewMemberService(db *gorm.DB, audit *AuditService) *MemberService {
 }
 
 type CreateMemberRequest struct {
-	Username     string     `json:"username"`
-	Password     string     `json:"password"`
-	FullName     string     `json:"full_name"`
-	Phone        string     `json:"phone"`
-	Email        string     `json:"email"`
-	IDCardNumber string     `json:"id_card_number"`
-	DateOfBirth  *time.Time `json:"date_of_birth"`
-	GroupID      string     `json:"group_id"`
-	Notes        string     `json:"notes"`
+	Username     string `json:"username"`
+	Password     string `json:"password"`
+	FullName     string `json:"full_name"`
+	Phone        string `json:"phone"`
+	Email        string `json:"email"`
+	IDCardNumber string `json:"id_card_number"`
+	// Hai đường dẫn ảnh dưới đây lưu được nhưng trước nay KHÔNG DTO nào nhận,
+	// nên cột luôn rỗng. Giấy đồng ý của phụ huynh gắn thẳng với giới nghiêm:
+	// không có nó thì quán không chứng minh được vì sao cho trẻ vị thành niên
+	// ngồi máy.
+	IDCardImageURL       string         `json:"id_card_image_url"`
+	ParentConsentFileURL string         `json:"parent_consent_file_url"`
+	DateOfBirth          utils.JSONDate `json:"date_of_birth"`
+	GroupID              string         `json:"group_id"`
+	Notes                string         `json:"notes"`
 }
 
 type UpdateMemberRequest struct {
-	FullName     string     `json:"full_name"`
-	Phone        string     `json:"phone"`
-	Email        string     `json:"email"`
-	Password     string     `json:"password"`
-	IDCardNumber string     `json:"id_card_number"`
-	AvatarURL    string     `json:"avatar_url"`
-	DateOfBirth  *time.Time `json:"date_of_birth"`
-	GroupID      string     `json:"group_id"`
-	Notes        string     `json:"notes"`
-	IsActive     *bool      `json:"is_active"`
+	FullName             string         `json:"full_name"`
+	Phone                string         `json:"phone"`
+	Email                string         `json:"email"`
+	Password             string         `json:"password"`
+	IDCardNumber         string         `json:"id_card_number"`
+	IDCardImageURL       string         `json:"id_card_image_url"`
+	ParentConsentFileURL string         `json:"parent_consent_file_url"`
+	AvatarURL            string         `json:"avatar_url"`
+	DateOfBirth          utils.JSONDate `json:"date_of_birth"`
+	GroupID              string         `json:"group_id"`
+	Notes                string         `json:"notes"`
+	IsActive             *bool          `json:"is_active"`
 }
 
 type TopupRequest struct {
@@ -72,27 +80,27 @@ type UpdateGroupRequest struct {
 }
 
 type MemberResponse struct {
-	ID                  string       `json:"id"`
-	Username            string       `json:"username"`
-	FullName            string       `json:"full_name"`
-	Phone               string       `json:"phone"`
-	Email               string       `json:"email"`
-	IDCardNumber        string       `json:"id_card_number"`
-	IDCardImageURL      string       `json:"id_card_image_url"`
-	AvatarURL           string       `json:"avatar_url"`
-	DateOfBirth         *time.Time   `json:"date_of_birth"`
-	Balance             int64        `json:"balance"`
-	BonusBalance        int64        `json:"bonus_balance"`
-	TotalSpent          int64        `json:"total_spent"`
-	TotalPlayedHours    int          `json:"total_played_hours"`
-	Group               *GroupResponse `json:"group"`
-	GroupID             *string      `json:"group_id"`
-	Notes               string       `json:"notes"`
-	ParentConsentFileURL string     `json:"parent_consent_file_url"`
-	IsActive            bool         `json:"is_active"`
-	LastVisitAt         *time.Time   `json:"last_visit_at"`
-	CreatedAt           time.Time    `json:"created_at"`
-	UpdatedAt           time.Time    `json:"updated_at"`
+	ID                   string         `json:"id"`
+	Username             string         `json:"username"`
+	FullName             string         `json:"full_name"`
+	Phone                string         `json:"phone"`
+	Email                string         `json:"email"`
+	IDCardNumber         string         `json:"id_card_number"`
+	IDCardImageURL       string         `json:"id_card_image_url"`
+	AvatarURL            string         `json:"avatar_url"`
+	DateOfBirth          *time.Time     `json:"date_of_birth"`
+	Balance              int64          `json:"balance"`
+	BonusBalance         int64          `json:"bonus_balance"`
+	TotalSpent           int64          `json:"total_spent"`
+	TotalPlayedMinutes   int            `json:"total_played_minutes"`
+	Group                *GroupResponse `json:"group"`
+	GroupID              *string        `json:"group_id"`
+	Notes                string         `json:"notes"`
+	ParentConsentFileURL string         `json:"parent_consent_file_url"`
+	IsActive             bool           `json:"is_active"`
+	LastVisitAt          *time.Time     `json:"last_visit_at"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
 }
 
 type GroupResponse struct {
@@ -160,27 +168,27 @@ func (s *MemberService) loadGroup(groupID *string) *GroupResponse {
 
 func toMemberResponse(m *model.Member, groupResp *GroupResponse) *MemberResponse {
 	return &MemberResponse{
-		ID:                  m.ID,
-		Username:            m.Username,
-		FullName:            m.FullName,
-		Phone:               m.Phone,
-		Email:               m.Email,
-		IDCardNumber:        m.IDCardNumber,
-		IDCardImageURL:      m.IDCardImageURL,
-		AvatarURL:           m.AvatarURL,
-		DateOfBirth:         m.DateOfBirth,
-		Balance:             m.Balance,
-		BonusBalance:        m.BonusBalance,
-		TotalSpent:          m.TotalSpent,
-		TotalPlayedHours:    m.TotalPlayedHours,
-		GroupID:             m.GroupID,
-		Group:               groupResp,
-		Notes:               m.Notes,
+		ID:                   m.ID,
+		Username:             m.Username,
+		FullName:             m.FullName,
+		Phone:                m.Phone,
+		Email:                m.Email,
+		IDCardNumber:         m.IDCardNumber,
+		IDCardImageURL:       m.IDCardImageURL,
+		AvatarURL:            m.AvatarURL,
+		DateOfBirth:          m.DateOfBirth,
+		Balance:              m.Balance,
+		BonusBalance:         m.BonusBalance,
+		TotalSpent:           m.TotalSpent,
+		TotalPlayedMinutes:   m.TotalPlayedMinutes,
+		GroupID:              m.GroupID,
+		Group:                groupResp,
+		Notes:                m.Notes,
 		ParentConsentFileURL: m.ParentConsentFileURL,
-		IsActive:            m.IsActive,
-		LastVisitAt:         m.LastVisitAt,
-		CreatedAt:           m.CreatedAt,
-		UpdatedAt:           m.UpdatedAt,
+		IsActive:             m.IsActive,
+		LastVisitAt:          m.LastVisitAt,
+		CreatedAt:            m.CreatedAt,
+		UpdatedAt:            m.UpdatedAt,
 	}
 }
 
@@ -206,10 +214,15 @@ func toTransactionResponse(t *model.MemberTransaction) *MemberTransactionRespons
 		BonusBefore:     t.BonusBefore,
 		BonusAfter:      t.BonusAfter,
 		PaymentMethod:   t.PaymentMethod,
-		ReferenceID:     func() string { if t.ReferenceID != nil { return *t.ReferenceID }; return "" }(),
-		Description:     t.Description,
-		CreatedBy:       t.CreatedBy,
-		CreatedAt:       t.CreatedAt,
+		ReferenceID: func() string {
+			if t.ReferenceID != nil {
+				return *t.ReferenceID
+			}
+			return ""
+		}(),
+		Description: t.Description,
+		CreatedBy:   t.CreatedBy,
+		CreatedAt:   t.CreatedAt,
 	}
 }
 
@@ -290,15 +303,17 @@ func (s *MemberService) Create(req *CreateMemberRequest) (*MemberResponse, error
 	}
 
 	member := model.Member{
-		Username:     req.Username,
-		PasswordHash: hash,
-		FullName:     req.FullName,
-		Phone:        req.Phone,
-		Email:        req.Email,
-		IDCardNumber: req.IDCardNumber,
-		DateOfBirth:  req.DateOfBirth,
-		Notes:        req.Notes,
-		IsActive:     true,
+		Username:             req.Username,
+		PasswordHash:         hash,
+		FullName:             req.FullName,
+		Phone:                req.Phone,
+		Email:                req.Email,
+		IDCardNumber:         req.IDCardNumber,
+		IDCardImageURL:       req.IDCardImageURL,
+		ParentConsentFileURL: req.ParentConsentFileURL,
+		DateOfBirth:          req.DateOfBirth.Time,
+		Notes:                req.Notes,
+		IsActive:             true,
 	}
 
 	if req.GroupID != "" {
@@ -358,11 +373,17 @@ func (s *MemberService) Update(id string, req *UpdateMemberRequest) (*MemberResp
 	if req.IDCardNumber != "" {
 		updates["id_card_number"] = req.IDCardNumber
 	}
+	if req.IDCardImageURL != "" {
+		updates["id_card_image_url"] = req.IDCardImageURL
+	}
+	if req.ParentConsentFileURL != "" {
+		updates["parent_consent_file_url"] = req.ParentConsentFileURL
+	}
 	if req.AvatarURL != "" {
 		updates["avatar_url"] = req.AvatarURL
 	}
-	if req.DateOfBirth != nil {
-		updates["date_of_birth"] = req.DateOfBirth
+	if req.DateOfBirth.Time != nil {
+		updates["date_of_birth"] = req.DateOfBirth.Time
 	}
 	if req.GroupID != "" {
 		updates["group_id"] = req.GroupID
@@ -661,12 +682,67 @@ func (s *MemberService) GetCombos(id string, params pagination.Params) ([]ComboP
 		return nil, 0, 0, 0, err
 	}
 
+	comboIDs := make([]string, len(purchases))
+	for i, p := range purchases {
+		comboIDs[i] = p.ComboID
+	}
+	comboMap := make(map[string]string, len(comboIDs))
+	if len(comboIDs) > 0 {
+		var combos []model.Combo
+		s.db.Where("id IN ?", comboIDs).Find(&combos)
+		for _, c := range combos {
+			comboMap[c.ID] = c.Name
+		}
+	}
+
 	result := make([]ComboPurchaseResponse, len(purchases))
 	for i := range purchases {
-		result[i] = purchaseToResponse(purchases[i])
+		result[i] = purchaseToResponse(purchases[i], comboMap[purchases[i].ComboID])
 	}
 
 	return result, total, params.Page, params.PageSize, nil
+}
+
+// RefreshTiers xếp lại hạng hội viên theo tổng chi tiêu.
+//
+// Chạy nền mỗi 15 phút, nhưng quán còn cần chạy NGAY sau khi sửa ngưỡng chi
+// tiêu của một hạng — nếu không thì mọi người vẫn ở hạng cũ tới 15 phút, và
+// nhân viên không có cách nào biết hàm này có chạy hay không.
+//
+// Trả về số hội viên đã đổi hạng.
+func (s *MemberService) RefreshTiers() (int, error) {
+	var groups []model.MemberGroup
+	if err := s.db.Order("min_spent DESC").Find(&groups).Error; err != nil {
+		return 0, err
+	}
+	if len(groups) == 0 {
+		return 0, nil
+	}
+
+	moved := 0
+	for _, g := range groups {
+		// Ngưỡng cao nhất trước, để mỗi người rơi vào hạng tốt nhất họ đủ điều
+		// kiện và hạng thấp hơn không giành lại được sau đó.
+		res := s.db.Model(&model.Member{}).
+			Where("total_spent >= ?", g.MinSpent).
+			Where("group_id IS NULL OR group_id <> ?", g.ID).
+			Where("group_id IS NULL OR group_id NOT IN (?)",
+				s.db.Model(&model.MemberGroup{}).Select("id").Where("min_spent > ?", g.MinSpent)).
+			Update("group_id", g.ID)
+		if res.Error != nil {
+			return moved, res.Error
+		}
+		moved += int(res.RowsAffected)
+	}
+
+	if moved > 0 {
+		s.audit.Log(&LogAuditRequest{
+			Action:     "refresh_tiers",
+			EntityType: "member",
+			Metadata:   map[string]interface{}{"moved": moved},
+		})
+	}
+	return moved, nil
 }
 
 func (s *MemberService) GetGroups() ([]*GroupResponse, error) {

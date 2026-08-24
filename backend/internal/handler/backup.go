@@ -80,3 +80,22 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 	}
 	response.Success(c, nil)
 }
+
+// @Summary Delete backup
+// @Description Delete a backup log entry and its .sql file on disk
+// @Tags Backups
+// @Accept json
+// @Produce json
+// @Param id path string true "Backup ID"
+// @Success 200 {object} response.Response
+// @Failure 400 {object} response.Response
+// @Router /api/backups/{id} [delete]
+// @Security BearerAuth
+func (h *BackupHandler) Delete(c *gin.Context) {
+	id := c.Param("id")
+	if err := h.svc.Delete(id); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}

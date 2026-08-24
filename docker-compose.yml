@@ -1,0 +1,129 @@
+# VNET Core — full deployment.
+#
+#   cp .env.docker.example .env
+#   # edit .env: DB_PASSWORD, JWT_SECRET, ALLOWED_ORIGINS
+#   docker compose up -d --build
+#
+# The admin UI is embedded in the server binary, so http://<host>:8080 serves
+# both the interface and the API. No separate web server is involved.
+#
+# Redis is intentionally absent: internal/config declares Redis settings, but
+# go.mod pulls no Redis client and nothing reads them. Running the container
+# would add a service no code talks to.
+
+x-app-image: &app-image
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      VERSION: ${VERSION:-docker}
+  image: vnet-core:${VERSION:-latest}
+
+x-db-env: &db-env
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: ${DB_USER:-vnet}
+  DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+  DB_NAME: ${DB_NAME:-vnet}
+  DB_SSLMODE: ${DB_SSLMODE:-disable}
+  TZ: Asia/Ho_Chi_Minh
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-vnet}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: ${DB_NAME:-vnet}
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # The database is named explicitly; pg_isready would otherwise probe a
+      # database named after the OS user and report ready too early.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vnet} -d ${DB_NAME:-vnet}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    # Not published: only the app needs it. Uncomment to attach a local client.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  app:
+    <<: *app-image
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *db-env
+      GIN_MODE: release
+
+      # Startup is refused in release mode if this is still the placeholder or
+      # shorter than 32 characters.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-24h}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-168h}
+
+      # Real origins only: "*" is rejected in release mode. The admin is served
+      # same-origin, so this matters only for other clients.
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+
+      SERVER_PORT: "8080"
+      UPLOAD_DIR: /app/uploads
+      HARDWARE_HISTORY_DAYS: ${HARDWARE_HISTORY_DAYS:-7}
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+  # --------------------------------------------------------------------------
+  # One-shot maintenance commands. They are behind a profile so `up` never runs
+  # them; invoke explicitly:
+  #
+  #   docker compose --profile tools run --rm migrate
+  #   docker compose --profile tools run --rm seed
+  # --------------------------------------------------------------------------
+
+  # Column-level fixups that assume the tables already exist, so this runs after
+  # the app has created the schema on first boot — not before it.
+  migrate:
+    <<: *app-image
+    profiles: ["tools"]
+    restart: "no"
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      <<: *db-env
+    entrypoint: ["/app/vnet-migrate"]
+
+  # Creates the admin/manager/staff accounts and baseline reference data.
+  # Change those passwords immediately afterwards.
+  #
+  # Add -menu for a 100-item sample menu with generated images:
+  #
+  #   docker compose --profile tools run --rm seed -menu
+  #
+  # That writes the images into the shared uploads volume, which is why this
+  # service mounts it and sets UPLOAD_DIR — without both, the images would land
+  # in a throwaway container and every product photo would 404.
+  seed:
+    <<: *app-image
+    profiles: ["tools"]
+    restart: "no"
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      <<: *db-env
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
+    entrypoint: ["/app/vnet-seed"]
+
+volumes:
+  postgres-data:
+  uploads:

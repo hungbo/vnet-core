@@ -94,7 +94,13 @@ function fetchData() {
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.audit.title') }}</span>
-          <TableHeaderOperation v-model:columns="columnChecks" :loading="loading" @refresh="getData">
+          <TableHeaderOperation
+            v-model:columns="columnChecks"
+            :loading="loading"
+            :show-add="false"
+            :show-delete="false"
+            @refresh="getData"
+          >
             <template #prefix>
               <ElSelect
                 v-model="filterAction"
@@ -139,8 +145,7 @@ function fetchData() {
                 max-height: 300px;
                 overflow: auto;
               "
-              >{{ formatJson(row.metadata || row.details) }}</pre
-            >
+              >{{ formatJson(row.metadata || row.details) }}</pre>
           </template>
         </ElTableColumn>
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />

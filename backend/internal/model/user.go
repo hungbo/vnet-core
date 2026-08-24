@@ -1,20 +1,24 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type User struct {
-	ID           string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	Username     string     `gorm:"type:varchar(50);not null;uniqueIndex" json:"username"`
-	PasswordHash string     `gorm:"type:varchar(255);not null" json:"-"`
-	FullName     string     `gorm:"type:varchar(100)" json:"full_name"`
-	Email        string     `gorm:"type:varchar(100)" json:"email"`
-	Phone        string     `gorm:"type:varchar(20)" json:"phone"`
-	AvatarURL    string     `gorm:"type:text" json:"avatar_url"`
-	IsActive     bool       `gorm:"default:true" json:"is_active"`
-	LastLoginAt  *time.Time `gorm:"type:timestamptz" json:"last_login_at"`
-	CreatedAt    time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
-	UpdatedAt    time.Time  `gorm:"default:now()" json:"updated_at,omitempty"`
-	DeletedAt    *time.Time `gorm:"index" json:"deleted_at,omitempty"`
+	ID           string         `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	Username     string         `gorm:"type:varchar(50);not null;uniqueIndex" json:"username"`
+	PasswordHash string         `gorm:"type:varchar(255);not null" json:"-"`
+	FullName     string         `gorm:"type:varchar(100)" json:"full_name"`
+	Email        string         `gorm:"type:varchar(100)" json:"email"`
+	Phone        string         `gorm:"type:varchar(20)" json:"phone"`
+	AvatarURL    string         `gorm:"type:text" json:"avatar_url"`
+	IsActive     bool           `gorm:"default:true" json:"is_active"`
+	LastLoginAt  *time.Time     `gorm:"type:timestamptz" json:"last_login_at"`
+	CreatedAt    time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
+	UpdatedAt    time.Time      `gorm:"default:now()" json:"updated_at,omitempty"`
+	DeletedAt    gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 
 	Roles []Role `gorm:"many2many:user_roles;foreignKey:ID;joinForeignKey:UserID;References:ID;joinReferences:RoleID" json:"roles,omitempty"`
 }

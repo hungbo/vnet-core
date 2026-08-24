@@ -1,7 +1,9 @@
 package service
 
 import (
+	"github.com/vnet/core/internal/model"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -141,4 +143,66 @@ func TestCurfewService_Override_Success(t *testing.T) {
 	assert.Equal(t, "Special event", result.OverrideReason)
 	assert.Equal(t, testUserID, *result.OverrideByAdmin)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestIsMinor(t *testing.T) {
+	at := time.Date(2026, 8, 21, 22, 0, 0, 0, time.UTC)
+
+	born2010 := time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC)
+	born2000 := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Turns 18 tomorrow, so still a minor tonight.
+	almost := time.Date(2008, 8, 22, 0, 0, 0, 0, time.UTC)
+
+	assert.True(t, IsMinor(&model.Member{DateOfBirth: &born2010}, at))
+	assert.False(t, IsMinor(&model.Member{DateOfBirth: &born2000}, at))
+	assert.True(t, IsMinor(&model.Member{DateOfBirth: &almost}, at))
+
+	// An unknown birthday must not lock the account out of the system.
+	assert.False(t, IsMinor(&model.Member{}, at))
+	assert.False(t, IsMinor(nil, at))
+}
+
+func TestWithinCurfew(t *testing.T) {
+	// Same-day window.
+	assert.True(t, withinCurfew("14:00:00", "12:00:00", "18:00:00"))
+	assert.False(t, withinCurfew("19:00:00", "12:00:00", "18:00:00"))
+
+	// Window that wraps past midnight — the common case for a curfew.
+	assert.True(t, withinCurfew("23:30:00", "22:00:00", "06:00:00"))
+	assert.True(t, withinCurfew("02:00:00", "22:00:00", "06:00:00"))
+	assert.False(t, withinCurfew("12:00:00", "22:00:00", "06:00:00"))
+
+	// End is exclusive.
+	assert.False(t, withinCurfew("06:00:00", "22:00:00", "06:00:00"))
+
+	assert.False(t, withinCurfew("12:00:00", "", ""))
+}
+
+func TestCurfewService_CheckStart_BlocksMinorDuringCurfew(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewCurfewService(db, NewAuditService(db))
+
+	at := time.Date(2026, 8, 21, 23, 0, 0, 0, time.UTC) // Friday 23:00
+	born := time.Date(2012, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	mock.ExpectQuery(`SELECT \* FROM "curfew_policies" WHERE is_active = \$1 AND day_of_week = \$2`).
+		WithArgs(true, int(at.Weekday())).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "curfew_start", "curfew_end", "is_active"}).
+			AddRow("c1", "22:00:00", "06:00:00", true))
+
+	err := svc.CheckStart(&model.Member{DateOfBirth: &born}, at)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "curfew")
+}
+
+func TestCurfewService_CheckStart_AllowsAdult(t *testing.T) {
+	db, _ := newMockDB(t)
+	svc := NewCurfewService(db, NewAuditService(db))
+
+	at := time.Date(2026, 8, 21, 23, 0, 0, 0, time.UTC)
+	born := time.Date(1990, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// No policy lookup happens at all for an adult.
+	assert.NoError(t, svc.CheckStart(&model.Member{DateOfBirth: &born}, at))
 }

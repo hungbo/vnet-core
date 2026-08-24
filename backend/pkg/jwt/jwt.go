@@ -7,20 +7,36 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// Token types. A token minted for refreshing must never be accepted as an
+// access token, so the type is carried inside the signed payload.
+const (
+	TypeAccess  = "access"
+	TypeRefresh = "refresh"
+)
+
+// Subject kinds. Staff tokens come from the admin login flows; member tokens
+// come from the client-facing login flows and must not reach admin endpoints.
+const (
+	KindStaff  = "staff"
+	KindMember = "member"
+)
+
 type Claims struct {
 	UserID      string   `json:"user_id"`
 	Username    string   `json:"username"`
 	Role        string   `json:"role"`
 	RoleID      string   `json:"role_id"`
 	Permissions []string `json:"permissions"`
+	TokenType   string   `json:"typ"`
+	Kind        string   `json:"knd"`
 	jwt.RegisteredClaims
 }
 
 type Manager struct {
-	secret        string
-	accessTTL     time.Duration
-	refreshTTL    time.Duration
-	issuer        string
+	secret     string
+	accessTTL  time.Duration
+	refreshTTL time.Duration
+	issuer     string
 }
 
 func New(secret string, accessTTL, refreshTTL time.Duration, issuer string) *Manager {
@@ -32,13 +48,15 @@ func New(secret string, accessTTL, refreshTTL time.Duration, issuer string) *Man
 	}
 }
 
-func (m *Manager) GenerateAccessToken(userID, username, role, roleID string, permissions []string) (string, error) {
+func (m *Manager) GenerateAccessToken(userID, username, role, roleID, kind string, permissions []string) (string, error) {
 	claims := &Claims{
 		UserID:      userID,
 		Username:    username,
 		Role:        role,
 		RoleID:      roleID,
 		Permissions: permissions,
+		TokenType:   TypeAccess,
+		Kind:        kind,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -49,9 +67,11 @@ func (m *Manager) GenerateAccessToken(userID, username, role, roleID string, per
 	return token.SignedString([]byte(m.secret))
 }
 
-func (m *Manager) GenerateRefreshToken(userID string) (string, error) {
+func (m *Manager) GenerateRefreshToken(userID, kind string) (string, error) {
 	claims := &Claims{
-		UserID: userID,
+		UserID:    userID,
+		TokenType: TypeRefresh,
+		Kind:      kind,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.refreshTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
 
 type SystemSetting struct {
 	ID          string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
@@ -16,7 +20,10 @@ type AuditLog struct {
 	ID          string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	Action      string    `gorm:"type:varchar(100);not null;index" json:"action"`
 	EntityType  string    `gorm:"type:varchar(50);index:idx_audit_logs_entity" json:"entity_type"`
-	EntityID    string    `gorm:"type:uuid;index:idx_audit_logs_entity" json:"entity_id"`
+	// Con trỏ chứ không phải string: cột là uuid, và PostgreSQL từ chối chuỗi
+	// rỗng làm uuid. Trước đây mọi bản ghi không gắn với một thực thể cụ thể
+	// (đổi cài đặt, sinh lô thẻ, nạp thẻ hụt) đều bị từ chối trong im lặng.
+	EntityID *string `gorm:"type:uuid;index:idx_audit_logs_entity" json:"entity_id"`
 	UserID      *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"user_id"`
 	Description string    `gorm:"type:text" json:"description"`
 	Metadata    string    `gorm:"type:jsonb" json:"metadata"`
@@ -29,7 +36,7 @@ type Notification struct {
 	Type        string    `gorm:"type:varchar(30);not null" json:"type"`
 	Title       string    `gorm:"type:varchar(200);not null" json:"title"`
 	Content     string    `gorm:"type:text" json:"content"`
-	ReferenceID string    `gorm:"type:uuid" json:"reference_id"`
+	ReferenceID *string   `gorm:"type:uuid" json:"reference_id"`
 	CreatedAt   time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }
 
@@ -77,14 +84,14 @@ type EInvoice struct {
 }
 
 type WebsiteBlockingRule struct {
-	ID          string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	Pattern     string     `gorm:"type:varchar(500);not null" json:"pattern"`
-	RuleType    string     `gorm:"type:varchar(10);not null" json:"rule_type"`
-	Category    string     `gorm:"type:varchar(30)" json:"category"`
-	Description string     `gorm:"type:text" json:"description"`
-	IsActive    bool       `gorm:"default:true;index" json:"is_active"`
-	CreatedAt   time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
-	DeletedAt   *time.Time `gorm:"index" json:"deleted_at,omitempty"`
+	ID          string         `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	Pattern     string         `gorm:"type:varchar(500);not null" json:"pattern"`
+	RuleType    string         `gorm:"type:varchar(10);not null" json:"rule_type"`
+	Category    string         `gorm:"type:varchar(30)" json:"category"`
+	Description string         `gorm:"type:text" json:"description"`
+	IsActive    bool           `gorm:"default:true;index" json:"is_active"`
+	CreatedAt   time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 type WebsiteRuleMapping struct {
@@ -97,9 +104,9 @@ type WebsiteRuleMapping struct {
 type WebsiteBlockingSchedule struct {
 	ID        string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	RuleID    string    `gorm:"type:uuid;not null;index" json:"rule_id"`
-	DayOfWeek []int     `gorm:"type:integer[]" json:"day_of_week"`
-	StartTime string    `gorm:"type:time" json:"start_time"`
-	EndTime   string    `gorm:"type:time" json:"end_time"`
+	DayOfWeek IntArray  `gorm:"type:integer[]" json:"day_of_week"`
+	StartTime string    `gorm:"type:time without time zone" json:"start_time"`
+	EndTime   string    `gorm:"type:time without time zone" json:"end_time"`
 	IsActive  bool      `gorm:"default:true" json:"is_active"`
 	CreatedAt time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }
@@ -115,11 +122,19 @@ type WebsiteBlockingViolation struct {
 }
 
 type AppUpdate struct {
-	ID         string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	Version    string    `gorm:"type:varchar(20);not null" json:"version"`
-	Platform   string    `gorm:"type:varchar(20);not null" json:"platform"`
-	FileURL    string    `gorm:"type:text;not null" json:"file_url"`
+	ID       string `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	Version  string `gorm:"type:varchar(20);not null" json:"version"`
+	Platform string `gorm:"type:varchar(20);not null;index" json:"platform"`
+	FileURL  string `gorm:"type:text;not null" json:"file_url"`
+	// Checksum là băm SHA-256 của tệp cài đặt, dạng hex.
+	//
+	// Bắt buộc, không phải tuỳ chọn: tải một tệp thực thi về rồi CHẠY nó mà
+	// không kiểm băm nghĩa là ai chiếm được đường tải — hoặc chỉ cần đứng giữa
+	// đường truyền — là chạy được mã tuỳ ý trên toàn bộ máy trạm.
+	Checksum   string    `gorm:"type:varchar(64);not null" json:"checksum"`
+	FileSize   int64     `gorm:"default:0" json:"file_size"`
 	Changelog  string    `gorm:"type:text" json:"changelog"`
 	IsRequired bool      `gorm:"default:false" json:"is_required"`
+	IsActive   bool      `gorm:"default:true;index" json:"is_active"`
 	CreatedAt  time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }

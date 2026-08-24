@@ -101,8 +101,17 @@ func TestShiftService_CloseShift_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "status", "opening_balance", "started_at", "notes"}).
 			AddRow("s1", testUserID, "open", int64(500000), testNow, ""))
 
-	mock.ExpectQuery(`SELECT COALESCE\(SUM\(final_amount\), 0\) FROM "orders"`).
+	// Cash in the drawer only: card/balance settlements are excluded by design.
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(amount\), 0\) FROM "payments"`).
 		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(200000)))
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(amount\), 0\) FROM "member_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(80000)))
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(-amount\), 0\) FROM "member_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(50000)))
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(amount\), 0\) FROM "cash_handovers"`).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(0)))
+	mock.ExpectQuery(`SELECT COALESCE\(SUM\(amount\), 0\) FROM "cash_handovers"`).
+		WillReturnRows(sqlmock.NewRows([]string{"coalesce"}).AddRow(int64(30000)))
 
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "shifts" SET`).
@@ -117,7 +126,9 @@ func TestShiftService_CloseShift_Success(t *testing.T) {
 	result, err := svc.CloseShift("s1", &CloseShiftRequest{ClosingBalance: 800000})
 	require.NoError(t, err)
 	assert.Equal(t, "closed", result.Status)
-	assert.NotNil(t, result.Discrepancy)
+	require.NotNil(t, result.Discrepancy)
+	// 500000 opening + 300000 net cash == 800000 counted, so the drawer balances.
+	assert.Equal(t, int64(0), *result.Discrepancy)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

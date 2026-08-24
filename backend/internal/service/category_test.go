@@ -28,11 +28,11 @@ func TestCategoryService_GetByID_Found(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewCategoryService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "categories"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND "categories"\."deleted_at" IS NULL ORDER BY "categories"."id" LIMIT \$2`).
 		WithArgs("c1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("c1", "Food"))
 
-	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE parent_id = \$1 AND deleted_at IS NULL ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE parent_id = \$1 AND "categories"\."deleted_at" IS NULL ORDER BY sort_order asc`).
 		WithArgs("c1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}))
 
@@ -46,7 +46,7 @@ func TestCategoryService_GetByID_NotFound(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewCategoryService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "categories"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND "categories"\."deleted_at" IS NULL ORDER BY "categories"."id" LIMIT \$2`).
 		WithArgs("nonexistent", 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
@@ -75,7 +75,7 @@ func TestCategoryService_Update_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewCategoryService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "categories"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND "categories"\."deleted_at" IS NULL ORDER BY "categories"."id" LIMIT \$2`).
 		WithArgs("c1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("c1", "Old Name"))
 
@@ -84,7 +84,7 @@ func TestCategoryService_Update_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND "categories"."id" = \$2 ORDER BY "categories"."id" LIMIT \$3`).
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND "categories"\."deleted_at" IS NULL AND "categories"\."id" = \$2 ORDER BY "categories"\."id" LIMIT \$3`).
 		WithArgs("c1", "c1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("c1", "New Name"))
 
@@ -99,9 +99,18 @@ func TestCategoryService_Delete_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewCategoryService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "categories"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1 AND "categories"\."deleted_at" IS NULL ORDER BY "categories"."id" LIMIT \$2`).
 		WithArgs("c1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("c1", "Test"))
+
+	// Xoá danh mục còn sản phẩm hoặc còn danh mục con sẽ để lại bản ghi mồ côi,
+	// nên Delete đếm hai thứ đó trước khi động vào deleted_at.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "products"`).
+		WithArgs("c1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "categories"`).
+		WithArgs("c1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "categories" SET`).
@@ -110,5 +119,23 @@ func TestCategoryService_Delete_Success(t *testing.T) {
 
 	err := svc.Delete("c1")
 	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Danh mục còn sản phẩm phải bị từ chối: nếu cho xoá, trang Sản phẩm tra tên
+// danh mục trong danh sách đang hoạt động, không thấy, và hiện UUID thô.
+func TestCategoryService_Delete_RefusesWhenProductsRemain(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewCategoryService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1`).
+		WithArgs("c1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("c1", "Nước"))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "products"`).
+		WithArgs("c1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
+
+	err := svc.Delete("c1")
+	assert.EqualError(t, err, "cannot delete category with products")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

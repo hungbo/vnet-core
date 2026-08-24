@@ -10,16 +10,36 @@ export function ChangePin(arg1, arg2) {
   return window['go']['main']['App']['ChangePin'](arg1, arg2);
 }
 
+export function CheckUpdate() {
+  return window['go']['main']['App']['CheckUpdate']();
+}
+
+export function CheckinAttendance() {
+  return window['go']['main']['App']['CheckinAttendance']();
+}
+
 export function CreateRoom(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateRoom'](arg1, arg2, arg3);
+}
+
+export function DownloadUpdate() {
+  return window['go']['main']['App']['DownloadUpdate']();
 }
 
 export function ExecuteCommand(arg1) {
   return window['go']['main']['App']['ExecuteCommand'](arg1);
 }
 
+export function GetAttendanceStatus() {
+  return window['go']['main']['App']['GetAttendanceStatus']();
+}
+
 export function GetCategories() {
   return window['go']['main']['App']['GetCategories']();
+}
+
+export function GetFeatureFlags() {
+  return window['go']['main']['App']['GetFeatureFlags']();
 }
 
 export function GetHardware() {
@@ -70,16 +90,40 @@ export function GetUserInfo() {
   return window['go']['main']['App']['GetUserInfo']();
 }
 
+export function GetVersion() {
+  return window['go']['main']['App']['GetVersion']();
+}
+
+export function GetWindowMode() {
+  return window['go']['main']['App']['GetWindowMode']();
+}
+
+export function HasBuiltinAdmin() {
+  return window['go']['main']['App']['HasBuiltinAdmin']();
+}
+
+export function HasCachedStaff() {
+  return window['go']['main']['App']['HasCachedStaff']();
+}
+
+export function HasMaintenancePin() {
+  return window['go']['main']['App']['HasMaintenancePin']();
+}
+
+export function IsLocked() {
+  return window['go']['main']['App']['IsLocked']();
+}
+
 export function IsLoggedIn() {
   return window['go']['main']['App']['IsLoggedIn']();
 }
 
-export function Login(arg1, arg2) {
-  return window['go']['main']['App']['Login'](arg1, arg2);
+export function LockScreen(arg1) {
+  return window['go']['main']['App']['LockScreen'](arg1);
 }
 
-export function LoginAdmin(arg1, arg2) {
-  return window['go']['main']['App']['LoginAdmin'](arg1, arg2);
+export function Login(arg1, arg2) {
+  return window['go']['main']['App']['Login'](arg1, arg2);
 }
 
 export function Logout() {
@@ -106,6 +150,10 @@ export function MarkRoomMessagesRead(arg1) {
   return window['go']['main']['App']['MarkRoomMessagesRead'](arg1);
 }
 
+export function OpenWindow(arg1) {
+  return window['go']['main']['App']['OpenWindow'](arg1);
+}
+
 export function PlaceOrder(arg1) {
   return window['go']['main']['App']['PlaceOrder'](arg1);
 }
@@ -130,8 +178,8 @@ export function SendScreenshotMessage(arg1, arg2) {
   return window['go']['main']['App']['SendScreenshotMessage'](arg1, arg2);
 }
 
-export function SetMachineCode(arg1) {
-  return window['go']['main']['App']['SetMachineCode'](arg1);
+export function SetLoggedIn(arg1) {
+  return window['go']['main']['App']['SetLoggedIn'](arg1);
 }
 
 export function SetServerURL(arg1) {
@@ -142,8 +190,20 @@ export function ShowMessage(arg1, arg2) {
   return window['go']['main']['App']['ShowMessage'](arg1, arg2);
 }
 
+export function ShowWindow() {
+  return window['go']['main']['App']['ShowWindow']();
+}
+
 export function ShutdownMachine() {
   return window['go']['main']['App']['ShutdownMachine']();
+}
+
+export function Startup(arg1) {
+  return window['go']['main']['App']['Startup'](arg1);
+}
+
+export function SubmitFeedback(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SubmitFeedback'](arg1, arg2, arg3);
 }
 
 export function TakeScreenshot() {
@@ -152,4 +212,12 @@ export function TakeScreenshot() {
 
 export function UnblockApp(arg1) {
   return window['go']['main']['App']['UnblockApp'](arg1);
+}
+
+export function UnlockMaintenance(arg1) {
+  return window['go']['main']['App']['UnlockMaintenance'](arg1);
+}
+
+export function UnlockScreen() {
+  return window['go']['main']['App']['UnlockScreen']();
 }

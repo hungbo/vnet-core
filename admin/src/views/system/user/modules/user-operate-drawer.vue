@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { enableStatusOptions, userGenderOptions } from '@/constants/business';
-import { fetchGetAllRoles } from '@/service/api';
+import { fetchAddUser, fetchGetAllRoles, fetchUpdateUser } from '@/service/api';
 import { useForm, useFormRules } from '@/hooks/common/form';
 import { $t } from '@/locales';
 
@@ -43,6 +43,9 @@ type Model = Pick<
 >;
 
 const model = ref(createDefaultModel());
+// Mật khẩu không nằm trong Api.SystemManage.User (backend không bao giờ trả về)
+// nên giữ riêng. Bắt buộc khi tạo, để trống khi sửa nghĩa là không đổi.
+const password = ref('');
 
 function createDefaultModel(): Model {
   return {
@@ -87,8 +90,11 @@ async function getRoleOptions() {
   }
 }
 
+const isEdit = computed(() => props.operateType === 'edit');
+
 function handleInitModel() {
   model.value = createDefaultModel();
+  password.value = '';
 
   if (props.operateType === 'edit' && props.rowData) {
     Object.assign(model.value, props.rowData);
@@ -99,9 +105,32 @@ function closeDrawer() {
   visible.value = false;
 }
 
+const submitting = ref(false);
+
 async function handleSubmit() {
   await validate();
-  // request
+  if (!isEdit.value && !password.value) {
+    window.$message?.warning($t('page.manage.user.form.password'));
+    return;
+  }
+  submitting.value = true;
+  const body: Record<string, unknown> = {
+    userName: model.value.userName,
+    nickName: model.value.nickName,
+    userGender: model.value.userGender,
+    userPhone: model.value.userPhone,
+    userEmail: model.value.userEmail,
+    userRoles: model.value.userRoles,
+    status: model.value.status
+  };
+  if (password.value) body.password = password.value;
+  // Bản mẫu chỉ hiện "lưu thành công" rồi không gửi gì — tài khoản nhân viên
+  // tạo xong không tồn tại. Chỉ báo thành công sau khi backend nhận.
+  const { error } = isEdit.value
+    ? await fetchUpdateUser({ ...body, id: String(props.rowData?.id ?? '') })
+    : await fetchAddUser(body);
+  submitting.value = false;
+  if (error) return;
   window.$message?.success($t('common.updateSuccess'));
   closeDrawer();
   emit('submitted');
@@ -121,6 +150,14 @@ watch(visible, () => {
     <ElForm ref="formRef" :model="model" :rules="rules" label-position="top">
       <ElFormItem :label="$t('page.manage.user.userName')" prop="userName">
         <ElInput v-model="model.userName" :placeholder="$t('page.manage.user.form.userName')" />
+      </ElFormItem>
+      <ElFormItem :label="$t('page.manage.user.password')" prop="password">
+        <ElInput
+          v-model="password"
+          type="password"
+          show-password
+          :placeholder="isEdit ? $t('page.manage.user.form.passwordKeep') : $t('page.manage.user.form.password')"
+        />
       </ElFormItem>
       <ElFormItem :label="$t('page.manage.user.userGender')" prop="userGender">
         <ElRadioGroup v-model="model.userGender">
@@ -150,7 +187,7 @@ watch(visible, () => {
     <template #footer>
       <ElSpace :size="16">
         <ElButton @click="closeDrawer">{{ $t('common.cancel') }}</ElButton>
-        <ElButton type="primary" @click="handleSubmit">{{ $t('common.confirm') }}</ElButton>
+        <ElButton type="primary" :loading="submitting" @click="handleSubmit">{{ $t('common.confirm') }}</ElButton>
       </ElSpace>
     </template>
   </ElDrawer>

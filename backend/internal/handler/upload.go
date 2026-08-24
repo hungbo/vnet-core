@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -69,8 +70,13 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	// Địa chỉ công khai dựng từ route tĩnh, KHÔNG phải từ đường dẫn trên đĩa.
+	// UPLOAD_DIR trong Docker là đường tuyệt đối (/app/uploads), nên "/" + dst
+	// cho ra "/app/uploads/..." — không khớp route /uploads nên rơi vào trang
+	// quản trị nhúng và trả về HTML. Thẻ <img> im lặng hiện ô trắng: ảnh sản
+	// phẩm và ảnh giấy tờ hội viên tải lên bằng bản Docker chưa từng hiện được.
 	response.Success(c, gin.H{
-		"url":      "/" + dst,
+		"url":      path.Join("/uploads", dateDir, filename),
 		"filename": filename,
 		"size":     file.Size,
 	})

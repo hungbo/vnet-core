@@ -1,12 +1,18 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { ElMessage, ElTree } from 'element-plus';
+import { fetchGetAllPermissions, fetchGetRolePermissions, fetchUpdateRolePermissions } from '@/service/api';
 import { $t } from '@/locales';
 
-defineOptions({ name: 'ButtonAuthModal' });
+defineOptions({ name: 'PermissionAuthModal' });
+
+// Bản mẫu của Soybean đổ ra button1…button10 rồi bấm Lưu chỉ ghi console. Ở đây
+// đọc đúng bảng permissions của backend và ghi thật vào role_permissions —
+// trước nay bảng đó chỉ được ghi một lần duy nhất bởi cmd/seed.
 
 interface Props {
-  /** the roleId */
-  roleId: number;
+  /** vai trò đang sửa */
+  roleId: string;
 }
 
 const props = defineProps<Props>();
@@ -15,88 +21,83 @@ const visible = defineModel<boolean>('visible', {
   default: false
 });
 
-function closeModal() {
+const title = computed(() => $t('page.manage.role.buttonAuth'));
+
+const treeRef = ref<InstanceType<typeof ElTree>>();
+const loading = ref(false);
+const submitting = ref(false);
+const tree = ref<any[]>([]);
+const checked = ref<string[]>([]);
+
+function buildTree(permissions: Api.SystemManage.Permission[]) {
+  // Gom theo module để danh sách vài chục mã quyền còn đọc được; tick ở nhánh
+  // cha là tick cả module.
+  const byModule = new Map<string, Api.SystemManage.Permission[]>();
+  permissions.forEach(p => {
+    const key = p.module || 'khác';
+    if (!byModule.has(key)) byModule.set(key, []);
+    byModule.get(key)!.push(p);
+  });
+
+  return [...byModule.entries()].map(([module, items]) => ({
+    id: `module:${module}`,
+    label: module,
+    children: items.map(p => ({
+      id: p.id,
+      label: p.name ? `${p.name} (${p.code})` : p.code
+    }))
+  }));
+}
+
+async function init() {
+  if (!props.roleId) return;
+  loading.value = true;
+  const [all, mine] = await Promise.all([fetchGetAllPermissions(), fetchGetRolePermissions(props.roleId)]);
+  loading.value = false;
+
+  if (all.error || mine.error) {
+    tree.value = [];
+    checked.value = [];
+    return;
+  }
+  tree.value = buildTree(all.data || []);
+  checked.value = mine.data || [];
+  // setCheckedKeys phải chạy sau khi cây đã dựng xong node.
+  requestAnimationFrame(() => treeRef.value?.setCheckedKeys(checked.value, false));
+}
+
+async function handleSubmit() {
+  // Chỉ lấy node lá: node cha là nhãn module, không phải mã quyền thật.
+  const keys = (treeRef.value?.getCheckedKeys(true) || []) as string[];
+  submitting.value = true;
+  const { error } = await fetchUpdateRolePermissions(props.roleId, keys.map(String));
+  submitting.value = false;
+  if (error) return;
+  // Quyền nằm trong token, nên người bị đổi quyền phải đăng nhập lại mới thấy.
+  ElMessage.success($t('page.manage.role.permissionSaved'));
   visible.value = false;
 }
 
-const title = computed(() => $t('common.edit') + $t('page.manage.role.buttonAuth'));
-
-type ButtonConfig = {
-  id: number;
-  label: string;
-  code: string;
-};
-
-const tree = shallowRef<ButtonConfig[]>([]);
-
-async function getAllButtons() {
-  // request
-  tree.value = [
-    { id: 1, label: 'button1', code: 'code1' },
-    { id: 2, label: 'button2', code: 'code2' },
-    { id: 3, label: 'button3', code: 'code3' },
-    { id: 4, label: 'button4', code: 'code4' },
-    { id: 5, label: 'button5', code: 'code5' },
-    { id: 6, label: 'button6', code: 'code6' },
-    { id: 7, label: 'button7', code: 'code7' },
-    { id: 8, label: 'button8', code: 'code8' },
-    { id: 9, label: 'button9', code: 'code9' },
-    { id: 10, label: 'button10', code: 'code10' }
-  ];
-}
-
-const checks = shallowRef<number[]>([]);
-
-async function getChecks() {
-  // eslint-disable-next-line no-console
-  console.log(props.roleId);
-  // request
-  checks.value = [1, 2, 3, 4, 5];
-}
-
-function checkChange(val: ButtonConfig) {
-  const idx = checks.value.indexOf(val.id);
-  if (idx === -1) {
-    checks.value.push(val.id);
-  } else {
-    checks.value.splice(idx, 1);
-  }
-}
-
-function handleSubmit() {
-  // eslint-disable-next-line no-console
-  console.log(checks.value, props.roleId);
-  // request
-
-  window.$message?.success?.($t('common.modifySuccess'));
-
-  closeModal();
-}
-
-function init() {
-  getAllButtons();
-  getChecks();
-}
-
-// init
-init();
+watch(visible, () => {
+  if (visible.value) init();
+});
 </script>
 
 <template>
-  <ElDialog v-model="visible" :title="title" preset="card" class="w-480px">
+  <ElDialog v-model="visible" :title="title" class="w-560px">
     <ElTree
-      v-model:checked-keys="checks"
+      ref="treeRef"
+      v-loading="loading"
       :data="tree"
       node-key="id"
       show-checkbox
-      class="h-280px overflow-y-auto"
-      :default-checked-keys="checks"
-      @check-change="checkChange"
+      default-expand-all
+      class="h-320px overflow-y-auto"
     />
     <template #footer>
       <ElSpace class="w-full justify-end">
-        <ElButton size="small" class="mt-16px" @click="closeModal">{{ $t('common.cancel') }}</ElButton>
-        <ElButton type="primary" size="small" class="mt-16px" @click="handleSubmit">
+        <ElButton size="small" @click="visible = false">{{ $t('common.cancel') }}</ElButton>
+        <ElButton type="primary" size="small" :loading="submitting" @click="handleSubmit">
           {{ $t('common.confirm') }}
         </ElButton>
       </ElSpace>

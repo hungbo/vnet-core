@@ -26,14 +26,16 @@ function formatCurrency(n: number) {
 
 <style scoped>
 .balance-section {
-	width: 320px;
+	/* Rộng bằng thanh, không cố định 320px: thanh chỉ 360px nên con số cứng đó
+	   vừa tràn vừa lệch với lưới nút bên dưới. */
+	width: 100%;
 }
 
 .balance-card {
-	background: #fff;
+	background: var(--vnet-surface);
 	border-radius: 12px;
 	padding: 16px 20px;
-	box-shadow: 0 2px 12px rgba(0,0,0,.06);
+	box-shadow: var(--vnet-shadow);
 }
 
 .balance-row {
@@ -51,17 +53,17 @@ function formatCurrency(n: number) {
 
 .balance-label {
 	font-size: 13px;
-	color: #909399;
+	color: var(--vnet-text-muted);
 }
 
 .balance-value {
 	font-weight: 600;
 	font-size: 16px;
-	color: #303133;
+	color: var(--vnet-text);
 }
 
 .balance-value.primary {
-	color: #67c23a;
+	color: var(--vnet-success);
 	font-size: 20px;
 }
 </style>

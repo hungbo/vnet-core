@@ -338,7 +338,6 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     vnet_categories: 'carbon:category',
 
     vnet_suppliers: 'carbon:enterprise',
-    vnet_warehouses: 'carbon:box',
     'vnet_stock-transactions': 'carbon:change-catalog',
     vnet_combos: 'mdi:package-variant-closed',
     vnet_shifts: 'carbon:calendar',
@@ -349,7 +348,17 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     vnet_backups: 'mdi:backup-restore',
     vnet_audit: 'mdi:clipboard-text-outline',
     'vnet_machine-groups': 'carbon:data-center',
-    'vnet_member-groups': 'carbon:user-multiple'
+    'vnet_member-groups': 'carbon:user-multiple',
+    vnet_notifications: 'carbon:notification',
+    vnet_attendance: 'carbon:event',
+    'vnet_machine-assets': 'carbon:tool-box',
+    vnet_cards: 'carbon:purchase',
+    'vnet_inventory-counts': 'carbon:list-checked',
+    vnet_feedback: 'carbon:star',
+    vnet_curfew: 'carbon:moon',
+    vnet_printers: 'carbon:printer',
+    'vnet_website-blocking': 'carbon:content-view',
+    'vnet_app-updates': 'carbon:upgrade'
   };
 
   const children = vnet.children.map(c => ({
@@ -363,11 +372,14 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
       key: 'vnet_management',
       i18nKey: 'route.vnet_management',
       icon: 'carbon:user-admin',
+      // Ai và cái gì đang có trong quán: người, máy, và phiên chơi nối hai thứ đó.
       children: [
         'vnet_members',
+        'vnet_member-groups',
+        'vnet_attendance',
         'vnet_machines',
         'vnet_machine-groups',
-        'vnet_member-groups',
+        'vnet_machine-assets',
         'vnet_sessions',
         'vnet_transactions'
       ]
@@ -376,27 +388,48 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
       key: 'vnet_business',
       i18nKey: 'route.vnet_business',
       icon: 'carbon:shopping-cart',
+      // Bán gì và lấy hàng từ đâu. Kiểm kê nằm cạnh Tồn kho vì nó sửa chính
+      // con số đó; thẻ nạp nằm cạnh Gói dịch vụ vì cùng là thứ bán ở quầy.
       children: [
         'vnet_orders',
         'vnet_products',
         'vnet_categories',
         'vnet_combos',
+        'vnet_cards',
         'vnet_suppliers',
-        'vnet_warehouses',
-        'vnet_stock-transactions'
+        'vnet_stock-transactions',
+        'vnet_inventory-counts'
       ]
     },
     {
       key: 'vnet_operations',
       i18nKey: 'route.vnet_operations',
       icon: 'carbon:settings-adjust',
-      children: ['vnet_shifts', 'vnet_bookings', 'vnet_promotions', 'vnet_reports']
+      // Việc chạy hằng ngày ở quầy.
+      children: [
+        'vnet_shifts',
+        'vnet_bookings',
+        'vnet_promotions',
+        'vnet_curfew',
+        'vnet_notifications',
+        'vnet_feedback',
+        'vnet_reports'
+      ]
     },
     {
       key: 'vnet_system',
       i18nKey: 'route.vnet_system',
       icon: 'carbon:settings',
-      children: ['vnet_settings', 'vnet_backups', 'vnet_audit']
+      // Cấu hình hạ tầng và dấu vết vận hành — thứ nhân viên bình thường
+      // không đụng tới hằng ngày.
+      children: [
+        'vnet_settings',
+        'vnet_printers',
+        'vnet_website-blocking',
+        'vnet_app-updates',
+        'vnet_backups',
+        'vnet_audit'
+      ]
     }
   ];
 
@@ -425,6 +458,9 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     } as App.Global.Menu);
   });
 
+  // Trang mới chưa được xếp nhóm vẫn hiện ra, nhưng nằm phẳng ở cấp cao nhất.
+  // Đó là nhánh dự phòng để không mất trang, KHÔNG phải chỗ để trang ở lại:
+  // thêm trang mới thì xếp nó vào một nhóm ở trên.
   const ungrouped = children.filter(c => !groupedKeys.has(c.routeKey as string) && c.routeKey !== 'vnet_dashboard');
   if (ungrouped.length) {
     topLevelMenus.push(...ungrouped);

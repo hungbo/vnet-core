@@ -1,25 +1,22 @@
 package handler
 
 import (
-	"log"
-
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/internal/service"
+	"github.com/vnet/core/pkg/jwt"
 	"github.com/vnet/core/pkg/response"
-	"gorm.io/gorm"
 )
 
 type AuthHandler struct {
-	db         *gorm.DB
-	svc        *service.AuthService
-	sessionSvc *service.SessionService
+	svc *service.AuthService
 }
 
-func NewAuthHandler(db *gorm.DB, svc *service.AuthService, sessionSvc *service.SessionService) *AuthHandler {
+func NewAuthHandler(svc *service.AuthService) *AuthHandler {
+	// Giữ tham chiếu cho Swagger sinh được kiểu trả về của /auth/permissions.
 	_ = model.Permission{}
-	return &AuthHandler{db: db, svc: svc, sessionSvc: sessionSvc}
+	return &AuthHandler{svc: svc}
 }
 
 // Login
@@ -93,27 +90,39 @@ func (h *AuthHandler) MemberLogin(c *gin.Context) {
 		return
 	}
 
+	// Mở phiên nằm trong MemberLogin: đăng nhập được mà không mở được phiên là
+	// khách ngồi máy không ai tính tiền, nên hai việc đó phải thành hoặc bại
+	// cùng nhau.
 	result, err := h.svc.MemberLogin(&req)
 	if err != nil {
 		response.Unauthorized(c, err.Error())
 		return
 	}
 
-	if req.MachineCode != "" && result.User.Role != "admin" {
-		var machine model.Machine
-		if err := h.db.Where("machine_code = ? AND is_active = ?", req.MachineCode, true).First(&machine).Error; err != nil {
-			log.Printf("session auto-start: machine not found for code %q: %v", req.MachineCode, err)
-		} else {
-			session, err := h.sessionSvc.StartSession(&service.StartRequest{
-				MachineID: machine.ID,
-				MemberID:  result.User.ID,
-			})
-			if err != nil {
-				log.Printf("session auto-start failed for member %s on machine %s: %v", result.User.ID, req.MachineCode, err)
-			} else if session != nil {
-				result.SessionID = session.ID
-			}
-		}
+	response.Success(c, result)
+}
+
+// ClientLogin
+// @Summary      Client Login (staff or member)
+// @Description  Một ô đăng nhập cho cả nhân viên lẫn hội viên; tên tài khoản quyết định đường đi
+// @Tags         Auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body  service.MemberLoginRequest  true  "Tài khoản, mật khẩu, mã máy"
+// @Success      200   {object}  response.Response{data=service.ClientLoginResponse}
+// @Failure      401   {object}  response.Response
+// @Router       /api/auth/client-login [post]
+func (h *AuthHandler) ClientLogin(c *gin.Context) {
+	var req service.MemberLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+
+	result, err := h.svc.ClientLogin(&req)
+	if err != nil {
+		response.Unauthorized(c, err.Error())
+		return
 	}
 
 	response.Success(c, result)
@@ -160,9 +169,24 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 func (h *AuthHandler) Me(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
-	result, err := h.svc.GetCurrentUser(userID)
+	// Hội viên và nhân viên nằm ở hai bảng khác nhau; tra nhầm bảng thì hội viên
+	// gọi /auth/me luôn hỏng.
+	var result *service.UserResponse
+	var err error
+	if middleware.GetKind(c) == jwt.KindStaff {
+		result, err = h.svc.GetCurrentUser(userID)
+	} else {
+		result, err = h.svc.GetCurrentMember(userID)
+	}
 	if err != nil {
-		response.NotFound(c, "User not found")
+		// 401 chứ KHÔNG phải 404: token hợp lệ về mặt chữ ký nhưng trỏ tới một
+		// tài khoản không còn tồn tại (tài khoản bị xoá, hoặc database vừa được
+		// phục hồi từ bản sao lưu khác). Đó là lỗi xác thực.
+		//
+		// Trả 404 làm admin không nhận ra: axios chỉ xử lý 401 và ba mã
+		// 9999/8888/7777, nên 404 lọt qua như một lỗi thường và giao diện treo
+		// vĩnh viễn ở màn hình chờ khởi động thay vì quay về trang đăng nhập.
+		response.ForceLogout(c)
 		return
 	}
 
@@ -190,7 +214,8 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.ChangePassword(userID, &req); err != nil {
+	isMember := middleware.GetKind(c) != jwt.KindStaff
+	if err := h.svc.ChangePassword(userID, isMember, &req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}

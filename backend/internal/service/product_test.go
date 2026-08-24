@@ -13,27 +13,53 @@ func TestProductService_List_All(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT count\(\*\) FROM "products" WHERE deleted_at IS NULL`).
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "products" WHERE "products"\."deleted_at" IS NULL`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE deleted_at IS NULL ORDER BY sort_order asc, name asc LIMIT \$1`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE "products"\."deleted_at" IS NULL ORDER BY sort_order asc, name asc LIMIT \$1`).
 		WithArgs(20).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "category_id", "price", "current_stock"}).
 			AddRow("p1", "Coke", nil, int64(10000), float64(0)).
 			AddRow("p2", "Pepsi", nil, int64(10000), float64(0)))
 
-	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE product_id = \$1 ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
 		WithArgs("p1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE product_id = \$1 ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
 		WithArgs("p2").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-	result, err := svc.List(nil, "", 1, 20)
+	result, err := svc.List(nil, "", "", 1, 20)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), result.Total)
 	assert.Len(t, result.Items, 2)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Thẻ danh mục trong thực đơn máy trạm gửi category_id lên và trước đây không ai
+// đọc, nên thẻ nào cũng ra nguyên cả thực đơn. Chốt lại điều kiện WHERE.
+func TestProductService_List_LocTheoDanhMuc(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewProductService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "products" WHERE category_id = \$1 AND "products"\."deleted_at" IS NULL`).
+		WithArgs("c1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE category_id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY sort_order asc, name asc LIMIT \$2`).
+		WithArgs("c1", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "category_id", "price", "current_stock"}).
+			AddRow("p1", "Mì xào bò", "c1", int64(45000), float64(0)))
+
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
+		WithArgs("p1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	result, err := svc.List(nil, "c1", "", 1, 20)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), result.Total)
+	assert.Len(t, result.Items, 1)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -41,11 +67,11 @@ func TestProductService_GetByID_Found(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price"}).AddRow("p1", "Coke", int64(10000)))
 
-	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE product_id = \$1 ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
 		WithArgs("p1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -59,7 +85,7 @@ func TestProductService_GetByID_NotFound(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("nonexistent", 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
@@ -78,7 +104,7 @@ func TestProductService_Create(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
 	mock.ExpectCommit()
 
-	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE product_id = \$1 ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
 		WithArgs(testUUID).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -102,7 +128,7 @@ func TestProductService_Create_WithCurrentStock(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
 	mock.ExpectCommit()
 
-	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE product_id = \$1 ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
 		WithArgs(testUUID).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -124,12 +150,12 @@ func TestProductService_GetByID_HasStock_WithCurrentStock(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "has_stock", "current_stock"}).
 			AddRow("p1", "Water", true, float64(50)))
 
-	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE product_id = \$1 ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
 		WithArgs("p1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -144,12 +170,12 @@ func TestProductService_GetByID_HasStock_NoBOM(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "has_stock"}).
 			AddRow("p1", "Coffee", true))
 
-	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE product_id = \$1 ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
 		WithArgs("p1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -164,7 +190,7 @@ func TestProductService_Update_CurrentStock(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "has_stock"}).
 			AddRow("p1", "Water", false))
@@ -174,12 +200,12 @@ func TestProductService_Update_CurrentStock(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"."id" = \$2 ORDER BY "products"."id" LIMIT \$3`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL AND "products"\."id" = \$2 ORDER BY "products"\."id" LIMIT \$3`).
 		WithArgs("p1", "p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "has_stock", "current_stock"}).
 			AddRow("p1", "Water", true, float64(30)))
 
-	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE product_id = \$1 ORDER BY sort_order asc`).
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
 		WithArgs("p1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
@@ -197,7 +223,7 @@ func TestProductService_Delete_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND deleted_at IS NULL ORDER BY "products"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("p1", "Test"))
 

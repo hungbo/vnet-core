@@ -12,6 +12,7 @@ import (
 	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ComboService struct {
@@ -32,20 +33,20 @@ type ComboListRequest struct {
 }
 
 type ComboResponse struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	Type         string   `json:"type"`
-	SlotStart    string   `json:"slot_start"`
-	SlotEnd      string   `json:"slot_end"`
-	ApplyDays    []int    `json:"apply_days"`
-	TotalMinutes int      `json:"total_minutes"`
-	ValidityDays int      `json:"validity_days"`
-	Price        int64    `json:"price"`
-	MemberPrefix string   `json:"member_prefix"`
-	MemberCount  int      `json:"member_count"`
-	IsActive     bool     `json:"is_active"`
-	CreatedAt    string   `json:"created_at"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	Type         string `json:"type"`
+	SlotStart    string `json:"slot_start"`
+	SlotEnd      string `json:"slot_end"`
+	ApplyDays    []int  `json:"apply_days"`
+	TotalMinutes int    `json:"total_minutes"`
+	ValidityDays int    `json:"validity_days"`
+	Price        int64  `json:"price"`
+	MemberPrefix string `json:"member_prefix"`
+	MemberCount  int    `json:"member_count"`
+	IsActive     bool   `json:"is_active"`
+	CreatedAt    string `json:"created_at"`
 }
 
 type CreateComboRequest struct {
@@ -57,8 +58,9 @@ type CreateComboRequest struct {
 	ApplyDays    []int  `json:"apply_days"`
 	TotalMinutes int    `json:"total_minutes"`
 	ValidityDays int    `json:"validity_days"`
-	Price        int64  `json:"price" binding:"required,min=0"`
-	IsActive     bool   `json:"is_active"`
+	// required và min=0 mâu thuẫn nhau; gói miễn phí là hợp lệ.
+	Price    int64 `json:"price" binding:"min=0"`
+	IsActive bool  `json:"is_active"`
 }
 
 type UpdateComboRequest struct {
@@ -81,10 +83,25 @@ type PurchaseComboRequest struct {
 	PaymentMethod string `json:"payment_method" binding:"required"`
 }
 
-
-
 type ActivateComboRequest struct {
 	MachineID string `json:"machine_id" binding:"required"`
+}
+
+// optionalClock turns a "HH:MM:SS" form value into a nullable column value.
+// An empty string is not a valid SQL time, so a combo without a fixed slot has
+// to store NULL rather than "".
+func optionalClock(v string) *string {
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+func clockValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
 }
 
 func (s *ComboService) List(req *ComboListRequest) (*pagination.Result, error) {
@@ -109,7 +126,7 @@ func (s *ComboService) List(req *ComboListRequest) (*pagination.Result, error) {
 	}
 
 	var combos []model.Combo
-	query := s.db.Where("deleted_at IS NULL")
+	query := s.db
 	if p.Search != "" {
 		query = query.Where("name ILIKE ?", "%"+p.Search+"%")
 	}
@@ -131,7 +148,7 @@ func (s *ComboService) List(req *ComboListRequest) (*pagination.Result, error) {
 
 func (s *ComboService) GetByID(id string) (*ComboResponse, error) {
 	var combo model.Combo
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&combo).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&combo).Error; err != nil {
 		return nil, err
 	}
 	result := comboToResponse(combo)
@@ -139,14 +156,21 @@ func (s *ComboService) GetByID(id string) (*ComboResponse, error) {
 }
 
 func (s *ComboService) Create(req *CreateComboRequest) (*ComboResponse, error) {
+	if req.Type == "fixed_slot" && (req.SlotStart == "" || req.SlotEnd == "") {
+		return nil, errors.New("slot_start and slot_end are required for fixed_slot type")
+	}
+	if req.Type == "prepaid" && req.TotalMinutes <= 0 {
+		return nil, errors.New("total_minutes must be > 0 for prepaid type")
+	}
+
 	prefix := generateMemberPrefix(req.Name)
 
 	combo := model.Combo{
 		Name:         req.Name,
 		Description:  req.Description,
 		Type:         req.Type,
-		SlotStart:    req.SlotStart,
-		SlotEnd:      req.SlotEnd,
+		SlotStart:    optionalClock(req.SlotStart),
+		SlotEnd:      optionalClock(req.SlotEnd),
 		ApplyDays:    req.ApplyDays,
 		TotalMinutes: req.TotalMinutes,
 		ValidityDays: req.ValidityDays,
@@ -177,8 +201,15 @@ func (s *ComboService) Create(req *CreateComboRequest) (*ComboResponse, error) {
 
 func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboResponse, error) {
 	var combo model.Combo
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&combo).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&combo).Error; err != nil {
 		return nil, err
+	}
+
+	if req.Type == "fixed_slot" && req.SlotStart == "" && req.SlotEnd == "" && (clockValue(combo.SlotStart) == "" || clockValue(combo.SlotEnd) == "") {
+		return nil, errors.New("slot_start and slot_end are required for fixed_slot type")
+	}
+	if req.Type == "prepaid" && req.TotalMinutes <= 0 && combo.TotalMinutes <= 0 {
+		return nil, errors.New("total_minutes must be > 0 for prepaid type")
 	}
 
 	updates := map[string]interface{}{}
@@ -233,7 +264,7 @@ func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboRespons
 
 func (s *ComboService) Delete(id string) error {
 	var combo model.Combo
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&combo).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&combo).Error; err != nil {
 		return err
 	}
 	now := time.Now()
@@ -255,23 +286,33 @@ func (s *ComboService) Delete(id string) error {
 
 func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userID string) (*ComboPurchaseResponse, error) {
 	var combo model.Combo
-	if err := s.db.Where("id = ? AND deleted_at IS NULL AND is_active = ?", comboID, true).First(&combo).Error; err != nil {
+	if err := s.db.Where("id = ? AND is_active = ?", comboID, true).First(&combo).Error; err != nil {
 		return nil, errors.New("combo not found or inactive")
 	}
 
 	memberID := req.MemberID
+	var generatedPassword string
 
 	if memberID == "" {
 		if combo.MemberPrefix == "" {
 			return nil, errors.New("member prefix not configured on this combo")
 		}
 
-		combo.MemberCount++
-		memberCode := fmt.Sprintf("%s-%04d", combo.MemberPrefix, combo.MemberCount)
+		tx := s.db.Begin()
+
+		var lockedCombo model.Combo
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedCombo, "id = ?", comboID).Error; err != nil {
+			tx.Rollback()
+			return nil, errors.New("combo not found")
+		}
+
+		newCount := lockedCombo.MemberCount + 1
+		memberCode := fmt.Sprintf("%s-%04d", combo.MemberPrefix, newCount)
 
 		randomBytes := make([]byte, 16)
 		rand.Read(randomBytes)
 		randomPass := hex.EncodeToString(randomBytes)
+		generatedPassword = randomPass
 		passHash, _ := utils.HashPassword(randomPass)
 
 		member := model.Member{
@@ -281,12 +322,22 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 			Phone:        req.CustomerPhone,
 			IsActive:     true,
 		}
-		if err := s.db.Create(&member).Error; err != nil {
+		if err := tx.Create(&member).Error; err != nil {
+			tx.Rollback()
 			return nil, err
 		}
 		memberID = member.ID
 
-		s.db.Model(&combo).Update("member_count", combo.MemberCount)
+		if err := tx.Model(&lockedCombo).Update("member_count", newCount).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+
+		if err := tx.Commit().Error; err != nil {
+			return nil, err
+		}
+
+		combo.MemberCount = newCount
 	}
 
 	var expiresAt *time.Time
@@ -305,29 +356,69 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 		ExpiresAt:        expiresAt,
 	}
 
-	if err := s.db.Create(&purchase).Error; err != nil {
+	// Purchase and payment are one unit of work: a combo must never exist
+	// without the matching money movement, and an unpayable purchase must not
+	// be created at all.
+	payTx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			payTx.Rollback()
+		}
+	}()
+
+	var member model.Member
+	if err := payTx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		First(&member, "id = ?", memberID).Error; err != nil {
+		payTx.Rollback()
+		return nil, errors.New("member not found")
+	}
+
+	balanceAfter := member.Balance
+	if req.PaymentMethod == PaymentMethodBalance {
+		if member.Balance < combo.Price {
+			payTx.Rollback()
+			return nil, errors.New("insufficient balance to purchase this combo")
+		}
+		balanceAfter = member.Balance - combo.Price
+	}
+
+	if err := payTx.Create(&purchase).Error; err != nil {
+		payTx.Rollback()
 		return nil, err
 	}
 
-	var member model.Member
-	if err := s.db.First(&member, "id = ?", memberID).Error; err == nil {
-		trans := model.MemberTransaction{
-			MemberID:        memberID,
-			TransactionType: "combo_purchase",
-			Amount:          -combo.Price,
-			BalanceBefore:   member.Balance,
-			BalanceAfter:    member.Balance - combo.Price,
-			PaymentMethod:   req.PaymentMethod,
-			ReferenceID:     &purchase.ID,
-			Description:     fmt.Sprintf("Purchase combo: %s", combo.Name),
-			CreatedAt:       time.Now(),
-		}
-		if userID != "" {
-			trans.CreatedBy = &userID
-		}
-		s.db.Create(&trans)
+	trans := model.MemberTransaction{
+		MemberID:        memberID,
+		TransactionType: "combo_purchase",
+		Amount:          -combo.Price,
+		BalanceBefore:   member.Balance,
+		BalanceAfter:    balanceAfter,
+		PaymentMethod:   req.PaymentMethod,
+		ReferenceID:     &purchase.ID,
+		Description:     fmt.Sprintf("Purchase combo: %s", combo.Name),
+		CreatedAt:       time.Now(),
+	}
+	if userID != "" {
+		trans.CreatedBy = &userID
+	}
+	if err := payTx.Create(&trans).Error; err != nil {
+		payTx.Rollback()
+		return nil, err
+	}
 
-		s.db.Model(&member).Update("total_spent", member.TotalSpent+combo.Price)
+	updates := map[string]interface{}{
+		"total_spent": member.TotalSpent + combo.Price,
+	}
+	if req.PaymentMethod == PaymentMethodBalance {
+		updates["balance"] = balanceAfter
+	}
+	if err := payTx.Model(&member).Updates(updates).Error; err != nil {
+		payTx.Rollback()
+		return nil, err
+	}
+
+	if err := payTx.Commit().Error; err != nil {
+		return nil, err
 	}
 
 	auditMetadata := map[string]interface{}{
@@ -351,7 +442,7 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 		Metadata:   auditMetadata,
 	})
 
-	result := purchaseToResponse(purchase)
+	result := purchaseToResponseWithPassword(purchase, combo.Name, generatedPassword)
 	return &result, nil
 }
 
@@ -370,13 +461,31 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 		return nil, errors.New("combo not found")
 	}
 
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	var machine model.Machine
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_active = ?", req.MachineID, true).First(&machine).Error; err != nil {
+		tx.Rollback()
+		return nil, errors.New("machine not found")
+	}
+
+	if machine.Status == "in_use" {
+		tx.Rollback()
+		return nil, errors.New("machine is already in use")
+	}
+
 	now := time.Now()
 	activatedAt := now
 	var slotEnd *time.Time
 	var remainingMinutes *int
 
-	if combo.SlotEnd != "" {
-		parts := strings.Split(combo.SlotEnd, ":")
+	if slotClock := clockValue(combo.SlotEnd); slotClock != "" {
+		parts := strings.Split(slotClock, ":")
 		if len(parts) >= 2 {
 			h, m := 0, 0
 			fmt.Sscanf(parts[0], "%d", &h)
@@ -396,23 +505,37 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 		MachineID:        req.MachineID,
 		MemberID:         &purchase.MemberID,
 		ComboType:        combo.Type,
-		ComboID:          &combo.ID,
+		ComboID:          &purchase.ID,
 		SlotEnd:          slotEnd,
 		RemainingMinutes: remainingMinutes,
 		StartedAt:        now,
 		IsActive:         true,
 	}
 
-	if err := s.db.Create(&session).Error; err != nil {
+	if err := tx.Create(&session).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	machine.Status = "in_use"
+	if err := tx.Save(&machine).Error; err != nil {
+		tx.Rollback()
 		return nil, err
 	}
 
 	updates := map[string]interface{}{
-		"activated":         true,
-		"activated_at":      activatedAt,
+		"activated":          true,
+		"activated_at":       activatedAt,
 		"current_session_id": session.ID,
 	}
-	s.db.Model(&purchase).Updates(updates)
+	if err := tx.Model(&purchase).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
 
 	purchase.Activated = true
 	purchase.ActivatedAt = &activatedAt
@@ -430,7 +553,7 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 		},
 	})
 
-	result := purchaseToResponse(purchase)
+	result := purchaseToResponse(purchase, combo.Name)
 	return &result, nil
 }
 
@@ -440,8 +563,8 @@ func comboToResponse(c model.Combo) ComboResponse {
 		Name:         c.Name,
 		Description:  c.Description,
 		Type:         c.Type,
-		SlotStart:    c.SlotStart,
-		SlotEnd:      c.SlotEnd,
+		SlotStart:    clockValue(c.SlotStart),
+		SlotEnd:      clockValue(c.SlotEnd),
 		ApplyDays:    c.ApplyDays,
 		TotalMinutes: c.TotalMinutes,
 		ValidityDays: c.ValidityDays,
@@ -454,23 +577,26 @@ func comboToResponse(c model.Combo) ComboResponse {
 }
 
 type ComboPurchaseResponse struct {
-	ID               string     `json:"id"`
-	ComboID          string     `json:"combo_id"`
-	MemberID         string     `json:"member_id"`
-	Price            int64      `json:"price"`
-	PaymentMethod    string     `json:"payment_method"`
-	Activated        bool       `json:"activated"`
-	ActivatedAt      *time.Time `json:"activated_at"`
-	CurrentSessionID *string    `json:"current_session_id"`
-	RemainingMinutes int        `json:"remaining_minutes"`
-	ExpiresAt        *time.Time `json:"expires_at"`
-	CreatedAt        time.Time  `json:"created_at"`
+	ID                string     `json:"id"`
+	ComboID           string     `json:"combo_id"`
+	ComboName         string     `json:"combo_name"`
+	MemberID          string     `json:"member_id"`
+	Price             int64      `json:"price"`
+	PaymentMethod     string     `json:"payment_method"`
+	Activated         bool       `json:"activated"`
+	ActivatedAt       *time.Time `json:"activated_at"`
+	CurrentSessionID  *string    `json:"current_session_id"`
+	RemainingMinutes  int        `json:"remaining_minutes"`
+	ExpiresAt         *time.Time `json:"expires_at"`
+	CreatedAt         time.Time  `json:"created_at"`
+	GeneratedPassword string     `json:"generated_password,omitempty"`
 }
 
-func purchaseToResponse(p model.ComboPurchase) ComboPurchaseResponse {
+func purchaseToResponse(p model.ComboPurchase, comboName string) ComboPurchaseResponse {
 	return ComboPurchaseResponse{
 		ID:               p.ID,
 		ComboID:          p.ComboID,
+		ComboName:        comboName,
 		MemberID:         p.MemberID,
 		Price:            p.Price,
 		PaymentMethod:    p.PaymentMethod,
@@ -481,6 +607,14 @@ func purchaseToResponse(p model.ComboPurchase) ComboPurchaseResponse {
 		ExpiresAt:        p.ExpiresAt,
 		CreatedAt:        p.CreatedAt,
 	}
+}
+
+func purchaseToResponseWithPassword(p model.ComboPurchase, comboName, password string) ComboPurchaseResponse {
+	r := purchaseToResponse(p, comboName)
+	if password != "" {
+		r.GeneratedPassword = password
+	}
+	return r
 }
 
 func generateMemberPrefix(name string) string {

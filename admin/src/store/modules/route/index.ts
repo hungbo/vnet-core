@@ -182,6 +182,15 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
       await authStore.initUserInfo();
     }
 
+    // initUserInfo đã tự đăng xuất nếu token không còn dùng được (tài khoản bị
+    // xoá, database vừa phục hồi từ bản sao lưu khác). Đi tiếp sẽ gọi
+    // getUserRoutes KHÔNG kèm token, hỏng lần hai, và setIsInitAuthRoute(true)
+    // không bao giờ chạy — giao diện đứng vĩnh viễn ở màn hình chờ khởi động
+    // thay vì về trang đăng nhập.
+    if (!authStore.userInfo.id) {
+      return;
+    }
+
     if (authRouteMode.value === 'static') {
       initStaticAuthRoute();
     } else {

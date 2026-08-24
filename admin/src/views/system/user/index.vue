@@ -1,7 +1,8 @@
 <script setup lang="tsx">
 import { ref } from 'vue';
+import dayjs from 'dayjs';
 import { enableStatusRecord, userGenderRecord } from '@/constants/business';
-import { fetchGetUserList } from '@/service/api';
+import { fetchBatchDeleteUser, fetchDeleteUser, fetchGetUserList } from '@/service/api';
 import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { $t } from '@/locales';
 import UserOperateDrawer from './modules/user-operate-drawer.vue';
@@ -64,6 +65,17 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
     { prop: 'userPhone', label: $t('page.manage.user.userPhone'), width: 120 },
     { prop: 'userEmail', label: $t('page.manage.user.userEmail'), minWidth: 200 },
     {
+      // last_login_at ĐƯỢC ghi mỗi lần đăng nhập nhưng chưa API nào trả ra, nên
+      // không cách nào biết tài khoản nào lâu rồi không ai dùng.
+      prop: 'lastLoginTime',
+      label: $t('page.manage.user.lastLogin'),
+      width: 150,
+      formatter: row =>
+        (row as any).lastLoginTime
+          ? dayjs((row as any).lastLoginTime).format('DD/MM/YYYY HH:mm')
+          : $t('page.manage.user.neverLoggedIn')
+    },
+    {
       prop: 'status',
       label: $t('page.manage.user.userStatus'),
       align: 'center',
@@ -92,7 +104,7 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
           <ElButton type="primary" plain size="small" onClick={() => edit(row.id)}>
             {$t('common.edit')}
           </ElButton>
-          <ElPopconfirm title={$t('common.confirmDelete')} onConfirm={() => handleDelete(row.id)}>
+          <ElPopconfirm title={$t('common.confirmDelete')} onConfirm={() => handleDelete(row.id as unknown as string)}>
             {{
               reference: () => (
                 <ElButton type="danger" plain size="small">
@@ -120,18 +132,15 @@ const {
 } = useTableOperate(data, 'id', getData);
 
 async function handleBatchDelete() {
-  // eslint-disable-next-line no-console
-  console.log(checkedRowKeys.value);
-  // request
-
+  if (!checkedRowKeys.value.length) return;
+  const { error } = await fetchBatchDeleteUser(checkedRowKeys.value.map(String));
+  if (error) return;
   onBatchDeleted();
 }
 
-function handleDelete(id: number) {
-  // eslint-disable-next-line no-console
-  console.log(id);
-  // request
-
+async function handleDelete(id: string) {
+  const { error } = await fetchDeleteUser(String(id));
+  if (error) return;
   onDeleted();
 }
 

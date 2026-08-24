@@ -1,16 +1,14 @@
 <template>
 	<div class="service-menu">
 		<header class="menu-header">
-			<el-button text @click="$emit('back')">
+			<!-- Cửa sổ riêng thì không có chỗ nào để "quay lại" — đóng cửa sổ là xong. -->
+			<el-button v-if="!standalone" text @click="$emit('back')">
 				<el-icon><ArrowLeft /></el-icon>
 				Quay lại
 			</el-button>
+			<span v-else class="header-spacer" />
 			<h3>Đồ ăn &amp; Nước uống</h3>
-			<el-badge :value="order.cartCount" :hidden="order.cartCount === 0">
-				<el-button text circle @click="order.showCart = true">
-					<el-icon><ShoppingCart /></el-icon>
-				</el-button>
-			</el-badge>
+			<span class="header-spacer" />
 		</header>
 
 		<div class="menu-categories">
@@ -20,22 +18,25 @@
 			</el-radio-group>
 		</div>
 
-		<main class="menu-grid">
-			<ProductCard
-				v-for="p in products" :key="p.id"
-				:product="p"
-				:color="p.color || 'food'"
-				@select="order.addToCart"
-			/>
-		</main>
+		<!-- Lưới món và giỏ hàng nằm cạnh nhau: chọn món và nhìn giỏ là một việc. -->
+		<div class="menu-content">
+			<main class="menu-grid">
+				<ProductCard
+					v-for="p in products" :key="p.id"
+					:product="p"
+					:color="p.color || 'food'"
+					@select="order.addToCart"
+				/>
+			</main>
 
-		<CartPanel />
+			<CartPanel />
+		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ArrowLeft, ShoppingCart } from '@element-plus/icons-vue'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import { useOrderStore } from '../stores/order.store'
 import ProductCard from '../components/ProductCard.vue'
 import CartPanel from '../components/CartPanel.vue'
@@ -43,6 +44,7 @@ import CartPanel from '../components/CartPanel.vue'
 declare const window: any
 const api = () => window.go?.main?.App
 
+defineProps<{ standalone?: boolean }>()
 const emit = defineEmits<{ back: [] }>()
 
 const order = useOrderStore()
@@ -71,7 +73,7 @@ onMounted(async () => {
 	height: 100vh;
 	display: flex;
 	flex-direction: column;
-	background: #f0f2f5;
+	background: var(--vnet-bg);
 }
 
 .menu-header {
@@ -79,7 +81,7 @@ onMounted(async () => {
 	align-items: center;
 	justify-content: space-between;
 	padding: 12px 16px;
-	background: #fff;
+	background: var(--vnet-surface);
 	box-shadow: 0 1px 4px rgba(0,0,0,.08);
 }
 
@@ -90,9 +92,15 @@ onMounted(async () => {
 
 .menu-categories {
 	padding: 12px 16px;
-	background: #fff;
+	background: var(--vnet-surface);
 	overflow-x: auto;
 	white-space: nowrap;
+}
+
+.menu-content {
+	flex: 1;
+	display: flex;
+	min-height: 0;
 }
 
 .menu-grid {
@@ -102,5 +110,8 @@ onMounted(async () => {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
 	gap: 12px;
+	/* Lưới là khối co giãn cao hết cửa sổ, nên hàng duy nhất giãn theo và mỗi ô
+	   cao bằng cả màn hình. align-content: start giữ ô cao đúng bằng nội dung. */
+	align-content: start;
 }
 </style>

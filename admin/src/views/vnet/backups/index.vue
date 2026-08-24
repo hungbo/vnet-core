@@ -25,7 +25,11 @@ function formatFileSize(bytes: number) {
 }
 
 function statusType(status: string): any {
-  const map: Record<string, string> = { running: 'warning', completed: 'success', failed: 'danger' };
+  const map: Record<string, string> = {
+    running: 'warning',
+    completed: 'success',
+    failed: 'danger'
+  };
   return map[status] || 'info';
 }
 
@@ -42,7 +46,11 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
   api: ({ page, pageSize }) => client.get('/backups', { params: { page, page_size: pageSize } }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'file_name', label: $t('vnetPages.backups.fileName'), minWidth: 200 },
+    {
+      prop: 'file_name',
+      label: $t('vnetPages.backups.fileName'),
+      minWidth: 200
+    },
     {
       prop: 'file_size',
       label: $t('vnetPages.backups.size'),
@@ -56,10 +64,12 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
       formatter: (row: any) => h(ElTag, { type: statusType(row.status) }, () => statusLabel(row.status))
     },
     {
-      prop: 'created_at',
+      // model.BackupLog KHÔNG có created_at, chỉ có started_at — cột cũ đọc một
+      // khoá không tồn tại nên luôn trống.
+      prop: 'started_at',
       label: $t('vnetPages.backups.createdAt'),
       width: 160,
-      formatter: (row: any) => (row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm') : '')
+      formatter: (row: any) => (row.started_at ? dayjs(row.started_at).format('DD/MM/YYYY HH:mm') : '-')
     },
     {
       prop: 'completed_at',
@@ -102,8 +112,21 @@ async function handleRestore(row: any) {
   } catch (_) {}
 }
 
-function handleDelete(_row: any) {
-  ElMessage.info($t('vnetPages.backups.messages.deleteComingSoon'));
+async function handleDelete(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      $t('vnetPages.backups.messages.deleteConfirm', { file: row.file_name }),
+      $t('common.warning'),
+      {
+        type: 'warning',
+        confirmButtonText: $t('vnetPages.common.delete'),
+        cancelButtonText: $t('vnetPages.common.cancel')
+      }
+    );
+    await client.delete(`/backups/${row.id}`);
+    ElMessage.success($t('vnetPages.backups.messages.deleteSuccess'));
+    await getData();
+  } catch (_) {}
 }
 </script>
 
@@ -113,7 +136,13 @@ function handleDelete(_row: any) {
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.backups.title') }}</span>
-          <TableHeaderOperation v-model:columns="columnChecks" :loading="loading" @refresh="getData">
+          <TableHeaderOperation
+            v-model:columns="columnChecks"
+            :loading="loading"
+            :show-add="false"
+            :show-delete="false"
+            @refresh="getData"
+          >
             <ElButton type="primary" :loading="creating" @click="handleCreateBackup">
               {{ $t('vnetPages.backups.createBackup') }}
             </ElButton>
@@ -128,11 +157,10 @@ function handleDelete(_row: any) {
               {{ $t('vnetPages.backups.restore') }}
             </ElButton>
             <ElButton
-              v-if="['running', 'completed'].includes(row.status)"
+              v-if="row.status !== 'running'"
               size="small"
               type="danger"
-              disabled
-              :title="$t('vnetPages.backups.messages.deleteComingSoon')"
+              @click="handleDelete(row)"
             >
               {{ $t('vnetPages.common.delete') }}
             </ElButton>

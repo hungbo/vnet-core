@@ -1,24 +1,24 @@
 package service
 
 type RouteItem struct {
-	Name      string     `json:"name"`
-	Path      string     `json:"path"`
-	Component string     `json:"component,omitempty"`
-	Meta      RouteMeta  `json:"meta,omitempty"`
-	Props     *bool      `json:"props,omitempty"`
-	Redirect  string     `json:"redirect,omitempty"`
+	Name      string      `json:"name"`
+	Path      string      `json:"path"`
+	Component string      `json:"component,omitempty"`
+	Meta      RouteMeta   `json:"meta,omitempty"`
+	Props     *bool       `json:"props,omitempty"`
+	Redirect  string      `json:"redirect,omitempty"`
 	Children  []RouteItem `json:"children,omitempty"`
 }
 
 type RouteMeta struct {
-	Title              string   `json:"title"`
-	I18nKey            string   `json:"i18nKey,omitempty"`
-	Icon               string   `json:"icon,omitempty"`
-	Order              int      `json:"order,omitempty"`
-	HideInMenu         bool     `json:"hideInMenu,omitempty"`
-	Constant           bool     `json:"constant,omitempty"`
-	KeepAlive          bool     `json:"keepAlive,omitempty"`
-	RequiredPermission string   `json:"-"`
+	Title              string `json:"title"`
+	I18nKey            string `json:"i18nKey,omitempty"`
+	Icon               string `json:"icon,omitempty"`
+	Order              int    `json:"order,omitempty"`
+	HideInMenu         bool   `json:"hideInMenu,omitempty"`
+	Constant           bool   `json:"constant,omitempty"`
+	KeepAlive          bool   `json:"keepAlive,omitempty"`
+	RequiredPermission string `json:"-"`
 }
 
 type UserRoutesResponse struct {
@@ -150,12 +150,6 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Meta:      RouteMeta{Title: "vnet_suppliers", I18nKey: "route.vnet_suppliers"},
 		},
 		{
-			Name:      "vnet_warehouses",
-			Path:      "/vnet/warehouses",
-			Component: "view.vnet_warehouses",
-			Meta:      RouteMeta{Title: "vnet_warehouses", I18nKey: "route.vnet_warehouses"},
-		},
-		{
 			Name:      "vnet_stock-transactions",
 			Path:      "/vnet/stock-transactions",
 			Component: "view.vnet_stock-transactions",
@@ -216,6 +210,60 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Meta:      RouteMeta{Title: "vnet_notifications", I18nKey: "route.vnet_notifications", RequiredPermission: "client.admin"},
 		},
 		{
+			Name:      "vnet_feedback",
+			Path:      "/vnet/feedback",
+			Component: "view.vnet_feedback",
+			Meta:      RouteMeta{Title: "vnet_feedback", I18nKey: "route.vnet_feedback", RequiredPermission: "reports.view"},
+		},
+		{
+			Name:      "vnet_curfew",
+			Path:      "/vnet/curfew",
+			Component: "view.vnet_curfew",
+			Meta:      RouteMeta{Title: "vnet_curfew", I18nKey: "route.vnet_curfew", RequiredPermission: "members.view"},
+		},
+		{
+			Name:      "vnet_machine-assets",
+			Path:      "/vnet/machine-assets",
+			Component: "view.vnet_machine-assets",
+			Meta:      RouteMeta{Title: "vnet_machine-assets", I18nKey: "route.vnet_machine-assets", RequiredPermission: "machines.view"},
+		},
+		{
+			Name:      "vnet_app-updates",
+			Path:      "/vnet/app-updates",
+			Component: "view.vnet_app-updates",
+			Meta:      RouteMeta{Title: "vnet_app-updates", I18nKey: "route.vnet_app-updates", RequiredPermission: "client.admin"},
+		},
+		{
+			Name:      "vnet_website-blocking",
+			Path:      "/vnet/website-blocking",
+			Component: "view.vnet_website-blocking",
+			Meta:      RouteMeta{Title: "vnet_website-blocking", I18nKey: "route.vnet_website-blocking", RequiredPermission: "machines.view"},
+		},
+		{
+			Name:      "vnet_attendance",
+			Path:      "/vnet/attendance",
+			Component: "view.vnet_attendance",
+			Meta:      RouteMeta{Title: "vnet_attendance", I18nKey: "route.vnet_attendance", RequiredPermission: "members.view"},
+		},
+		{
+			Name:      "vnet_inventory-counts",
+			Path:      "/vnet/inventory-counts",
+			Component: "view.vnet_inventory-counts",
+			Meta:      RouteMeta{Title: "vnet_inventory-counts", I18nKey: "route.vnet_inventory-counts", RequiredPermission: "settings.edit"},
+		},
+		{
+			Name:      "vnet_cards",
+			Path:      "/vnet/cards",
+			Component: "view.vnet_cards",
+			Meta:      RouteMeta{Title: "vnet_cards", I18nKey: "route.vnet_cards", RequiredPermission: "members.topup"},
+		},
+		{
+			Name:      "vnet_printers",
+			Path:      "/vnet/printers",
+			Component: "view.vnet_printers",
+			Meta:      RouteMeta{Title: "vnet_printers", I18nKey: "route.vnet_printers", RequiredPermission: "settings.edit"},
+		},
+		{
 			Name:      "vnet_backups",
 			Path:      "/vnet/backups",
 			Component: "view.vnet_backups",
@@ -241,40 +289,40 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 
 	routes := []RouteItem{vnetRoute}
 
-		if hasPerm("client.admin") {
-			routes = append(routes, RouteItem{
-				Name:      "system",
-				Path:      "/system",
-				Component: "layout.base",
-				Meta:      RouteMeta{Title: "system", I18nKey: "route.system", Order: 9, Icon: "carbon:cloud-service-management"},
-				Children: []RouteItem{
-					{
-						Name:      "system_user",
-						Path:      "/system/user",
-						Component: "view.system_user",
-						Meta:      RouteMeta{Title: "system_user", I18nKey: "route.system_user", Order: 1, Icon: "carbon:user-admin"},
-					},
-					{
-						Name:      "system_role",
-						Path:      "/system/role",
-						Component: "view.system_role",
-						Meta:      RouteMeta{Title: "system_role", I18nKey: "route.system_role", Order: 2, Icon: "carbon:user-role"},
-					},
-					{
-						Name:      "system_menu",
-						Path:      "/system/menu",
-						Component: "view.system_menu",
-						Meta:      RouteMeta{Title: "system_menu", I18nKey: "route.system_menu", Order: 3, Icon: "carbon:tree-view"},
-					},
-					{
-						Name:      "system_user-detail",
-						Path:      "/system/user-detail/:id",
-						Component: "view.system_user-detail",
-						Meta:      RouteMeta{Title: "system_user-detail", I18nKey: "route.system_user-detail", HideInMenu: true},
-					},
+	if hasPerm("client.admin") {
+		routes = append(routes, RouteItem{
+			Name:      "system",
+			Path:      "/system",
+			Component: "layout.base",
+			Meta:      RouteMeta{Title: "system", I18nKey: "route.system", Order: 9, Icon: "carbon:cloud-service-management"},
+			Children: []RouteItem{
+				{
+					Name:      "system_user",
+					Path:      "/system/user",
+					Component: "view.system_user",
+					Meta:      RouteMeta{Title: "system_user", I18nKey: "route.system_user", Order: 1, Icon: "carbon:user-admin"},
 				},
-			})
-		}
+				{
+					Name:      "system_role",
+					Path:      "/system/role",
+					Component: "view.system_role",
+					Meta:      RouteMeta{Title: "system_role", I18nKey: "route.system_role", Order: 2, Icon: "carbon:user-role"},
+				},
+				{
+					Name:      "system_menu",
+					Path:      "/system/menu",
+					Component: "view.system_menu",
+					Meta:      RouteMeta{Title: "system_menu", I18nKey: "route.system_menu", Order: 3, Icon: "carbon:tree-view"},
+				},
+				{
+					Name:      "system_user-detail",
+					Path:      "/system/user-detail/:id",
+					Component: "view.system_user-detail",
+					Meta:      RouteMeta{Title: "system_user-detail", I18nKey: "route.system_user-detail", HideInMenu: true},
+				},
+			},
+		})
+	}
 
 	return UserRoutesResponse{
 		Routes: routes,

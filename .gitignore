@@ -5,6 +5,8 @@
 *.so
 *.dylib
 *.test
+# Vite build config, not a Go test binary — required to build the admin
+!admin/.env.test
 *.out
 bin/
 vendor/
@@ -27,6 +29,31 @@ Thumbs.db
 # Env
 .env
 .env.local
+# Build-time Vite config with no secrets. Without it the admin builds broken:
+# it carries VITE_AUTH_ROUTE_MODE, VITE_ROUTE_HOME and the 8888/7777/9999
+# response codes the backend contract depends on.
+!admin/.env
 
 # Build artifacts
 backend/tmp/
+
+# Generated: the admin build is copied here at build time. Only the placeholder
+# is tracked, because go:embed needs the directory to be non-empty.
+backend/cmd/server/embed/*
+!backend/cmd/server/embed/index.html
+
+# Runtime data
+backend/uploads/
+client/tmp/
+
+# Binary do `go build` sinh ra ngay tại thư mục gói — dựng lại được, không phải
+# mã nguồn. Tên trùng tên thư mục nên rất dễ lọt vào commit mà không ai để ý.
+/backend/seed
+/client/src/src
+
+# Gói phát hành dựng thử trên máy (mỗi tệp gần 10MB)
+/client/*.zip
+
+# Kết quả và cache của scripts/verify.py
+__pycache__/
+/verify-results.json

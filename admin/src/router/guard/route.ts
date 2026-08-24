@@ -110,6 +110,16 @@ async function initRoute(to: RouteLocationNormalized): Promise<RouteLocationRaw 
     // initialize the auth route
     await routeStore.initAuthRoute();
 
+    // Khởi tạo thất bại nghĩa là token không dùng được nữa và store đã tự đăng
+    // xuất. Phải TRẢ VỀ một điểm đến ở đây chứ không để resetStore tự gọi
+    // toLogin: gọi router.push từ trong beforeEach của lần điều hướng ĐẦU TIÊN
+    // sẽ huỷ chính lần đó, router.isReady() không bao giờ hoàn tất, app.mount()
+    // không chạy — và người dùng nhìn màn hình chờ khởi động vĩnh viễn.
+    if (!routeStore.isInitAuthRoute) {
+      const loginRoute: RouteKey = 'login';
+      return { name: loginRoute, query: getRouteQueryOfLoginRoute(to, routeStore.routeHome) };
+    }
+
     // the route is captured by the "not-found" route because the auth route is not initialized
     // after the auth route is initialized, redirect to the original route
     if (isNotFoundRoute) {

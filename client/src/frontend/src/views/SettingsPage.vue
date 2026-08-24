@@ -1,19 +1,28 @@
 <template>
 	<div class="settings-page">
+		<!--
+			Ba cột thật, không phải hai nút rồi chèn một <div width:80px> cho cân —
+			cái chèn đó lệch ngay khi nhãn nút đổi độ dài.
+		-->
 		<header class="settings-header">
 			<el-button text @click="$emit('back')">
 				<el-icon><ArrowLeft /></el-icon>
 				Quay lại
 			</el-button>
 			<h3>Cài đặt</h3>
-			<div style="width: 80px;"></div>
+			<span />
 		</header>
 
 		<div class="settings-body">
-			<el-card shadow="never" class="settings-card">
-				<template #header>
-					<span>Đổi mật khẩu / PIN</span>
-				</template>
+			<!--
+				KHÔNG dùng el-card ở đây. Element Plus đặt sẵn
+				`.el-card__body { flex-grow: 1; overflow: auto }`, nên trong một
+				cột flex mỗi thẻ tự thành MỘT vùng cuộn riêng: trang Cài đặt hoá
+				ra bốn thanh cuộn lồng nhau, và cái ở ngoài thì không bao giờ
+				cuộn. Khối thường thì cả trang cuộn chung một lần.
+			-->
+			<section class="settings-card">
+				<h4>Đổi mật khẩu / PIN</h4>
 				<el-form :model="pinForm" label-position="top">
 					<el-form-item label="Mật khẩu cũ">
 						<el-input v-model="pinForm.oldPin" type="password" show-password />
@@ -24,47 +33,58 @@
 					<el-form-item label="Xác nhận mật khẩu mới">
 						<el-input v-model="pinForm.confirmPin" type="password" show-password />
 					</el-form-item>
-					<el-button
-						type="primary"
-						:loading="changingPin"
-						@click="changePin"
-					>
+					<el-button type="primary" :loading="changingPin" @click="changePin">
 						Đổi mật khẩu
 					</el-button>
 				</el-form>
-			</el-card>
+			</section>
 
-			<el-card shadow="never" class="settings-card">
-				<template #header>
-					<span>Cấu hình thiết bị</span>
-				</template>
+			<!--
+				Chỉ quản trị mới đổi được địa chỉ máy chủ. Gõ nhầm một ký tự là
+				máy trạm mất liên lạc, và người sửa được chuyện đó lại không ngồi
+				trước máy đó.
+
+				Mã máy KHÔNG có ở đây: nó do bộ cài ghi vào config.json, và dịch
+				vụ nền cũng đọc từ đó. Cho sửa ở giao diện nghĩa là hai nguồn cho
+				cùng một giá trị, rồi máy chủ thấy một mã còn dịch vụ khai một mã.
+			-->
+			<section v-if="laQuanTri" class="settings-card">
+				<h4>Cấu hình thiết bị</h4>
 				<el-form label-position="top">
-					<el-form-item label="Mã máy">
-						<el-input v-model="machineCode" @change="saveMachineCode" placeholder="VD: M01" />
-					</el-form-item>
 					<el-form-item label="Địa chỉ server">
-						<el-input v-model="serverUrl" @change="saveServerUrl" placeholder="http://localhost:8080" />
+						<el-input v-model="serverUrl" placeholder="http://localhost:8080" />
 					</el-form-item>
+					<el-button type="primary" style="width: 100%" @click="saveDevice">Lưu cấu hình</el-button>
 				</el-form>
-			</el-card>
+			</section>
 
-			<el-card shadow="never" class="settings-card">
-				<template #header>
-					<span>Thông tin</span>
-				</template>
-				<el-descriptions :column="1" border size="small">
-					<el-descriptions-item label="Mã máy chủ">{{ hardware?.machine_code || '—' }}</el-descriptions-item>
-					<el-descriptions-item label="Server">{{ hardware?.server_url || '—' }}</el-descriptions-item>
-					<el-descriptions-item v-if="hardware?.cpu_name" label="CPU">{{ hardware.cpu_name }}</el-descriptions-item>
-					<el-descriptions-item v-if="hardware?.gpu_name" label="GPU">{{ hardware.gpu_name }}</el-descriptions-item>
-					<el-descriptions-item v-if="hardware?.ram_gb" label="RAM">{{ hardware.ram_gb }} GB</el-descriptions-item>
-					<el-descriptions-item v-if="hardware?.storage_gb" label="Ổ cứng">{{ hardware.storage_gb }} GB</el-descriptions-item>
-					<el-descriptions-item v-if="hardware?.cpu_temp" label="Nhiệt CPU">{{ hardware.cpu_temp }}°C</el-descriptions-item>
-					<el-descriptions-item v-if="hardware?.gpu_temp" label="Nhiệt GPU">{{ hardware.gpu_temp }}°C</el-descriptions-item>
-					<el-descriptions-item label="Phiên bản">1.0.0</el-descriptions-item>
-					<el-descriptions-item label="Nền tảng">VNET Desktop</el-descriptions-item>
-				</el-descriptions>
-			</el-card>
+			<section class="settings-card">
+				<h4>Cập nhật ứng dụng</h4>
+
+				<p class="update-notes">Đang dùng bản {{ version || '—' }}</p>
+
+				<el-alert v-if="update?.has_update" type="warning" :closable="false" show-icon
+					:title="`Có bản mới: ${update.version}`" style="margin-bottom: 12px" />
+				<el-alert v-else-if="checked" type="success" :closable="false" show-icon
+					title="Đang dùng bản mới nhất" style="margin-bottom: 12px" />
+
+				<p v-if="update?.changelog" class="update-notes">{{ update.changelog }}</p>
+				<p v-if="downloadedPath" class="update-notes">
+					Đã tải về: {{ downloadedPath }} — đóng ứng dụng rồi chạy tệp này để cài.
+				</p>
+
+				<div class="update-actions">
+					<el-button :loading="checking" @click="checkUpdate">Kiểm tra cập nhật</el-button>
+					<el-button
+						v-if="update?.has_update"
+						type="primary"
+						:loading="downloading"
+						@click="downloadUpdate"
+					>
+						Tải bản cập nhật
+					</el-button>
+				</div>
+			</section>
 
 			<div class="logout-section">
 				<el-button type="danger" size="large" @click="$emit('logout')">
@@ -76,9 +96,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { useSessionStore } from '../stores/session.store'
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -89,23 +110,73 @@ const emit = defineEmits<{
 }>()
 
 const changingPin = ref(false)
+
+// GetVersion/CheckUpdate/DownloadUpdate đã có trong update.go nhưng phía Vue
+// chưa gọi hàm nào, và ô "Phiên bản" ở trên là chuỗi cứng 1.0.0 — số hiển thị
+// không liên quan gì tới bản đang chạy.
+const version = ref('')
+const checking = ref(false)
+const checked = ref(false)
+const downloading = ref(false)
+const update = ref<any>(null)
+const downloadedPath = ref('')
+
+async function checkUpdate() {
+	checking.value = true
+	downloadedPath.value = ''
+	try {
+		update.value = JSON.parse(await api().CheckUpdate())
+		checked.value = true
+	} catch (e) {
+		ElMessage.error(String(e))
+	} finally {
+		checking.value = false
+	}
+}
+
+async function downloadUpdate() {
+	downloading.value = true
+	try {
+		// Cố ý KHÔNG tự chạy tệp cài: làm vậy sẽ tắt ứng dụng giữa phiên của khách.
+		downloadedPath.value = await api().DownloadUpdate()
+		ElMessage.success('Đã tải xong và kiểm tra băm')
+	} catch (e) {
+		ElMessage.error(String(e))
+	} finally {
+		downloading.value = false
+	}
+}
 const serverUrl = ref('http://localhost:8080')
-const machineCode = ref('')
-const hardware = ref<any>(null)
+
+// Chỉ quản trị mới thấy phần Cấu hình thiết bị. Nhân viên đăng nhập trên máy
+// trạm mang vai trò 'admin' (App.Login quy về), hội viên thì không.
+const session = useSessionStore()
+const laQuanTri = computed(() => session.role === 'admin')
 const pinForm = ref({
 	oldPin: '',
 	newPin: '',
 	confirmPin: '',
 })
 
-function saveServerUrl() {
-	localStorage.setItem('vnet_server_url', serverUrl.value)
-	api().SetServerURL(serverUrl.value)
-}
+/**
+ * Lưu cấu hình thiết bị.
+ *
+ * Bản cũ lưu ngay mỗi lần rời ô (@change) và không kiểm gì: gõ nhầm địa chỉ máy
+ * chủ là máy trạm mất kết nối ngay lập tức, không có bước xác nhận nào để dừng
+ * lại. Gom về một nút và kiểm dữ liệu trước khi ghi.
+ */
+function saveDevice() {
+	const url = serverUrl.value.trim().replace(/\/+$/, '')
 
-function saveMachineCode() {
-	localStorage.setItem('vnet_machine_code', machineCode.value)
-	api().SetMachineCode(machineCode.value)
+	if (!/^https?:\/\/[^\s/]+/.test(url)) {
+		ElMessage.warning('Địa chỉ server phải bắt đầu bằng http:// hoặc https://')
+		return
+	}
+
+	serverUrl.value = url
+	localStorage.setItem('vnet_server_url', url)
+	api().SetServerURL(url)
+	ElMessage.success('Đã lưu địa chỉ máy chủ')
 }
 
 async function changePin() {
@@ -129,64 +200,73 @@ async function changePin() {
 	}
 }
 
-async function loadHardware() {
-	try {
-		const hw = await api().GetHardware()
-		const parsed = JSON.parse(hw)
-		if (parsed?.data) {
-			hardware.value = parsed.data
-		} else if (parsed?.machine_code) {
-			hardware.value = parsed
-		}
-	} catch { /* ignore */ }
-}
-
 onMounted(() => {
 	const savedUrl = localStorage.getItem('vnet_server_url')
 	if (savedUrl) serverUrl.value = savedUrl
-	const savedCode = localStorage.getItem('vnet_machine_code')
-	if (savedCode) machineCode.value = savedCode
-	loadHardware()
+	api().GetVersion().then((v: string) => { version.value = v }).catch(() => {})
 })
 </script>
 
 <style scoped>
+.update-notes {
+	font-size: 13px;
+	color: var(--vnet-text-muted);
+	margin-bottom: 12px;
+	white-space: pre-wrap;
+}
+
+.update-actions {
+	display: flex;
+	gap: 8px;
+}
+
 .settings-page {
 	height: 100vh;
 	display: flex;
 	flex-direction: column;
-	background: #f0f2f5;
+	background: var(--vnet-bg);
 }
 
 .settings-header {
-	display: flex;
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
 	align-items: center;
-	padding: 12px 16px;
-	background: #fff;
-	box-shadow: 0 1px 4px rgba(0,0,0,.08);
+	padding: 10px var(--vnet-gap);
+	background: var(--vnet-surface);
+	border-bottom: 1px solid var(--vnet-border);
 }
 
 .settings-header h3 {
-	font-size: 16px;
+	font-size: 15px;
 	font-weight: 600;
-	flex: 1;
 	text-align: center;
+	white-space: nowrap;
 }
 
 .settings-body {
 	flex: 1;
 	overflow-y: auto;
-	padding: 16px;
-	max-width: 480px;
-	margin: 0 auto;
+	padding: var(--vnet-gap);
+	/* Không kẹp 480px và không căn giữa: thanh chỉ rộng 360px, cột hẹp giữa màn
+	   hình rộng là bố cục của trang web chứ không phải của thanh công cụ. */
 	width: 100%;
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: var(--vnet-gap);
 }
 
 .settings-card {
-	border-radius: 12px;
+	background: var(--vnet-surface);
+	border: 1px solid var(--vnet-border);
+	border-radius: var(--vnet-radius);
+	padding: 16px;
+}
+
+.settings-card h4 {
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--vnet-text);
+	margin-bottom: 14px;
 }
 
 .logout-section {

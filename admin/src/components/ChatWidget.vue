@@ -140,6 +140,15 @@ watch(currentRoomId, async (newId) => {
   }
 });
 
+
+// The dialog was unreachable: nothing ever set showNewRoomDialog, and the
+// recipient list was never loaded, so staff could only reply to conversations
+// a customer had already opened.
+async function openNewRoom() {
+  await fetchMembers();
+  showNewRoomDialog.value = true;
+}
+
 </script>
 
 <template>
@@ -148,7 +157,8 @@ watch(currentRoomId, async (newId) => {
     <div class="chat-panel-handle" @mousedown="startDrag">
       <span>Chat hỗ trợ</span>
       <div>
-        <ElButton size="small" text @click.stop="deleteAllRooms">🗑</ElButton>
+        <ElButton size="small" text title="Tạo hội thoại mới" @click.stop="openNewRoom">＋</ElButton>
+        <ElButton size="small" text title="Xoá tất cả hội thoại" @click.stop="deleteAllRooms">🗑</ElButton>
         <ElButton size="small" text @click.stop="isChatOpen = false">─</ElButton>
       </div>
     </div>

@@ -6,6 +6,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { formatAmount } from '@/utils/money';
 
 const { t: $t } = useI18n();
 const route = useRoute();
@@ -26,6 +27,12 @@ const sesLoading = ref(false);
 const sesPage = ref(1);
 const sesPageSize = ref(10);
 const sesTotal = ref(0);
+
+const combos = ref<any[]>([]);
+const combosLoading = ref(false);
+const comboPage = ref(1);
+const comboPageSize = ref(10);
+const comboTotal = ref(0);
 
 const editVisible = ref(false);
 const submitting = ref(false);
@@ -70,6 +77,21 @@ async function fetchTransactions() {
     transactions.value = [];
   } finally {
     transLoading.value = false;
+  }
+}
+
+async function fetchCombos() {
+  combosLoading.value = true;
+  try {
+    const res: any = await client.get(`/members/${memberId}/combos`, {
+      params: { page: comboPage.value, page_size: comboPageSize.value }
+    });
+    combos.value = res.items || [];
+    comboTotal.value = res.total || 0;
+  } catch {
+    combos.value = [];
+  } finally {
+    combosLoading.value = false;
   }
 }
 
@@ -126,6 +148,7 @@ onMounted(() => {
   fetchMember();
   fetchTransactions();
   fetchSessions();
+  fetchCombos();
 });
 </script>
 
@@ -151,10 +174,10 @@ onMounted(() => {
             <ElDescriptionsItem :label="$t('vnetPages.members.phone')">{{ member?.phone }}</ElDescriptionsItem>
             <ElDescriptionsItem :label="$t('vnetPages.members.email')">{{ member?.email || '-' }}</ElDescriptionsItem>
             <ElDescriptionsItem :label="$t('vnetPages.members.balance')">
-              {{ member?.balance?.toLocaleString() }}
+              {{ formatAmount(member?.balance) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem :label="$t('vnetPages.members.bonus')">
-              {{ member?.bonus_balance?.toLocaleString() }}
+              {{ formatAmount(member?.bonus_balance) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem :label="$t('vnetPages.members.group')">
               {{ member?.group?.name || '-' }}
@@ -177,7 +200,7 @@ onMounted(() => {
           <ElTable v-loading="transLoading" :data="transactions" border stripe style="width: 100%">
             <ElTableColumn prop="transaction_type" :label="$t('vnetPages.members.type')" width="100" />
             <ElTableColumn :label="$t('vnetPages.members.amount')" width="120">
-              <template #default="{ row }">{{ row.amount?.toLocaleString() }}</template>
+              <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
             </ElTableColumn>
             <ElTableColumn prop="payment_method" :label="$t('vnetPages.members.method')" width="120" />
             <ElTableColumn prop="reference_id" :label="$t('vnetPages.members.reference')" min-width="140" />
@@ -225,6 +248,39 @@ onMounted(() => {
               layout="prev, pager, next, total"
               small
               @current-change="fetchSessions"
+            />
+          </div>
+        </ElTabPane>
+
+        <ElTabPane :label="$t('vnetPages.combos.comboPurchases')" name="combos">
+          <ElTable v-loading="combosLoading" :data="combos" border stripe style="width: 100%">
+            <ElTableColumn prop="combo_name" :label="$t('vnetPages.combos.name')" min-width="140" />
+            <ElTableColumn :label="$t('vnetPages.combos.price')" width="100">
+              <template #default="{ row }">{{ formatAmount(row.price) }}</template>
+            </ElTableColumn>
+            <ElTableColumn prop="payment_method" :label="$t('vnetPages.combos.paymentMethod')" width="110" />
+            <ElTableColumn :label="$t('vnetPages.combos.status')" width="120">
+              <template #default="{ row }">
+                <ElTag :type="row.activated ? 'success' : 'info'" size="small">
+                  {{ row.activated ? $t('vnetPages.combos.activated') : $t('vnetPages.combos.pending') }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
+            <ElTableColumn :label="$t('vnetPages.combos.remainingMinutes')" width="100">
+              <template #default="{ row }">{{ row.remaining_minutes }}p</template>
+            </ElTableColumn>
+            <ElTableColumn :label="$t('vnetPages.combos.expiresAt')" width="160">
+              <template #default="{ row }">{{ formatDate(row.expires_at) }}</template>
+            </ElTableColumn>
+          </ElTable>
+          <div style="display: flex; justify-content: center; margin-top: 12px">
+            <ElPagination
+              v-model:current-page="comboPage"
+              :page-size="comboPageSize"
+              :total="comboTotal"
+              layout="prev, pager, next, total"
+              small
+              @current-change="fetchCombos"
             />
           </div>
         </ElTabPane>

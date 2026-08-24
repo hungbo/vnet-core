@@ -19,8 +19,11 @@ func NewShiftService(db *gorm.DB, audit *AuditService) *ShiftService {
 }
 
 type ShiftResponse struct {
-	ID             string  `json:"id"`
-	UserID         string  `json:"user_id"`
+	ID     string `json:"id"`
+	UserID string `json:"user_id"`
+	// Cột "Người dùng" trên trang Ca làm việc đọc trường này. Không trả về thì
+	// bảng hiện UUID thô — nhân viên không đọc được ai đã trực ca nào.
+	UserName       string  `json:"user_name"`
 	StartedAt      string  `json:"started_at"`
 	EndedAt        *string `json:"ended_at"`
 	Status         string  `json:"status"`
@@ -38,14 +41,39 @@ type OpenShiftRequest struct {
 }
 
 type CloseShiftRequest struct {
-	ClosingBalance int64  `json:"closing_balance" binding:"required"`
+	// Đóng ca với két rỗng là hợp lệ, nên 0 phải được chấp nhận.
+	ClosingBalance int64  `json:"closing_balance"`
 	Notes          string `json:"notes"`
 }
 
 type HandoverRequest struct {
-	Amount       int64  `json:"amount" binding:"required"`
+	Amount       int64  `json:"amount" binding:"gt=0"`
 	HandoverType string `json:"handover_type" binding:"required,oneof=cash_in cash_out"`
 	Reason       string `json:"reason"`
+}
+
+// userNames nạp tên nhân viên cho cả trang một lần thay vì mỗi dòng một truy vấn.
+// Unscoped: nhân viên nghỉ việc rồi thì ca trực cũ vẫn phải hiện tên.
+func (s *ShiftService) userNames(shifts []model.Shift) map[string]string {
+	ids := make([]string, 0, len(shifts))
+	for _, sh := range shifts {
+		ids = append(ids, sh.UserID)
+	}
+	out := map[string]string{}
+	if len(ids) == 0 {
+		return out
+	}
+	var rows []struct{ ID, Username, FullName string }
+	s.db.Unscoped().Model(&model.User{}).Select("id, username, full_name").
+		Where("id IN ?", ids).Find(&rows)
+	for _, r := range rows {
+		if r.FullName != "" {
+			out[r.ID] = r.FullName
+		} else {
+			out[r.ID] = r.Username
+		}
+	}
+	return out
 }
 
 func (s *ShiftService) List(params *pagination.Params) (*pagination.Result, error) {
@@ -76,8 +104,10 @@ func (s *ShiftService) List(params *pagination.Params) (*pagination.Result, erro
 	}
 
 	items := make([]ShiftResponse, len(shifts))
+	names := s.userNames(shifts)
 	for i, sh := range shifts {
 		items[i] = shiftToResponse(sh)
+		items[i].UserName = names[sh.UserID]
 	}
 
 	return pagination.NewResult(items, total, params), nil
@@ -129,6 +159,66 @@ func (s *ShiftService) OpenShift(req *OpenShiftRequest, userID string) (*ShiftRe
 	return &result, nil
 }
 
+// expectedCash is what the drawer should hold on top of the opening float:
+// only money that physically entered or left it during the shift.
+//
+// Balance-settled orders and session fees never touch the drawer, so they are
+// deliberately excluded — the previous implementation summed every order with
+// status "paid", a status this codebase never assigns, so the expected total
+// was always zero and every shift reconciled against nothing.
+//
+// Orders carry no shift_id, so the window is the shift's own time range. With
+// overlapping shifts on one till the attribution is approximate; giving orders
+// a shift_id is the proper fix and is tracked separately.
+func (s *ShiftService) expectedCash(shift *model.Shift, until time.Time) (int64, error) {
+	var cashPayments int64
+	if err := s.db.Model(&model.Payment{}).
+		Where("payment_method = ? AND status = ? AND paid_at >= ? AND paid_at <= ?",
+			"cash", "completed", shift.StartedAt, until).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&cashPayments).Error; err != nil {
+		return 0, err
+	}
+
+	// Top-ups add cash; combo purchases paid in cash do too, and are stored as
+	// a negative ledger amount, hence the sign flip.
+	var cashTopups int64
+	if err := s.db.Model(&model.MemberTransaction{}).
+		Where("payment_method = ? AND transaction_type IN ? AND created_at >= ? AND created_at <= ?",
+			"cash", []string{"topup", "topup_bonus"}, shift.StartedAt, until).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&cashTopups).Error; err != nil {
+		return 0, err
+	}
+
+	var cashCombos int64
+	if err := s.db.Model(&model.MemberTransaction{}).
+		Where("payment_method = ? AND transaction_type = ? AND created_at >= ? AND created_at <= ?",
+			"cash", "combo_purchase", shift.StartedAt, until).
+		Select("COALESCE(SUM(-amount), 0)").
+		Scan(&cashCombos).Error; err != nil {
+		return 0, err
+	}
+
+	var handoverIn int64
+	if err := s.db.Model(&model.CashHandover{}).
+		Where("shift_id = ? AND handover_type = ?", shift.ID, "cash_in").
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&handoverIn).Error; err != nil {
+		return 0, err
+	}
+
+	var handoverOut int64
+	if err := s.db.Model(&model.CashHandover{}).
+		Where("shift_id = ? AND handover_type = ?", shift.ID, "cash_out").
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&handoverOut).Error; err != nil {
+		return 0, err
+	}
+
+	return cashPayments + cashTopups + cashCombos + handoverIn - handoverOut, nil
+}
+
 func (s *ShiftService) CloseShift(id string, req *CloseShiftRequest) (*ShiftResponse, error) {
 	var shift model.Shift
 	if err := s.db.Where("id = ?", id).First(&shift).Error; err != nil {
@@ -142,14 +232,12 @@ func (s *ShiftService) CloseShift(id string, req *CloseShiftRequest) (*ShiftResp
 		return nil, errors.New("shift is already closed")
 	}
 
-	var expectedTotal int64
-	s.db.Model(&model.Order{}).
-		Where("status = ? AND created_at >= ? AND created_at <= ?",
-			"paid", shift.StartedAt, time.Now()).
-		Select("COALESCE(SUM(final_amount), 0)").
-		Scan(&expectedTotal)
-
 	now := time.Now()
+	expectedTotal, err := s.expectedCash(&shift, now)
+	if err != nil {
+		return nil, err
+	}
+
 	discrepancy := req.ClosingBalance - (shift.OpeningBalance + expectedTotal)
 
 	updates := map[string]interface{}{
@@ -157,6 +245,7 @@ func (s *ShiftService) CloseShift(id string, req *CloseShiftRequest) (*ShiftResp
 		"ended_at":        now,
 		"closing_balance": req.ClosingBalance,
 		"expected_total":  expectedTotal,
+		"discrepancy":     discrepancy,
 		"notes":           shift.Notes + "\n" + req.Notes,
 	}
 
@@ -238,9 +327,8 @@ func shiftToResponse(s model.Shift) ShiftResponse {
 		OpeningBalance: s.OpeningBalance,
 		ClosingBalance: s.ClosingBalance,
 		ExpectedTotal:  s.ExpectedTotal,
+		Discrepancy:    s.Discrepancy,
 		Notes:          s.Notes,
 		CreatedAt:      s.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
-
-

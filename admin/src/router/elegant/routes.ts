@@ -639,6 +639,24 @@ export const generatedRoutes = [
     },
     children: [
       {
+        name: 'vnet_app-updates',
+        path: '/vnet/app-updates',
+        component: 'view.vnet_app-updates',
+        meta: {
+          title: 'vnet_app-updates',
+          i18nKey: 'route.vnet_app-updates'
+        }
+      },
+      {
+        name: 'vnet_attendance',
+        path: '/vnet/attendance',
+        component: 'view.vnet_attendance',
+        meta: {
+          title: 'vnet_attendance',
+          i18nKey: 'route.vnet_attendance'
+        }
+      },
+      {
         name: 'vnet_audit',
         path: '/vnet/audit',
         component: 'view.vnet_audit',
@@ -666,6 +684,15 @@ export const generatedRoutes = [
         }
       },
       {
+        name: 'vnet_cards',
+        path: '/vnet/cards',
+        component: 'view.vnet_cards',
+        meta: {
+          title: 'vnet_cards',
+          i18nKey: 'route.vnet_cards'
+        }
+      },
+      {
         name: 'vnet_categories',
         path: '/vnet/categories',
         component: 'view.vnet_categories',
@@ -684,12 +711,48 @@ export const generatedRoutes = [
         }
       },
       {
+        name: 'vnet_curfew',
+        path: '/vnet/curfew',
+        component: 'view.vnet_curfew',
+        meta: {
+          title: 'vnet_curfew',
+          i18nKey: 'route.vnet_curfew'
+        }
+      },
+      {
         name: 'vnet_dashboard',
         path: '/vnet/dashboard',
         component: 'view.vnet_dashboard',
         meta: {
           title: 'vnet_dashboard',
           i18nKey: 'route.vnet_dashboard'
+        }
+      },
+      {
+        name: 'vnet_feedback',
+        path: '/vnet/feedback',
+        component: 'view.vnet_feedback',
+        meta: {
+          title: 'vnet_feedback',
+          i18nKey: 'route.vnet_feedback'
+        }
+      },
+      {
+        name: 'vnet_inventory-counts',
+        path: '/vnet/inventory-counts',
+        component: 'view.vnet_inventory-counts',
+        meta: {
+          title: 'vnet_inventory-counts',
+          i18nKey: 'route.vnet_inventory-counts'
+        }
+      },
+      {
+        name: 'vnet_machine-assets',
+        path: '/vnet/machine-assets',
+        component: 'view.vnet_machine-assets',
+        meta: {
+          title: 'vnet_machine-assets',
+          i18nKey: 'route.vnet_machine-assets'
         }
       },
       {
@@ -744,6 +807,15 @@ export const generatedRoutes = [
         meta: {
           title: 'vnet_orders',
           i18nKey: 'route.vnet_orders'
+        }
+      },
+      {
+        name: 'vnet_printers',
+        path: '/vnet/printers',
+        component: 'view.vnet_printers',
+        meta: {
+          title: 'vnet_printers',
+          i18nKey: 'route.vnet_printers'
         }
       },
       {
@@ -828,12 +900,12 @@ export const generatedRoutes = [
         }
       },
       {
-        name: 'vnet_warehouses',
-        path: '/vnet/warehouses',
-        component: 'view.vnet_warehouses',
+        name: 'vnet_website-blocking',
+        path: '/vnet/website-blocking',
+        component: 'view.vnet_website-blocking',
         meta: {
-          title: 'vnet_warehouses',
-          i18nKey: 'route.vnet_warehouses'
+          title: 'vnet_website-blocking',
+          i18nKey: 'route.vnet_website-blocking'
         }
       }
     ]

@@ -48,7 +48,10 @@ export const useAppStore = defineStore(SetupStoreId.App, () => {
     setReloadFlag(true);
   }
 
-  const locale = ref<App.I18n.LangType>(localStg.get('lang') || 'zh-CN');
+  // Phải trùng mặc định của i18n ở src/locales/index.ts. Lệch nhau thì chữ của
+  // ứng dụng ra tiếng Việt còn chữ dựng sẵn của Element Plus ra tiếng Trung —
+  // "暂无数据" trong mọi bảng rỗng, "取消 / 确定" trong mọi hộp xác nhận xoá.
+  const locale = ref<App.I18n.LangType>(localStg.get('lang') || 'vi-VN');
 
   const localeOptions: App.I18n.LangOption[] = [
     { label: '中文', key: 'zh-CN' },

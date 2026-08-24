@@ -49,7 +49,7 @@ type UpdateCategoryRequest struct {
 
 func (s *CategoryService) List() ([]CategoryResponse, error) {
 	var categories []model.Category
-	if err := s.db.Where("deleted_at IS NULL").Order("sort_order asc, name asc").Find(&categories).Error; err != nil {
+	if err := s.db.Order("sort_order asc, name asc").Find(&categories).Error; err != nil {
 		return nil, err
 	}
 
@@ -77,7 +77,7 @@ func (s *CategoryService) List() ([]CategoryResponse, error) {
 
 func (s *CategoryService) GetByID(id string) (*CategoryResponse, error) {
 	var category model.Category
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&category).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("category not found")
 		}
@@ -85,7 +85,7 @@ func (s *CategoryService) GetByID(id string) (*CategoryResponse, error) {
 	}
 
 	var children []model.Category
-	s.db.Where("parent_id = ? AND deleted_at IS NULL", id).Order("sort_order asc").Find(&children)
+	s.db.Where("parent_id = ?", id).Order("sort_order asc").Find(&children)
 
 	result := categoryToResponse(category)
 	for _, ch := range children {
@@ -128,7 +128,7 @@ func (s *CategoryService) Create(req *CreateCategoryRequest) (*CategoryResponse,
 
 func (s *CategoryService) Update(id string, req *UpdateCategoryRequest) (*CategoryResponse, error) {
 	var category model.Category
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&category).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("category not found")
 		}
@@ -177,11 +177,31 @@ func (s *CategoryService) Update(id string, req *UpdateCategoryRequest) (*Catego
 
 func (s *CategoryService) Delete(id string) error {
 	var category model.Category
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&category).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("category not found")
 		}
 		return err
+	}
+
+	// Xoá danh mục vẫn còn sản phẩm sẽ để lại sản phẩm mồ côi: giao diện tra tên
+	// danh mục trong danh sách đang hoạt động, không thấy, nên hiện UUID thô.
+	// Chỉ đếm sản phẩm chưa xoá — sản phẩm đã xoá mềm mà vẫn chặn thì danh mục
+	// không bao giờ xoá được nữa.
+	var productCount int64
+	if err := s.db.Model(&model.Product{}).Where("category_id = ?", id).Count(&productCount).Error; err != nil {
+		return err
+	}
+	if productCount > 0 {
+		return errors.New("cannot delete category with products")
+	}
+
+	var childCount int64
+	if err := s.db.Model(&model.Category{}).Where("parent_id = ?", id).Count(&childCount).Error; err != nil {
+		return err
+	}
+	if childCount > 0 {
+		return errors.New("cannot delete category with sub-categories")
 	}
 
 	now := time.Now()

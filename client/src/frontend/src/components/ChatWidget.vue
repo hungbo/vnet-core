@@ -2,7 +2,7 @@
 	<!-- Full Page Mode -->
 	<div v-if="fullPage" class="chat-fullpage">
 		<header class="chat-header">
-			<el-button text @click="$emit('back')">
+			<el-button v-if="!standalone" text @click="$emit('back')">
 				<el-icon>
 					<ArrowLeft />
 				</el-icon>
@@ -69,7 +69,10 @@ import { useChatStore } from '../stores/chat.store'
 declare const window: any
 const api = () => window.go?.main?.App
 
-const props = withDefaults(defineProps<{ fullPage?: boolean }>(), { fullPage: false })
+const props = withDefaults(defineProps<{ fullPage?: boolean; standalone?: boolean }>(), {
+	fullPage: false,
+	standalone: false,
+})
 const emit = defineEmits<{ back: [] }>()
 
 const store = useChatStore()
@@ -94,8 +97,8 @@ const autoScrollJson = computed(() => JSON.stringify({
 	receive: { new: true, newAfterScrollUp: true }
 }))
 const stylesJson = computed(() => JSON.stringify({
-	general: { color: '#333', borderStyle: '1px solid #e4e7ed' },
-	footer: { background: '#fff' }
+	general: { color: '#333', borderStyle: '1px solid var(--vnet-border)' },
+	footer: { background: 'var(--vnet-surface)' }
 }))
 
 function openWidget() {
@@ -240,8 +243,8 @@ onBeforeUnmount(() => {
 	min-width: 20px;
 	height: 20px;
 	border-radius: 10px;
-	background: #f56c6c;
-	color: #fff;
+	background: var(--vnet-danger);
+	color: var(--vnet-surface);
 	font-size: 11px;
 	font-weight: 600;
 	display: flex;
@@ -255,7 +258,7 @@ onBeforeUnmount(() => {
 	z-index: 1001;
 	width: 380px;
 	height: 520px;
-	background: #fff;
+	background: var(--vnet-surface);
 	border-radius: 12px;
 	box-shadow: 0 8px 24px rgba(0, 0, 0, .15);
 	display: flex;
@@ -268,12 +271,12 @@ onBeforeUnmount(() => {
 	align-items: center;
 	justify-content: space-between;
 	padding: 8px 12px;
-	background: #f5f7fa;
+	background: var(--vnet-surface-2);
 	cursor: grab;
 	user-select: none;
 	font-size: 13px;
 	font-weight: 500;
-	border-bottom: 1px solid #e4e7ed;
+	border-bottom: 1px solid var(--vnet-border);
 	flex-shrink: 0;
 }
 
@@ -291,7 +294,7 @@ onBeforeUnmount(() => {
 	height: 100vh;
 	display: flex;
 	flex-direction: column;
-	background: #fff;
+	background: var(--vnet-surface);
 }
 
 .chat-fullpage .chat-header {
@@ -318,7 +321,7 @@ onBeforeUnmount(() => {
 	position: absolute;
 	inset: 0;
 	z-index: 10;
-	background: #fff;
+	background: var(--vnet-surface);
 	display: flex;
 	flex-direction: column;
 	align-items: center;

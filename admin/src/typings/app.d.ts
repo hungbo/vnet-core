@@ -322,6 +322,14 @@ declare namespace App {
         keywordSearch: string;
         logout: string;
         logoutConfirm: string;
+        changePassword: string;
+        changePasswordOld: string;
+        changePasswordNew: string;
+        changePasswordConfirm: string;
+        changePasswordRequired: string;
+        changePasswordTooShort: string;
+        changePasswordMismatch: string;
+        changePasswordSuccess: string;
         lookForward: string;
         modify: string;
         modifySuccess: string;
@@ -577,8 +585,8 @@ declare namespace App {
             };
             addRole: string;
             editRole: string;
-            menuAuth: string;
             buttonAuth: string;
+            permissionSaved: string;
           };
           user: {
             title: string;
@@ -589,6 +597,9 @@ declare namespace App {
             userEmail: string;
             userStatus: string;
             userRole: string;
+            password: string;
+            lastLogin: string;
+            neverLoggedIn: string;
             form: {
               userName: string;
               userGender: string;
@@ -597,6 +608,8 @@ declare namespace App {
               userEmail: string;
               userStatus: string;
               userRole: string;
+              password: string;
+              passwordKeep: string;
             };
             addUser: string;
             editUser: string;
@@ -664,6 +677,7 @@ declare namespace App {
             addMenu: string;
             editMenu: string;
             addChildMenu: string;
+            readOnlyNote: string;
             type: {
               directory: string;
               menu: string;
@@ -732,6 +746,7 @@ declare namespace App {
           member: string;
           startTime: string;
           duration: string;
+          remaining: string;
           stats: {
             members: string;
             onlineMachines: string;
@@ -872,6 +887,7 @@ declare namespace App {
           member: string;
           startTime: string;
           duration: string;
+          remaining: string;
           endTime: string;
           status: string;
           running: string;
@@ -1055,21 +1071,6 @@ declare namespace App {
             saveError: string;
           };
         };
-        warehouses: {
-          title: string;
-          name: string;
-          address: string;
-          addWarehouse: string;
-          form: {
-            nameRequired: string;
-          };
-          messages: {
-            addSuccess: string;
-            editSuccess: string;
-            loadError: string;
-            saveError: string;
-          };
-        };
         stockTransactions: {
           title: string;
           createTransaction: string;
@@ -1193,6 +1194,10 @@ declare namespace App {
           };
         };
         settings: {
+          features: string;
+          featuresHint: string;
+          attendanceEnabled: string;
+          feedbackEnabled: string;
           title: string;
           general: string;
           billing: string;
@@ -1212,19 +1217,16 @@ declare namespace App {
           maxBookingsPerMember: string;
           cancelBeforeMinutes: string;
           maxDebt: string;
-          printerType: string;
-          thermal: string;
-          laser: string;
-          inkjet: string;
-          printerName: string;
-          paperSize: string;
-          paperSizePlaceholder: string;
-          autoPrint: string;
+          limitsHint: string;
+          topup: string;
+          topupPresets: string;
+          topupHint: string;
+          addPreset: string;
+          invoiceHint: string;
+          printerMoved: string;
           invoiceTitle: string;
           invoiceFooter: string;
           taxCode: string;
-          invoiceStartNumber: string;
-          showLogo: string;
           messages: {
             saveSuccess: string;
             saveError: string;
@@ -1295,7 +1297,25 @@ declare namespace App {
             creating: string;
             restoreConfirm: string;
             restoring: string;
-            deleteComingSoon: string;
+            deleteConfirm: string;
+            deleteSuccess: string;
+          };
+        };
+        realtime: {
+          orderTitle: string;
+          orderBody: string;
+          topupTitle: string;
+          topupBody: string;
+          chatTitle: string;
+          sessionEndedTitle: string;
+          sessionEndedBody: string;
+          curfewTitle: string;
+          curfewBody: string;
+          reasons: {
+            slot_ended: string;
+            minutes_exhausted: string;
+            curfew_window: string;
+            max_minor_hours: string;
           };
         };
       };

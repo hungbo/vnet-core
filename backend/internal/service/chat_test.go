@@ -14,7 +14,7 @@ func TestChatService_SendMessage_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewChatService(db, nil, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "chat_rooms" WHERE id = \$1 ORDER BY "chat_rooms"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "chat_rooms" WHERE id = \$1 AND "chat_rooms"\."deleted_at" IS NULL ORDER BY "chat_rooms"\."id" LIMIT \$2`).
 		WithArgs("conv1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "title"}).AddRow("conv1", "Test"))
 
@@ -24,10 +24,10 @@ func TestChatService_SendMessage_Success(t *testing.T) {
 	mock.ExpectCommit()
 
 	result, err := svc.SendMessage(&SendMessageRequest{
-		RoomID: "conv1",
-		SenderType:     "staff",
-		SenderID:       "u1",
-		Message:        "Hello",
+		RoomID:     "conv1",
+		SenderType: "staff",
+		SenderID:   "u1",
+		Message:    "Hello",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "Hello", result.Message)
@@ -39,15 +39,15 @@ func TestChatService_SendMessage_RoomNotFound(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewChatService(db, nil, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT \* FROM "chat_rooms" WHERE id = \$1 ORDER BY "chat_rooms"."id" LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "chat_rooms" WHERE id = \$1 AND "chat_rooms"\."deleted_at" IS NULL ORDER BY "chat_rooms"\."id" LIMIT \$2`).
 		WithArgs("nonexistent", 1).
 		WillReturnError(gorm.ErrRecordNotFound)
 
 	_, err := svc.SendMessage(&SendMessageRequest{
-		RoomID: "nonexistent",
-		SenderType:     "staff",
-		SenderID:       "u1",
-		Message:        "Hello",
+		RoomID:     "nonexistent",
+		SenderType: "staff",
+		SenderID:   "u1",
+		Message:    "Hello",
 	})
 	assert.Error(t, err)
 	assert.Equal(t, "room not found", err.Error())

@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 import ImageUpload from '@/components/common/ImageUpload.vue';
 
@@ -47,7 +48,13 @@ const newIngredient = ref({ ingredient_id: '', quantity: 1 });
 const newOption = ref({ ingredient_id: null, quantity: 1 });
 
 const rules = {
-  name: [{ required: true, message: $t('vnetPages.products.form.nameRequired'), trigger: 'blur' }]
+  name: [
+    {
+      required: true,
+      message: $t('vnetPages.products.form.nameRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
 const stockDialog = ref(false);
@@ -57,21 +64,26 @@ const stockTargetProduct = ref<any>(null);
 const stockFormRef = ref<any>(null);
 const stockForm = ref({ quantity: 1, note: '', unit_price: 0 });
 const stockRules = {
-  quantity: [{ required: true, message: $t('vnetPages.products.form.quantityRequired'), trigger: 'blur' }]
+  quantity: [
+    {
+      required: true,
+      message: $t('vnetPages.products.form.quantityRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
-function formatPrice(price: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price || 0);
-}
-
+// Trả về mã UUID khi không tra được tên là vô nghĩa với người trực quầy. Danh
+// mục/đơn vị chỉ biến mất khỏi danh sách khi đã bị xoá mềm, nên nói thẳng ra
+// điều đó.
 function getCategoryName(id: number) {
   const c = categories.value.find(c => c.id === id);
-  return c ? c.name : id;
+  return c ? c.name : $t('vnetPages.common.deleted');
 }
 
 function getUnitName(id: string) {
   const u = units.value.find(u => u.id === id);
-  return u ? u.name : id;
+  return u ? u.name : $t('vnetPages.common.deleted');
 }
 
 const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
@@ -133,7 +145,9 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
 
 async function fetchCategories() {
   try {
-    const res: any = await client.get('/categories', { params: { page_size: 1000 } });
+    const res: any = await client.get('/categories', {
+      params: { page_size: 1000 }
+    });
     categories.value = Array.isArray(res) ? res : res?.items || [];
   } catch (_) {}
 }
@@ -211,7 +225,9 @@ function onSelectSearch(keyword: string) {
 
 async function fetchSuppliers() {
   try {
-    const res: any = await client.get('/suppliers', { params: { page_size: 1000 } });
+    const res: any = await client.get('/suppliers', {
+      params: { page_size: 1000 }
+    });
     suppliers.value = Array.isArray(res) ? res : res?.items || [];
   } catch (_) {}
 }
@@ -362,7 +378,9 @@ async function addIngredient() {
   if (isEdit.value) {
     saving.value = true;
     try {
-      await client.post(`/products/${form.value.id}/ingredients`, { ...newIngredient.value });
+      await client.post(`/products/${form.value.id}/ingredients`, {
+        ...newIngredient.value
+      });
       ElMessage.success($t('vnetPages.products.messages.addIngredientSuccess'));
       newIngredient.value = { ingredient_id: '', quantity: 1 };
       await fetchProductIngredients(form.value.id);
@@ -458,6 +476,7 @@ async function handleStockSave() {
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
           >
@@ -579,7 +598,8 @@ async function handleStockSave() {
             "
           />
           <span v-if="form.has_stock" style="margin-left: 8px; color: #666">
-            {{ $t('vnetPages.products.currentStock') }}: {{ form.current_stock ?? 0 }}
+            {{ $t('vnetPages.products.currentStock') }}:
+            {{ form.current_stock ?? 0 }}
           </span>
         </ElFormItem>
         <template v-if="form.has_stock">

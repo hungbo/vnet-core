@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 
@@ -13,6 +14,11 @@ import (
 )
 
 func main() {
+	// Thực đơn mẫu nằm sau một cờ chứ không chạy mặc định: đó là dữ liệu để thử
+	// nghiệm, không phải dữ liệu quán nào cũng muốn có trong database thật.
+	withMenu := flag.Bool("menu", false, "tạo thêm thực đơn mẫu 100 món (kèm ảnh) để thử nghiệm")
+	flag.Parse()
+
 	cfg := config.Load()
 	db := database.Init(&cfg.Database)
 
@@ -24,6 +30,13 @@ func main() {
 	if err := seed(db); err != nil {
 		log.Fatalf("Seed failed: %v", err)
 	}
+
+	if *withMenu {
+		if err := seedMenu(db, cfg.Server.UploadDir); err != nil {
+			log.Fatalf("Seed menu failed: %v", err)
+		}
+	}
+
 	log.Println("Seed completed")
 }
 
@@ -37,10 +50,10 @@ func runMigrations(db *gorm.DB) error {
 		&model.MachineBooking{}, &model.Promotion{}, &model.PromotionCondition{}, &model.PromotionReward{},
 		&model.SystemSetting{}, &model.AuditLog{},
 		&model.MachineAsset{}, &model.MachineHardwareSnapshot{},
-		&model.ComboItem{}, &model.Shift{}, &model.CashHandover{},
+		&model.Shift{}, &model.CashHandover{},
 		&model.ProductOptionGroup{}, &model.ProductOption{}, &model.ProductIngredient{},
 		&model.PrinterConfig{}, &model.ProductPrinterMapping{},
-		&model.Supplier{}, &model.Warehouse{}, &model.StockTransaction{}, &model.InventoryCount{},
+		&model.Supplier{}, &model.StockTransaction{}, &model.InventoryCountSession{}, &model.InventoryCount{},
 		&model.Notification{}, &model.NotificationRecipient{}, &model.MemberNotification{}, &model.BackupLog{},
 		&model.EInvoiceConfig{}, &model.EInvoice{},
 		&model.ChatRoom{}, &model.ChatParticipant{}, &model.ChatMessage{}, &model.ServiceFeedback{},
@@ -131,13 +144,19 @@ func seed(db *gorm.DB) error {
 
 	var allPerms []model.Permission
 	db.Find(&allPerms)
-	for _, role := range []model.Role{adminRole} {
-		db.Model(&role).Association("Permissions").Replace(&allPerms)
-	}
+	db.Model(&adminRole).Association("Permissions").Replace(&allPerms)
 
-	var memberPerms []model.Permission
-	db.Where("code IN ?", []string{"members.view", "machines.view", "orders.view", "client.admin"}).Find(&memberPerms)
-	db.Model(&staffRole).Association("Permissions").Replace(&memberPerms)
+	// Manager runs day-to-day business but not the back-office tooling (audit
+	// log, notification dispatch, database backups). "*" has to be excluded
+	// too: PermissionRequired treats it as a superuser wildcard, so keeping it
+	// would make the client.admin exclusion meaningless.
+	var managerPerms []model.Permission
+	db.Where("code NOT IN ?", []string{"*", "client.admin"}).Find(&managerPerms)
+	db.Model(&managerRole).Association("Permissions").Replace(&managerPerms)
+
+	var staffPerms []model.Permission
+	db.Where("code IN ?", []string{"members.view", "machines.view", "orders.view", "client.admin"}).Find(&staffPerms)
+	db.Model(&staffRole).Association("Permissions").Replace(&staffPerms)
 
 	settings := []model.SystemSetting{
 		{GroupName: "topup", Key: "presets", Value: `{"values": [5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000]}`, Description: "Mệnh giá nạp tiền"},

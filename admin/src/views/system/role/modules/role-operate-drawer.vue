@@ -2,10 +2,10 @@
 import { computed, ref, watch } from 'vue';
 import { useBoolean } from '@sa/hooks';
 import { enableStatusOptions } from '@/constants/business';
+import { fetchAddRole, fetchUpdateRole } from '@/service/api';
 import { useForm, useFormRules } from '@/hooks/common/form';
 import { $t } from '@/locales';
-import MenuAuthModal from './menu-auth-modal.vue';
-import ButtonAuthModal from './button-auth-modal.vue';
+import PermissionAuthModal from './button-auth-modal.vue';
 
 defineOptions({ name: 'RoleOperateDrawer' });
 
@@ -30,8 +30,7 @@ const visible = defineModel<boolean>('visible', {
 
 const { formRef, validate, restoreValidation } = useForm();
 const { defaultRequiredRule } = useFormRules();
-const { bool: menuAuthVisible, setTrue: openMenuAuthModal } = useBoolean();
-const { bool: buttonAuthVisible, setTrue: openButtonAuthModal } = useBoolean();
+const { bool: permissionAuthVisible, setTrue: openPermissionAuthModal } = useBoolean();
 
 const title = computed(() => {
   const titles: Record<UI.TableOperateType, string> = {
@@ -62,7 +61,7 @@ const rules: Record<RuleKey, App.Global.FormRule> = {
   status: defaultRequiredRule
 };
 
-const roleId = computed(() => props.rowData?.id || -1);
+const roleId = computed(() => String(props.rowData?.id ?? ''));
 
 const isEdit = computed(() => props.operateType === 'edit');
 
@@ -78,9 +77,22 @@ function closeDrawer() {
   visible.value = false;
 }
 
+const submitting = ref(false);
+
 async function handleSubmit() {
   await validate();
-  // request
+  submitting.value = true;
+  const body = {
+    roleName: model.value.roleName,
+    roleCode: model.value.roleCode,
+    roleDesc: model.value.roleDesc,
+    status: model.value.status
+  };
+  // Bản mẫu của Soybean hiện "lưu thành công" rồi không gửi gì. Chỉ báo thành
+  // công sau khi backend thực sự nhận.
+  const { error } = isEdit.value ? await fetchUpdateRole({ ...body, id: roleId.value }) : await fetchAddRole(body);
+  submitting.value = false;
+  if (error) return;
   window.$message?.success($t('common.updateSuccess'));
   closeDrawer();
   emit('submitted');
@@ -113,15 +125,18 @@ watch(visible, () => {
       </ElFormItem>
     </ElForm>
     <ElSpace v-if="isEdit">
-      <ElButton @click="openMenuAuthModal">{{ $t('page.manage.role.menuAuth') }}</ElButton>
-      <MenuAuthModal v-model:visible="menuAuthVisible" :role-id="roleId" />
-      <ElButton @click="openButtonAuthModal">{{ $t('page.manage.role.buttonAuth') }}</ElButton>
-      <ButtonAuthModal v-model:visible="buttonAuthVisible" :role-id="roleId" />
+      <!--
+        Nút "Phân quyền menu" của bản mẫu đã gỡ: cây menu là hằng số trong
+        internal/service/route.go, không có bảng menu-theo-vai-trò để ghi, nên
+        nút đó chỉ có thể hiện thông báo thành công giả.
+      -->
+      <ElButton @click="openPermissionAuthModal">{{ $t('page.manage.role.buttonAuth') }}</ElButton>
+      <PermissionAuthModal v-model:visible="permissionAuthVisible" :role-id="roleId" />
     </ElSpace>
     <template #footer>
       <ElSpace :size="16">
         <ElButton @click="closeDrawer">{{ $t('common.cancel') }}</ElButton>
-        <ElButton type="primary" @click="handleSubmit">{{ $t('common.confirm') }}</ElButton>
+        <ElButton type="primary" :loading="submitting" @click="handleSubmit">{{ $t('common.confirm') }}</ElButton>
       </ElSpace>
     </template>
   </ElDrawer>

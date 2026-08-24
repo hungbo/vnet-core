@@ -53,10 +53,10 @@ type SupplierResponse struct {
 }
 
 type CreateSupplierRequest struct {
-	Name    string `json:"name" binding:"required"`
-	Phone   string `json:"phone"`
-	Email   string `json:"email"`
-	Address string `json:"address"`
+	Name     string `json:"name" binding:"required"`
+	Phone    string `json:"phone"`
+	Email    string `json:"email"`
+	Address  string `json:"address"`
 	IsActive *bool  `json:"is_active"`
 }
 
@@ -64,26 +64,6 @@ type UpdateSupplierRequest struct {
 	Name     *string `json:"name"`
 	Phone    *string `json:"phone"`
 	Email    *string `json:"email"`
-	Address  *string `json:"address"`
-	IsActive *bool   `json:"is_active"`
-}
-
-type WarehouseResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Address   string `json:"address"`
-	IsActive  bool   `json:"is_active"`
-	CreatedAt string `json:"created_at"`
-}
-
-type CreateWarehouseRequest struct {
-	Name    string `json:"name" binding:"required"`
-	Address string `json:"address"`
-	IsActive *bool  `json:"is_active"`
-}
-
-type UpdateWarehouseRequest struct {
-	Name     *string `json:"name"`
 	Address  *string `json:"address"`
 	IsActive *bool   `json:"is_active"`
 }
@@ -101,8 +81,6 @@ type StockTransactionResponse struct {
 	ReferenceID     *string `json:"reference_id"`
 	SupplierID      *string `json:"supplier_id"`
 	SupplierName    string  `json:"supplier_name"`
-	WarehouseID     *string `json:"warehouse_id"`
-	WarehouseName   string  `json:"warehouse_name"`
 	Description     string  `json:"description"`
 	CreatedBy       *string `json:"created_by"`
 	CreatedByName   string  `json:"created_by_name"`
@@ -112,13 +90,13 @@ type StockTransactionResponse struct {
 type CreateStockTransactionRequest struct {
 	ProductID       *string `json:"product_id"`
 	TransactionType string  `json:"transaction_type" binding:"required,oneof=inbound outbound adjustment"`
-	Quantity        float64 `json:"quantity" binding:"required"`
-	UnitPrice       int64   `json:"unit_price"`
-	TotalPrice      int64   `json:"total_price"`
-	ReferenceID     *string `json:"reference_id"`
-	SupplierID      *string `json:"supplier_id"`
-	WarehouseID     *string `json:"warehouse_id"`
-	Description     string  `json:"description"`
+	// Với loại adjustment, đây là số tồn kho mục tiêu — chỉnh về 0 là hợp lệ.
+	Quantity    float64 `json:"quantity"`
+	UnitPrice   int64   `json:"unit_price"`
+	TotalPrice  int64   `json:"total_price"`
+	ReferenceID *string `json:"reference_id"`
+	SupplierID  *string `json:"supplier_id"`
+	Description string  `json:"description"`
 }
 
 type UnitResponse struct {
@@ -139,7 +117,7 @@ type ProductIngredientResponse struct {
 
 type CreateProductIngredientRequest struct {
 	IngredientID string  `json:"ingredient_id" binding:"required"`
-	Quantity     float64 `json:"quantity" binding:"required"`
+	Quantity     float64 `json:"quantity" binding:"gt=0"`
 	UnitID       string  `json:"unit_id"`
 }
 
@@ -154,7 +132,7 @@ type StockDeductionItem struct {
 
 func (s *InventoryService) ListSuppliers() ([]SupplierResponse, error) {
 	var suppliers []model.Supplier
-	if err := s.db.Where("deleted_at IS NULL").Order("name asc").Find(&suppliers).Error; err != nil {
+	if err := s.db.Order("name asc").Find(&suppliers).Error; err != nil {
 		return nil, err
 	}
 
@@ -197,7 +175,7 @@ func (s *InventoryService) CreateSupplier(req *CreateSupplierRequest) (*Supplier
 
 func (s *InventoryService) UpdateSupplier(id string, req *UpdateSupplierRequest) (*SupplierResponse, error) {
 	var supplier model.Supplier
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&supplier).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&supplier).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("không tìm thấy nhà cung cấp")
 		}
@@ -242,7 +220,7 @@ func (s *InventoryService) UpdateSupplier(id string, req *UpdateSupplierRequest)
 
 func (s *InventoryService) DeleteSupplier(id string) error {
 	var supplier model.Supplier
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&supplier).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&supplier).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("không tìm thấy nhà cung cấp")
 		}
@@ -259,110 +237,6 @@ func (s *InventoryService) DeleteSupplier(id string) error {
 		EntityType: "supplier",
 		EntityID:   supplier.ID,
 		Metadata:   map[string]interface{}{"name": supplier.Name},
-	})
-
-	return nil
-}
-
-func (s *InventoryService) ListWarehouses() ([]WarehouseResponse, error) {
-	var warehouses []model.Warehouse
-	if err := s.db.Where("deleted_at IS NULL").Order("name asc").Find(&warehouses).Error; err != nil {
-		return nil, err
-	}
-
-	responses := make([]WarehouseResponse, len(warehouses))
-	for i, w := range warehouses {
-		responses[i] = warehouseToResponse(w)
-	}
-	return responses, nil
-}
-
-func (s *InventoryService) CreateWarehouse(req *CreateWarehouseRequest) (*WarehouseResponse, error) {
-	active := true
-	if req.IsActive != nil {
-		active = *req.IsActive
-	}
-
-	warehouse := model.Warehouse{
-		Name:     req.Name,
-		Address:  req.Address,
-		IsActive: active,
-	}
-
-	if err := s.db.Create(&warehouse).Error; err != nil {
-		return nil, err
-	}
-
-	result := warehouseToResponse(warehouse)
-
-	s.audit.Log(&LogAuditRequest{
-		Action:     "create",
-		EntityType: "warehouse",
-		EntityID:   warehouse.ID,
-		Metadata:   map[string]interface{}{"name": req.Name},
-	})
-
-	return &result, nil
-}
-
-func (s *InventoryService) UpdateWarehouse(id string, req *UpdateWarehouseRequest) (*WarehouseResponse, error) {
-	var warehouse model.Warehouse
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&warehouse).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("không tìm thấy kho")
-		}
-		return nil, err
-	}
-
-	updates := map[string]interface{}{}
-	if req.Name != nil {
-		updates["name"] = *req.Name
-	}
-	if req.Address != nil {
-		updates["address"] = *req.Address
-	}
-	if req.IsActive != nil {
-		updates["is_active"] = *req.IsActive
-	}
-
-	if len(updates) > 0 {
-		if err := s.db.Model(&warehouse).Updates(updates).Error; err != nil {
-			return nil, err
-		}
-	}
-
-	s.db.First(&warehouse, "id = ?", id)
-	result := warehouseToResponse(warehouse)
-
-	s.audit.Log(&LogAuditRequest{
-		Action:     "update",
-		EntityType: "warehouse",
-		EntityID:   warehouse.ID,
-		Metadata:   map[string]interface{}{"name": warehouse.Name, "updates": updates},
-	})
-
-	return &result, nil
-}
-
-func (s *InventoryService) DeleteWarehouse(id string) error {
-	var warehouse model.Warehouse
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", id).First(&warehouse).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("không tìm thấy kho")
-		}
-		return err
-	}
-
-	now := time.Now()
-	if err := s.db.Model(&warehouse).Update("deleted_at", &now).Error; err != nil {
-		return err
-	}
-
-	s.audit.Log(&LogAuditRequest{
-		Action:     "delete",
-		EntityType: "warehouse",
-		EntityID:   warehouse.ID,
-		Metadata:   map[string]interface{}{"name": warehouse.Name},
 	})
 
 	return nil
@@ -448,7 +322,6 @@ func (s *InventoryService) CreateStockTransaction(req *CreateStockTransactionReq
 		StockAfter:      stockAfter,
 		ReferenceID:     req.ReferenceID,
 		SupplierID:      req.SupplierID,
-		WarehouseID:     req.WarehouseID,
 		Description:     req.Description,
 		CreatedBy:       &createdBy,
 	}
@@ -466,6 +339,7 @@ func (s *InventoryService) CreateStockTransaction(req *CreateStockTransactionReq
 		Action:     "create",
 		EntityType: "stock_transaction",
 		EntityID:   transaction.ID,
+		UserID:     optionalUUID(createdBy),
 		Metadata:   map[string]interface{}{"type": transaction.TransactionType, "entity_name": entityName, "quantity": req.Quantity},
 	})
 
@@ -499,16 +373,6 @@ func supplierToResponse(s model.Supplier) SupplierResponse {
 	}
 }
 
-func warehouseToResponse(w model.Warehouse) WarehouseResponse {
-	return WarehouseResponse{
-		ID:        w.ID,
-		Name:      w.Name,
-		Address:   w.Address,
-		IsActive:  w.IsActive,
-		CreatedAt: w.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-	}
-}
-
 func (s *InventoryService) ListProductIngredients(productID string) ([]ProductIngredientResponse, error) {
 	var pms []model.ProductIngredient
 	if err := s.db.Where("product_id = ?", productID).Find(&pms).Error; err != nil {
@@ -524,7 +388,7 @@ func (s *InventoryService) ListProductIngredients(productID string) ([]ProductIn
 
 func (s *InventoryService) CreateProductIngredient(productID string, req *CreateProductIngredientRequest) (*ProductIngredientResponse, error) {
 	var ingredient model.Product
-	if err := s.db.Where("id = ? AND deleted_at IS NULL", req.IngredientID).First(&ingredient).Error; err != nil {
+	if err := s.db.Where("id = ?", req.IngredientID).First(&ingredient).Error; err != nil {
 		return nil, errors.New("không tìm thấy nguyên liệu")
 	}
 
@@ -603,9 +467,19 @@ func (s *InventoryService) DeductItemsStock(tx *gorm.DB, items []StockDeductionI
 		deductions[it.IngredientID] += it.Quantity
 	}
 
-	for ingredientID, totalQty := range deductions {
+	// Iterate in a stable order. Map iteration order is random, which makes
+	// concurrent orders touching the same ingredients lock rows in opposing
+	// orders and deadlock.
+	ingredientIDs := make([]string, 0, len(deductions))
+	for id := range deductions {
+		ingredientIDs = append(ingredientIDs, id)
+	}
+	sort.Strings(ingredientIDs)
+
+	for _, ingredientID := range ingredientIDs {
+		totalQty := deductions[ingredientID]
 		var ingredient model.Product
-		if err := tx.Where("id = ? AND deleted_at IS NULL", ingredientID).First(&ingredient).Error; err != nil {
+		if err := tx.Where("id = ?", ingredientID).First(&ingredient).Error; err != nil {
 			return fmt.Errorf("không tìm thấy nguyên liệu %s", ingredientID)
 		}
 
@@ -654,9 +528,19 @@ func (s *InventoryService) RestoreItemsStock(tx *gorm.DB, items []StockDeduction
 		deductions[it.IngredientID] += it.Quantity
 	}
 
-	for ingredientID, totalQty := range deductions {
+	// Iterate in a stable order. Map iteration order is random, which makes
+	// concurrent orders touching the same ingredients lock rows in opposing
+	// orders and deadlock.
+	ingredientIDs := make([]string, 0, len(deductions))
+	for id := range deductions {
+		ingredientIDs = append(ingredientIDs, id)
+	}
+	sort.Strings(ingredientIDs)
+
+	for _, ingredientID := range ingredientIDs {
+		totalQty := deductions[ingredientID]
 		var ingredient model.Product
-		if err := tx.Where("id = ? AND deleted_at IS NULL", ingredientID).First(&ingredient).Error; err != nil {
+		if err := tx.Where("id = ?", ingredientID).First(&ingredient).Error; err != nil {
 			return fmt.Errorf("không tìm thấy nguyên liệu %s", ingredientID)
 		}
 
@@ -716,7 +600,7 @@ func (s *InventoryService) DeductStock(tx *gorm.DB, productID string, quantity i
 
 func (s *InventoryService) deductSingleIngredient(tx *gorm.DB, ingredientID string, deductQty float64, productID string, referenceID string) error {
 	var ingredient model.Product
-	if err := tx.Where("id = ? AND deleted_at IS NULL", ingredientID).First(&ingredient).Error; err != nil {
+	if err := tx.Where("id = ?", ingredientID).First(&ingredient).Error; err != nil {
 		return fmt.Errorf("không tìm thấy nguyên liệu %s", ingredientID)
 	}
 
@@ -797,14 +681,6 @@ func stockTransactionToResponse(db *gorm.DB, t model.StockTransaction) StockTran
 		}
 	}
 
-	warehouseName := ""
-	if t.WarehouseID != nil {
-		var warehouse model.Warehouse
-		if err := db.Where("id = ?", *t.WarehouseID).First(&warehouse).Error; err == nil {
-			warehouseName = warehouse.Name
-		}
-	}
-
 	createdByName := ""
 	if t.CreatedBy != nil {
 		var user model.User
@@ -826,8 +702,6 @@ func stockTransactionToResponse(db *gorm.DB, t model.StockTransaction) StockTran
 		ReferenceID:     t.ReferenceID,
 		SupplierID:      t.SupplierID,
 		SupplierName:    supplierName,
-		WarehouseID:     t.WarehouseID,
-		WarehouseName:   warehouseName,
 		Description:     t.Description,
 		CreatedBy:       t.CreatedBy,
 		CreatedByName:   createdByName,

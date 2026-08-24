@@ -70,7 +70,7 @@ func TestAuthRequired_ValidToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	jwtManager := jwt.New("test-secret", 1*time.Hour, 7*24*time.Hour, "test")
-	token, _ := jwtManager.GenerateAccessToken("u1", "admin", "admin", "r1", []string{"*"})
+	token, _ := jwtManager.GenerateAccessToken("u1", "admin", "admin", "r1", jwt.KindStaff, []string{"*"})
 
 	router := gin.New()
 	router.Use(AuthRequired(jwtManager))
@@ -203,4 +203,88 @@ func TestPermissionRequired_NoPermissionsData(t *testing.T) {
 	assert.Equal(t, 403, resp.Code)
 }
 
+// A refresh token is signed with the same key and claims type as an access
+// token, so only the "typ" claim keeps it out of the protected routes.
+func TestAuthRequired_RejectsRefreshToken(t *testing.T) {
+	gin.SetMode(gin.TestMode)
 
+	jwtManager := jwt.New("test-secret", 1*time.Hour, 7*24*time.Hour, "test")
+	refreshToken, _ := jwtManager.GenerateRefreshToken("u1", jwt.KindStaff)
+
+	router := gin.New()
+	router.Use(AuthRequired(jwtManager))
+	router.GET("/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := performRequest(router.ServeHTTP, "GET", "/test", map[string]string{
+		"Authorization": "Bearer " + refreshToken,
+	})
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+
+	var resp testResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.Equal(t, 8888, resp.Code)
+}
+
+func staffOnlyRouter(t *testing.T, kind string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+
+	jwtManager := jwt.New("test-secret", 1*time.Hour, 7*24*time.Hour, "test")
+	token, _ := jwtManager.GenerateAccessToken("u1", "someone", "member", "", kind, []string{"member.access"})
+
+	router := gin.New()
+	router.Use(AuthRequired(jwtManager), StaffOnly())
+	router.GET("/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	return performRequest(router.ServeHTTP, "GET", "/test", map[string]string{
+		"Authorization": "Bearer " + token,
+	})
+}
+
+func TestStaffOnly_RejectsMemberToken(t *testing.T) {
+	w := staffOnlyRouter(t, jwt.KindMember)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestStaffOnly_AllowsStaffToken(t *testing.T) {
+	w := staffOnlyRouter(t, jwt.KindStaff)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func selfOrStaffRequest(t *testing.T, kind, subjectID, requestedID string) *httptest.ResponseRecorder {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+
+	jwtManager := jwt.New("test-secret", 1*time.Hour, 7*24*time.Hour, "test")
+	token, _ := jwtManager.GenerateAccessToken(subjectID, "someone", "member", "", kind, []string{"member.access"})
+
+	router := gin.New()
+	router.Use(AuthRequired(jwtManager))
+	router.GET("/members/:id", SelfOrStaff("id"), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	return performRequest(router.ServeHTTP, "GET", "/members/"+requestedID, map[string]string{
+		"Authorization": "Bearer " + token,
+	})
+}
+
+func TestSelfOrStaff_MemberCanReadOwnRecord(t *testing.T) {
+	w := selfOrStaffRequest(t, jwt.KindMember, "member-1", "member-1")
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestSelfOrStaff_MemberCannotReadOtherRecord(t *testing.T) {
+	w := selfOrStaffRequest(t, jwt.KindMember, "member-1", "member-2")
+	assert.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestSelfOrStaff_StaffCanReadAnyRecord(t *testing.T) {
+	w := selfOrStaffRequest(t, jwt.KindStaff, "u1", "member-2")
+	assert.Equal(t, http.StatusOK, w.Code)
+}

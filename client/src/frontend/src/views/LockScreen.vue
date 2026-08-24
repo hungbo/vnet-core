@@ -12,7 +12,7 @@
 						<el-form-item>
 							<el-input
 								v-model="username"
-								placeholder="Tài khoản hội viên"
+								placeholder="Tài khoản"
 								size="large"
 								clearable
 							/>
@@ -48,7 +48,7 @@
 						<p class="qr-hint">Đưa mã QR vào khung hình</p>
 					</div>
 					<div class="qr-placeholder" v-else>
-						<el-icon :size="64" color="#909399"><Camera /></el-icon>
+						<el-icon :size="64" color="var(--vnet-text-muted)"><Camera /></el-icon>
 						<p class="qr-hint">Quét mã QR trên ứng dụng VNET Mobile</p>
 						<el-button type="primary" size="large" @click="startCamera" style="margin-top: 16px;">
 							Mở camera
@@ -58,23 +58,73 @@
 			</el-tabs>
 
 			<div class="admin-link">
-				<el-button text size="small" @click="$emit('adminLogin')">
-					Đăng nhập quản trị
+				<el-button v-if="coPin" text size="small" @click="hienPin = !hienPin">
+					Mở khoá kỹ thuật
 				</el-button>
+			</div>
+
+			<!--
+				Đường vào DUY NHẤT khi mất mạng. Mọi cách đăng nhập phía trên đều
+				gọi API, nên router hỏng là cả phòng máy đứng trước màn hình khoá
+				phủ kín mà không có gì gõ vào được.
+			-->
+			<div v-if="hienPin" class="pin-box">
+				<el-input
+					v-model="pin"
+					type="password"
+					size="large"
+					placeholder="PIN kỹ thuật"
+					show-password
+					@keyup.enter="moKhoaKyThuat"
+				/>
+				<el-button type="warning" size="large" :loading="dangMo" @click="moKhoaKyThuat">
+					Mở khoá
+				</el-button>
+				<p class="pin-hint">
+					Mở máy để sửa chữa. Không mở phiên chơi và không tính tiền.
+				</p>
 			</div>
 		</div>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Camera } from '@element-plus/icons-vue'
 import jsQR from 'jsqr'
 
+declare const window: any
+const api = () => window.go?.main?.App
+
 const emit = defineEmits<{
 	login: [username: string, password: string]
-	adminLogin: []
 }>()
+
+const coPin = ref(false)
+const hienPin = ref(false)
+const pin = ref('')
+const dangMo = ref(false)
+
+// Máy chưa đặt PIN thì không hiện nút: mời người ta gõ vào một cái không bao giờ
+// đúng là cách chắc chắn nhất để họ tưởng máy hỏng.
+onMounted(async () => {
+	try { coPin.value = await api().HasMaintenancePin() } catch { coPin.value = false }
+})
+
+async function moKhoaKyThuat() {
+	if (!pin.value) return
+	dangMo.value = true
+	try {
+		await api().UnlockMaintenance(pin.value)
+		pin.value = ''
+		hienPin.value = false
+	} catch (e) {
+		ElMessage.error(String(e).replace(/^Error:\s*/, ''))
+	} finally {
+		dangMo.value = false
+	}
+}
 
 defineProps<{
 	loading?: boolean
@@ -167,15 +217,22 @@ onUnmounted(() => {
 	align-items: center;
 	justify-content: center;
 	height: 100vh;
-	background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+	/* Nền dựng từ token thay vì ba mã màu chép tay: đây là màn hình phủ kín và
+	   đứng nguyên suốt thời gian máy trống, nên nó phải cùng một tông với phần
+	   còn lại chứ không phải một hòn đảo riêng. */
+	background: radial-gradient(circle at 50% 30%, var(--vnet-surface-2), var(--vnet-bg) 70%);
 }
 
 .lock-card {
 	width: 380px;
 	padding: 40px 32px 24px;
-	background: rgba(255, 255, 255, .95);
+	/* Thẻ TRẮNG trên nền tối là mảnh sót lại từ trước khi máy trạm chuyển sang
+	   tông tối. Không ai thấy nó vì màn hình khoá xưa nay nằm gọn trong thanh
+	   360px; giờ nó phủ kín màn hình nên sai màu là sai to. */
+	background: var(--vnet-surface);
+	border: 1px solid var(--vnet-border);
 	border-radius: 16px;
-	box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
+	box-shadow: var(--vnet-shadow);
 }
 
 .logo {
@@ -196,7 +253,7 @@ onUnmounted(() => {
 .logo-sub {
 	display: block;
 	font-size: 11px;
-	color: #909399;
+	color: var(--vnet-text-muted);
 	letter-spacing: 4px;
 	text-transform: uppercase;
 	margin-top: 4px;
@@ -237,9 +294,22 @@ onUnmounted(() => {
 }
 
 .qr-hint {
-	color: #909399;
+	color: var(--vnet-text-muted);
 	font-size: 13px;
 	margin-top: 12px;
+	text-align: center;
+}
+
+.pin-box {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	margin-top: 12px;
+}
+
+.pin-hint {
+	font-size: 12px;
+	color: var(--vnet-text-muted);
 	text-align: center;
 }
 

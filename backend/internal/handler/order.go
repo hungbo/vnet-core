@@ -100,7 +100,7 @@ func (h *OrderHandler) Update(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
-	result, err := h.svc.Update(id, req)
+	result, err := h.svc.Update(id, req, middleware.GetUserID(c))
 	if err != nil {
 		handleCreateError(c, err)
 		return
@@ -249,6 +249,33 @@ func (h *OrderHandler) Pay(c *gin.Context) {
 		return
 	}
 	result, err := h.svc.Pay(id, req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// UpdateItemStatus
+// @Summary Đổi trạng thái một món trong đơn
+// @Description Luồng bếp: pending → preparing → ready → served
+// @Tags Orders
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Order ID"
+// @Param itemId path string true "Order item ID"
+// @Param request body service.UpdateItemStatusRequest true "Trạng thái mới"
+// @Success 200 {object} response.Response{data=service.OrderItemResponse}
+// @Failure 400 {object} response.Response
+// @Router /orders/{id}/items/{itemId}/status [post]
+func (h *OrderHandler) UpdateItemStatus(c *gin.Context) {
+	var req service.UpdateItemStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	result, err := h.svc.UpdateItemStatus(c.Param("id"), c.Param("itemId"), req.Status, middleware.GetUserID(c))
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

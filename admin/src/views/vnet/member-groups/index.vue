@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
+import { formatAmount } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -28,7 +29,13 @@ const form = ref({
 });
 
 const rules: FormRules = {
-  name: [{ required: true, message: $t('vnetPages.memberGroups.nameRequired'), trigger: 'blur' }]
+  name: [
+    {
+      required: true,
+      message: $t('vnetPages.memberGroups.nameRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
 function formatDate(dateStr: string | undefined) {
@@ -37,7 +44,10 @@ function formatDate(dateStr: string | undefined) {
 }
 
 const { columns, columnChecks, data, getData, loading } = useUITable({
-  api: () => client.get('/member-groups', { params: { search: search.value || undefined } }),
+  api: () =>
+    client.get('/member-groups', {
+      params: { search: search.value || undefined }
+    }),
   transform: vnetSimpleTransform,
   columns: () => [
     { prop: 'name', label: $t('vnetPages.memberGroups.name'), minWidth: 150 },
@@ -46,7 +56,7 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
       label: $t('vnetPages.memberGroups.minSpent'),
       width: 130,
       align: 'right',
-      formatter: (row: any) => row.min_spent?.toLocaleString() ?? ''
+      formatter: (row: any) => formatAmount(row.min_spent)
     },
     {
       prop: 'discount_percent',
@@ -81,7 +91,12 @@ function searchData() {
 function openCreate() {
   isEdit.value = false;
   editingId.value = null;
-  form.value = { name: '', min_spent: 0, discount_percent: 0, is_default: false };
+  form.value = {
+    name: '',
+    min_spent: 0,
+    discount_percent: 0,
+    is_default: false
+  };
   dialogVisible.value = true;
 }
 
@@ -136,7 +151,12 @@ async function handleDelete(row: any) {
     await client.delete(`/member-groups/${row.id}`);
     ElMessage.success($t('vnetPages.memberGroups.deleteSuccess'));
     getData();
-  } catch {}
+  } catch (e: any) {
+    // ElMessageBox từ chối bằng chuỗi 'cancel'/'close' khi người dùng bấm Huỷ —
+    // đó không phải lỗi. Còn lại là backend từ chối (ràng buộc dữ liệu, quy tắc
+    // nghiệp vụ) và phải nói ra; `catch {}` rỗng làm nút bấm vào im lặng.
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
 }
 </script>
 
@@ -154,7 +174,13 @@ async function handleDelete(row: any) {
           />
           <ElButton type="primary" @click="searchData">{{ $t('vnetPages.common.search') }}</ElButton>
         </div>
-        <TableHeaderOperation v-model:columns="columnChecks" :loading="loading" @add="openCreate" @refresh="getData" />
+        <TableHeaderOperation
+          v-model:columns="columnChecks"
+          :loading="loading"
+          :show-delete="false"
+          @add="openCreate"
+          @refresh="getData"
+        />
       </div>
 
       <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">

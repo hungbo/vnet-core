@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
@@ -8,6 +9,11 @@ import { vnetTransform } from '@/hooks/common/vnet-table';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+
+// Bốn giá trị này là enum của cột notifications.type ở backend. Bảng và ô chọn
+// phải đọc chung một danh sách, nếu không giao diện lại hiện mã thô "promotion".
+const TYPES = ['info', 'warning', 'promotion', 'system'] as const;
+const typeOptions = computed(() => TYPES.map(v => ({ value: v, label: $t(`vnetPages.notifications.types.${v}`) })));
 
 const saving = ref(false);
 const dialogVisible = ref(false);
@@ -17,19 +23,53 @@ const formRef = ref<any>(null);
 const form = ref<any>({ type: 'info', title: '', content: '' });
 
 const rules = {
-  type: [{ required: true, message: $t('vnetPages.notifications.form.typeRequired'), trigger: 'blur' }],
-  title: [{ required: true, message: $t('vnetPages.notifications.form.titleRequired'), trigger: 'blur' }]
+  type: [
+    {
+      required: true,
+      message: $t('vnetPages.notifications.form.typeRequired'),
+      trigger: 'blur'
+    }
+  ],
+  title: [
+    {
+      required: true,
+      message: $t('vnetPages.notifications.form.titleRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
 const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
   api: ({ page, pageSize }: { page: number; pageSize: number }) =>
-    client.get('/admin/notifications', { params: { page, page_size: pageSize } }),
+    client.get('/admin/notifications', {
+      params: { page, page_size: pageSize }
+    }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'type', label: $t('vnetPages.notifications.type'), width: 100 },
-    { prop: 'title', label: $t('vnetPages.notifications.title'), minWidth: 200 },
-    { prop: 'content', label: $t('vnetPages.notifications.content'), minWidth: 300, showOverflowTooltip: true },
-    { prop: 'created_at', label: $t('vnetPages.notifications.createdAt'), width: 180 }
+    {
+      prop: 'type',
+      label: $t('vnetPages.notifications.type'),
+      width: 120,
+      formatter: (row: any) =>
+        (TYPES as readonly string[]).includes(row.type) ? $t(`vnetPages.notifications.types.${row.type}`) : row.type
+    },
+    {
+      prop: 'title',
+      label: $t('vnetPages.notifications.title'),
+      minWidth: 200
+    },
+    {
+      prop: 'content',
+      label: $t('vnetPages.notifications.content'),
+      minWidth: 300,
+      showOverflowTooltip: true
+    },
+    {
+      prop: 'created_at',
+      label: $t('vnetPages.notifications.createdAt'),
+      width: 180,
+      formatter: (row: any) => (row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm') : '-')
+    }
   ]
 });
 
@@ -88,13 +128,15 @@ async function handleDelete(row: any) {
 
 async function handleDispatch(row: any) {
   try {
-    await ElMessageBox.confirm(
-      $t('vnetPages.notifications.messages.dispatchConfirm'),
-      $t('vnetPages.common.confirm'),
-      { type: 'info' }
-    );
+    await ElMessageBox.confirm($t('vnetPages.notifications.messages.dispatchConfirm'), $t('vnetPages.common.confirm'), {
+      type: 'info'
+    });
     const res: any = await client.post(`/admin/notifications/${row.id}/dispatch`);
-    ElMessage.success($t('vnetPages.notifications.messages.dispatchSuccess', { count: res.dispatched ?? 0 }));
+    ElMessage.success(
+      $t('vnetPages.notifications.messages.dispatchSuccess', {
+        count: res.dispatched ?? 0
+      })
+    );
   } catch (_) {}
 }
 </script>
@@ -108,10 +150,10 @@ async function handleDispatch(row: any) {
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
-          >
-          </TableHeaderOperation>
+          ></TableHeaderOperation>
         </div>
       </template>
       <ElTable v-loading="loading" :data="data" style="width: 100%">
@@ -147,10 +189,7 @@ async function handleDispatch(row: any) {
       <ElForm ref="formRef" :model="form" :rules="rules" :label-width="80">
         <ElFormItem :label="$t('vnetPages.notifications.type')" prop="type">
           <ElSelect v-model="form.type" style="width: 100%">
-            <ElOption label="Info" value="info" />
-            <ElOption label="Warning" value="warning" />
-            <ElOption label="Promotion" value="promotion" />
-            <ElOption label="System" value="system" />
+            <ElOption v-for="opt in typeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </ElSelect>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.notifications.title')" prop="title">

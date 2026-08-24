@@ -2,6 +2,7 @@ package handler
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/response"
 )
@@ -150,4 +151,43 @@ func (h *PrinterHandler) TestPrint(c *gin.Context) {
 	}
 
 	response.Success(c, "Test print sent successfully")
+}
+
+// ListProducts
+// @Summary      Danh sách món gán cho máy in
+// @Tags         Printers
+// @Produce      json
+// @Param        id  path  string  true  "Printer ID"
+// @Success      200  {object}  response.Response
+// @Router       /api/printers/{id}/products [get]
+func (h *PrinterHandler) ListProducts(c *gin.Context) {
+	ids, err := h.svc.ListProducts(c.Param("id"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"product_ids": ids})
+}
+
+// SetProducts
+// @Summary      Gán món cho máy in (thay toàn bộ danh sách)
+// @Tags         Printers
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string                      true  "Printer ID"
+// @Param        body  body  service.SetProductsRequest  true  "Danh sách mã sản phẩm"
+// @Success      200  {object}  response.Response
+// @Router       /api/printers/{id}/products [put]
+func (h *PrinterHandler) SetProducts(c *gin.Context) {
+	var req service.SetProductsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	ids, err := h.svc.SetProducts(c.Param("id"), req.ProductIDs, middleware.GetUserID(c))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"product_ids": ids})
 }

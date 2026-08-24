@@ -1,0 +1,91 @@
+/*
+ * Bảng màu tối của máy khách VNET.
+ *
+ * Trước đây không có một tệp CSS nguồn nào: màu hex nằm rải rác trong mười sáu
+ * khối <style scoped>, và riêng #f0f2f5 lặp ở bốn tệp. Đổi tông là phải đi sửa
+ * từng chỗ, và luôn sót.
+ *
+ * Chỉ có MỘT bảng màu — máy trạm đặt trong phòng tối, không cần chế độ sáng,
+ * nên không dựng cơ chế đổi theme. Nếu sau này cần, thêm một khối
+ * :root[data-theme="light"] ghi đè đúng các biến dưới đây là đủ.
+ */
+
+:root {
+	/* Nền: ba tầng độ sâu, dùng để tách lớp thay vì vẽ viền khắp nơi. */
+	--vnet-bg: #0d1017;
+	--vnet-surface: #151a23;
+	--vnet-surface-2: #1c222e;
+	--vnet-border: #262e3d;
+
+	/* Chữ: bốn mức tương phản. muted dùng cho nhãn, faint cho chú thích. */
+	--vnet-text: #e6e9ef;
+	--vnet-text-muted: #9aa4b8;
+	--vnet-text-faint: #6b7689;
+
+	/* Màu nhấn. Một màu chính, còn lại là màu ngữ nghĩa. */
+	--vnet-primary: #4c7dff;
+	--vnet-primary-soft: rgba(76, 125, 255, 0.14);
+	--vnet-success: #3fb950;
+	--vnet-warning: #d9a441;
+	--vnet-danger: #f0603d;
+
+	--vnet-radius: 12px;
+	--vnet-radius-sm: 8px;
+	--vnet-gap: 12px;
+	--vnet-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+
+	color-scheme: dark;
+}
+
+/*
+ * Element Plus đọc biến riêng của nó. Ánh xạ sang bảng trên để nút, ô nhập, thẻ
+ * và hộp thoại không lạc tông — nếu không, phần giao diện tự viết thì tối còn
+ * phần Element Plus vẫn trắng.
+ */
+:root {
+	--el-color-primary: var(--vnet-primary);
+	--el-color-success: var(--vnet-success);
+	--el-color-warning: var(--vnet-warning);
+	--el-color-danger: var(--vnet-danger);
+	--el-color-error: var(--vnet-danger);
+
+	--el-bg-color: var(--vnet-surface);
+	--el-bg-color-page: var(--vnet-bg);
+	--el-bg-color-overlay: var(--vnet-surface-2);
+
+	--el-text-color-primary: var(--vnet-text);
+	--el-text-color-regular: var(--vnet-text-muted);
+	--el-text-color-secondary: var(--vnet-text-muted);
+	--el-text-color-placeholder: var(--vnet-text-faint);
+	--el-text-color-disabled: var(--vnet-text-faint);
+
+	--el-border-color: var(--vnet-border);
+	--el-border-color-light: var(--vnet-border);
+	--el-border-color-lighter: var(--vnet-border);
+	--el-border-color-extra-light: var(--vnet-border);
+	--el-fill-color-blank: var(--vnet-surface);
+	--el-fill-color-light: var(--vnet-surface-2);
+	--el-mask-color: rgba(6, 9, 14, 0.72);
+}
+
+html,
+body,
+#app {
+	background: var(--vnet-bg);
+	color: var(--vnet-text);
+}
+
+/* Thanh cuộn mảnh, hoà vào nền — thanh cuộn trắng mặc định rất chói trên nền tối. */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--vnet-border);
+	border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}

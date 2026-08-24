@@ -1,5 +1,12 @@
 <template>
-	<el-drawer v-model="store.showCart" title="Giỏ hàng" size="320px">
+	<!--
+		Cột thường, KHÔNG phải el-drawer. Ngăn kéo nghĩa là khách phải bấm vào
+		biểu tượng giỏ mới thấy mình đã chọn gì và hết bao nhiêu tiền — mà đó
+		đúng là hai thứ người ta muốn nhìn trong lúc chọn món.
+	-->
+	<aside class="cart-panel">
+		<h4 class="cart-title">Giỏ hàng<span v-if="store.cartCount" class="cart-count">{{ store.cartCount }}</span></h4>
+
 		<div class="cart-balance" v-if="balance !== null">
 			<span class="cart-balance-label">Số dư:</span>
 			<span class="cart-balance-value">{{ formatCurrency(balance) }}</span>
@@ -22,10 +29,17 @@
 			<span>Tổng cộng:</span>
 			<span class="cart-total-value">{{ formatCurrency(store.cartTotal) }}</span>
 		</div>
-		<el-button type="primary" size="large" style="width:100%;margin-top:12px" :loading="store.ordering" @click="store.placeOrder">
+		<el-button
+			type="primary"
+			size="large"
+			style="width:100%;margin-top:12px"
+			:loading="store.ordering"
+			:disabled="store.cart.length === 0"
+			@click="store.placeOrder"
+		>
 			Gọi món
 		</el-button>
-	</el-drawer>
+	</aside>
 </template>
 
 <script setup lang="ts">
@@ -43,9 +57,36 @@ function formatCurrency(n: number) {
 </script>
 
 <style scoped>
+.cart-panel {
+	width: 320px;
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	padding: 16px;
+	background: var(--vnet-surface);
+	border-left: 1px solid var(--vnet-border);
+	overflow-y: auto;
+}
+
+.cart-title {
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--vnet-text);
+	margin-bottom: 8px;
+}
+
+.cart-count {
+	margin-left: 8px;
+	padding: 1px 8px;
+	border-radius: 10px;
+	font-size: 12px;
+	background: var(--vnet-primary);
+	color: #fff;
+}
+
 .cart-empty {
 	text-align: center;
-	color: #909399;
+	color: var(--vnet-text-muted);
 	padding: 40px 0;
 }
 
@@ -53,24 +94,24 @@ function formatCurrency(n: number) {
 	display: flex;
 	justify-content: space-between;
 	padding: 12px 0;
-	border-bottom: 1px solid #f0f0f0;
+	border-bottom: 1px solid var(--vnet-border);
 	margin-bottom: 8px;
 }
 
 .cart-balance-label {
 	font-size: 14px;
-	color: #606266;
+	color: var(--vnet-text-muted);
 }
 
 .cart-balance-value {
 	font-size: 14px;
 	font-weight: 600;
-	color: #67c23a;
+	color: var(--vnet-success);
 }
 
 .cart-item {
 	padding: 12px 0;
-	border-bottom: 1px solid #f0f0f0;
+	border-bottom: 1px solid var(--vnet-border);
 }
 
 .cart-item-info {
@@ -86,7 +127,7 @@ function formatCurrency(n: number) {
 
 .cart-item-price {
 	font-size: 14px;
-	color: #e6a23c;
+	color: var(--vnet-warning);
 	font-weight: 600;
 }
 
@@ -112,6 +153,6 @@ function formatCurrency(n: number) {
 }
 
 .cart-total-value {
-	color: #e6a23c;
+	color: var(--vnet-warning);
 }
 </style>

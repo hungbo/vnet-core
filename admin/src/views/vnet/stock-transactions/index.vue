@@ -6,13 +6,10 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
-
-function formatPrice(price: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price || 0);
-}
 
 const saving = ref(false);
 
@@ -20,14 +17,34 @@ const products = ref<any[]>([]);
 
 const dialog = ref(false);
 const formRef = ref<any>(null);
-const form = ref<any>({ product_id: null, transaction_type: 'inbound', quantity: 1, unit_price: 0 });
+const form = ref<any>({
+  product_id: null,
+  transaction_type: 'inbound',
+  quantity: 1,
+  unit_price: 0
+});
 const rules = {
-  product_id: [{ required: true, message: $t('vnetPages.stockTransactions.form.productRequired'), trigger: 'change' }],
-  quantity: [{ required: true, message: $t('vnetPages.stockTransactions.form.quantityRequired'), trigger: 'blur' }]
+  product_id: [
+    {
+      required: true,
+      message: $t('vnetPages.stockTransactions.form.productRequired'),
+      trigger: 'change'
+    }
+  ],
+  quantity: [
+    {
+      required: true,
+      message: $t('vnetPages.stockTransactions.form.quantityRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
 const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) => client.get('/stock-transactions', { params: { page, page_size: pageSize } }),
+  api: ({ page, pageSize }) =>
+    client.get('/stock-transactions', {
+      params: { page, page_size: pageSize }
+    }),
   transform: vnetTransform,
   columns: () => [
     {
@@ -47,9 +64,21 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
             : $t('vnetPages.stockTransactions.exportLabel')
         )
     },
-    { prop: 'quantity', label: $t('vnetPages.stockTransactions.quantity'), width: 90 },
-    { prop: 'stock_before', label: $t('vnetPages.stockTransactions.before'), width: 80 },
-    { prop: 'stock_after', label: $t('vnetPages.stockTransactions.after'), width: 80 },
+    {
+      prop: 'quantity',
+      label: $t('vnetPages.stockTransactions.quantity'),
+      width: 90
+    },
+    {
+      prop: 'stock_before',
+      label: $t('vnetPages.stockTransactions.before'),
+      width: 80
+    },
+    {
+      prop: 'stock_after',
+      label: $t('vnetPages.stockTransactions.after'),
+      width: 80
+    },
     {
       prop: 'total_price',
       label: $t('vnetPages.stockTransactions.totalPrice'),
@@ -73,13 +102,23 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
 
 async function fetchProducts() {
   try {
-    const res: any = await client.get('/products', { params: { page_size: 1000 } });
+    const res: any = await client.get('/products', {
+      params: { page_size: 1000 }
+    });
     products.value = Array.isArray(res) ? res : res?.items || [];
   } catch (_) {}
 }
 
-function handleCreate() {
-  form.value = { product_id: null, transaction_type: 'inbound', quantity: 1, unit_price: 0 };
+async function handleCreate() {
+  form.value = {
+    product_id: null,
+    transaction_type: 'inbound',
+    quantity: 1,
+    unit_price: 0
+  };
+  // fetchProducts trước đây không ai gọi (tệp không có onMounted), nên ô chọn
+  // sản phẩm luôn rỗng và hộp thoại này không tạo được phiếu nào.
+  await fetchProducts();
   dialog.value = true;
 }
 
@@ -109,6 +148,7 @@ async function handleSave() {
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
           />
@@ -136,7 +176,12 @@ async function handleSave() {
             :placeholder="$t('vnetPages.stockTransactions.form.productRequired')"
             style="width: 100%"
           >
-            <ElOption v-for="p in products" :key="p.id" :label="p.name" :value="p.id" />
+            <ElOption
+              v-for="p in products"
+              :key="p.id"
+              :label="`${p.name} — ${$t('vnetPages.stockTransactions.before')}: ${p.current_stock ?? 0}`"
+              :value="p.id"
+            />
           </ElSelect>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.stockTransactions.transactionType')" prop="transaction_type">

@@ -36,7 +36,7 @@ func (h *ProductHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.Query("page"))
 	pageSize, _ := strconv.Atoi(c.Query("page_size"))
 
-	result, err := h.svc.List(isRetail, search, page, pageSize)
+	result, err := h.svc.List(isRetail, c.Query("category_id"), search, page, pageSize)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch products")
 		return

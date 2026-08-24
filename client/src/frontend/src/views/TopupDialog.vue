@@ -3,11 +3,11 @@
 		<div class="balance-info" v-if="memberInfo">
 			<div class="info-row">
 				<span>Số dư hiện tại</span>
-				<strong style="color: #67c23a;">{{ formatCurrency(memberInfo.balance) }}</strong>
+				<strong style="color: var(--vnet-success);">{{ formatCurrency(memberInfo.balance) }}</strong>
 			</div>
 			<div class="info-row" v-if="memberInfo.bonus_balance">
 				<span>KM</span>
-				<strong style="color: #e6a23c;">{{ formatCurrency(memberInfo.bonus_balance) }}</strong>
+				<strong style="color: var(--vnet-warning);">{{ formatCurrency(memberInfo.bonus_balance) }}</strong>
 			</div>
 		</div>
 
@@ -130,25 +130,25 @@ onMounted(async () => {
 
 .preset-btn {
 	padding: 10px 4px;
-	border: 1px solid #dcdfe6;
+	border: 1px solid var(--vnet-border);
 	border-radius: 8px;
-	background: #fff;
+	background: var(--vnet-surface);
 	cursor: pointer;
 	font-size: 12px;
 	font-weight: 500;
-	color: #303133;
+	color: var(--vnet-text);
 	transition: all .2s;
 }
 
 .preset-btn:hover {
-	border-color: #409eff;
-	color: #409eff;
+	border-color: var(--vnet-primary);
+	color: var(--vnet-primary);
 }
 
 .preset-btn.active {
-	background: #409eff;
-	color: #fff;
-	border-color: #409eff;
+	background: var(--vnet-primary);
+	color: var(--vnet-surface);
+	border-color: var(--vnet-primary);
 }
 
 .custom-input {
@@ -158,7 +158,7 @@ onMounted(async () => {
 .custom-label {
 	display: block;
 	font-size: 12px;
-	color: #909399;
+	color: var(--vnet-text-muted);
 	margin-bottom: 6px;
 }
 
@@ -173,7 +173,7 @@ onMounted(async () => {
 
 .hint {
 	font-size: 11px;
-	color: #909399;
+	color: var(--vnet-text-muted);
 	text-align: center;
 	margin-top: 8px;
 }

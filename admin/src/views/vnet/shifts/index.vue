@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -18,27 +19,52 @@ const openDialog = ref(false);
 const openFormRef = ref<any>(null);
 const openForm = ref({ opening_balance: 0 });
 const openRules = {
-  opening_balance: [{ required: true, message: $t('vnetPages.shifts.form.amountRequired'), trigger: 'blur' }]
+  opening_balance: [
+    {
+      required: true,
+      message: $t('vnetPages.shifts.form.amountRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
 const closeDialog = ref(false);
 const closeFormRef = ref<any>(null);
 const closeForm = ref({ id: null, closing_balance: 0 });
 const closeRules = {
-  closing_balance: [{ required: true, message: $t('vnetPages.shifts.form.amountRequired'), trigger: 'blur' }]
+  closing_balance: [
+    {
+      required: true,
+      message: $t('vnetPages.shifts.form.amountRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
 const handoverDialog = ref(false);
 const handoverFormRef = ref<any>(null);
-const handoverForm = ref({ id: null, amount: 0, handover_type: 'cash_in', reason: '' });
+const handoverForm = ref({
+  id: null,
+  amount: 0,
+  handover_type: 'cash_in',
+  reason: ''
+});
 const handoverRules = {
-  amount: [{ required: true, message: $t('vnetPages.shifts.form.amountRequired'), trigger: 'blur' }],
-  handover_type: [{ required: true, message: $t('vnetPages.shifts.form.handoverTypePlaceholder'), trigger: 'change' }]
+  amount: [
+    {
+      required: true,
+      message: $t('vnetPages.shifts.form.amountRequired'),
+      trigger: 'blur'
+    }
+  ],
+  handover_type: [
+    {
+      required: true,
+      message: $t('vnetPages.shifts.form.handoverTypePlaceholder'),
+      trigger: 'change'
+    }
+  ]
 };
-
-function formatPrice(price: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price || 0);
-}
 
 const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
   api: ({ page, pageSize }) =>
@@ -52,7 +78,13 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'user_id', label: $t('vnetPages.shifts.user'), width: 120 },
+    // Trước đây đọc user_id nên bảng hiện UUID thô; backend nay trả kèm user_name.
+    {
+      prop: 'user_name',
+      label: $t('vnetPages.shifts.user'),
+      minWidth: 140,
+      formatter: (row: any) => row.user_name || row.user_id || '-'
+    },
     {
       prop: 'started_at',
       label: $t('vnetPages.shifts.startTime'),
@@ -85,6 +117,25 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       label: $t('vnetPages.shifts.closingCash'),
       width: 120,
       formatter: (row: any) => (row.closing_balance != null ? formatPrice(row.closing_balance) : '-')
+    },
+    {
+      prop: 'expected_total',
+      label: $t('vnetPages.shifts.expectedTotal'),
+      width: 130,
+      formatter: (row: any) => (row.expected_total != null ? formatPrice(row.expected_total) : '-')
+    },
+    {
+      // The two numbers a shift close exists to produce. They were computed but
+      // never shown, so nobody could see whether the till balanced.
+      prop: 'discrepancy',
+      label: $t('vnetPages.shifts.discrepancy'),
+      width: 130,
+      formatter: (row: any) => {
+        if (row.discrepancy == null) return '-';
+        const type = row.discrepancy === 0 ? 'success' : 'danger';
+        const sign = row.discrepancy > 0 ? '+' : '';
+        return h(ElTag, { type, size: 'small' }, () => `${sign}${formatPrice(row.discrepancy)}`);
+      }
     }
   ]
 });
@@ -124,7 +175,9 @@ async function handleSaveClose() {
   if (!valid) return;
   saving.value = true;
   try {
-    await client.post(`/shifts/${closeForm.value.id}/close`, { closing_balance: closeForm.value.closing_balance });
+    await client.post(`/shifts/${closeForm.value.id}/close`, {
+      closing_balance: closeForm.value.closing_balance
+    });
     ElMessage.success($t('vnetPages.shifts.messages.closeSuccess'));
     closeDialog.value = false;
     await fetchData();
@@ -136,7 +189,12 @@ async function handleSaveClose() {
 }
 
 function handleHandover(row: any) {
-  handoverForm.value = { id: row.id, amount: 0, handover_type: 'cash_in', reason: '' };
+  handoverForm.value = {
+    id: row.id,
+    amount: 0,
+    handover_type: 'cash_in',
+    reason: ''
+  };
   handoverDialog.value = true;
 }
 
@@ -167,7 +225,13 @@ async function handleSaveHandover() {
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.shifts.title') }}</span>
-          <TableHeaderOperation v-model:columns="columnChecks" :loading="loading" @refresh="getData">
+          <TableHeaderOperation
+            v-model:columns="columnChecks"
+            :loading="loading"
+            :show-add="false"
+            :show-delete="false"
+            @refresh="getData"
+          >
             <template #prefix>
               <ElSelect
                 v-model="filterStatus"

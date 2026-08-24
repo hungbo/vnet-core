@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { formatPrice } from '@/utils/money';
 
 const { t: $t } = useI18n();
 
@@ -14,10 +15,6 @@ const total = ref(0);
 const search = ref('');
 const typeFilter = ref('');
 const dateRange = ref<any>(null);
-
-function formatPrice(price: number) {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(price || 0);
-}
 
 function typeLabel(type: string) {
   const map: Record<string, string> = {

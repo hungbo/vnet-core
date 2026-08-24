@@ -58,6 +58,21 @@ export const useChatStore = defineStore('chat', () => {
         }
       } catch {}
     })
+    // Staff can open a conversation from their side; without this the client
+    // kept waiting on a room it had not been told about.
+    EventsOn('vnet:room:new', () => {
+      loadSupportConv()
+    })
+    // A room removed by staff must not stay on screen with stale messages.
+    EventsOn('vnet:room:deleted', (data: string) => {
+      try {
+        const parsed = JSON.parse(data)
+        if (parsed.room_id === roomId.value || parsed.id === roomId.value) {
+          roomId.value = ''
+          messages.value = []
+        }
+      } catch {}
+    })
   }
 
   async function loadSupportConv(uid?: string) {

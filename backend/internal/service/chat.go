@@ -22,27 +22,27 @@ func NewChatService(db *gorm.DB, wsHub *hub.Hub, audit *AuditService) *ChatServi
 }
 
 type CreateRoomRequest struct {
-	Title         string   `json:"title"`
-	ParticipantID string   `json:"participant_id" binding:"required"`
+	Title           string `json:"title"`
+	ParticipantID   string `json:"participant_id" binding:"required"`
 	ParticipantType string `json:"participant_type" binding:"required"`
 }
 
 type SendMessageRequest struct {
-	RoomID string `json:"room_id" binding:"required"`
-	SenderType     string `json:"sender_type" binding:"required"`
-	SenderID       string `json:"sender_id" binding:"required"`
-	Message        string `json:"message" binding:"required"`
-	MessageType    string `json:"message_type"`
+	RoomID      string `json:"room_id" binding:"required"`
+	SenderType  string `json:"sender_type" binding:"required"`
+	SenderID    string `json:"sender_id" binding:"required"`
+	Message     string `json:"message" binding:"required"`
+	MessageType string `json:"message_type"`
 }
 
 type RoomResponse struct {
-	ID          string            `json:"id"`
-	Title       string            `json:"title"`
-	IsGroup     bool              `json:"is_group"`
-	LastMessage *MessageResponse  `json:"last_message,omitempty"`
-	UnreadCount int               `json:"unread_count"`
+	ID           string            `json:"id"`
+	Title        string            `json:"title"`
+	IsGroup      bool              `json:"is_group"`
+	LastMessage  *MessageResponse  `json:"last_message,omitempty"`
+	UnreadCount  int               `json:"unread_count"`
 	Participants []ParticipantInfo `json:"participants,omitempty"`
-	CreatedAt   time.Time         `json:"created_at"`
+	CreatedAt    time.Time         `json:"created_at"`
 }
 
 type ParticipantInfo struct {
@@ -127,13 +127,13 @@ func (s *ChatService) ListRooms(participantID string, participantType string, pa
 		}
 
 		result[i] = RoomResponse{
-			ID:          room.ID,
-			Title:       room.Title,
-			IsGroup:     room.IsGroup,
-			LastMessage: lastMsgResp,
-			UnreadCount: int(unreadCount),
+			ID:           room.ID,
+			Title:        room.Title,
+			IsGroup:      room.IsGroup,
+			LastMessage:  lastMsgResp,
+			UnreadCount:  int(unreadCount),
 			Participants: s.getParticipants(room.ID),
-			CreatedAt:   room.CreatedAt,
+			CreatedAt:    room.CreatedAt,
 		}
 	}
 
@@ -154,7 +154,7 @@ func (s *ChatService) CreateRoom(req *CreateRoomRequest) (*RoomResponse, error) 
 	}
 
 	participant := model.ChatParticipant{
-		RoomID:  room.ID,
+		RoomID:          room.ID,
 		ParticipantType: req.ParticipantType,
 		ParticipantID:   req.ParticipantID,
 	}
@@ -174,6 +174,18 @@ func (s *ChatService) CreateRoom(req *CreateRoomRequest) (*RoomResponse, error) 
 
 	if s.hub != nil {
 		s.hub.JoinAllAdminsToRoom(room.ID)
+		// Người vừa mở phòng cũng phải được vào phòng trên hub, không chỉ nhân
+		// viên.
+		//
+		// HubRoomSync nạp danh sách phòng đúng MỘT LẦN, lúc WebSocket kết nối,
+		// từ bảng chat_participants. Phòng này vừa sinh ra SAU thời điểm đó nên
+		// nó không có trong danh sách, và không chỗ nào nối bù: SendMessage chỉ
+		// gọi JoinRoomByUserID cho NGƯỜI GỬI.
+		//
+		// Hệ quả là máy khách mở khung hỗ trợ rồi ngồi chờ sẽ không nhận được
+		// tin nào cho tới khi chính nó gõ một câu — nhân viên nhắn trước thì
+		// khách không thấy gì, mà máy chủ vẫn ghi log "SendMessage done".
+		s.hub.JoinRoomByUserID(req.ParticipantID, room.ID)
 		s.hub.BroadcastToType(hub.Event{
 			Type: "room:new",
 			Data: map[string]string{"room_id": room.ID},
@@ -181,9 +193,9 @@ func (s *ChatService) CreateRoom(req *CreateRoomRequest) (*RoomResponse, error) 
 	}
 
 	return &RoomResponse{
-		ID:      room.ID,
-		Title:   room.Title,
-		IsGroup: room.IsGroup,
+		ID:        room.ID,
+		Title:     room.Title,
+		IsGroup:   room.IsGroup,
 		CreatedAt: room.CreatedAt,
 	}, nil
 }
@@ -272,7 +284,7 @@ func (s *ChatService) MarkRoomMessagesRead(roomID string) (int64, error) {
 			Type: "room:read",
 			Data: map[string]interface{}{
 				"room_id": roomID,
-				"status":          "read",
+				"status":  "read",
 			},
 		}, "")
 	}
@@ -443,4 +455,31 @@ func (s *ChatService) MarkRead(roomID string, participantID string) error {
 	})
 
 	return nil
+}
+
+// IsParticipant reports whether the given subject belongs to the room. Room IDs
+// travel in URLs and request bodies, so without this check any authenticated
+// member who learns a room ID can read the conversation inside it.
+func (s *ChatService) IsParticipant(roomID, participantID string) (bool, error) {
+	if roomID == "" || participantID == "" {
+		return false, nil
+	}
+
+	var count int64
+	if err := s.db.Model(&model.ChatParticipant{}).
+		Where("room_id = ? AND participant_id = ?", roomID, participantID).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// RoomOfMessage resolves the room a message belongs to, so per-message routes
+// can be authorised against the same participant rule as per-room ones.
+func (s *ChatService) RoomOfMessage(messageID string) (string, error) {
+	var msg model.ChatMessage
+	if err := s.db.Select("room_id").Where("id = ?", messageID).First(&msg).Error; err != nil {
+		return "", err
+	}
+	return msg.RoomID, nil
 }

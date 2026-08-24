@@ -5,8 +5,8 @@ import "time"
 type CurfewPolicy struct {
 	ID              string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	DayOfWeek       int        `gorm:"not null" json:"day_of_week"`
-	CurfewStart     string     `gorm:"type:time;not null" json:"curfew_start"`
-	CurfewEnd       string     `gorm:"type:time;not null" json:"curfew_end"`
+	CurfewStart     string     `gorm:"type:time without time zone;not null" json:"curfew_start"`
+	CurfewEnd       string     `gorm:"type:time without time zone;not null" json:"curfew_end"`
 	MaxMinorHours   int        `gorm:"default:2" json:"max_minor_hours"`
 	IsActive        bool       `gorm:"default:true" json:"is_active"`
 	OverrideByAdmin *string    `gorm:"type:uuid" json:"override_by_admin"`

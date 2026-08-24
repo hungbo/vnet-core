@@ -19,12 +19,20 @@ const formRef = ref<any>(null);
 const form = ref<any>({ name: '', icon: '', parent_id: null, sort_order: 0 });
 
 const rules = {
-  name: [{ required: true, message: $t('vnetPages.categories.form.nameRequired'), trigger: 'blur' }]
+  name: [
+    {
+      required: true,
+      message: $t('vnetPages.categories.form.nameRequired'),
+      trigger: 'blur'
+    }
+  ]
 };
 
 async function fetchTree() {
   try {
-    const res: any = await client.get('/categories', { params: { page_size: 1000 } });
+    const res: any = await client.get('/categories', {
+      params: { page_size: 1000 }
+    });
     const list = Array.isArray(res) ? res : res?.items || [];
     treeOptions.value = buildTree(list);
   } catch (_) {}
@@ -46,7 +54,10 @@ function buildTree(items: any[]): any[] {
 }
 
 const { columns, columnChecks, data, getData, loading } = useUITable({
-  api: () => client.get('/categories', { params: { search: search.value || undefined } }),
+  api: () =>
+    client.get('/categories', {
+      params: { search: search.value || undefined }
+    }),
   transform: vnetSimpleTransform,
   columns: () => [
     { prop: 'name', label: $t('vnetPages.categories.name'), minWidth: 200 },
@@ -121,6 +132,7 @@ async function handleDelete(row: any) {
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
           >

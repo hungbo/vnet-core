@@ -5,8 +5,8 @@ import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
-import { useWebSocketStore } from '@/store/modules/ws';
 import client from '@/api/client';
+import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
@@ -16,6 +16,204 @@ const router = useRouter();
 const wsStore = useWebSocketStore();
 
 const search = ref('');
+
+// --- Khoá máy trạm -----------------------------------------------------------
+// Heartbeat là route ghi dữ liệu duy nhất không qua đăng nhập, nên mỗi máy có
+// khoá riêng. Máy chủ chỉ lưu băm: khoá thô hiện đúng một lần, lúc tạo máy hoặc
+// lúc cấp lại.
+
+const tokenVisible = ref(false);
+const tokenValue = ref('');
+const tokenMachine = ref('');
+
+function showToken(code: string, token: string) {
+  tokenMachine.value = code;
+  tokenValue.value = token;
+  tokenVisible.value = true;
+}
+
+async function copyToken() {
+  try {
+    await navigator.clipboard.writeText(tokenValue.value);
+    ElMessage.success($t('vnetPages.machines.token.copied'));
+  } catch {
+    ElMessage.warning($t('vnetPages.machines.token.copyFailed'));
+  }
+}
+
+async function handleIssueToken(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      $t('vnetPages.machines.token.reissueConfirm', { code: row.machine_code }),
+      $t('vnetPages.common.confirm'),
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  try {
+    const res: any = await client.post(`/machines/${row.id}/agent-token`, {});
+    showToken(row.machine_code, res?.agent_token || '');
+    getData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
+}
+
+// --- Điều khiển từ xa -------------------------------------------------------
+// Danh sách này phải khớp remoteActions bên backend
+// (internal/service/machine.go). Backend trả 409 khi máy chưa kết nối, nên
+// "đã gửi lệnh" ở đây nghĩa là máy thật sự đã nhận.
+
+// --- Nhật ký phần cứng --------------------------------------------------------
+// GET /machines/:id/hardware trả về chuỗi số đo mà máy trạm gửi kèm mỗi
+// heartbeat. Không có màn hình nào đọc nó, nên nhiệt độ và mức tải máy — thứ
+// quán cần để biết máy nào sắp hỏng — không xem được ở đâu cả.
+
+const hwVisible = ref(false);
+const hwLoading = ref(false);
+const hwMachine = ref<any>(null);
+const hwRows = ref<any[]>([]);
+
+async function openHardware(row: any) {
+  hwMachine.value = row;
+  hwRows.value = [];
+  hwVisible.value = true;
+  hwLoading.value = true;
+  try {
+    const res: any = await client.get(`/machines/${row.id}/hardware`, {
+      params: { page: 1, page_size: 50 }
+    });
+    hwRows.value = Array.isArray(res) ? res : res?.items || [];
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.machines.messages.loadError'));
+  } finally {
+    hwLoading.value = false;
+  }
+}
+
+function pct(v: number | null | undefined) {
+  return v == null ? '-' : `${Number(v).toFixed(0)}%`;
+}
+
+// Máy trạm gửi uptime theo giây. Hiện nguyên số giây thì không ai đọc được —
+// điều người vận hành muốn biết là "máy này bật liên tục mấy ngày rồi".
+function uptime(v: number | null | undefined) {
+  if (!v) return '-';
+  const d = Math.floor(v / 86400);
+  const h = Math.floor((v % 86400) / 3600);
+  const m = Math.floor((v % 3600) / 60);
+  if (d > 0) return `${d}n ${h}g`;
+  if (h > 0) return `${h}g ${m}p`;
+  return `${m}p`;
+}
+
+function temp(v: number | null | undefined) {
+  return v ? `${Number(v).toFixed(1)}°C` : '-';
+}
+
+const remoteBusy = ref('');
+
+async function sendRemote(row: any, action: string, payload?: Record<string, unknown>) {
+  remoteBusy.value = `${row.id}:${action}`;
+  try {
+    await client.post(`/machines/${row.id}/remote/${action}`, payload ?? {});
+    ElNotification({
+      type: 'success',
+      title: $t('vnetPages.common.success'),
+      message: $t('vnetPages.machines.remote.sent', { code: row.machine_code })
+    });
+  } catch (e: any) {
+    // 409 = máy chưa kết nối. Phân biệt rõ với lỗi thật để nhân viên không đi
+    // tìm sự cố trong khi máy chỉ đang tắt.
+    const offline = e?.status === 409;
+    ElMessage({
+      type: offline ? 'warning' : 'error',
+      message: offline
+        ? $t('vnetPages.machines.remote.offline', { code: row.machine_code })
+        : e?.message || $t('vnetPages.common.error')
+    });
+  } finally {
+    remoteBusy.value = '';
+  }
+}
+
+async function handleLock(row: any) {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      $t('vnetPages.machines.remote.lockReasonPrompt'),
+      $t('vnetPages.machines.remote.lock'),
+      {
+        inputPlaceholder: $t('vnetPages.machines.remote.lockReasonPlaceholder'),
+        inputValue: ''
+      }
+    );
+    await sendRemote(row, 'lock', { reason: value || '' });
+  } catch {
+    // người dùng bấm huỷ
+  }
+}
+
+// App.BlockApp/UnblockApp đã có sẵn trong máy khách nhưng trước nay không lối
+// vào ở cả hai phía — viết rồi mà chưa từng gọi được. Chặn theo TÊN tiến trình,
+// không phải câu lệnh tuỳ ý.
+function handleRemoteCommand(row: any, cmd: string) {
+  if (cmd === 'message') return handleMessage(row);
+  if (cmd === 'block-app' || cmd === 'unblock-app') return handleBlockApp(row, cmd);
+  return handlePower(row, cmd as 'shutdown' | 'restart');
+}
+
+async function handleBlockApp(row: any, action: 'block-app' | 'unblock-app') {
+  let value: string;
+  try {
+    const res = await ElMessageBox.prompt(
+      $t('vnetPages.machines.remote.appPrompt'),
+      $t(`vnetPages.machines.remote.${action === 'block-app' ? 'blockApp' : 'unblockApp'}`),
+      { inputPlaceholder: $t('vnetPages.machines.remote.appPlaceholder') }
+    );
+    value = res.value;
+  } catch {
+    return;
+  }
+  if (!value?.trim()) {
+    ElMessage.warning($t('vnetPages.machines.remote.appRequired'));
+    return;
+  }
+  await sendRemote(row, action, { process: value.trim() });
+}
+
+async function handlePower(row: any, action: 'shutdown' | 'restart') {
+  try {
+    // confirmAction đã có sẵn trong locale từ trước: 'Thực hiện "{action}" trên máy {code}?'
+    await ElMessageBox.confirm(
+      $t('vnetPages.machines.remote.confirmAction', {
+        action: $t(`vnetPages.machines.remote.${action}`),
+        code: row.machine_code
+      }),
+      $t('vnetPages.common.confirm'),
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  await sendRemote(row, action);
+}
+
+async function handleMessage(row: any) {
+  try {
+    const { value } = await ElMessageBox.prompt(
+      $t('vnetPages.machines.remote.messagePrompt'),
+      $t('vnetPages.machines.remote.message'),
+      {
+        inputPattern: /\S/,
+        inputErrorMessage: $t('vnetPages.machines.remote.messageRequired')
+      }
+    );
+    await sendRemote(row, 'message', { title: 'VNET', message: value });
+  } catch {
+    // người dùng bấm huỷ
+  }
+}
 
 const dialogVisible = ref(false);
 const isEdit = ref(false);
@@ -36,8 +234,20 @@ const form = ref({
 });
 
 const rules: FormRules = {
-  machine_code: [{ required: true, message: $t('vnetPages.machines.form.codeRequired'), trigger: 'blur' }],
-  group_id: [{ required: true, message: $t('vnetPages.machines.form.groupRequired'), trigger: 'change' }]
+  machine_code: [
+    {
+      required: true,
+      message: $t('vnetPages.machines.form.codeRequired'),
+      trigger: 'blur'
+    }
+  ],
+  group_id: [
+    {
+      required: true,
+      message: $t('vnetPages.machines.form.groupRequired'),
+      trigger: 'change'
+    }
+  ]
 };
 
 function statusType(status: string): any {
@@ -67,7 +277,9 @@ function formatDate(date: string | null | undefined) {
 
 async function fetchGroups() {
   try {
-    const res: any = await client.get('/machine-groups', { params: { page_size: 200 } });
+    const res: any = await client.get('/machine-groups', {
+      params: { page_size: 200 }
+    });
     groups.value = Array.isArray(res) ? res : res?.items || [];
   } catch {
     groups.value = [];
@@ -76,10 +288,20 @@ async function fetchGroups() {
 
 const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
   api: ({ page, pageSize }) =>
-    client.get('/machines', { params: { page, page_size: pageSize, search: search.value || undefined } }),
+    client.get('/machines', {
+      params: {
+        page,
+        page_size: pageSize,
+        search: search.value || undefined
+      }
+    }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'machine_code', label: $t('vnetPages.machines.code'), width: 130 },
+    {
+      prop: 'machine_code',
+      label: $t('vnetPages.machines.code'),
+      width: 130
+    },
     {
       prop: 'group',
       label: $t('vnetPages.machines.group'),
@@ -150,12 +372,18 @@ async function handleSubmit() {
         message: $t('vnetPages.machines.messages.editSuccess')
       });
     } else {
-      await client.post('/machines', form.value);
+      const created: any = await client.post('/machines', form.value);
       ElNotification({
         type: 'success',
         title: $t('vnetPages.common.success'),
         message: $t('vnetPages.machines.messages.addSuccess')
       });
+      // Máy mới KHÔNG còn được cấp khoá tự động: máy trạm cắm vào là chạy.
+      // Nhánh này chỉ còn dùng khi máy chủ có trả khoá về — giữ lại để khoá
+      // không bao giờ biến mất lặng lẽ, vì nó chỉ hiện đúng một lần.
+      if (created?.agent_token) {
+        showToken(created.machine_code || form.value.machine_code, created.agent_token);
+      }
     }
     dialogVisible.value = false;
     getData();
@@ -169,7 +397,9 @@ async function handleSubmit() {
 async function handleDelete(row: any) {
   try {
     await ElMessageBox.confirm(
-      $t('vnetPages.machines.messages.deleteConfirm', { code: row.machine_code }),
+      $t('vnetPages.machines.messages.deleteConfirm', {
+        code: row.machine_code
+      }),
       $t('vnetPages.common.confirm'),
       { type: 'warning' }
     );
@@ -183,12 +413,25 @@ async function handleDelete(row: any) {
   }
 }
 
+function onMachineStatus() {
+  getData();
+}
+
 onMounted(() => {
-  wsStore.on('machine:status', () => { getData(); });
+  // fetchGroups vốn được định nghĩa nhưng không ai gọi, nên ô chọn nhóm luôn
+  // rỗng và KHÔNG tạo được máy nào từ giao diện — nhóm là trường bắt buộc.
+  fetchGroups();
+  wsStore.on('machine:status', onMachineStatus);
+  // Mở/trả máy đổi cột Trạng thái y như machine:status. Thiếu hai dòng này thì
+  // tắt máy từ xa xong bảng vẫn hiện "Đang sử dụng" và nhân viên tưởng lệnh hỏng.
+  wsStore.on('session:started', onMachineStatus);
+  wsStore.on('session:ended', onMachineStatus);
 });
 
 onBeforeUnmount(() => {
-  wsStore.off('machine:status');
+  wsStore.off('machine:status', onMachineStatus);
+  wsStore.off('session:started', onMachineStatus);
+  wsStore.off('session:ended', onMachineStatus);
 });
 </script>
 
@@ -206,14 +449,56 @@ onBeforeUnmount(() => {
           />
           <ElButton type="primary" @click="searchData">{{ $t('vnetPages.common.search') }}</ElButton>
         </div>
-        <TableHeaderOperation v-model:columns="columnChecks" :loading="loading" @add="openCreate" @refresh="getData" />
+        <TableHeaderOperation
+          v-model:columns="columnChecks"
+          :loading="loading"
+          :show-delete="false"
+          @add="openCreate"
+          @refresh="getData"
+        />
       </div>
 
       <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
-        <ElTableColumn :label="$t('vnetPages.common.action')" width="260" fixed="right">
+        <ElTableColumn :label="$t('vnetPages.machines.remote.title')" width="230" fixed="right">
+          <template #default="{ row }">
+            <ElButton size="small" :loading="remoteBusy === `${row.id}:lock`" @click="handleLock(row)">
+              {{ $t('vnetPages.machines.remote.lock') }}
+            </ElButton>
+            <ElButton size="small" :loading="remoteBusy === `${row.id}:unlock`" @click="sendRemote(row, 'unlock')">
+              {{ $t('vnetPages.machines.remote.unlock') }}
+            </ElButton>
+            <ElDropdown style="margin-left: 8px" @command="(cmd: string) => handleRemoteCommand(row, cmd)">
+              <ElButton size="small">{{ $t('vnetPages.machines.remote.more') }}</ElButton>
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem command="message">{{ $t('vnetPages.machines.remote.message') }}</ElDropdownItem>
+                  <ElDropdownItem command="block-app" divided>
+                    {{ $t('vnetPages.machines.remote.blockApp') }}
+                  </ElDropdownItem>
+                  <ElDropdownItem command="unblock-app">
+                    {{ $t('vnetPages.machines.remote.unblockApp') }}
+                  </ElDropdownItem>
+                  <ElDropdownItem command="restart" divided>
+                    {{ $t('vnetPages.machines.remote.restart') }}
+                  </ElDropdownItem>
+                  <ElDropdownItem command="shutdown">
+                    {{ $t('vnetPages.machines.remote.shutdown') }}
+                  </ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.common.action')" width="340" fixed="right">
           <template #default="{ row }">
             <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
+            <ElButton size="small" @click="handleIssueToken(row)">
+              {{ $t('vnetPages.machines.token.reissue') }}
+            </ElButton>
+            <ElButton size="small" @click="openHardware(row)">
+              {{ $t('vnetPages.machines.hardware') }}
+            </ElButton>
             <ElButton size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
@@ -231,6 +516,51 @@ onBeforeUnmount(() => {
         />
       </div>
     </ElCard>
+
+    <!--
+      880px chứ không phải 760: bảy cột cố định cộng lại rộng 790px, nên ở 760
+      cột cuối bị cắt mất khỏi mép phải mà không có gì báo.
+    -->
+    <ElDialog
+      v-model="hwVisible"
+      :title="$t('vnetPages.machines.hardwareTitle', { code: hwMachine?.machine_code })"
+      width="880px"
+    >
+      <ElAlert type="info" :closable="false" show-icon style="margin-bottom: 12px">
+        {{ $t('vnetPages.machines.hardwareHint') }}
+      </ElAlert>
+      <ElTable v-loading="hwLoading" :data="hwRows" border stripe size="small" style="width: 100%" max-height="420">
+        <ElTableColumn :label="$t('vnetPages.machines.recordedAt')" width="160">
+          <template #default="{ row }">
+            {{ row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm') : '-' }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.machines.cpuTemp')" width="110" align="right">
+          <template #default="{ row }">{{ temp(row.cpu_temp) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.machines.gpuTemp')" width="110" align="right">
+          <template #default="{ row }">{{ temp(row.gpu_temp) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.machines.cpuUsage')" width="100" align="right">
+          <template #default="{ row }">{{ pct(row.cpu_usage) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.machines.ramUsage')" width="100" align="right">
+          <template #default="{ row }">{{ pct(row.ram_usage) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.machines.diskUsage')" width="100" align="right">
+          <template #default="{ row }">{{ pct(row.disk_usage) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.machines.uptime')" width="110" align="right">
+          <template #default="{ row }">{{ uptime(row.uptime) }}</template>
+        </ElTableColumn>
+        <template #empty>
+          <span style="color: #909399">{{ $t('vnetPages.machines.noHardware') }}</span>
+        </template>
+      </ElTable>
+      <template #footer>
+        <ElButton @click="hwVisible = false">{{ $t('common.close') }}</ElButton>
+      </template>
+    </ElDialog>
 
     <ElDialog
       v-model="dialogVisible"
@@ -267,6 +597,29 @@ onBeforeUnmount(() => {
         <ElButton type="primary" :loading="submitting" @click="handleSubmit">
           {{ $t('vnetPages.common.save') }}
         </ElButton>
+      </template>
+    </ElDialog>
+
+    <ElDialog
+      v-model="tokenVisible"
+      :title="$t('vnetPages.machines.token.title', { code: tokenMachine })"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <ElAlert type="warning" :closable="false" show-icon style="margin-bottom: 16px">
+        {{ $t('vnetPages.machines.token.onlyOnce') }}
+      </ElAlert>
+      <ElInput :model-value="tokenValue" readonly>
+        <template #append>
+          <ElButton @click="copyToken">{{ $t('vnetPages.machines.token.copy') }}</ElButton>
+        </template>
+      </ElInput>
+      <div style="color: #909399; font-size: 13px; line-height: 1.6; margin-top: 12px">
+        {{ $t('vnetPages.machines.token.howTo') }}
+        <code style="background: #f4f4f5; padding: 2px 6px; border-radius: 3px">VNET_AGENT_TOKEN</code>
+      </div>
+      <template #footer>
+        <ElButton type="primary" @click="tokenVisible = false">{{ $t('common.close') }}</ElButton>
       </template>
     </ElDialog>
   </div>

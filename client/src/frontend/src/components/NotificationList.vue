@@ -47,14 +47,16 @@ function formatTime(t: string) {
 
 async function load() {
 	try {
+		// Phía Go đã bóc vỏ {code,message,data} và lấy sẵn items, nên bóc thêm
+		// một lớp "data" nữa ở đây khiến danh sách luôn rỗng và chấm đỏ luôn 0.
 		const unreadStr = await api().GetUnreadNotificationCount()
-		const unreadData = JSON.parse(unreadStr)
-		unreadCount.value = unreadData?.data?.count || 0
+		const unread = JSON.parse(unreadStr)
+		unreadCount.value = unread?.count ?? unread?.data?.count ?? 0
 		emit('update:unreadCount', unreadCount.value)
 
 		const notifStr = await api().GetNotifications()
 		const parsed = JSON.parse(notifStr)
-		items.value = parsed?.data?.items || []
+		items.value = Array.isArray(parsed) ? parsed : parsed?.items || []
 	} catch { /* ignore */ }
 }
 
@@ -83,7 +85,7 @@ defineExpose({ load })
 <style scoped>
 .notif-panel {
 	width: 100%;
-	max-width: 400px;
+	max-width: 100%;
 	max-height: 320px;
 	overflow-y: auto;
 	border-radius: 12px;
@@ -99,7 +101,7 @@ defineExpose({ load })
 
 .notif-empty {
 	text-align: center;
-	color: #909399;
+	color: var(--vnet-text-muted);
 	padding: 24px 0;
 	font-size: 13px;
 }
@@ -115,7 +117,7 @@ defineExpose({ load })
 }
 
 .notif-item.unread {
-	background: #f5f7fa;
+	background: var(--vnet-surface-2);
 	margin: 0 -16px;
 	padding: 10px 16px;
 }
@@ -123,18 +125,18 @@ defineExpose({ load })
 .notif-title {
 	font-size: 14px;
 	font-weight: 500;
-	color: #303133;
+	color: var(--vnet-text);
 }
 
 .notif-body {
 	font-size: 13px;
-	color: #606266;
+	color: var(--vnet-text-muted);
 	margin-top: 2px;
 }
 
 .notif-time {
 	font-size: 11px;
-	color: #c0c4cc;
+	color: var(--vnet-text-faint);
 	margin-top: 4px;
 }
 </style>

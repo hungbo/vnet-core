@@ -156,13 +156,81 @@ func (h *PromotionHandler) Delete(c *gin.Context) {
 // @Router /lucky-spin/rewards [get]
 // @Security BearerAuth
 func (h *PromotionHandler) GetLuckySpinRewards(c *gin.Context) {
-	result, err := h.svc.GetLuckySpinRewards()
+	// include_inactive=true dành cho màn quản trị: ô đã tắt vẫn phải nhìn thấy
+	// để bật lại. Vòng quay gọi không kèm tham số nên vẫn chỉ thấy ô đang bật.
+	result, err := h.svc.GetLuckySpinRewards(c.Query("include_inactive") == "true")
 	if err != nil {
 		response.InternalError(c, "Failed to fetch lucky spin rewards")
 		return
 	}
 
 	response.Success(c, result)
+}
+
+// CreateLuckySpinReward adds a reward slot to the wheel
+// @Summary Create lucky spin reward
+// @Tags LuckySpin
+// @Accept json
+// @Produce json
+// @Param request body service.LuckySpinRewardRequest true "Reward"
+// @Success 201 {object} response.Response{data=service.LuckySpinRewardResponse}
+// @Failure 400 {object} response.Response
+// @Router /lucky-spin/rewards [post]
+// @Security BearerAuth
+func (h *PromotionHandler) CreateLuckySpinReward(c *gin.Context) {
+	var req service.LuckySpinRewardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	result, err := h.svc.CreateLuckySpinReward(&req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Created(c, result)
+}
+
+// UpdateLuckySpinReward edits a reward slot
+// @Summary Update lucky spin reward
+// @Tags LuckySpin
+// @Accept json
+// @Produce json
+// @Param id path string true "Reward ID"
+// @Param request body service.LuckySpinRewardRequest true "Reward"
+// @Success 200 {object} response.Response{data=service.LuckySpinRewardResponse}
+// @Failure 400 {object} response.Response
+// @Router /lucky-spin/rewards/{id} [put]
+// @Security BearerAuth
+func (h *PromotionHandler) UpdateLuckySpinReward(c *gin.Context) {
+	var req service.LuckySpinRewardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	result, err := h.svc.UpdateLuckySpinReward(c.Param("id"), &req)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, result)
+}
+
+// DeleteLuckySpinReward removes a reward slot
+// @Summary Delete lucky spin reward
+// @Tags LuckySpin
+// @Produce json
+// @Param id path string true "Reward ID"
+// @Success 200 {object} response.Response
+// @Failure 400 {object} response.Response
+// @Router /lucky-spin/rewards/{id} [delete]
+// @Security BearerAuth
+func (h *PromotionHandler) DeleteLuckySpinReward(c *gin.Context) {
+	if err := h.svc.DeleteLuckySpinReward(c.Param("id")); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
 }
 
 // Spin performs a lucky spin
