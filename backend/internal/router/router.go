@@ -108,6 +108,11 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		api.GET("/machines/by-code/:code/blocklist", h.WebsiteBlock.EffectiveForMachine)
 		api.POST("/machines/by-code/:code/blocklist/violations", h.WebsiteBlock.ReportViolation)
 		api.GET("/machines/by-code/:code/app-update", h.AppUpdate.Latest)
+		// Máy trạm báo kết quả lệnh giám sát về: ảnh chụp và danh sách tiến
+		// trình. Đường lên bằng HTTP chứ không WebSocket vì readPump của hub
+		// giới hạn 4 KB, còn ảnh cỡ vài trăm KB.
+		api.POST("/machines/by-code/:code/screenshot", h.Machine.ReportScreenshot)
+		api.POST("/machines/by-code/:code/processes", h.Machine.ReportProcesses)
 
 		// WebSocket nằm NGOÀI nhóm protected: nó nhận thêm một cách vào thứ hai —
 		// khoá riêng của máy trạm — để tiến trình nền giữ được kết nối kể cả khi

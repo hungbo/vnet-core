@@ -489,6 +489,46 @@ func (h *MachineHandler) VerifyAgentToken(machineCode, token string) error {
 	return h.svc.VerifyAgentToken(machineCode, token)
 }
 
+// ReportScreenshot nhận ảnh máy trạm gửi lên sau lệnh remote:screenshot.
+// Xác thực bằng khoá máy như heartbeat, không cần tài khoản người.
+func (h *MachineHandler) ReportScreenshot(c *gin.Context) {
+	code := c.Param("code")
+	if err := h.svc.VerifyAgentToken(code, agentToken(c)); err != nil {
+		response.Unauthorized(c, err.Error())
+		return
+	}
+	var req service.ScreenshotReport
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	if err := h.svc.ReportScreenshot(code, &req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// ReportProcesses nhận danh sách tiến trình máy trạm gửi lên sau
+// remote:process-list hoặc remote:process-kill.
+func (h *MachineHandler) ReportProcesses(c *gin.Context) {
+	code := c.Param("code")
+	if err := h.svc.VerifyAgentToken(code, agentToken(c)); err != nil {
+		response.Unauthorized(c, err.Error())
+		return
+	}
+	var req service.ProcessReport
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	if err := h.svc.ReportProcesses(code, &req); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
 func agentToken(c *gin.Context) string {
 	if t := c.GetHeader("X-Agent-Token"); t != "" {
 		return t

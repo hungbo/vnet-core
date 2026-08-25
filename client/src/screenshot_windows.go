@@ -12,9 +12,10 @@ import (
 // Chụp màn hình bằng GDI qua syscall — không cần CGO, nên vẫn biên dịch chéo
 // được từ máy Mac cho cả amd64 lẫn arm64.
 //
-// Về quyền riêng tư: hàm này CHỈ được gọi từ nút trong khung chat của chính
-// khách. Không nối nó vào lệnh điều khiển từ xa — chụp lén màn hình khách là
-// việc khác hẳn với khách tự gửi ảnh để nhờ hỗ trợ.
+// Hàm này có HAI lối gọi: nút "gửi ảnh" trong khung chat của khách, và lệnh
+// remote:screenshot do nhân viên bấm từ trang quản trị (chụp ngầm, không báo
+// khách). Đây là máy của quán và giám sát máy trạm là chức năng chuẩn; mọi lần
+// chụp theo lệnh đều được ghi vào nhật ký kiểm toán ở phía máy chủ.
 
 var (
 	gdi32 = syscall.NewLazyDLL("gdi32.dll")

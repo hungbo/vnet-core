@@ -321,6 +321,31 @@ Máy **vừa cài xong, chưa từng nối được máy chủ lần nào** vẫ
 
 ---
 
+## 9. Giám sát máy trạm từ trang quản trị
+
+Cần một máy trạm THẬT đang đăng nhập và nối WebSocket, và một trình duyệt mở
+trang **Máy** trên trang quản trị. Ba chức năng này chỉ chạy ở tiến trình giao
+diện (session của người dùng), không phải dịch vụ nền.
+
+1. **Chụp màn hình**: ở trang Máy, mở dropdown "Khác" của máy đó → **Chụp màn
+   hình**. Trong vài giây một hộp thoại hiện ảnh màn hình hiện tại của máy khách.
+   - Máy đang tắt/không nối: bấm phải hiện cảnh báo "chưa kết nối", không phải lỗi đỏ.
+   - Ảnh phải là màn hình desktop của KHÁCH, không phải màn hình khoá VNET.
+2. **Xem ứng dụng**: dropdown "Khác" → **Xem ứng dụng**. Bảng hiện danh sách ứng
+   dụng đang chạy, gộp theo tên, sắp theo RAM giảm dần. Chrome nhiều tiến trình
+   con phải gộp thành MỘT dòng với tổng RAM, không phải 30 dòng.
+3. **Tắt ứng dụng**: trong bảng trên, bấm **Tắt** ở một ứng dụng vô hại (ví dụ
+   notepad đang mở). Xác nhận → ứng dụng tắt, bảng tự nạp lại và dòng đó biến mất.
+   - Thử tắt một tiến trình trong danh sách cấm (không hiện nút, hoặc nếu gọi
+     thẳng API thì `killed = -1`): `vnet-client`, `csrss`, `winlogon`, `lsass`,
+     `services`, `wininit`, `smss`, `svchost`. Máy KHÔNG được sập, lớp khoá VNET
+     KHÔNG được tắt.
+4. Nhật ký kiểm toán: mỗi lần chụp/xem/tắt phải có một dòng `remote_screenshot`
+   / `remote_process-list` / `remote_process-kill` trong bảng `audit_logs`, kèm
+   ai bấm và máy nào.
+
+---
+
 ## Ghi lại kết quả
 
 Mỗi mục ghi **đạt / sai** kèm một câu mô tả thứ nhìn thấy. Mục nào sai thì chụp

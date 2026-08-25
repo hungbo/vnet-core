@@ -328,6 +328,15 @@ func TestMachineService_RemoteAction_RejectsUnknownAction(t *testing.T) {
 	// Không truy vấn nào được chạy — không cần ExpectQuery nào cả.
 }
 
+// Ba lệnh giám sát phải nằm trong whitelist và phải có cờ báo-dữ-liệu-về.
+func TestMachineService_RemoteAction_MonitoringActionsAllowed(t *testing.T) {
+	for _, a := range []string{"screenshot", "process-list", "process-kill"} {
+		_, ok := remoteActions[a]
+		assert.True(t, ok, "lệnh giám sát %q phải được cho phép", a)
+		assert.True(t, wantsReport[a], "lệnh %q phải cần request_id để khớp câu trả lời", a)
+	}
+}
+
 // Cố ý không có lệnh chạy câu lệnh tuỳ ý.
 func TestMachineService_RemoteAction_HasNoArbitraryExec(t *testing.T) {
 	for _, forbidden := range []string{"exec", "execute", "command", "cmd", "run", "shell"} {

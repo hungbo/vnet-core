@@ -158,6 +158,8 @@ async function handleLock(row: any) {
 // vào ở cả hai phía — viết rồi mà chưa từng gọi được. Chặn theo TÊN tiến trình,
 // không phải câu lệnh tuỳ ý.
 function handleRemoteCommand(row: any, cmd: string) {
+  if (cmd === 'screenshot') return handleScreenshot(row);
+  if (cmd === 'processes') return handleProcesses(row);
   if (cmd === 'message') return handleMessage(row);
   if (cmd === 'block-app' || cmd === 'unblock-app') return handleBlockApp(row, cmd);
   return handlePower(row, cmd as 'shutdown' | 'restart');
@@ -212,6 +214,96 @@ async function handleMessage(row: any) {
     await sendRemote(row, 'message', { title: 'VNET', message: value });
   } catch {
     // người dùng bấm huỷ
+  }
+}
+
+// --- Giám sát: chụp màn hình + tiến trình -------------------------------------
+// Lệnh đi xuống máy trạm, dữ liệu bay NGƯỢC về qua WebSocket. Khớp bằng
+// request_id để mở nhiều máy cùng lúc không bị lẫn ảnh của nhau.
+
+const shotVisible = ref(false);
+const shotImage = ref('');
+const shotMachine = ref('');
+const shotReqId = ref('');
+
+const procVisible = ref(false);
+const procMachine = ref('');
+const procReqId = ref('');
+const procList = ref<any[]>([]);
+const procLoading = ref(false);
+
+// sendRemoteForResult như sendRemote nhưng TRẢ VỀ data để lấy request_id. Tách
+// riêng vì sendRemote nuốt kết quả và chỉ hiện toast.
+async function sendRemoteForResult(row: any, action: string): Promise<any | null> {
+  try {
+    return await client.post(`/machines/${row.id}/remote/${action}`, {});
+  } catch (e: any) {
+    const offline = e?.status === 409;
+    ElMessage({
+      type: offline ? 'warning' : 'error',
+      message: offline
+        ? $t('vnetPages.machines.remote.offline', { code: row.machine_code })
+        : e?.message || $t('vnetPages.common.error')
+    });
+    return null;
+  }
+}
+
+async function handleScreenshot(row: any) {
+  const res = await sendRemoteForResult(row, 'screenshot');
+  if (!res) return;
+  shotImage.value = '';
+  shotMachine.value = row.machine_code;
+  shotReqId.value = res.request_id || '';
+  shotVisible.value = true;
+}
+
+async function handleProcesses(row: any) {
+  const res = await sendRemoteForResult(row, 'process-list');
+  if (!res) return;
+  procList.value = [];
+  procMachine.value = row.machine_code;
+  procReqId.value = res.request_id || '';
+  procLoading.value = true;
+  procVisible.value = true;
+}
+
+async function handleKill(name: string) {
+  try {
+    await ElMessageBox.confirm(
+      $t('vnetPages.machines.remote.killConfirm', { name }),
+      $t('vnetPages.machines.remote.processKill'),
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  // Không có row ở đây — dùng lại machine_code đang mở. Gửi bằng client.post
+  // trực tiếp để kèm payload {process}.
+  const machine = data.value.find((m: any) => m.machine_code === procMachine.value);
+  if (!machine) return;
+  procLoading.value = true;
+  try {
+    await client.post(`/machines/${machine.id}/remote/process-kill`, { process: name });
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+    procLoading.value = false;
+  }
+}
+
+function onScreenshot(payload: any) {
+  if (payload?.request_id !== shotReqId.value) return;
+  shotImage.value = payload.image || '';
+}
+
+function onProcesses(payload: any) {
+  if (payload?.request_id !== procReqId.value) return;
+  procList.value = payload.processes || [];
+  procLoading.value = false;
+  if (typeof payload.killed === 'number' && payload.killed === -1) {
+    // -1 nghĩa là tiến trình nằm trong danh sách cấm tắt (không phải "không thấy").
+  } else if (typeof payload.killed === 'number' && payload.killed >= 0) {
+    ElMessage.success($t('vnetPages.machines.remote.killed', { n: payload.killed }));
   }
 }
 
@@ -424,12 +516,16 @@ onMounted(() => {
   // tắt máy từ xa xong bảng vẫn hiện "Đang sử dụng" và nhân viên tưởng lệnh hỏng.
   wsStore.on('session:started', onMachineStatus);
   wsStore.on('session:ended', onMachineStatus);
+  wsStore.on('machine:screenshot', onScreenshot);
+  wsStore.on('machine:processes', onProcesses);
 });
 
 onBeforeUnmount(() => {
   wsStore.off('machine:status', onMachineStatus);
   wsStore.off('session:started', onMachineStatus);
   wsStore.off('session:ended', onMachineStatus);
+  wsStore.off('machine:screenshot', onScreenshot);
+  wsStore.off('machine:processes', onProcesses);
 });
 </script>
 
@@ -470,7 +566,9 @@ onBeforeUnmount(() => {
               <ElButton size="small">{{ $t('vnetPages.machines.remote.more') }}</ElButton>
               <template #dropdown>
                 <ElDropdownMenu>
-                  <ElDropdownItem command="message">{{ $t('vnetPages.machines.remote.message') }}</ElDropdownItem>
+                  <ElDropdownItem command="screenshot">{{ $t('vnetPages.machines.remote.screenshot') }}</ElDropdownItem>
+                  <ElDropdownItem command="processes">{{ $t('vnetPages.machines.remote.processes') }}</ElDropdownItem>
+                  <ElDropdownItem command="message" divided>{{ $t('vnetPages.machines.remote.message') }}</ElDropdownItem>
                   <ElDropdownItem command="block-app" divided>
                     {{ $t('vnetPages.machines.remote.blockApp') }}
                   </ElDropdownItem>
@@ -596,6 +694,40 @@ onBeforeUnmount(() => {
           {{ $t('vnetPages.common.save') }}
         </ElButton>
       </template>
+    </ElDialog>
+
+    <ElDialog
+      v-model="shotVisible"
+      :title="$t('vnetPages.machines.remote.screenshotTitle', { code: shotMachine })"
+      width="80%"
+      top="4vh"
+    >
+      <div v-if="!shotImage" style="text-align: center; padding: 60px; color: #909399">
+        {{ $t('vnetPages.machines.remote.waiting') }}
+      </div>
+      <img v-else :src="shotImage" style="width: 100%; display: block; border-radius: 4px" />
+    </ElDialog>
+
+    <ElDialog
+      v-model="procVisible"
+      :title="$t('vnetPages.machines.remote.processesTitle', { code: procMachine })"
+      width="600px"
+      top="6vh"
+    >
+      <ElTable v-loading="procLoading" :data="procList" border stripe max-height="60vh">
+        <ElTableColumn :label="$t('vnetPages.machines.remote.procName')" prop="name" />
+        <ElTableColumn :label="$t('vnetPages.machines.remote.procCount')" prop="count" width="90" align="center" />
+        <ElTableColumn :label="$t('vnetPages.machines.remote.procRam')" width="110" align="right">
+          <template #default="{ row }">{{ row.ram_mb }} MB</template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.common.action')" width="90" align="center">
+          <template #default="{ row }">
+            <ElButton size="small" type="danger" @click="handleKill(row.name)">
+              {{ $t('vnetPages.machines.remote.kill') }}
+            </ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
     </ElDialog>
 
     <ElDialog

@@ -10,6 +10,7 @@ import (
 	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
+	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -444,16 +445,99 @@ var remoteActions = map[string]string{
 	// không phải câu lệnh tuỳ ý — xem ghi chú về ExecuteCommand ở trên.
 	"block-app":   "chặn ứng dụng trên máy",
 	"unblock-app": "bỏ chặn ứng dụng trên máy",
+	// Ba lệnh giám sát. Máy trạm làm xong thì báo NGƯỢC dữ liệu lên bằng HTTP
+	// (route by-code, X-Agent-Token) chứ không qua WebSocket: readPump của hub
+	// giới hạn 4 KB chiều lên, mà ảnh chụp màn hình cỡ vài trăm KB.
+	"screenshot":   "chụp màn hình máy",
+	"process-list": "xem tiến trình đang chạy",
+	"process-kill": "tắt một tiến trình",
+}
+
+// wantsReport là những lệnh mà máy trạm sẽ trả dữ liệu về sau, nên cần một
+// request_id để trang quản trị khớp câu trả lời với đúng lần bấm.
+var wantsReport = map[string]bool{
+	"screenshot":   true,
+	"process-list": true,
+	"process-kill": true,
 }
 
 // ErrMachineOffline được handler dùng để trả 409 thay vì 400.
 var ErrMachineOffline = hub.ErrMachineOffline
+
+// ScreenshotReport là dữ liệu máy trạm gửi về sau lệnh remote:screenshot.
+type ScreenshotReport struct {
+	RequestID string `json:"request_id"`
+	Image     string `json:"image"` // data URI
+}
+
+// ProcessInfo là một dòng trong bảng tiến trình — đã gộp theo tên phía máy trạm.
+type ProcessInfo struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`    // số tiến trình cùng tên
+	RAMMB int64  `json:"ram_mb"`   // tổng RAM, MB
+}
+
+// ProcessReport là dữ liệu máy trạm gửi về sau remote:process-list / process-kill.
+type ProcessReport struct {
+	RequestID string        `json:"request_id"`
+	Processes []ProcessInfo `json:"processes"`
+	// Killed chỉ có với process-kill: số tiến trình vừa tắt được. -1 nếu chỉ là
+	// process-list (không phải lệnh tắt).
+	Killed int `json:"killed"`
+}
+
+// ReportScreenshot nhận ảnh máy trạm gửi lên rồi đẩy tới mọi trang quản trị.
+//
+// Không lưu xuống đĩa: ảnh đi thẳng qua WebSocket tới admin rồi thôi. Lưu lại
+// nghĩa là một kho ảnh màn hình khách nằm trên ổ cứng, kèm chính sách dọn rác
+// và một câu hỏi pháp lý — không đáng, vì nhân viên chỉ cần nhìn một lần.
+func (s *MachineService) ReportScreenshot(machineCode string, req *ScreenshotReport) error {
+	var machine model.Machine
+	if err := s.db.Select("id, machine_code").Where("machine_code = ?", machineCode).
+		First(&machine).Error; err != nil {
+		return errors.New("không tìm thấy máy")
+	}
+	s.hub.BroadcastToType(hub.Event{
+		Type: "machine:screenshot",
+		Data: map[string]interface{}{
+			"request_id":   req.RequestID,
+			"machine_id":   machine.ID,
+			"machine_code": machine.MachineCode,
+			"image":        req.Image,
+		},
+	}, hub.ClientTypeAdmin)
+	return nil
+}
+
+// ReportProcesses nhận danh sách tiến trình máy trạm gửi lên rồi đẩy tới admin.
+func (s *MachineService) ReportProcesses(machineCode string, req *ProcessReport) error {
+	var machine model.Machine
+	if err := s.db.Select("id, machine_code").Where("machine_code = ?", machineCode).
+		First(&machine).Error; err != nil {
+		return errors.New("không tìm thấy máy")
+	}
+	s.hub.BroadcastToType(hub.Event{
+		Type: "machine:processes",
+		Data: map[string]interface{}{
+			"request_id":   req.RequestID,
+			"machine_id":   machine.ID,
+			"machine_code": machine.MachineCode,
+			"processes":    req.Processes,
+			"killed":       req.Killed,
+		},
+	}, hub.ClientTypeAdmin)
+	return nil
+}
 
 // RemoteActionResult mang theo kết quả chốt tiền khi lệnh làm kết thúc phiên,
 // để nhân viên thấy ngay đã thu bao nhiêu chứ không phải mở trang khác kiểm.
 type RemoteActionResult struct {
 	Action  string              `json:"action"`
 	Session *EndSessionResponse `json:"session,omitempty"`
+	// RequestID chỉ có với các lệnh giám sát. Trang quản trị giữ nó rồi khớp
+	// với sự kiện machine:screenshot / machine:processes bay về sau đó, để biết
+	// ảnh nào là của lần bấm nào — quan trọng khi mở nhiều máy cùng lúc.
+	RequestID string `json:"request_id,omitempty"`
 }
 
 // endsSession liệt kê những lệnh làm khách rời máy. Tắt máy và khởi động lại
@@ -482,15 +566,28 @@ func (s *MachineService) RemoteAction(id, action string, payload interface{}, ac
 		return nil, err
 	}
 
-	event := hub.Event{
-		Type: "remote:" + action,
-		Data: map[string]interface{}{
-			"machine_id":   id,
-			"machine_code": machine.MachineCode,
-			"action":       action,
-			"payload":      payload,
-		},
+	// Với lệnh giám sát: sinh request_id để máy trạm echo lại khi báo dữ liệu
+	// về. Nuốt lỗi rand là chấp nhận được — request_id rỗng chỉ làm mất khả năng
+	// khớp nhiều máy cùng lúc, không làm hỏng lệnh.
+	requestID := ""
+	if wantsReport[action] {
+		requestID, _ = utils.GenerateRandomToken(8)
 	}
+
+	// request_id nằm NGANG HÀNG với payload, không lồng vào trong: payload là
+	// thứ máy trạm đọc field theo tên (reason/title/process...), chèn vào đó là
+	// làm lệch mọi lệnh cũ.
+	data := map[string]interface{}{
+		"machine_id":   id,
+		"machine_code": machine.MachineCode,
+		"action":       action,
+		"payload":      payload,
+	}
+	if requestID != "" {
+		data["request_id"] = requestID
+	}
+
+	event := hub.Event{Type: "remote:" + action, Data: data}
 
 	err := s.hub.SendToMachine(machine.MachineCode, event)
 
@@ -517,7 +614,7 @@ func (s *MachineService) RemoteAction(id, action string, payload interface{}, ac
 		return nil, err
 	}
 
-	result := &RemoteActionResult{Action: action}
+	result := &RemoteActionResult{Action: action, RequestID: requestID}
 
 	// Chốt phiên SAU khi lệnh đã tới được máy, không phải trước.
 	//

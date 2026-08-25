@@ -67,7 +67,10 @@ func TestRemoteStringField_MissingIsEmptyNotPanic(t *testing.T) {
 // Danh sách lệnh máy khách đăng ký phải khớp remoteActions bên backend. Lệch
 // nhau là cả chuỗi đứt lặng lẽ — đúng lỗi mà đợt này đang sửa.
 func TestRegisteredRemoteHandlersMatchBackend(t *testing.T) {
-	backendActions := []string{"lock", "unlock", "shutdown", "restart", "message", "block-app", "unblock-app"}
+	backendActions := []string{
+		"lock", "unlock", "shutdown", "restart", "message", "block-app", "unblock-app",
+		"screenshot", "process-list", "process-kill",
+	}
 
 	c := &WSClient{handlers: make(map[string]WSHandler)}
 	(&App{locker: NewScreenLocker()}).registerRemoteHandlers(c)

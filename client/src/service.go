@@ -58,8 +58,11 @@ func runAgentWS(ctx context.Context, cfg *Config) {
 	ws := NewAgentWSClient(ctx, cfg)
 	ws.On("remote:shutdown", func(WSMessage) { shutdownMachine() })
 	ws.On("remote:restart", func(WSMessage) { restartMachine() })
-	ws.On("remote:block-app", func(msg WSMessage) { blockAppByName(remoteField(msg, "app")) })
-	ws.On("remote:unblock-app", func(msg WSMessage) { unblockAppByName(remoteField(msg, "app")) })
+	// "process", không phải "app": trang quản trị gửi khoá "process" (xem
+	// machines/index.vue), và giao diện cũng đọc "process". Bản cũ đọc "app" ở
+	// đây nên nhánh chặn ứng dụng phía dịch vụ nền luôn nhận chuỗi rỗng.
+	ws.On("remote:block-app", func(msg WSMessage) { blockAppByName(remoteField(msg, "process")) })
+	ws.On("remote:unblock-app", func(msg WSMessage) { unblockAppByName(remoteField(msg, "process")) })
 	ws.Run()
 }
 

@@ -891,9 +891,8 @@ func (a *App) MarkAllNotificationsRead() (string, error) {
 
 // TakeScreenshot chụp màn hình và trả về data URI để gửi kèm tin nhắn chat.
 //
-// Chỉ được gọi từ nút trong khung chat của chính khách. Cố ý KHÔNG nối vào lệnh
-// điều khiển từ xa: chụp lén màn hình khách là việc khác hẳn với khách tự gửi
-// ảnh để nhờ hỗ trợ.
+// Cùng captureScreen với lệnh remote:screenshot; khác ở chỗ này là khách tự
+// bấm gửi, còn lệnh remote là nhân viên chụp từ xa.
 func (a *App) TakeScreenshot() (string, error) {
 	return captureScreen()
 }
@@ -1006,6 +1005,60 @@ func (a *App) registerRemoteHandlers(c *WSClient) {
 			log.Printf("[remote] bỏ chặn %s thất bại: %v", name, err)
 		}
 	})
+
+	// Ba lệnh giám sát chạy Ở GIAO DIỆN, không ở dịch vụ nền: chụp màn hình cần
+	// desktop của khách, mà dịch vụ chạy ở session 0 không thấy desktop nào.
+	c.On("remote:screenshot", func(msg WSMessage) {
+		reqID := remoteRequestID(msg)
+		img, err := captureScreen()
+		if err != nil {
+			log.Printf("[remote] chụp màn hình thất bại: %v", err)
+			return
+		}
+		if err := baoCaoLen(a.cfg, "screenshot", map[string]string{
+			"request_id": reqID, "image": img,
+		}); err != nil {
+			log.Printf("[remote] gửi ảnh lên thất bại: %v", err)
+		}
+	})
+
+	c.On("remote:process-list", func(msg WSMessage) {
+		reqID := remoteRequestID(msg)
+		if err := baoCaoLen(a.cfg, "processes", map[string]interface{}{
+			"request_id": reqID, "processes": likeTienTrinh(), "killed": -1,
+		}); err != nil {
+			log.Printf("[remote] gửi danh sách tiến trình thất bại: %v", err)
+		}
+	})
+
+	c.On("remote:process-kill", func(msg WSMessage) {
+		reqID := remoteRequestID(msg)
+		name := remoteStringField(msg, "process")
+		killed := 0
+		if name != "" {
+			killed = tatTienTrinh(name)
+		}
+		// Gửi kèm danh sách mới để trang quản trị vẽ lại bảng ngay, thấy tiến
+		// trình vừa tắt đã biến mất.
+		if err := baoCaoLen(a.cfg, "processes", map[string]interface{}{
+			"request_id": reqID, "processes": likeTienTrinh(), "killed": killed,
+		}); err != nil {
+			log.Printf("[remote] gửi kết quả tắt tiến trình thất bại: %v", err)
+		}
+	})
+}
+
+// remoteRequestID bóc request_id nằm NGANG HÀNG với payload (không nằm trong
+// payload): backend đặt nó ở vỏ ngoài để không làm lệch các trường payload mà
+// những lệnh cũ đang đọc.
+func remoteRequestID(msg WSMessage) string {
+	var envelope struct {
+		RequestID string `json:"request_id"`
+	}
+	if err := json.Unmarshal(msg.Payload, &envelope); err != nil {
+		return ""
+	}
+	return envelope.RequestID
 }
 
 // remoteStringField bóc một trường chuỗi khỏi payload lồng hai lớp mà backend
