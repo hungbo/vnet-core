@@ -157,14 +157,7 @@ func (s *MachineService) GetByCode(code string) (*model.Machine, error) {
 	return &machine, nil
 }
 
-// CreateResult kèm khoá máy trạm ở dạng THÔ. Đây là lần duy nhất khoá xuất
-// hiện — máy chủ chỉ lưu băm. Ghi vào cấu hình máy trạm ngay.
-type CreateMachineResult struct {
-	*model.Machine
-	AgentToken string `json:"agent_token"`
-}
-
-func (s *MachineService) Create(req *CreateMachineRequest) (*CreateMachineResult, error) {
+func (s *MachineService) Create(req *CreateMachineRequest) (*model.Machine, error) {
 	machine := model.Machine{
 		MachineCode: req.MachineCode,
 		GroupID:     req.GroupID,
@@ -175,13 +168,6 @@ func (s *MachineService) Create(req *CreateMachineRequest) (*CreateMachineResult
 		OSInfo:      req.OSInfo,
 		Status:      "offline",
 		IsActive:    true,
-		// KHÔNG cấp khoá tự động. Mỗi máy một khoá riêng nghĩa là quán 50 máy
-		// phải chép tay 50 chuỗi, và chép nhầm một ký tự thì triệu chứng là máy
-		// vẫn chạy nhưng trang quản trị chỉ nói "Ngoại tuyến" — không một chữ
-		// nào cho biết vì sao. Máy trạm cắm vào là chạy.
-		//
-		// Ai muốn siết thì bấm "Cấp khoá" ở trang Máy: từ lúc đó máy chủ bắt
-		// buộc khoá cho đúng máy đó, còn những máy khác vẫn không cần.
 	}
 	if err := s.db.Create(&machine).Error; err != nil {
 		return nil, err
@@ -192,73 +178,7 @@ func (s *MachineService) Create(req *CreateMachineRequest) (*CreateMachineResult
 		EntityID:   machine.ID,
 		Metadata:   map[string]interface{}{"machine_code": machine.MachineCode},
 	})
-	return &CreateMachineResult{Machine: &machine}, nil
-}
-
-// IssueAgentToken cấp lại khoá cho một máy. Khoá cũ mất hiệu lực ngay — dùng
-// khi máy trạm bị thay hoặc nghi khoá lộ.
-func (s *MachineService) IssueAgentToken(id, actorID string) (string, error) {
-	var machine model.Machine
-	if err := s.db.First(&machine, "id = ?", id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", errors.New("không tìm thấy máy")
-		}
-		return "", err
-	}
-
-	token, err := randomString(cardSecretLen * 2)
-	if err != nil {
-		return "", err
-	}
-	now := time.Now()
-	if err := s.db.Model(&machine).Updates(map[string]interface{}{
-		"agent_token": hashSecret(token), "agent_token_issued_at": &now,
-	}).Error; err != nil {
-		return "", err
-	}
-
-	var actor *string
-	if actorID != "" {
-		actor = &actorID
-	}
-	_ = s.audit.Log(&LogAuditRequest{
-		Action:     "issue_agent_token",
-		EntityType: "machine",
-		EntityID:   machine.ID,
-		UserID:     actor,
-		Metadata:   map[string]interface{}{"machine_code": machine.MachineCode},
-	})
-	return token, nil
-}
-
-var (
-	ErrMachineUnknown    = errors.New("không có máy nào mang mã này")
-	ErrAgentTokenInvalid = errors.New("khoá máy trạm không đúng")
-)
-
-// VerifyAgentToken kiểm khoá kèm theo báo cáo của máy trạm.
-//
-// Khoá là TUỲ CHỌN. Máy chưa được cấp khoá thì chỉ cần mã máy có thật là qua —
-// cắm máy vào là chạy, không phải chép chuỗi bí mật cho từng máy một.
-//
-// Cấp khoá cho một máy (nút "Cấp khoá" ở trang Máy) là bật ràng buộc cho riêng
-// máy đó: từ lúc ấy báo cáo thiếu khoá hoặc sai khoá đều bị từ chối. Đánh đổi
-// phải nói rõ: không có khoá thì bất kỳ ai trong mạng đoán được mã máy đều gửi
-// được báo cáo giả và nhận được lệnh điều khiển dành cho máy đó — mà trong quán
-// net, khách ngồi ngay trên cùng mạng ấy.
-func (s *MachineService) VerifyAgentToken(machineCode, token string) error {
-	var machine model.Machine
-	if err := s.db.Select("machine_code, agent_token").
-		Where("machine_code = ?", machineCode).First(&machine).Error; err != nil {
-		return ErrMachineUnknown
-	}
-	if machine.AgentToken == "" {
-		return nil
-	}
-	if !secretMatches(machine.AgentToken, token) {
-		return ErrAgentTokenInvalid
-	}
-	return nil
+	return &machine, nil
 }
 
 func (s *MachineService) Update(id string, req *UpdateMachineRequest) (*model.Machine, error) {
@@ -446,7 +366,7 @@ var remoteActions = map[string]string{
 	"block-app":   "chặn ứng dụng trên máy",
 	"unblock-app": "bỏ chặn ứng dụng trên máy",
 	// Ba lệnh giám sát. Máy trạm làm xong thì báo NGƯỢC dữ liệu lên bằng HTTP
-	// (route by-code, X-Agent-Token) chứ không qua WebSocket: readPump của hub
+	// (route by-code) chứ không qua WebSocket: readPump của hub
 	// giới hạn 4 KB chiều lên, mà ảnh chụp màn hình cỡ vài trăm KB.
 	"screenshot":   "chụp màn hình máy",
 	"process-list": "xem tiến trình đang chạy",

@@ -260,12 +260,15 @@ so `golangci-lint run` uses defaults.
     still self-healing, and `Broadcast` is correct here where `SendToUser` was correct for balance —
     stock is not private, and every open menu needs it.
 
-31. **The machine key is optional, and that is a deliberate trade.** `Create` no longer issues one;
-    `VerifyAgentToken` passes any machine whose `agent_token` is empty, so a client plugs in and runs.
-    Pressing "Cấp khoá" turns the requirement on **for that machine only**. The cost is real: without a
-    key anyone on the LAN who can guess a machine code can post fake telemetry and receive that
-    machine's remote commands — and in a net café the customers are on that LAN. `AuthOrAgent` picks
-    the agent path whenever there is no user token, so an empty key still reaches the verifier.
+31. **The by-code machine routes are open, identified only by the machine code in the URL.** The agent
+    token mechanism was removed entirely — it was optional, never enabled on any machine, and only added
+    confusion. So `heartbeat`, `screenshot`, `processes`, `blocklist`, `app-update` and the background
+    WebSocket accept any request naming a valid machine code. The cost is real and accepted: anyone on
+    the LAN who can guess a machine code can post fake telemetry, pull the blocklist, or connect the
+    WebSocket to receive that machine's remote commands and screenshots — and in a net café the
+    customers are on that LAN. `AuthOrAgent` routes to the agent path (kind=agent, no user_id, so
+    permission middleware still rejects it) whenever there is a machine_code and no user token. If a
+    future need to lock machines down arises, this is where a real per-machine secret would go back.
 
 32. **Anything that can power off a customer's machine must be a pure function of observations.**
     `guardState.step` decides; `observeGuard` (Windows-only) merely gathers. Every uncertain

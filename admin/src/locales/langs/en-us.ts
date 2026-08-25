@@ -929,18 +929,6 @@ const local: App.I18n.Schema = {
         messagePrompt: 'Message to show on the machine:',
         messageRequired: 'Enter a message'
       },
-      token: {
-        title: 'Agent key for {code}',
-        reissue: 'Issue key',
-        reissueConfirm:
-          'Issue a new key for machine {code}? The old key stops working immediately and the machine goes silent until you write the new one into its config.',
-        onlyOnce:
-          'The key is shown ONCE. Only a hash is stored — if you close this without saving it, you have to issue a new one.',
-        copy: 'Copy',
-        copied: 'Key copied',
-        copyFailed: 'The browser blocked copying — select and copy manually',
-        howTo: 'Put this key in the client config under the environment variable'
-      },
       asset: {
         name: 'Name',
         type: 'Type',

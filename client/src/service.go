@@ -50,8 +50,8 @@ func runAgent(ctx context.Context) {
 // session 0. Nhờ hub gửi lệnh tới MỌI kết nối của một mã máy, hai bên cùng nhận
 // và mỗi bên bỏ qua phần không thuộc mình.
 func runAgentWS(ctx context.Context, cfg *Config) {
-	if cfg.AgentToken == "" {
-		log.Printf("[agent] chưa có khoá máy — bỏ qua WebSocket, chỉ gửi nhịp tim")
+	if cfg.MachineCode == "" {
+		log.Printf("[agent] chưa khai mã máy — bỏ qua WebSocket, chỉ gửi nhịp tim")
 		return
 	}
 

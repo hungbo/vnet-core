@@ -43,7 +43,7 @@ Name: "{group}\VNET Client"; Filename: "{app}\vnet-client.exe"
 ; Ghi cấu hình TRƯỚC khi bật dịch vụ: dịch vụ chạy ở session 0 và không thừa
 ; hưởng biến môi trường của người cài, nên nó chỉ đọc được tệp config.json.
 Filename: "{cmd}"; \
-  Parameters: "/C echo {{""server_url"":""{code:GetServerURL}"",""machine_code"":""{code:GetMachineCode}"",""agent_token"":""{code:GetAgentToken}""} > ""{app}\config.json"""; \
+  Parameters: "/C echo {{""server_url"":""{code:GetServerURL}"",""machine_code"":""{code:GetMachineCode}""} > ""{app}\config.json"""; \
   Flags: runhidden
 
 ; Đặt PIN TRƯỚC khi bật dịch vụ, và bằng chính .exe chứ không ghi thẳng vào tệp:
@@ -75,7 +75,6 @@ begin
     'và mọi cách đăng nhập khác đều phải hỏi máy chủ. Đặt chung một PIN cho cả quán.');
   ConfigPage.Add('Địa chỉ máy chủ:', False);
   ConfigPage.Add('Mã máy:', False);
-  ConfigPage.Add('Khoá máy (không bắt buộc):', False);
   ConfigPage.Add('PIN kỹ thuật:', False);
   ConfigPage.Values[0] := 'http://192.168.1.10:8080';
 end;
@@ -85,7 +84,7 @@ begin
   Result := True;
   if CurPageID = ConfigPage.ID then
   begin
-    if (Trim(ConfigPage.Values[3]) <> '') and (Length(Trim(ConfigPage.Values[3])) < 4) then
+    if (Trim(ConfigPage.Values[2]) <> '') and (Length(Trim(ConfigPage.Values[2])) < 4) then
     begin
       MsgBox('PIN kỹ thuật phải có ít nhất 4 ký tự.', mbError, MB_OK);
       Result := False;
@@ -114,17 +113,12 @@ begin
   Result := Trim(ConfigPage.Values[1]);
 end;
 
-function GetAgentToken(Param: string): string;
+function GetPin(Param: string): string;
 begin
   Result := Trim(ConfigPage.Values[2]);
 end;
 
-function GetPin(Param: string): string;
-begin
-  Result := Trim(ConfigPage.Values[3]);
-end;
-
 function CoPin: Boolean;
 begin
-  Result := Trim(ConfigPage.Values[3]) <> '';
+  Result := Trim(ConfigPage.Values[2]) <> '';
 end;

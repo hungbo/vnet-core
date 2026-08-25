@@ -10,12 +10,11 @@ import (
 )
 
 type WebsiteBlockHandler struct {
-	svc     *service.WebsiteBlockService
-	machine *service.MachineService
+	svc *service.WebsiteBlockService
 }
 
-func NewWebsiteBlockHandler(svc *service.WebsiteBlockService, machine *service.MachineService) *WebsiteBlockHandler {
-	return &WebsiteBlockHandler{svc: svc, machine: machine}
+func NewWebsiteBlockHandler(svc *service.WebsiteBlockService) *WebsiteBlockHandler {
+	return &WebsiteBlockHandler{svc: svc}
 }
 
 // ListRules
@@ -164,10 +163,6 @@ func (h *WebsiteBlockHandler) SetGroups(c *gin.Context) {
 // @Router       /api/machines/by-code/{code}/blocklist [get]
 func (h *WebsiteBlockHandler) EffectiveForMachine(c *gin.Context) {
 	code := c.Param("code")
-	if err := h.machine.VerifyAgentToken(code, agentToken(c)); err != nil {
-		response.Unauthorized(c, err.Error())
-		return
-	}
 	res, err := h.svc.EffectiveFor(code, time.Now())
 	if err != nil {
 		response.NotFound(c, err.Error())
@@ -187,10 +182,6 @@ func (h *WebsiteBlockHandler) EffectiveForMachine(c *gin.Context) {
 // @Router       /api/machines/by-code/{code}/blocklist/violations [post]
 func (h *WebsiteBlockHandler) ReportViolation(c *gin.Context) {
 	code := c.Param("code")
-	if err := h.machine.VerifyAgentToken(code, agentToken(c)); err != nil {
-		response.Unauthorized(c, err.Error())
-		return
-	}
 	var req service.ReportViolationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)

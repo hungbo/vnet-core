@@ -80,7 +80,6 @@ func (w *webBlocker) sync() {
 	if err != nil {
 		return
 	}
-	req.Header.Set("X-Agent-Token", w.cfg.AgentToken)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -90,7 +89,7 @@ func (w *webBlocker) sync() {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, resp.Body)
-		log.Printf("[chặn web] máy chủ trả %d — kiểm tra VNET_AGENT_TOKEN", resp.StatusCode)
+		log.Printf("[chặn web] máy chủ trả %d", resp.StatusCode)
 		return
 	}
 
@@ -190,7 +189,6 @@ func (w *webBlocker) reportViolation(domain, url string) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Agent-Token", w.cfg.AgentToken)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return

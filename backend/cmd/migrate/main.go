@@ -50,6 +50,11 @@ var migrations = []migration{
 	// chuyển sang available.
 	{name: "drop_machine_status_maintenance", sql: "UPDATE machines SET status = 'offline' WHERE status = 'maintenance'"},
 
+	// Bỏ khoá máy trạm (agent token). Cơ chế này là tuỳ chọn, thực tế không máy
+	// nào bật, và đã được gỡ khỏi toàn bộ mã. Xoá hai cột cho sạch — GORM
+	// AutoMigrate không tự xoá cột nên phải làm tay.
+	{name: "drop_machine_agent_token", sql: "ALTER TABLE machines DROP COLUMN IF EXISTS agent_token, DROP COLUMN IF EXISTS agent_token_issued_at"},
+
 	// Một đơn hàng chỉ được đánh giá một lần. Chỉ mục PHẦN: đánh giá không gắn
 	// đơn (nhận xét chung về dịch vụ) thì gửi bao nhiêu lần cũng được.
 	{name: "feedback_one_per_order", sql: "CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_order ON service_feedbacks (order_id) WHERE order_id IS NOT NULL"},

@@ -20,7 +20,6 @@ func TestLoadConfig_FileAndEnvPrecedence(t *testing.T) {
 	data, _ := json.Marshal(fileConfig{
 		ServerURL:   "http://tu-tep:8080",
 		MachineCode: "TU-TEP",
-		AgentToken:  "khoa-tu-tep",
 	})
 	path := filepath.Join(filepath.Dir(exe), "config.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
@@ -30,13 +29,12 @@ func TestLoadConfig_FileAndEnvPrecedence(t *testing.T) {
 
 	os.Unsetenv("VNET_SERVER_URL")
 	os.Unsetenv("VNET_MACHINE_CODE")
-	os.Unsetenv("VNET_AGENT_TOKEN")
 
 	cfg := LoadConfig()
 	if cfg.ServerURL != "http://tu-tep:8080" {
 		t.Fatalf("ServerURL = %q, mong đọc được từ config.json", cfg.ServerURL)
 	}
-	if cfg.MachineCode != "TU-TEP" || cfg.AgentToken != "khoa-tu-tep" {
+	if cfg.MachineCode != "TU-TEP" {
 		t.Fatalf("đọc thiếu trường từ config.json: %+v", cfg)
 	}
 

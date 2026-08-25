@@ -929,18 +929,6 @@ const local: App.I18n.Schema = {
         messagePrompt: 'Nội dung thông báo gửi tới máy:',
         messageRequired: 'Nhập nội dung thông báo'
       },
-      token: {
-        title: 'Khoá máy trạm {code}',
-        reissue: 'Cấp khoá',
-        reissueConfirm:
-          'Cấp lại khoá cho máy {code}? Khoá cũ mất hiệu lực ngay và máy sẽ ngừng báo tín hiệu cho tới khi bạn ghi khoá mới vào cấu hình.',
-        onlyOnce:
-          'Khoá chỉ hiện MỘT LẦN duy nhất. Hệ thống chỉ lưu bản băm — đóng cửa sổ này mà chưa lưu thì phải cấp lại khoá.',
-        copy: 'Chép',
-        copied: 'Đã chép khoá',
-        copyFailed: 'Trình duyệt không cho chép — hãy chọn và chép tay',
-        howTo: 'Ghi khoá này vào cấu hình máy trạm ở biến môi trường'
-      },
       asset: {
         name: 'Tên',
         type: 'Loại',

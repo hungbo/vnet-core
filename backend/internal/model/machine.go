@@ -36,13 +36,7 @@ type Machine struct {
 	// Trên máy đóng băng (diskless), reboot làm giá trị này nhảy về hiện tại;
 	// phiên nào bắt đầu TRƯỚC mốc này là phiên còn sót từ trước khi reboot.
 	BootedAt *time.Time `gorm:"type:timestamptz" json:"booted_at,omitempty"`
-	// Khoá riêng của máy trạm, dùng để xác thực heartbeat. Lưu băm SHA-256 và
-	// không bao giờ trả ra API — khoá thô chỉ hiện một lần lúc tạo máy hoặc
-	// lúc cấp lại. Trước đây heartbeat không cần xác thực gì: ai biết mã máy
-	// là ghi được dữ liệu phần cứng và nhiệt độ giả vào hệ thống.
-	AgentToken         string         `gorm:"type:varchar(64)" json:"-"`
-	AgentTokenIssuedAt *time.Time     `gorm:"type:timestamptz" json:"agent_token_issued_at"`
-	IsActive           bool           `gorm:"default:true" json:"is_active"`
+	IsActive  bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt          time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
 	UpdatedAt          time.Time      `gorm:"default:now()" json:"updated_at,omitempty"`
 	DeletedAt          gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`

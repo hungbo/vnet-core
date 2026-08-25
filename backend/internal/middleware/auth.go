@@ -55,46 +55,28 @@ func AuthRequired(jwtManager *jwt.Manager) gin.HandlerFunc {
 	}
 }
 
-// AgentTokenVerifier kiểm khoá riêng của một máy trạm. Dùng lại
-// MachineService.VerifyAgentToken, không dựng cơ chế xác thực mới.
-type AgentTokenVerifier func(machineCode, token string) error
-
 // AuthOrAgent cho phép MỘT TRONG HAI cách vào: token người dùng như thường, hoặc
-// khoá riêng của máy trạm kèm mã máy.
+// chỉ mã máy (tiến trình nền của máy trạm, không có tài khoản người).
 //
 // Đây là thứ vá lỗ hổng lớn nhất của máy trạm: WebSocket trước đây chỉ nối được
-// SAU KHI khách đăng nhập, bằng token của khách. Máy không có ai ngồi thì không
-// có kết nối nào, nên nhân viên KHÔNG tắt hay khoá được máy trống — đúng lúc cần
-// nhất. Tiến trình nền chạy như dịch vụ Windows giữ kết nối 24/7 bằng khoá máy.
+// SAU KHI khách đăng nhập. Máy trống thì không có kết nối nào, nên nhân viên
+// KHÔNG tắt hay khoá được máy trống — đúng lúc cần nhất. Tiến trình nền chạy như
+// dịch vụ Windows giữ kết nối 24/7 chỉ bằng mã máy.
 //
-// Kết nối bằng khoá máy KHÔNG có user_id và KHÔNG có role_id, nên hub xếp nó là
-// client thường chứ không phải quản trị, và mọi middleware phân quyền phía sau
-// đều từ chối nó.
-func AuthOrAgent(jwtManager *jwt.Manager, verify AgentTokenVerifier) gin.HandlerFunc {
+// Kết nối kiểu này KHÔNG có user_id và KHÔNG có role_id, nên hub xếp nó là client
+// thường chứ không phải quản trị, và mọi middleware phân quyền phía sau đều từ
+// chối nó. Khoá máy trạm đã bỏ: nhận diện chỉ bằng mã máy trong URL.
+func AuthOrAgent(jwtManager *jwt.Manager) gin.HandlerFunc {
 	authRequired := AuthRequired(jwtManager)
 
 	return func(c *gin.Context) {
 		machineCode := c.Query("machine_code")
-		agent := c.GetHeader("X-Agent-Token")
-		if agent == "" {
-			agent = c.Query("agent_token")
-		}
 
 		// Ưu tiên token người dùng. Giao diện máy trạm gửi kèm CẢ mã máy, nên
 		// nếu chỉ nhìn mã máy thì kết nối của khách bị xếp nhầm là tiến trình
 		// nền và mất danh tính người dùng — phòng chat sẽ không vào được.
-		hasUserToken := extractToken(c) != ""
-
-		// Khoá rỗng vẫn đi đường máy trạm: khoá là TUỲ CHỌN, và chính verify là
-		// nơi quyết định máy này có bắt buộc khoá hay không.
-		if hasUserToken || machineCode == "" || verify == nil {
+		if extractToken(c) != "" || machineCode == "" {
 			authRequired(c)
-			return
-		}
-
-		if err := verify(machineCode, agent); err != nil {
-			response.Unauthorized(c, err.Error())
-			c.Abort()
 			return
 		}
 

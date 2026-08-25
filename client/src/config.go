@@ -9,10 +9,7 @@ import (
 
 type Config struct {
 	ServerURL   string
-	MachineCode string
-	// Khoá riêng của máy này. TUỲ CHỌN: để trống thì máy chủ vẫn nhận, trừ khi
-	// ai đó đã bấm "Cấp khoá" cho đúng máy này ở trang Máy.
-	AgentToken        string
+	MachineCode       string
 	HeartbeatInterval time.Duration
 	ScreenLockEnabled bool
 	HighTempThreshold float64
@@ -34,7 +31,6 @@ type Config struct {
 type fileConfig struct {
 	ServerURL   string `json:"server_url"`
 	MachineCode string `json:"machine_code"`
-	AgentToken  string `json:"agent_token"`
 	// Băm của PIN kỹ thuật, KHÔNG phải PIN. Tệp này nằm trong Program Files nên
 	// khách đọc được; ghi PIN trần vào đây là dán chìa khoá lên cửa.
 	MaintenancePin string `json:"maintenance_pin"`
@@ -62,7 +58,6 @@ func LoadConfig() *Config {
 	cfg := &Config{
 		ServerURL:          getEnv("VNET_SERVER_URL", firstNonEmpty(fc.ServerURL, "http://localhost:8080")),
 		MachineCode:        getEnv("VNET_MACHINE_CODE", fc.MachineCode),
-		AgentToken:         getEnv("VNET_AGENT_TOKEN", fc.AgentToken),
 		MaintenancePinHash: fc.MaintenancePin,
 		HeartbeatInterval:  15 * time.Second,
 		ScreenLockEnabled:  true,

@@ -27,21 +27,15 @@ type WSClient struct {
 	machineCode string
 	conn        *websocket.Conn
 	handlers    map[string]WSHandler
-
-	// agentToken khác rỗng nghĩa là nối bằng KHOÁ MÁY thay vì token người dùng.
-	// Tiến trình nền dùng đường này để giữ kết nối kể cả khi chưa ai đăng nhập —
-	// bản cũ chỉ nối sau khi khách đăng nhập, nên máy trống không nhận lệnh nào.
-	agentToken string
 }
 
-// NewAgentWSClient dựng một kết nối cho tiến trình nền: xác thực bằng khoá máy,
+// NewAgentWSClient dựng một kết nối cho tiến trình nền: nhận diện bằng mã máy,
 // KHÔNG đăng ký handler nào cho giao diện (không có cửa sổ để mà phát sự kiện).
 func NewAgentWSClient(ctx context.Context, cfg *Config) *WSClient {
 	return &WSClient{
 		ctx:         ctx,
 		baseURL:     cfg.ServerURL,
 		machineCode: cfg.MachineCode,
-		agentToken:  cfg.AgentToken,
 		handlers:    make(map[string]WSHandler),
 	}
 }
@@ -161,19 +155,12 @@ func (c *WSClient) Connect(ctx context.Context) error {
 	}
 
 	header := http.Header{}
-	switch {
-	case c.agentToken != "":
-		header.Set("X-Agent-Token", c.agentToken)
-		log.Printf("[WS] nối bằng khoá máy %s", c.machineCode)
-	case c.token != "":
+	if c.token != "" {
 		header.Set("Authorization", "Bearer "+c.token)
 		log.Printf("[WS] token prefix: %s...", safePrefix(c.token, 20))
-	default:
-		// Không gửi header nào cả. Khoá máy là tuỳ chọn, nên tiến trình nền của
-		// một máy chưa cấp khoá chỉ cần mã máy. Gửi "Bearer " rỗng thì máy chủ
-		// vẫn cho qua, nhưng nó nói dối về ý định và người đọc nhật ký sau này
-		// sẽ đi tìm xem token biến đâu mất.
-		log.Printf("[WS] nối bằng mã máy %s, không kèm khoá", c.machineCode)
+	} else {
+		// Tiến trình nền chỉ cần mã máy — khoá máy trạm đã bỏ.
+		log.Printf("[WS] nối bằng mã máy %s", c.machineCode)
 	}
 
 	for {

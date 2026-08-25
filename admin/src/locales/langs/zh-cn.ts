@@ -926,16 +926,6 @@ const local: App.I18n.Schema = {
         messagePrompt: '要显示在机器上的消息：',
         messageRequired: '请输入消息内容'
       },
-      token: {
-        title: '{code} 的客户端密钥',
-        reissue: '签发密钥',
-        reissueConfirm: '为机器 {code} 重新签发密钥？旧密钥立即失效，机器将停止上报，直到把新密钥写入配置。',
-        onlyOnce: '密钥只显示一次。系统仅保存哈希值 — 未保存就关闭需要重新签发。',
-        copy: '复制',
-        copied: '密钥已复制',
-        copyFailed: '浏览器阻止复制 — 请手动选择复制',
-        howTo: '将此密钥写入客户端配置的环境变量'
-      },
       asset: {
         name: '名称',
         type: '类型',

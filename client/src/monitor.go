@@ -112,7 +112,6 @@ func baoCaoLen(cfg *Config, path string, body interface{}) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Agent-Token", cfg.AgentToken)
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return err

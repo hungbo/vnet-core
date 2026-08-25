@@ -103,7 +103,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		}
 
 		// Ba route máy trạm gọi mà không có tài khoản người dùng. Tất cả đều
-		// xác thực bằng khoá riêng của máy (X-Agent-Token), không phải mở tự do.
+		// nhận diện bằng mã máy trong URL (khoá máy trạm đã bỏ).
 		api.POST("/machines/by-code/:code/heartbeat", h.Machine.HeartbeatByCode)
 		api.GET("/machines/by-code/:code/blocklist", h.WebsiteBlock.EffectiveForMachine)
 		api.POST("/machines/by-code/:code/blocklist/violations", h.WebsiteBlock.ReportViolation)
@@ -118,7 +118,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		// khoá riêng của máy trạm — để tiến trình nền giữ được kết nối kể cả khi
 		// không có ai đăng nhập trên máy đó.
 		api.GET("/ws/client",
-			middleware.AuthOrAgent(jwtManager, h.Machine.VerifyAgentToken),
+			middleware.AuthOrAgent(jwtManager),
 			wsHub.HandleWS)
 
 		protected := api.Group("")
@@ -173,7 +173,6 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				machines.PUT("/:id", middleware.StaffOnly(), h.Machine.Update)
 				machines.DELETE("/:id", middleware.StaffOnly(), h.Machine.Delete)
 				machines.POST("/:id/heartbeat", middleware.StaffOnly(), h.Machine.Heartbeat)
-				machines.POST("/:id/agent-token", middleware.StaffOnly(), h.Machine.IssueAgentToken)
 				machines.GET("/:id/hardware", middleware.StaffOnly(), h.Machine.GetHardware)
 				machines.POST("/:id/remote/:action", middleware.StaffOnly(), h.Machine.RemoteAction)
 			}

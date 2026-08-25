@@ -110,21 +110,6 @@ func TestParseOptionalTime(t *testing.T) {
 	}
 }
 
-// Khoá máy trạm dùng chung bộ sinh mã với thẻ, nên cùng đảm bảo về độ mạnh.
-// Dài gấp đôi mã thẻ vì nó nằm trong tệp cấu hình chứ không ai gõ tay.
-func TestAgentTokenLength(t *testing.T) {
-	tok, err := randomString(cardSecretLen * 2)
-	if err != nil {
-		t.Fatalf("sinh khoá lỗi: %v", err)
-	}
-	if len(tok) != 32 {
-		t.Errorf("khoá dài %d, mong 32", len(tok))
-	}
-	if hashSecret(tok) == tok {
-		t.Error("khoá được lưu thô")
-	}
-}
-
 // Cột date của PostgreSQL trả về là nửa đêm THEO UTC, còn "hôm nay" ở máy chủ
 // là nửa đêm theo giờ địa phương. So bằng time.Equal luôn sai — lỗi này từng
 // làm chuỗi điểm danh báo về 0 dù hôm qua vẫn điểm danh.

@@ -130,7 +130,7 @@ def file_exists_in_app(path: str) -> bool:
     return out.returncode == 0
 
 
-def agent_hb(code: str, uptime: int, token: str = "") -> int:
+def agent_hb(code: str, uptime: int) -> int:
     """Gửi một heartbeat như máy trạm thật, có kèm uptime.
 
     Máy chủ suy ra mốc khởi động từ uptime (booted_at = bây giờ - uptime), nên
@@ -140,8 +140,7 @@ def agent_hb(code: str, uptime: int, token: str = "") -> int:
         "machine_code": code, "cpu_temp": 45, "gpu_temp": 55,
         "cpu_usage": 10, "ram_usage": 40, "disk_usage": 50, "uptime": uptime,
     }
-    headers = {"X-Agent-Token": token} if token else None
-    return call("POST", f"/api/machines/by-code/{code}/heartbeat", body, None, headers=headers)[0]
+    return call("POST", f"/api/machines/by-code/{code}/heartbeat", body)[0]
 
 
 def data_of(res) -> object:
@@ -254,8 +253,6 @@ def phase_setup(t: str) -> dict:
         st, res = probe(area, f"tạo máy {n}", "POST", "/api/machines",
                         {"machine_code": f"KT-{n:02d}", "group_id": ids["machine_group"]}, t)
         ids[f"machine{n}"] = (data_of(res) or {}).get("id", "")
-        # Khoá máy trạm chỉ trả về đúng một lần, ngay lúc tạo máy.
-        ids[f"machine{n}_token"] = (data_of(res) or {}).get("agent_token", "")
 
     st, res = probe(area, "tạo tài sản máy", "POST", "/api/machine-assets",
                     {"machine_id": ids["machine1"], "asset_type": "monitor",
@@ -784,29 +781,23 @@ class FakeMachine:
     Chỉ đọc, không gửi — nên bỏ qua toàn bộ phần đóng khung có mask.
     """
 
-    def __init__(self, machine_code: str, token: str = "", agent_token: str = ""):
+    def __init__(self, machine_code: str, token: str = ""):
         self.code = machine_code
         self.sock: socket.socket | None = None
         self.buf = b""
-        self._connect(token, agent_token)
+        self._connect(token)
 
-    def _connect(self, token: str, agent_token: str = "") -> None:
+    def _connect(self, token: str) -> None:
         u = urllib.parse.urlparse(BASE)
         host = u.hostname or "localhost"
         port = u.port or (443 if u.scheme == "https" else 80)
 
         self.sock = socket.create_connection((host, port), timeout=10)
         key = base64.b64encode(os.urandom(16)).decode()
-        # Khoá máy là đường vào thứ hai: tiến trình nền giữ kết nối kể cả khi
-        # không có ai đăng nhập trên máy đó.
-        if agent_token:
-            path = (f"/api/ws/client?machine_code={self.code}"
-                    f"&agent_token={urllib.parse.quote(agent_token)}")
-        elif token:
+        # Tiến trình nền nối chỉ bằng mã máy; giao diện kèm token người dùng.
+        if token:
             path = f"/api/ws/client?machine_code={self.code}&token={urllib.parse.quote(token)}"
         else:
-            # Máy chưa cấp khoá: chỉ cần mã máy. Đây là đường đi mặc định của
-            # tiến trình nền sau khi khoá trở thành tuỳ chọn.
             path = f"/api/ws/client?machine_code={self.code}"
         req = (
             f"GET {path} HTTP/1.1\r\n"
@@ -1731,12 +1722,9 @@ def flow_website_block(t: str, ids: dict) -> None:
         report.add(area, "chuẩn bị máy để kiểm", BROKEN, "không tạo được máy")
         return
 
-    # Khoá máy là tuỳ chọn nên hai máy này không có khoá — danh sách chặn lấy
-    # được chỉ bằng mã máy, đúng như máy trạm thật sẽ làm.
-    def blocklist(code: str, token: str = ""):
-        headers = {"X-Agent-Token": token} if token else None
-        st, r = call("GET", f"/api/machines/by-code/{code}/blocklist", None, None,
-                     headers=headers)
+    # Route by-code mở: danh sách chặn lấy được chỉ bằng mã máy.
+    def blocklist(code: str):
+        st, r = call("GET", f"/api/machines/by-code/{code}/blocklist")
         return st, (data_of(r) or {}).get("domains", [])
 
     # Chuẩn hoá: mọi cách viết cùng một tên miền phải quy về một luật.
@@ -1826,28 +1814,14 @@ def flow_website_block(t: str, ids: dict) -> None:
     expect(area, "tắt luật thì máy trạm không nhận nữa", "facebook.com" not in da,
            detail_bad=f"danh sách {da}")
 
-    # Cấp khoá cho WB-A1: từ lúc này danh sách chặn của nó là dữ liệu có khoá.
-    _, res = call("POST", f"/api/machines/{ma['id']}/agent-token", {}, t)
-    khoa_a = (data_of(res) or {}).get("agent_token", "")
-    expect(area, "cấp được khoá cho máy WB-A1", bool(khoa_a))
-
+    # Khoá máy trạm đã bỏ: route by-code mở, nhận diện bằng mã máy, không cần khoá.
     st, _ = call("GET", "/api/machines/by-code/WB-A1/blocklist")
-    expect(area, "máy đã cấp khoá: lấy danh sách chặn thiếu khoá bị từ chối", st == 401,
+    expect(area, "route by-code mở: lấy danh sách chặn không cần khoá", st == 200,
            f"{st}", f"HTTP {st}")
-
-    st, _ = call("GET", "/api/machines/by-code/WB-A1/blocklist", None, None,
-                 headers={"X-Agent-Token": "KHOA-BIA-RA"})
-    expect(area, "máy đã cấp khoá: sai khoá không lấy được danh sách", st == 401,
-           f"{st}", f"HTTP {st}")
-
-    st, _ = call("GET", "/api/machines/by-code/WB-A1/blocklist", None, None,
-                 headers={"X-Agent-Token": khoa_a})
-    expect(area, "đúng khoá thì lấy được danh sách", st == 200, detail_bad=f"HTTP {st}")
 
     # Báo vi phạm.
     st, _ = call("POST", "/api/machines/by-code/WB-A1/blocklist/violations",
-                 {"domain": "https://www.tiktok.com/xyz", "process_name": "chrome.exe"},
-                 None, headers={"X-Agent-Token": khoa_a})
+                 {"domain": "https://www.tiktok.com/xyz", "process_name": "chrome.exe"})
     expect(area, "máy trạm báo được lần truy cập bị chặn", st == 200, detail_bad=f"HTTP {st}")
 
     st, res = call("GET", "/api/website-violations?page_size=20", None, t)
@@ -1860,11 +1834,6 @@ def flow_website_block(t: str, ids: dict) -> None:
     expect(area, "vi phạm gắn được với luật đã chặn",
            bool(hit) and hit[0].get("rule_id"),
            detail_bad="không truy được lần chặn thuộc luật nào")
-
-    st, _ = call("POST", "/api/machines/by-code/WB-A1/blocklist/violations",
-                 {"domain": "tiktok.com"}, None,
-                 headers={"X-Agent-Token": "KHOA-SAI"})
-    expect(area, "báo vi phạm bằng khoá sai bị từ chối", st == 401, f"{st}", f"HTTP {st}")
 
     # Tên miền vô nghĩa bị chặn ngay lúc tạo luật.
     st, _ = call("POST", "/api/website-rules", {"pattern": "khong-phai-ten-mien"}, t)
@@ -1899,8 +1868,7 @@ def flow_app_update(t: str, ids: dict) -> None:
 
     def latest(current, platform="windows-amd64"):
         st, r = call("GET",
-                     f"/api/machines/by-code/AU-01/app-update?platform={platform}&current={current}",
-                     None, None, headers={"X-Agent-Token": token})
+                     f"/api/machines/by-code/AU-01/app-update?platform={platform}&current={current}")
         return st, (data_of(r) or {})
 
     # Băm là bắt buộc và phải là SHA-256 hex.
@@ -1956,20 +1924,9 @@ def flow_app_update(t: str, ids: dict) -> None:
     expect(area, "từ chối công bố trùng phiên bản cùng nền tảng", st >= 400,
            detail_bad=f"HTTP {st}")
 
-    # Máy chưa cấp khoá thì hỏi được ngay — đường đi mặc định sau khi khoá trở
-    # thành tuỳ chọn.
+    # Route by-code mở: hỏi bản cập nhật chỉ bằng mã máy.
     st, _ = call("GET", "/api/machines/by-code/AU-01/app-update?platform=windows-amd64&current=1.0.0")
-    expect(area, "máy chưa cấp khoá hỏi được bản cập nhật", st == 200, f"{st}", f"HTTP {st}")
-
-    # Cấp khoá xong thì ràng buộc bật lên cho riêng máy đó.
-    _, res = call("POST", f"/api/machines/{m['id']}/agent-token", {}, t)
-    khoa = (data_of(res) or {}).get("agent_token", "")
-    st, _ = call("GET", "/api/machines/by-code/AU-01/app-update?platform=windows-amd64&current=1.0.0")
-    expect(area, "máy đã cấp khoá: hỏi cập nhật thiếu khoá bị từ chối", st == 401,
-           f"{st}", f"HTTP {st}")
-    st, _ = call("GET", "/api/machines/by-code/AU-01/app-update?platform=windows-amd64&current=1.0.0",
-                 None, None, headers={"X-Agent-Token": khoa})
-    expect(area, "máy đã cấp khoá: đúng khoá thì hỏi được", st == 200, f"{st}", f"HTTP {st}")
+    expect(area, "hỏi được bản cập nhật bằng mã máy", st == 200, f"{st}", f"HTTP {st}")
 
     expect(area, "công bố bản cập nhật có vào nhật ký",
            sql("select count(*) from audit_logs where action = 'publish_app_update'") != "0",
@@ -2465,72 +2422,22 @@ def phase_permissions(tokens: dict, ids: dict) -> None:
     expect(area, "chèn SQL qua tham số sắp xếp bị vô hiệu",
            st == 200 and still not in ("", "0"), f"bảng users còn {still} dòng")
 
-    # Khoá máy trạm là TUỲ CHỌN. Máy cắm vào là chạy; ai muốn siết thì bấm
-    # "Cấp khoá" cho riêng máy đó, và từ lúc ấy máy chủ bắt buộc khoá.
+    # Khoá máy trạm đã bỏ: route by-code mở, nhận diện chỉ bằng mã máy.
     body = {"cpu_temp": 50, "gpu_temp": 55}
 
     st, _ = call("POST", "/api/machines/by-code/KT-02/heartbeat", body)
-    expect(area, "máy chưa cấp khoá thì báo cáo không cần khoá", st == 200,
-           f"{st}", f"HTTP {st} — máy mới lẽ ra cắm vào là chạy")
+    expect(area, "báo cáo bằng mã máy có thật được nhận", st == 200,
+           f"{st}", f"HTTP {st}")
 
     # Mã máy vẫn phải có thật: nó là thứ duy nhất còn lại để chặn rác.
     st, _ = call("POST", "/api/machines/by-code/KHONG-CO-MAY-NAY/heartbeat", body)
-    expect(area, "mã máy không tồn tại bị từ chối", st == 401,
+    expect(area, "mã máy không tồn tại bị từ chối", st in (401, 404),
            f"{st}", f"HTTP {st} — ghi được cho máy không tồn tại")
 
-    # Cấp khoá cho KT-01 là bật ràng buộc cho RIÊNG máy đó.
-    st, res = call("POST", f"/api/machines/{ids['machine1']}/agent-token", {}, tokens["admin"])
-    token = (data_of(res) or {}).get("agent_token", "")
-    if token:
-        ids["machine1_token"] = token
-    expect(area, "cấp khoá cho một máy trả về khoá dùng được", bool(token),
-           detail_bad=f"HTTP {st}")
-
-    st, _ = call("POST", "/api/machines/by-code/KT-01/heartbeat", body)
-    expect(area, "máy ĐÃ cấp khoá thì báo cáo thiếu khoá bị từ chối", st == 401,
-           f"{st}", f"HTTP {st} — cấp khoá xong mà vẫn vào được thì cấp để làm gì")
-
-    st, _ = call("POST", "/api/machines/by-code/KT-01/heartbeat", body,
-                 headers={"X-Agent-Token": "KHOA-SAI-HOAN-TOAN"})
-    expect(area, "sai khoá bị từ chối", st == 401, f"{st}", f"HTTP {st}")
-
-    st, _ = call("POST", "/api/machines/by-code/KT-01/heartbeat", body,
-                 headers={"X-Agent-Token": token})
-    expect(area, "đúng khoá được nhận", st == 200,
-           detail_bad=f"HTTP {st} — khoá vừa cấp không dùng được")
-
-    # Khoá của máy này không dùng cho máy khác được. KT-02 chưa cấp khoá nên nó
-    # nhận mọi thứ — dùng máy thứ ba, cũng đã cấp khoá, để đo cho đúng.
-    st, res = call("POST", f"/api/machines/{ids['machine3']}/agent-token", {}, tokens["admin"])
-    token3 = (data_of(res) or {}).get("agent_token", "")
-    if token3:
-        ids["machine3_token"] = token3
-    st, _ = call("POST", "/api/machines/by-code/KT-03/heartbeat", body,
-                 headers={"X-Agent-Token": token})
-    expect(area, "khoá máy này không dùng được cho máy khác", st == 401,
-           f"{st}", f"HTTP {st} — một khoá lộ là ghi được cho mọi máy")
-
-    # Cấp lại khoá thì khoá cũ chết ngay.
-    st, res = call("POST", f"/api/machines/{ids['machine1']}/agent-token", {}, tokens["admin"])
-    fresh = (data_of(res) or {}).get("agent_token", "")
-    if fresh:
-        ids["machine1_token"] = fresh
-    st_old, _ = call("POST", "/api/machines/by-code/KT-01/heartbeat", body,
-                     headers={"X-Agent-Token": token})
-    st_new, _ = call("POST", "/api/machines/by-code/KT-01/heartbeat", body,
-                     headers={"X-Agent-Token": fresh})
-    expect(area, "cấp lại khoá thì khoá cũ mất hiệu lực ngay",
-           bool(fresh) and st_old == 401 and st_new == 200,
-           f"khoá cũ {st_old}, khoá mới {st_new}",
-           f"khoá cũ {st_old}, khoá mới {st_new}")
-
-    # Khoá không được lọt ra API danh sách.
-    st, res = call("GET", "/api/machines?page_size=5", None, tokens["admin"])
-    rows = items_of(res)
-    expect(area, "danh sách máy không lộ khoá",
-           bool(rows) and all("agent_token" not in r for r in rows),
-           detail_bad="khoá máy trạm lọt ra API danh sách")
-
+    # Route cấp khoá đã xoá.
+    st, _ = call("POST", f"/api/machines/{ids['machine1']}/agent-token", {}, tokens["admin"])
+    expect(area, "route cấp khoá đã bị xoá", st == 404,
+           f"{st}", f"HTTP {st} — route agent-token lẽ ra không còn")
 
 # --------------------------------------------------------------------------- #
 # Luồng: cài đặt có thực sự điều khiển hệ thống không
@@ -3160,33 +3067,15 @@ def flow_agent_ws_and_features(t: str, ids: dict) -> None:
     except Exception as e:  # noqa: BLE001
         report.add(area, "mã máy không tồn tại bị từ chối", OK, str(e)[:50])
 
-    # --- cấp khoá xong thì khoá sai bị từ chối -------------------------------
-    st, res = call("POST", f"/api/machines/{mach_id}/agent-token", {}, t)
-    agent = (data_of(res) or {}).get("agent_token", "")
-    if not agent:
-        report.add(area, "cấp khoá cho máy", BROKEN, f"{st} {res.get('message','')[:60]}")
-        return
-
-    try:
-        FakeMachine(code, agent_token="khoa-bia-ra")
-        report.add(area, "máy đã cấp khoá thì khoá sai bị từ chối", WRONG, "", "vẫn nối được bằng khoá bịa")
-    except Exception as e:  # noqa: BLE001
-        report.add(area, "máy đã cấp khoá thì khoá sai bị từ chối", OK, str(e)[:50])
-
-    try:
-        FakeMachine(code)
-        report.add(area, "máy đã cấp khoá thì thiếu khoá bị từ chối", WRONG, "", "vẫn nối được khi không đưa khoá")
-    except Exception as e:  # noqa: BLE001
-        report.add(area, "máy đã cấp khoá thì thiếu khoá bị từ chối", OK, str(e)[:50])
-
     # --- hai kết nối cùng một mã máy ----------------------------------------
+    # Khoá máy trạm đã bỏ: nối chỉ bằng mã máy.
     try:
-        service = FakeMachine(code, agent_token=agent)   # tiến trình nền
-        ui = FakeMachine(code, agent_token=agent)        # giao diện
+        service = FakeMachine(code)   # tiến trình nền
+        ui = FakeMachine(code)        # giao diện
     except Exception as e:  # noqa: BLE001
-        report.add(area, "nối được bằng khoá máy", BROKEN, str(e)[:70])
+        report.add(area, "nối được bằng mã máy", BROKEN, str(e)[:70])
         return
-    report.add(area, "nối được bằng khoá máy, không cần ai đăng nhập", OK)
+    report.add(area, "nối được bằng mã máy, không cần ai đăng nhập", OK)
     time.sleep(0.5)
 
     st, res = call("POST", f"/api/machines/{mach_id}/remote/shutdown", token=t)
@@ -3325,7 +3214,7 @@ def flow_per_minute_billing(t: str, ids: dict) -> None:
     # phút — chơi ba tiếng ở giá 20.000₫/giờ là lệch 60.000₫.
     nghe = None
     try:
-        nghe = FakeMachine(code, agent_token=ids.get("machine1_token", ""))
+        nghe = FakeMachine(code)
     except Exception as e:
         report.add(area, "mở WebSocket để nghe lượt trừ tiền", BROKEN, str(e)[:120])
 
@@ -3595,8 +3484,7 @@ def flow_hardware_retention(t: str, ids: dict) -> None:
     area = "31. Lịch sử phần cứng"
 
     mid = ids.get("machine3", "")
-    token = ids.get("machine3_token", "")
-    if not (mid and token):
+    if not mid:
         report.add(area, "chuẩn bị máy để kiểm", BROKEN, "không lấy được máy KT-03")
         return
 
@@ -3604,8 +3492,7 @@ def flow_hardware_retention(t: str, ids: dict) -> None:
     # Bốn lần báo cáo liên tiếp, uptime tăng dần: dòng mới nhất phải nằm trên cùng.
     for i in range(4):
         call("POST", "/api/machines/by-code/KT-03/heartbeat",
-             {"cpu_temp": 40 + i, "cpu_usage": 10 + i, "uptime": 1000 + i},
-             headers={"X-Agent-Token": token})
+             {"cpu_temp": 40 + i, "cpu_usage": 10 + i, "uptime": 1000 + i})
 
     st, res = call("GET", f"/api/machines/{mid}/hardware?page=1&page_size=10", None, t)
     ups = [r.get("uptime") for r in items_of(res)]

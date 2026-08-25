@@ -3,7 +3,6 @@ package handler
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
@@ -171,14 +170,8 @@ func (h *MachineHandler) Heartbeat(c *gin.Context) {
 func (h *MachineHandler) HeartbeatByCode(c *gin.Context) {
 	code := c.Param("code")
 
-	// Đây là route ghi dữ liệu duy nhất nằm ngoài AuthRequired: máy trạm chưa
-	// đăng nhập được bằng tài khoản người. Thay vào đó mỗi máy có khoá riêng,
-	// cấp lúc tạo máy và ghi vào cấu hình máy trạm.
-	if err := h.svc.VerifyAgentToken(code, agentToken(c)); err != nil {
-		response.Unauthorized(c, err.Error())
-		return
-	}
-
+	// Route ghi dữ liệu nằm ngoài AuthRequired: máy trạm không có tài khoản
+	// người. Nhận diện bằng mã máy trong URL — khoá máy trạm đã bỏ.
 	var req service.HeartbeatRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
@@ -464,39 +457,9 @@ func (h *MachineHandler) DeleteAsset(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-// IssueAgentToken
-// @Summary      Cấp lại khoá máy trạm
-// @Description  Khoá THÔ chỉ trả về ở đây, một lần duy nhất. Khoá cũ mất hiệu lực ngay.
-// @Tags         Machines
-// @Produce      json
-// @Param        id  path  string  true  "Machine ID"
-// @Success      200  {object}  response.Response
-// @Router       /api/machines/{id}/agent-token [post]
-func (h *MachineHandler) IssueAgentToken(c *gin.Context) {
-	token, err := h.svc.IssueAgentToken(c.Param("id"), middleware.GetUserID(c))
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-	response.Success(c, gin.H{"agent_token": token})
-}
-
-// agentToken bóc khoá máy trạm khỏi header. Máy trạm gửi X-Agent-Token; chấp
-// nhận cả Authorization: Bearer cho công cụ chỉ đặt được header chuẩn.
-// VerifyAgentToken cho middleware WebSocket kiểm khoá riêng của máy trạm.
-// Dùng lại đúng hàm mà heartbeat đang dùng, không dựng đường xác thực thứ hai.
-func (h *MachineHandler) VerifyAgentToken(machineCode, token string) error {
-	return h.svc.VerifyAgentToken(machineCode, token)
-}
-
 // ReportScreenshot nhận ảnh máy trạm gửi lên sau lệnh remote:screenshot.
-// Xác thực bằng khoá máy như heartbeat, không cần tài khoản người.
 func (h *MachineHandler) ReportScreenshot(c *gin.Context) {
 	code := c.Param("code")
-	if err := h.svc.VerifyAgentToken(code, agentToken(c)); err != nil {
-		response.Unauthorized(c, err.Error())
-		return
-	}
 	var req service.ScreenshotReport
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
@@ -513,10 +476,6 @@ func (h *MachineHandler) ReportScreenshot(c *gin.Context) {
 // remote:process-list hoặc remote:process-kill.
 func (h *MachineHandler) ReportProcesses(c *gin.Context) {
 	code := c.Param("code")
-	if err := h.svc.VerifyAgentToken(code, agentToken(c)); err != nil {
-		response.Unauthorized(c, err.Error())
-		return
-	}
 	var req service.ProcessReport
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
@@ -529,9 +488,3 @@ func (h *MachineHandler) ReportProcesses(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-func agentToken(c *gin.Context) string {
-	if t := c.GetHeader("X-Agent-Token"); t != "" {
-		return t
-	}
-	return strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
-}

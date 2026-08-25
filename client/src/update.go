@@ -63,7 +63,6 @@ func checkUpdate(cfg *Config) (*UpdateInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("X-Agent-Token", cfg.AgentToken)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {

@@ -17,48 +17,7 @@ const wsStore = useWebSocketStore();
 
 const search = ref('');
 
-// --- Khoá máy trạm -----------------------------------------------------------
-// Heartbeat là route ghi dữ liệu duy nhất không qua đăng nhập, nên mỗi máy có
-// khoá riêng. Máy chủ chỉ lưu băm: khoá thô hiện đúng một lần, lúc tạo máy hoặc
-// lúc cấp lại.
 
-const tokenVisible = ref(false);
-const tokenValue = ref('');
-const tokenMachine = ref('');
-
-function showToken(code: string, token: string) {
-  tokenMachine.value = code;
-  tokenValue.value = token;
-  tokenVisible.value = true;
-}
-
-async function copyToken() {
-  try {
-    await navigator.clipboard.writeText(tokenValue.value);
-    ElMessage.success($t('vnetPages.machines.token.copied'));
-  } catch {
-    ElMessage.warning($t('vnetPages.machines.token.copyFailed'));
-  }
-}
-
-async function handleIssueToken(row: any) {
-  try {
-    await ElMessageBox.confirm(
-      $t('vnetPages.machines.token.reissueConfirm', { code: row.machine_code }),
-      $t('vnetPages.common.confirm'),
-      { type: 'warning' }
-    );
-  } catch {
-    return;
-  }
-  try {
-    const res: any = await client.post(`/machines/${row.id}/agent-token`, {});
-    showToken(row.machine_code, res?.agent_token || '');
-    getData();
-  } catch (e: any) {
-    ElMessage.error(e?.message || $t('vnetPages.common.error'));
-  }
-}
 
 // --- Điều khiển từ xa -------------------------------------------------------
 // Danh sách này phải khớp remoteActions bên backend
@@ -468,12 +427,6 @@ async function handleSubmit() {
         title: $t('vnetPages.common.success'),
         message: $t('vnetPages.machines.messages.addSuccess')
       });
-      // Máy mới KHÔNG còn được cấp khoá tự động: máy trạm cắm vào là chạy.
-      // Nhánh này chỉ còn dùng khi máy chủ có trả khoá về — giữ lại để khoá
-      // không bao giờ biến mất lặng lẽ, vì nó chỉ hiện đúng một lần.
-      if (created?.agent_token) {
-        showToken(created.machine_code || form.value.machine_code, created.agent_token);
-      }
     }
     dialogVisible.value = false;
     getData();
@@ -589,9 +542,6 @@ onBeforeUnmount(() => {
         <ElTableColumn :label="$t('vnetPages.common.action')" width="340" fixed="right">
           <template #default="{ row }">
             <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" @click="handleIssueToken(row)">
-              {{ $t('vnetPages.machines.token.reissue') }}
-            </ElButton>
             <ElButton size="small" @click="openHardware(row)">
               {{ $t('vnetPages.machines.hardware') }}
             </ElButton>
@@ -730,27 +680,5 @@ onBeforeUnmount(() => {
       </ElTable>
     </ElDialog>
 
-    <ElDialog
-      v-model="tokenVisible"
-      :title="$t('vnetPages.machines.token.title', { code: tokenMachine })"
-      width="520px"
-      :close-on-click-modal="false"
-    >
-      <ElAlert type="warning" :closable="false" show-icon style="margin-bottom: 16px">
-        {{ $t('vnetPages.machines.token.onlyOnce') }}
-      </ElAlert>
-      <ElInput :model-value="tokenValue" readonly>
-        <template #append>
-          <ElButton @click="copyToken">{{ $t('vnetPages.machines.token.copy') }}</ElButton>
-        </template>
-      </ElInput>
-      <div style="color: #909399; font-size: 13px; line-height: 1.6; margin-top: 12px">
-        {{ $t('vnetPages.machines.token.howTo') }}
-        <code style="background: #f4f4f5; padding: 2px 6px; border-radius: 3px">VNET_AGENT_TOKEN</code>
-      </div>
-      <template #footer>
-        <ElButton type="primary" @click="tokenVisible = false">{{ $t('common.close') }}</ElButton>
-      </template>
-    </ElDialog>
   </div>
 </template>

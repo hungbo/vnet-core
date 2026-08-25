@@ -8,12 +8,11 @@ import (
 )
 
 type AppUpdateHandler struct {
-	svc     *service.AppUpdateService
-	machine *service.MachineService
+	svc *service.AppUpdateService
 }
 
-func NewAppUpdateHandler(svc *service.AppUpdateService, machine *service.MachineService) *AppUpdateHandler {
-	return &AppUpdateHandler{svc: svc, machine: machine}
+func NewAppUpdateHandler(svc *service.AppUpdateService) *AppUpdateHandler {
+	return &AppUpdateHandler{svc: svc}
 }
 
 // List
@@ -107,11 +106,6 @@ func (h *AppUpdateHandler) Delete(c *gin.Context) {
 // @Failure      401  {object}  response.Response
 // @Router       /api/machines/by-code/{code}/app-update [get]
 func (h *AppUpdateHandler) Latest(c *gin.Context) {
-	code := c.Param("code")
-	if err := h.machine.VerifyAgentToken(code, agentToken(c)); err != nil {
-		response.Unauthorized(c, err.Error())
-		return
-	}
 	res, err := h.svc.Latest(c.Query("platform"), c.Query("current"))
 	if err != nil {
 		response.BadRequest(c, err.Error())

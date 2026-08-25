@@ -98,10 +98,8 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 			}
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
-			if resp.StatusCode == http.StatusUnauthorized {
-				log.Printf("báo cáo: máy chủ từ chối khoá máy trạm — kiểm tra VNET_AGENT_TOKEN")
-			} else if resp.StatusCode >= 400 {
-				log.Printf("báo cáo: máy chủ trả %d", resp.StatusCode)
+			if resp.StatusCode >= 400 {
+				log.Printf("báo cáo: máy chủ trả %d — kiểm tra VNET_MACHINE_CODE", resp.StatusCode)
 			}
 		}
 	}
@@ -114,7 +112,6 @@ func postHeartbeat(cfg *Config, body []byte) (*http.Response, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Agent-Token", cfg.AgentToken)
 	return httpClient.Do(req)
 }
 
