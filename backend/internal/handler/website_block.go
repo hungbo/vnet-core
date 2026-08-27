@@ -99,10 +99,11 @@ func (h *WebsiteBlockHandler) UpdateRule(c *gin.Context) {
 // @Produce      json
 // @Param        id  path  string  true  "Rule ID"
 // @Success      200  {object}  response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router       /api/website-rules/{id} [delete]
 func (h *WebsiteBlockHandler) DeleteRule(c *gin.Context) {
 	if err := h.svc.DeleteRule(c.Param("id"), middleware.GetUserID(c)); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

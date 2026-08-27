@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { newIdempotencyKey } from '@/utils/idempotency';
 import { formatAmount } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
@@ -216,7 +218,8 @@ async function openCreate() {
     customer_phone: '',
     range: [],
     deposit_amount: 0,
-    notes: ''
+    notes: '',
+    idempotency_key: newIdempotencyKey()
   };
   await loadPickers();
   dialogVisible.value = true;
@@ -273,7 +276,9 @@ async function handleSave() {
       await client.post('/bookings', {
         ...body,
         machine_id: f.machine_id,
-        member_id: f.member_id || undefined
+        member_id: f.member_id || undefined,
+        // Đặt chỗ có trừ cọc, nên bấm đúp là trừ cọc hai lần.
+        idempotency_key: f.idempotency_key
       });
     }
     ElNotification({
@@ -340,6 +345,23 @@ async function handleNoShow(row: any) {
     ElMessage.error(e?.message || $t('vnetPages.common.error'));
   }
 }
+
+const wsStore = useWebSocketStore();
+
+// Nhận máy, huỷ, hay đánh vắng ở một thiết bị khác — kể cả thiết bị khác của
+// cùng nhân viên. Không có handler này thì danh sách bên kia giữ trạng thái cũ
+// tới khi có người tự tải lại trang.
+function onBookingUpdated() {
+  getData();
+}
+
+onMounted(() => {
+  wsStore.on('booking:updated', onBookingUpdated);
+});
+
+onBeforeUnmount(() => {
+  wsStore.off('booking:updated', onBookingUpdated);
+});
 </script>
 
 <template>

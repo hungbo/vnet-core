@@ -60,6 +60,19 @@ type UpdateMachineRequest struct {
 	// "maintenance" từng nằm trong danh sách nhưng chưa bao giờ là trạng thái
 	// thật: không dòng code nào đặt hay đọc nó, chỉ có một nhãn trên giao diện.
 	Status *string `json:"status" binding:"omitempty,oneof=offline available in_use"`
+	// IsActive là công tắc tạm ngừng máy, và là ĐƯỜNG THAY CHO VIỆC XOÁ.
+	//
+	// Máy đã có phiên chơi, đơn hàng hay lịch đặt thì không xoá được nữa (xem
+	// Delete bên dưới): lịch sử phải giữ lại. Không có công tắc này thì quản trị
+	// viên muốn ngừng một máy hỏng chỉ còn cách xoá — đúng thao tác nguy hiểm
+	// nhất trong service này.
+	//
+	// StartSession lọc "is_active = true" (session.go), nên đặt false là chặn
+	// mở phiên mới ngay lập tức. List KHÔNG lọc cột này, nên máy đã tắt vẫn hiện
+	// trên trang quản trị để bật lại được.
+	//
+	// Con trỏ vì đây là bản vá từng phần: bỏ trống nghĩa là không đổi.
+	IsActive *bool `json:"is_active"`
 }
 
 type HeartbeatRequest struct {
@@ -211,6 +224,9 @@ func (s *MachineService) Update(id string, req *UpdateMachineRequest) (*model.Ma
 	if req.Status != nil {
 		updates["status"] = *req.Status
 	}
+	if req.IsActive != nil {
+		updates["is_active"] = *req.IsActive
+	}
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
 		if err := s.db.Model(&machine).Updates(updates).Error; err != nil {
@@ -226,6 +242,18 @@ func (s *MachineService) Update(id string, req *UpdateMachineRequest) (*model.Ma
 	return &machine, nil
 }
 
+// Delete xoá một máy.
+//
+// Máy đã từng chạy là máy có lịch sử: phiên chơi, đơn hàng gọi tại máy, lịch
+// đặt, đánh giá dịch vụ. Toàn bộ những thứ đó là chứng từ và phải giữ — chính
+// vì thế mà mười một chỗ trong service này phải dùng Unscoped() để còn hiện
+// được mã máy của một máy đã xoá. Đường đúng cho máy hỏng hay máy tạm ngừng là
+// tắt is_active (UpdateMachineRequest.IsActive), StartSession sẽ từ chối mở
+// phiên trên nó ngay.
+//
+// machine_hardware_snapshots và website_blocking_violations KHÔNG chặn: đó là
+// telemetry và nhật ký, không phải chứng từ. Bảng snapshot cũng là bảng lớn
+// nhất hệ thống và đã có job dọn định kỳ riêng.
 func (s *MachineService) Delete(id string) error {
 	var machine model.Machine
 	if err := s.db.Where("id = ?", id).First(&machine).Error; err != nil {
@@ -234,7 +262,22 @@ func (s *MachineService) Delete(id string) error {
 		}
 		return err
 	}
-	if err := s.db.Delete(&machine).Error; err != nil {
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.MachineSession{}, Cot: "machine_id", Nhan: "phiên chơi"},
+		{Bang: &model.Order{}, Cot: "machine_id", Nhan: "đơn hàng"},
+		{Bang: &model.MachineBooking{}, Cot: "machine_id", Nhan: "lịch đặt máy"},
+		{Bang: &model.ServiceFeedback{}, Cot: "machine_id", Nhan: "đánh giá dịch vụ"},
+	}, "hãy tắt hoạt động máy thay vì xoá"); err != nil {
+		return err
+	}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Tài sản gắn máy (bàn phím, chuột, tai nghe) là con SỞ HỮU: không còn
+		// máy thì không còn chỗ để gắn.
+		if err := tx.Where("machine_id = ?", id).Delete(&model.MachineAsset{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&machine).Error
+	}); err != nil {
 		return err
 	}
 	_ = s.audit.Log(&LogAuditRequest{
@@ -651,12 +694,25 @@ func (s *MachineService) UpdateGroup(id string, req *UpdateMachineGroupRequest) 
 	return &group, nil
 }
 
+// DeleteGroup xoá một nhóm máy.
+//
+// Nhóm máy không có cột is_active nên không có đường "tạm ngừng" — nhưng mọi
+// phụ thuộc ở đây đều SỬA ĐƯỢC: chuyển máy sang nhóm khác, xoá dòng giá. Thông
+// điệp phải nói ra điều đó, chặn mà không chỉ lối thoát là bịt kín.
 func (s *MachineService) DeleteGroup(id string) error {
 	var group model.MachineGroup
 	if err := s.db.Where("id = ?", id).First(&group).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("machine group not found")
 		}
+		return err
+	}
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.Machine{}, Cot: "group_id", Nhan: "máy"},
+		{Bang: &model.MachinePrice{}, Cot: "machine_group_id", Nhan: "dòng bảng giá theo hạng"},
+		{Bang: &model.TimeBasedPricing{}, Cot: "machine_group_id", Nhan: "khung giá theo giờ"},
+		{Bang: &model.WebsiteRuleMapping{}, Cot: "machine_group_id", Nhan: "luật chặn web gán cho nhóm"},
+	}, "hãy chuyển chúng sang nhóm khác trước"); err != nil {
 		return err
 	}
 	if err := s.db.Delete(&group).Error; err != nil {
@@ -766,6 +822,10 @@ func (s *MachineService) UpdateAsset(id string, req *UpdateMachineAssetRequest, 
 	return &asset, nil
 }
 
+// DeleteAsset xoá một tài sản gắn với máy (bàn phím, chuột, tai nghe…).
+//
+// Đã rà internal/model: không bảng nào tham chiếu machine_assets, nó là lá của
+// cây quan hệ. Không cần kiểm phụ thuộc.
 func (s *MachineService) DeleteAsset(id string) error {
 	var asset model.MachineAsset
 	if err := s.db.Where("id = ?", id).First(&asset).Error; err != nil {

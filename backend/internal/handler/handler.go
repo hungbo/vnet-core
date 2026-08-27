@@ -85,7 +85,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Chat:              NewChatHandler(chatSvc),
 		Report:            NewReportHandler(service.NewReportService(db)),
 		SystemManage:      NewSystemManageHandler(service.NewSystemManageService(db, auditSvc)),
-		Notification:      NewNotificationHandler(service.NewNotificationService(db, auditSvc)),
+		Notification:      NewNotificationHandler(service.NewNotificationService(db, auditSvc).WithHub(wsHub)),
 		NotificationAdmin: NewNotificationAdminHandler(service.NewNotificationAdminService(db, wsHub, auditSvc)),
 	}
 }

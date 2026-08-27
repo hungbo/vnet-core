@@ -76,6 +76,9 @@ type CreateBookingRequest struct {
 	BookedTo      string `json:"booked_to" binding:"required"`
 	DepositAmount int64  `json:"deposit_amount"`
 	Notes         string `json:"notes"`
+	// IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+	// MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 type UpdateBookingRequest struct {
@@ -260,6 +263,11 @@ func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*Book
 		}
 	}()
 
+	if err := giuKhoaIdempotency(tx, "booking.create", req.IdempotencyKey); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
 	// Số dư sau khi trừ cọc, mang ra ngoài khối để còn báo cho máy trạm sau khi
 	// commit. Báo bên trong transaction là hứa một con số có thể bị rollback.
 	var hvSoDu string
@@ -397,11 +405,28 @@ func (s *BookingService) Update(id string, req *UpdateBookingRequest, userID str
 	return &result, nil
 }
 
+// Delete xoá một lịch đặt máy.
+//
+// Không bảng nào tham chiếu machine_bookings, nên chặn ở đây là chặn theo
+// TRẠNG THÁI: lịch đã nhận máy là một lượt chơi đã xảy ra, và lịch đã thu cọc
+// là tiền đang giữ của khách. Cả hai phải đi qua đường HUỶ — Cancel hoàn cọc
+// tử tế, còn xoá thì tiền nằm lại trong két mà không có chứng từ nào giải thích.
 func (s *BookingService) Delete(id string) error {
 	var booking model.MachineBooking
 	if err := s.db.Where("id = ?", id).First(&booking).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("không tìm thấy lịch đặt máy")
+		}
 		return err
 	}
+
+	if booking.Status == "checked_in" {
+		return chanVi("lịch đặt đã nhận máy, không xoá được — hãy dùng chức năng huỷ")
+	}
+	if booking.DepositAmount > 0 && booking.DepositTransactionID != nil {
+		return chanVi("lịch đặt đã thu cọc %d đ — hãy huỷ để hoàn cọc thay vì xoá", booking.DepositAmount)
+	}
+
 	now := time.Now()
 	if err := s.db.Model(&booking).Update("deleted_at", &now).Error; err != nil {
 		return err
@@ -421,7 +446,7 @@ func (s *BookingService) Delete(id string) error {
 }
 
 func (s *BookingService) CheckIn(id string) (*BookingResponse, error) {
-	result, err := s.updateStatus(id, "checked_in", nil)
+	result, err := s.updateStatus(id, "checked_in", nil, "pending")
 	if err != nil {
 		return nil, err
 	}
@@ -464,6 +489,20 @@ func (s *BookingService) Cancel(id string) (*BookingResponse, error) {
 	}
 
 	tx := s.db.Begin()
+
+	// Kiểm tra ở trên chạy trên bản đọc ngoài transaction. Hai lệnh huỷ song song
+	// đều thấy trạng thái cũ và đều hoàn cọc — khách được trả cọc hai lần. Khoá
+	// rồi đọc lại là chỗ duy nhất chặn được.
+	var locked model.MachineBooking
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&locked).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if locked.Status != "pending" {
+		tx.Rollback()
+		return nil, fmt.Errorf("lịch đặt đang ở trạng thái %s, không huỷ được", locked.Status)
+	}
+	booking = locked
 
 	var hvSoDu string
 	var soDuSau, thuongSau int64
@@ -515,6 +554,7 @@ func (s *BookingService) Cancel(id string) (*BookingResponse, error) {
 	tx.Commit()
 
 	phatSoDuMoi(s.hub, hvSoDu, soDuSau, thuongSau)
+	phatLichDatDoi(s.hub, booking.ID, "cancelled")
 
 	booking.Status = "cancelled"
 	booking.CancelAt = &now
@@ -553,7 +593,7 @@ func (s *BookingService) NoShow(id string) (*BookingResponse, error) {
 		return nil, errors.New("cannot mark cancelled booking as no-show")
 	}
 
-	result, err := s.updateStatus(id, "no_show", nil)
+	result, err := s.updateStatus(id, "no_show", nil, "pending")
 	if err != nil {
 		return nil, err
 	}
@@ -568,10 +608,36 @@ func (s *BookingService) NoShow(id string) (*BookingResponse, error) {
 	return result, nil
 }
 
-func (s *BookingService) updateStatus(id, status string, cancelAt *time.Time) (*BookingResponse, error) {
+// phatLichDatDoi báo cho mọi thiết bị quản trị rằng một lịch đặt vừa đổi trạng
+// thái. Không có sự kiện nào cho đặt chỗ, nên nhận máy ở quầy xong thì danh sách
+// trên điện thoại của cùng nhân viên đó vẫn hiện lịch cũ.
+func phatLichDatDoi(h *hub.Hub, bookingID, status string) {
+	if h == nil || bookingID == "" {
+		return
+	}
+	h.BroadcastToType(hub.Event{
+		Type: "booking:updated",
+		Data: map[string]interface{}{"booking_id": bookingID, "status": status},
+	}, hub.ClientTypeAdmin)
+}
+
+// updateStatus đổi trạng thái lịch đặt. chapNhanTu liệt kê những trạng thái được
+// phép chuyển đi; để trống là chấp nhận mọi trạng thái.
+//
+// Việc đọc và ghi nằm trong cùng một transaction với hàng đã khoá. Trước đây hàm
+// đọc trần rồi ghi đè vô điều kiện, nên gọi hai lần — hai nhân viên, hay một
+// người trên hai thiết bị — đều thành công và mỗi lần lại ghi một lượt audit.
+func (s *BookingService) updateStatus(id, status string, cancelAt *time.Time, chapNhanTu ...string) (*BookingResponse, error) {
+	tx := s.db.Begin()
+
 	var booking model.MachineBooking
-	if err := s.db.Where("id = ?", id).First(&booking).Error; err != nil {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&booking).Error; err != nil {
+		tx.Rollback()
 		return nil, err
+	}
+	if len(chapNhanTu) > 0 && !contains(chapNhanTu, booking.Status) {
+		tx.Rollback()
+		return nil, fmt.Errorf("lịch đặt đang ở trạng thái %s, không thể chuyển sang %s", booking.Status, status)
 	}
 
 	updates := map[string]interface{}{
@@ -582,9 +648,15 @@ func (s *BookingService) updateStatus(id, status string, cancelAt *time.Time) (*
 		updates["cancel_at"] = cancelAt
 	}
 
-	if err := s.db.Model(&booking).Updates(updates).Error; err != nil {
+	if err := tx.Model(&booking).Updates(updates).Error; err != nil {
+		tx.Rollback()
 		return nil, err
 	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+
+	phatLichDatDoi(s.hub, booking.ID, status)
 
 	booking.Status = status
 	if cancelAt != nil {

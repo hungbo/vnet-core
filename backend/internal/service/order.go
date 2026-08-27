@@ -549,6 +549,18 @@ func (s *OrderService) Update(id string, req CreateOrderRequest, updatedBy strin
 	return &result, nil
 }
 
+// Delete xoá một đơn hàng.
+//
+// Chặn theo TRẠNG THÁI và CHỨNG TỪ TIỀN, không theo số bản ghi con: mọi đơn đều
+// có order_items, nên chặn theo con thì không đơn nào xoá được bao giờ và chức
+// năng dọn đơn rác biến mất. Cái cần bảo vệ là sổ sách.
+//
+// Đơn đã duyệt hoặc đã hoàn tất thì đã trừ kho và có thể đã thu tiền — đường
+// đúng là HUỶ đơn (UpdateStatus "cancelled"), việc đó hoàn kho và hoàn tiền tử
+// tế. Xoá thẳng thì tồn kho lệch và doanh thu mất một dòng mà không ai biết.
+//
+// Đơn pending/cancelled sạch chứng từ thì cho xoá, kéo theo order_items vì
+// chúng là con SỞ HỮU.
 func (s *OrderService) Delete(id string) error {
 	var order model.Order
 	if err := s.db.Where("id = ?", id).First(&order).Error; err != nil {
@@ -557,9 +569,28 @@ func (s *OrderService) Delete(id string) error {
 		}
 		return err
 	}
-	if err := s.db.Delete(&order).Error; err != nil {
+
+	if order.Status == "confirmed" || order.Status == "completed" {
+		return chanVi("đơn %s đã duyệt/đã hoàn tất, không xoá được — hãy dùng chức năng huỷ đơn", order.OrderCode)
+	}
+
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.Payment{}, Cot: "order_id", Nhan: "phiếu thanh toán"},
+		{Bang: &model.EInvoice{}, Cot: "order_id", Nhan: "hoá đơn điện tử đã phát hành"},
+		{Bang: &model.GiftCardTransaction{}, Cot: "order_id", Nhan: "giao dịch thẻ quà tặng"},
+	}, "xoá sẽ làm lệch đối soát ca và báo cáo doanh thu — hãy dùng chức năng huỷ đơn"); err != nil {
 		return err
 	}
+
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("order_id = ?", id).Delete(&model.OrderItem{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&order).Error
+	}); err != nil {
+		return err
+	}
+	phatDonDoi(s.hub, &order, "deleted")
 	s.audit.Log(&LogAuditRequest{
 		Action:     "delete",
 		EntityType: "order",
@@ -573,19 +604,48 @@ func (s *OrderService) Delete(id string) error {
 	return nil
 }
 
+// BatchDelete xoá nhiều đơn, lặp qua Delete.
+//
+// Bản cũ chạy một câu "WHERE id IN (...)" nên bỏ qua toàn bộ phần kiểm trạng
+// thái và chứng từ — chọn cả trang rồi bấm xoá là quét sạch cả đơn đã thu tiền.
+// Nó cũng không phát sự kiện WebSocket nào, nên thiết bị khác giữ danh sách cũ.
+//
+// Dừng ở đơn đầu tiên bị chặn; những đơn trước đó đã xoá thật và đã ghi audit.
 func (s *OrderService) BatchDelete(ids []string) error {
 	if len(ids) == 0 {
 		return errors.New("no ids provided")
 	}
-	if err := s.db.Where("id IN ?", ids).Delete(&model.Order{}).Error; err != nil {
-		return err
+	for _, id := range ids {
+		if err := s.Delete(id); err != nil {
+			return err
+		}
 	}
-	s.audit.Log(&LogAuditRequest{
-		Action:     "batch_delete",
-		EntityType: "order",
-		Metadata:   map[string]interface{}{"ids": ids, "count": len(ids)},
-	})
 	return nil
+}
+
+// phatDonDoi báo cho trang quản trị rằng một đơn vừa đổi trạng thái.
+//
+// order:new chỉ bắn lúc đơn SINH RA. Duyệt hay huỷ thì không bắn gì, nên thiết
+// bị thứ hai của cùng một nhân viên — điện thoại để cạnh máy tính — vẫn hiện nút
+// "Duyệt" trên một đơn đã xử lý xong, cho tới khi có người tự tải lại trang.
+//
+// BroadcastToType tới mọi kết nối admin, tức mọi thiết bị của mọi nhân viên.
+// Không gửi cho máy trạm: trạng thái đơn của người khác không phải việc của
+// khách đang ngồi máy.
+func phatDonDoi(h *hub.Hub, order *model.Order, status string) {
+	if h == nil || order == nil {
+		return
+	}
+	data := map[string]interface{}{
+		"order_id":   order.ID,
+		"order_code": order.OrderCode,
+		"order_type": order.OrderType,
+		"status":     status,
+	}
+	if order.MemberID != nil {
+		data["member_id"] = *order.MemberID
+	}
+	h.BroadcastToType(hub.Event{Type: "order:updated", Data: data}, hub.ClientTypeAdmin)
 }
 
 var validOrderTransitions = map[string][]string{
@@ -604,79 +664,123 @@ func contains(list []string, item string) bool {
 	return false
 }
 
-func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) error {
+// processTopupOrder cộng tiền cho hội viên rồi chốt đơn nạp.
+//
+// Toàn bộ việc đọc-kiểm-ghi nằm trong MỘT transaction với đơn hàng đã khoá.
+// UpdateStatus kiểm tra trạng thái trên một bản đọc trần ở ngoài transaction,
+// nên hai nhân viên bấm duyệt cùng lúc — hoặc cùng một người bấm trên hai thiết
+// bị — đều lọt qua guard đó và cộng tiền hai lần. Khoá ở đây là chỗ duy nhất
+// chặn được.
+func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (err error) {
 	now := time.Now()
 	tx := s.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			// Giá trị trả về phải được đặt tên: không có dòng này thì panic bị
+			// nuốt và hàm trả nil, admin thấy "nạp thành công" trong khi không
+			// đồng nào chuyển đi.
+			err = fmt.Errorf("lỗi khi xử lý đơn nạp tiền: %v", r)
 		}
 	}()
 
+	var locked model.Order
+	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", order.ID).First(&locked).Error; e != nil {
+		tx.Rollback()
+		return errors.New("không tìm thấy đơn hàng")
+	}
+	if locked.Status != "pending" {
+		tx.Rollback()
+		return errors.New("đơn đã được xử lý")
+	}
+	// CreateTopupOrderRequest không bắt buộc member_id, nên đơn có thể không gắn
+	// hội viên. Trước đây chỗ này deref thẳng và panic.
+	if locked.MemberID == nil || *locked.MemberID == "" {
+		tx.Rollback()
+		return errors.New("đơn nạp tiền không gắn hội viên")
+	}
+
 	var member model.Member
-	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *order.MemberID).First(&member).Error; err != nil {
+	if e := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", *locked.MemberID).First(&member).Error; e != nil {
 		tx.Rollback()
 		return errors.New("không tìm thấy hội viên")
 	}
 
-	balanceAfter := member.Balance + order.FinalAmount
+	balanceAfter := member.Balance + locked.FinalAmount
 	transaction := model.MemberTransaction{
 		MemberID:        member.ID,
 		TransactionType: "topup",
-		Amount:          order.FinalAmount,
+		Amount:          locked.FinalAmount,
 		BalanceBefore:   member.Balance,
 		BalanceAfter:    balanceAfter,
-		PaymentMethod:   order.PaymentMethod,
-		Description:     "Nạp tiền qua đơn hàng " + order.OrderCode,
+		PaymentMethod:   locked.PaymentMethod,
+		Description:     "Nạp tiền qua đơn hàng " + locked.OrderCode,
 		CreatedBy:       &updatedBy,
 	}
-	if err := tx.Create(&transaction).Error; err != nil {
+	if e := tx.Create(&transaction).Error; e != nil {
 		tx.Rollback()
-		return err
+		return e
 	}
-	if err := tx.Model(&member).Updates(map[string]interface{}{
+	if e := tx.Model(&member).Updates(map[string]interface{}{
 		"balance":    balanceAfter,
 		"updated_at": time.Now(),
-	}).Error; err != nil {
+	}).Error; e != nil {
 		tx.Rollback()
-		return err
+		return e
 	}
-	if err := tx.Model(&order).Updates(map[string]interface{}{
-		"status":       "completed",
-		"updated_by":   updatedBy,
-		"completed_at": &now,
-	}).Error; err != nil {
+	// Điều kiện status trong chính câu UPDATE: khoá ở trên đã đủ cho hai
+	// transaction song song, câu này còn chặn cả trường hợp khoá bị bỏ qua (đọc
+	// ngoài tx ở nơi khác trong tương lai).
+	res := tx.Model(&model.Order{}).
+		Where("id = ? AND status = ?", locked.ID, "pending").
+		Updates(map[string]interface{}{
+			"status":       "completed",
+			"updated_by":   updatedBy,
+			"completed_at": &now,
+		})
+	if res.Error != nil {
 		tx.Rollback()
-		return err
+		return res.Error
 	}
-	if err := tx.Commit().Error; err != nil {
-		return err
+	if res.RowsAffected == 0 {
+		tx.Rollback()
+		return errors.New("đơn đã được xử lý")
 	}
+	if e := tx.Commit().Error; e != nil {
+		return e
+	}
+
+	// Caller dựng response từ struct này nên phải đồng bộ lại sau khi ghi.
+	order.Status = "completed"
+	order.CompletedAt = &now
 
 	// Mã máy tra một lần, dùng cho cả hai sự kiện dưới.
 	machineCode := ""
-	if order.MachineID != nil {
+	if locked.MachineID != nil {
 		var machine model.Machine
-		if err := s.db.Select("machine_code").Where("id = ?", *order.MachineID).First(&machine).Error; err == nil {
+		if e := s.db.Select("machine_code").Where("id = ?", *locked.MachineID).First(&machine).Error; e == nil {
 			machineCode = machine.MachineCode
 		}
 	}
 
-	// Số dư là chuyện riêng của một hội viên: chỉ quản trị và đúng máy khách đó
-	// đang ngồi được biết. Broadcast đẩy nó sang mọi máy trạm trong quán.
-	s.hub.SendToAdminsAndMachine(machineCode, hub.Event{
-		Type: "balance:updated",
-		Data: map[string]interface{}{
-			"member_id": *order.MemberID,
-			"balance":   balanceAfter,
-		},
-	})
+	// Đi qua helper chung: nó gửi balance:updated tới mọi thiết bị của hội viên
+	// và member:updated tới mọi thiết bị quản trị.
+	phatSoDuMoi(s.hub, *locked.MemberID, balanceAfter, member.BonusBalance)
+	// Máy trạm xác thực bằng mã máy chứ không có tài khoản, nên SendToUser
+	// không với tới nó — phải gửi riêng theo mã máy.
 	if machineCode != "" {
+		s.hub.SendToMachine(machineCode, hub.Event{
+			Type: "balance:updated",
+			Data: map[string]interface{}{
+				"member_id": *locked.MemberID,
+				"balance":   balanceAfter,
+			},
+		})
 		s.hub.SendToMachine(machineCode, hub.Event{
 			Type: "topup:confirmed",
 			Data: map[string]interface{}{
-				"amount":   order.FinalAmount,
-				"order_id": order.ID,
+				"amount":   locked.FinalAmount,
+				"order_id": locked.ID,
 			},
 		})
 	}
@@ -770,6 +874,24 @@ func (s *OrderService) settleOrder(tx *gorm.DB, order *model.Order, method, refe
 	return tx.Model(order).Updates(updates).Error
 }
 
+// khoaDonHang khoá đơn trong transaction rồi xác nhận nó vẫn đúng trạng thái mà
+// UpdateStatus đã đọc ở ngoài.
+//
+// UpdateStatus đọc đơn bằng một câu SELECT trần rồi mới quyết định làm gì. Hai
+// nhân viên bấm cùng lúc — hay cùng một người bấm trên điện thoại và máy tính —
+// đều đọc được trạng thái cũ và đều lọt qua validOrderTransitions. Transaction
+// thứ hai phải dừng ở đây: nó chờ khoá, đọc lại và thấy trạng thái đã đổi.
+func khoaDonHang(tx *gorm.DB, id, mongDoi string) error {
+	var locked model.Order
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&locked).Error; err != nil {
+		return errors.New("không tìm thấy đơn hàng")
+	}
+	if locked.Status != mongDoi {
+		return errors.New("đơn đã được xử lý")
+	}
+	return nil
+}
+
 func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusRequest) (*OrderResponse, error) {
 	var order model.Order
 	if err := s.db.Where("id = ?", id).First(&order).Error; err != nil {
@@ -797,6 +919,10 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			goto afterUpdate
 		}
 		tx := s.db.Begin()
+		if err := khoaDonHang(tx, order.ID, order.Status); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 		if err := tx.Model(&order).Updates(map[string]interface{}{
 			"status":     "confirmed",
 			"updated_by": updatedBy,
@@ -823,6 +949,10 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			goto afterUpdate
 		}
 		tx := s.db.Begin()
+		if err := khoaDonHang(tx, order.ID, order.Status); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 		if err := s.settleOrder(tx, &order, order.PaymentMethod, "", updatedBy, now); err != nil {
 			tx.Rollback()
 			return nil, err
@@ -833,6 +963,13 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 
 	case "cancelled":
 		tx := s.db.Begin()
+		// Không khoá thì hai lệnh huỷ song song đều thấy status "confirmed" và
+		// đều gọi restoreStockForOrder — tồn kho được cộng lại hai lần, tức là
+		// sinh hàng từ hư không.
+		if err := khoaDonHang(tx, order.ID, order.Status); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 		if err := tx.Model(&order).Updates(map[string]interface{}{
 			"status":     "cancelled",
 			"updated_by": updatedBy,
@@ -856,6 +993,8 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 	}
 
 afterUpdate:
+
+	phatDonDoi(s.hub, &order, req.Status)
 
 	items := s.loadOrderItems(order.ID)
 	result := toOrderResponse(&order, items)
@@ -1259,6 +1398,7 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 		return nil, err
 	}
 	phatTonKhoDoi(s.hub, khoDaDoi...)
+	phatDonDoi(s.hub, &order, "completed")
 
 	items := s.loadOrderItems(order.ID)
 	result := toOrderResponse(&order, items)

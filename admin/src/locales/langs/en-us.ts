@@ -830,6 +830,9 @@ const local: App.I18n.Schema = {
     },
     machines: {
       title: 'Machines',
+      active: 'Active',
+      activeHint: 'Turn off to suspend the machine — no new session can start on it. Use this instead of deleting a machine that already has history.',
+      suspended: 'Suspended',
       searchPlaceholder: 'Search machine code / group',
       add: 'Add Machine',
       edit: 'Edit Machine',

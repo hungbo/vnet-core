@@ -94,6 +94,9 @@ type PurchaseComboRequest struct {
 	CustomerName  string `json:"customer_name"`
 	CustomerPhone string `json:"customer_phone"`
 	PaymentMethod string `json:"payment_method" binding:"required"`
+	// IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+	// MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 type ActivateComboRequest struct {
@@ -275,9 +278,22 @@ func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboRespons
 	return &result, nil
 }
 
+// Delete xoá một gói combo.
+//
+// Lượt mua là chứng từ tiền và có thể còn phút chưa dùng; phiên chơi đã mở bằng
+// combo này là lịch sử. Cả hai phải giữ, nên combo đã bán thì chỉ tắt được.
 func (s *ComboService) Delete(id string) error {
 	var combo model.Combo
 	if err := s.db.Where("id = ?", id).First(&combo).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("không tìm thấy combo")
+		}
+		return err
+	}
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.ComboPurchase{}, Cot: "combo_id", Nhan: "lượt mua combo"},
+		{Bang: &model.MachineSession{}, Cot: "combo_id", Nhan: "phiên chơi dùng combo này"},
+	}, "hãy tắt combo (bỏ đang bán) thay vì xoá"); err != nil {
 		return err
 	}
 	now := time.Now()
@@ -378,6 +394,11 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 			payTx.Rollback()
 		}
 	}()
+
+	if err := giuKhoaIdempotency(payTx, "combo.purchase", req.IdempotencyKey); err != nil {
+		payTx.Rollback()
+		return nil, err
+	}
 
 	var member model.Member
 	if err := payTx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -485,6 +506,20 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 			tx.Rollback()
 		}
 	}()
+
+	// Kiểm tra purchase.Activated ở trên chạy trên bản đọc ngoài transaction. Hai
+	// lần kích hoạt song song đều thấy Activated=false và đều mở phiên chơi cho
+	// cùng một gói combo. Khoá rồi đọc lại là chỗ duy nhất chặn được.
+	var lockedPurchase model.ComboPurchase
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", purchaseID).First(&lockedPurchase).Error; err != nil {
+		tx.Rollback()
+		return nil, errors.New("purchase not found")
+	}
+	if lockedPurchase.Activated {
+		tx.Rollback()
+		return nil, errors.New("purchase already activated")
+	}
+	purchase = lockedPurchase
 
 	var machine model.Machine
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_active = ?", req.MachineID, true).First(&machine).Error; err != nil {

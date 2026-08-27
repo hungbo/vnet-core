@@ -113,11 +113,25 @@ export const useWebSocketStore = defineStore(SetupStoreId.Ws, () => {
     if (list.length === 0) handlers.delete(event);
   }
 
+  /**
+   * Phát sự kiện cho mọi handler đã đăng ký.
+   *
+   * Mỗi handler chạy trong try/catch riêng. `forEach` trần thì một handler ném
+   * lỗi là dừng luôn cả vòng lặp: những trang đăng ký sau nó im lặng không nhận
+   * được gì nữa, và triệu chứng — màn hình này cập nhật, màn hình kia không —
+   * trông y hệt mất kết nối chứ không giống lỗi lập trình.
+   */
   function emit(event: string, data: any) {
     const list = handlers.get(event);
-    if (list) {
-      list.forEach(h => h(data));
-    }
+    if (!list) return;
+    // Sao chép trước: handler có thể gọi off() ngay trong lúc chạy.
+    [...list].forEach(h => {
+      try {
+        h(data);
+      } catch (e) {
+        console.error(`[ws] handler lỗi khi xử lý "${event}"`, e);
+      }
+    });
   }
 
   return {

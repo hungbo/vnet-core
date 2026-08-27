@@ -128,6 +128,11 @@ func TestComboService_Delete_Success(t *testing.T) {
 		WithArgs("c1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("c1"))
 
+	// Combo đã bán hay đã có phiên chơi dùng nó thì không xoá được nữa.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "combo_purchases"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "combos" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -437,8 +442,14 @@ func TestComboService_Activate_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "type", "total_minutes", "slot_end", "created_at"}).
 			AddRow("c1", "Gaming 3h", "fixed_slot", 180, "23:00", testNow))
 
-	// Transaction: lock machine
 	mock.ExpectBegin()
+	// Activate khoá và đọc lại purchase trong transaction: kiểm tra Activated ở
+	// trên chạy ngoài transaction nên hai lệnh kích hoạt song song đều lọt.
+	mock.ExpectQuery(`SELECT \* FROM "combo_purchases" WHERE id = \$1 ORDER BY "combo_purchases"."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("p1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "combo_id", "member_id", "price", "activated", "remaining_minutes", "created_at"}).
+			AddRow("p1", "c1", "mem1", int64(50000), false, 180, testNow))
+	// Lock machine
 	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\) AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$3 FOR UPDATE`).
 		WithArgs("m1", true, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status"}).
@@ -503,6 +514,12 @@ func TestComboService_Activate_MachineNotFound(t *testing.T) {
 			AddRow("c1", "Gaming 3h", "fixed_slot", 180, testNow))
 
 	mock.ExpectBegin()
+	// Activate khoá và đọc lại purchase trong transaction: kiểm tra Activated ở
+	// trên chạy ngoài transaction nên hai lệnh kích hoạt song song đều lọt.
+	mock.ExpectQuery(`SELECT \* FROM "combo_purchases" WHERE id = \$1 ORDER BY "combo_purchases"."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("p1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "combo_id", "member_id", "price", "activated", "remaining_minutes", "created_at"}).
+			AddRow("p1", "c1", "mem1", int64(50000), false, 180, testNow))
 	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\) AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$3 FOR UPDATE`).
 		WithArgs("nonexistent", true, 1).
 		WillReturnError(gorm.ErrRecordNotFound)

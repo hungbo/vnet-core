@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
@@ -48,7 +47,7 @@ func (h *AttendanceHandler) Checkin(c *gin.Context) {
 	case errors.Is(err, service.ErrAlreadyCheckedIn):
 		// 409 chứ không phải 400: yêu cầu hợp lệ, chỉ là đã làm rồi. Giao diện
 		// phân biệt được để hiện "đã điểm danh" thay vì báo lỗi đỏ.
-		response.Error(c, http.StatusConflict, err.Error())
+		response.Conflict(c, err.Error())
 	default:
 		response.BadRequest(c, err.Error())
 	}

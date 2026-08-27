@@ -182,6 +182,11 @@ func (s *CurfewService) Update(id string, req *UpdateCurfewRequest) (*CurfewResp
 	return &result, nil
 }
 
+// Delete xoá một chính sách giờ giới nghiêm.
+//
+// Đã rà internal/model: không bảng nào tham chiếu curfew_policies. Cột
+// override_by_admin là của chính bảng này, trỏ RA ngoài chứ không phải bị trỏ
+// vào. Không cần kiểm phụ thuộc.
 func (s *CurfewService) Delete(id string) error {
 	var policy model.CurfewPolicy
 	if err := s.db.First(&policy, "id = ?", id).Error; err != nil {

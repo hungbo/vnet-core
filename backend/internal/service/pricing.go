@@ -160,8 +160,17 @@ func (s *PricingService) UpdateMachinePrice(id string, req *MachinePriceRequest,
 	return &row, nil
 }
 
+// DeleteMachinePrice xoá một dòng bảng giá theo hạng.
+//
+// Không bảng nào tham chiếu tới machine_prices nên không cần kiểm phụ thuộc —
+// đã rà toàn bộ internal/model. Chỉ cần đọc trước để ID sai trả 404 thay vì
+// báo thành công như bản cũ.
 func (s *PricingService) DeleteMachinePrice(id, actorID string) error {
-	if err := s.db.Delete(&model.MachinePrice{}, "id = ?", id).Error; err != nil {
+	var row model.MachinePrice
+	if err := s.db.First(&row, "id = ?", id).Error; err != nil {
+		return errors.New("không tìm thấy dòng giá")
+	}
+	if err := s.db.Delete(&row).Error; err != nil {
 		return err
 	}
 	s.log("delete_machine_price", id, actorID, nil)
@@ -237,8 +246,16 @@ func (s *PricingService) UpdateTimePricing(id string, req *TimePricingRequest, a
 	return &row, nil
 }
 
+// DeleteTimePricing xoá một khung giá theo giờ.
+//
+// Không bảng nào tham chiếu tới time_based_pricings. Đọc trước để ID sai trả
+// 404 thay vì báo thành công.
 func (s *PricingService) DeleteTimePricing(id, actorID string) error {
-	if err := s.db.Delete(&model.TimeBasedPricing{}, "id = ?", id).Error; err != nil {
+	var row model.TimeBasedPricing
+	if err := s.db.First(&row, "id = ?", id).Error; err != nil {
+		return errors.New("không tìm thấy khung giá")
+	}
+	if err := s.db.Delete(&row).Error; err != nil {
 		return err
 	}
 	s.log("delete_time_pricing", id, actorID, nil)

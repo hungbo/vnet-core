@@ -11,7 +11,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/response"
+	"gorm.io/gorm"
 )
 
 var constraintMessages = map[string]string{
@@ -143,6 +145,26 @@ func handleCreateError(c *gin.Context, err error) {
 		return
 	}
 	response.BadRequest(c, err.Error())
+}
+
+// handleDeleteError phân loại lỗi của các hàm xoá.
+//
+//	409 — còn dữ liệu phụ thuộc, hoặc sai trạng thái nghiệp vụ
+//	404 — không tìm thấy bản ghi
+//	400 — còn lại
+//
+// Trước đây mọi lỗi xoá đều trả 400, nên giao diện không có cách nào phân biệt
+// "ID gõ sai" với "máy còn 142 phiên chơi trong lịch sử" — hai thứ cần hai
+// phản ứng hoàn toàn khác nhau từ người vận hành.
+func handleDeleteError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, service.ErrRangBuoc):
+		response.Conflict(c, err.Error())
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		response.NotFound(c, err.Error())
+	default:
+		response.BadRequest(c, err.Error())
+	}
 }
 
 func handleValidationError(c *gin.Context, err error) {

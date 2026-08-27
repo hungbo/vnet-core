@@ -123,7 +123,12 @@ async function handleDelete(row: any) {
     await client.delete(`/admin/notifications/${row.id}`);
     ElMessage.success($t('vnetPages.notifications.messages.deleteSuccess'));
     await getData();
-  } catch (_) {}
+  } catch (e: any) {
+    // Người dùng bấm Huỷ ở hộp xác nhận thì e === 'cancel'. Mọi thứ khác là
+    // lỗi nghiệp vụ — điển hình là 409 "còn dữ liệu phụ thuộc" — và phải nói
+    // ra; catch rỗng làm nút bấm vào không có phản hồi gì.
+    if (e !== 'cancel') ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
 }
 
 async function handleDispatch(row: any) {

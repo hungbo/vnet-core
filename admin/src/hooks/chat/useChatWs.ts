@@ -2,7 +2,8 @@ import type { Ref } from 'vue';
 import { ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import client from '@/api/client';
-import { chatUnreadCount, isChatOpen, roomUnreadCounts } from '@/hooks/chat/chatState';
+import { useAuthStore } from '@/store/modules/auth';
+import { chatUnreadCount, isChatOpen } from '@/hooks/chat/chatState';
 import { $t } from '@/locales';
 
 /** Tên hiển thị của người gửi. Dùng chung cho khung chat và thông báo nổi. */
@@ -17,6 +18,13 @@ export function useChatWs(
   rooms: Ref<any[]>,
   fetchRooms: () => Promise<void>
 ) {
+  // Lấy thẳng từ store thay vì nhận thêm một tham số: hàm này đã chạm trần
+  // max-params, và id người đang đăng nhập thì chỗ nào cũng lấy được như nhau.
+  const authStore = useAuthStore();
+  /** Tính lại con số trên chuông từ danh sách phòng — nguồn duy nhất là máy chủ. */
+  function demLaiChuaDoc() {
+    chatUnreadCount.value = rooms.value.reduce((sum: number, r: any) => sum + (r.unreadCount || 0), 0);
+  }
   function mapMessage(msg: any) {
     return {
       _id: msg.id,
@@ -50,19 +58,39 @@ export function useChatWs(
   }
 
   const wsChatHandler = async (msg: any) => {
+    // Tin do CHÍNH tài khoản này gửi, vọng về từ một thiết bị khác của mình.
+    //
+    // Máy chủ không còn bỏ qua người gửi khi phát tin (bỏ qua thì lọc theo tài
+    // khoản, tức là bịt luôn mọi thiết bị khác của người đó). Nên ở đây phải tự
+    // phân biệt: chỉ chèn vào khung chat, không kêu chuông và không cộng số
+    // chưa-đọc cho câu do chính mình vừa gõ ở máy bên cạnh.
+    const laTinCuaMinh = msg.sender_type === 'admin' && msg.sender_id === authStore.userInfo?.id;
+
     if (msg.room_id === currentRoomId.value && isChatOpen.value) {
       if (!messages.value.some((m: any) => m._id === msg.id)) {
         messages.value = sortMessages([...messages.value, mapMessage(msg)]);
       }
+      if (laTinCuaMinh) return;
       try {
         await client.put(`/chat/rooms/${currentRoomId.value}/read`);
       } catch {}
-    } else {
+      return;
+    }
+
+    // Phòng không đang mở. Tin của chính mình thì không có gì để báo.
+    if (laTinCuaMinh) return;
+
+    {
       playNotificationSound();
-      roomUnreadCounts.value[msg.room_id] = (roomUnreadCounts.value[msg.room_id] || 0) + 1;
-      chatUnreadCount.value += 1;
       const room = rooms.value.find((r: any) => r.roomId === msg.room_id);
-      if (room) room.unreadCount = (room.unreadCount || 0) + 1;
+      if (room) {
+        room.unreadCount = (room.unreadCount || 0) + 1;
+        demLaiChuaDoc();
+      } else {
+        // Phòng chưa có trong danh sách (vừa được tạo): lấy lại từ máy chủ thay
+        // vì tự đoán một con số.
+        fetchRooms();
+      }
 
       // Tiếng chuông và con số trên icon không nói được AI nhắn và nhắn GÌ, nên
       // nhân viên phải mở khung chat mới biết có đáng bỏ việc đang làm không.
@@ -116,6 +144,20 @@ export function useChatWs(
   };
 
   const wsRoomRead = (data: any) => {
+    // Nhân viên nào đó đã đọc phòng này — có thể là chính người đang ngồi đây,
+    // trên điện thoại. Trạng thái đã-đọc phía nhân viên là chung cho cả phòng,
+    // nên mọi thiết bị nhân viên phải tắt con số cùng lúc.
+    //
+    // Khách đọc thì KHÔNG đụng tới: nó chỉ nói tin của nhân viên đã tới mắt
+    // khách, không nói nhân viên đã xem tin của khách.
+    if (data.reader_type === 'admin') {
+      const room = rooms.value.find((r: any) => r.roomId === data.room_id);
+      if (room) {
+        room.unreadCount = 0;
+        demLaiChuaDoc();
+      }
+    }
+
     if (data.room_id !== currentRoomId.value) return;
     messages.value = messages.value.map((m: any) => ({
       ...m,

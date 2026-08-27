@@ -123,7 +123,12 @@ func (s *ChatService) ListRooms(participantID string, participantType string, pa
 				}
 			}
 		} else {
-			s.db.Model(&model.ChatMessage{}).Where("room_id = ? AND status != ?", room.ID, "read").Count(&unreadCount)
+			// Nhánh của nhân viên: nhân viên không có dòng chat_participants nào
+			// nên không có mốc LastReadAt. Chỉ đếm tin của KHÁCH — tin nhân viên
+			// tự gửi mà tính là chưa đọc thì con số không bao giờ về 0.
+			s.db.Model(&model.ChatMessage{}).
+				Where("room_id = ? AND sender_type = ? AND status != ?", room.ID, "member", "read").
+				Count(&unreadCount)
 		}
 
 		result[i] = RoomResponse{
@@ -272,19 +277,33 @@ func (s *ChatService) MarkMessageRead(messageID string) error {
 	return nil
 }
 
-func (s *ChatService) MarkRoomMessagesRead(roomID string) (int64, error) {
+// MarkRoomMessagesRead đánh dấu đã đọc những tin của PHÍA BÊN KIA.
+//
+// readerType là "admin" hoặc "member". Trước đây hàm quét cả phòng không phân
+// biệt người gửi, nên khách mở khung chat là xoá luôn dấu chưa-đọc trên tin của
+// chính nhân viên — con số trên chuông của nhân viên về 0 dù chưa ai đọc gì.
+func (s *ChatService) MarkRoomMessagesRead(roomID, readerType string) (int64, error) {
+	phiaBenKia := "member"
+	if readerType == "member" {
+		phiaBenKia = "admin"
+	}
+
 	result := s.db.Model(&model.ChatMessage{}).
-		Where("room_id = ? AND status != ?", roomID, "read").
+		Where("room_id = ? AND sender_type = ? AND status != ?", roomID, phiaBenKia, "read").
 		Update("status", "read")
 	if result.Error != nil {
 		return 0, result.Error
 	}
-	if result.RowsAffected > 0 {
+	if result.RowsAffected > 0 && s.hub != nil {
+		// reader_type để phía nhận biết có nên xoá con số chưa-đọc của mình
+		// không: nhân viên A đọc thì mọi thiết bị nhân viên xoá, còn khách đọc
+		// thì con số của nhân viên phải giữ nguyên.
 		s.hub.PublishToRoom(roomID, hub.Event{
 			Type: "room:read",
 			Data: map[string]interface{}{
-				"room_id": roomID,
-				"status":  "read",
+				"room_id":     roomID,
+				"reader_type": readerType,
+				"status":      "read",
 			},
 		}, "")
 	}
@@ -356,10 +375,17 @@ func (s *ChatService) SendMessage(req *SendMessageRequest) (*MessageResponse, er
 
 	if s.hub != nil {
 		s.hub.JoinRoomByUserID(req.SenderID, req.RoomID)
+		// KHÔNG bỏ qua người gửi. skipUserID lọc theo tài khoản chứ không theo
+		// kết nối, nên bỏ qua người gửi là bỏ qua MỌI thiết bị của họ: nhân viên
+		// nhắn từ điện thoại thì khung chat trên máy tính của chính mình không
+		// bao giờ thấy câu vừa gửi.
+		//
+		// Thiết bị đã gửi nhận lại tin của mình là vô hại: nó chèn lạc quan theo
+		// đúng id trả về từ HTTP 201, và phía nhận lọc trùng theo id.
 		s.hub.PublishToRoom(req.RoomID, hub.Event{
 			Type: "chat:message",
 			Data: result,
-		}, req.SenderID)
+		}, "")
 	}
 
 	log.Printf("[ChatSvc] SendMessage done: id=%s status=%s", msg.ID, msg.Status)
@@ -413,7 +439,19 @@ func (s *ChatService) DeleteAllRooms() error {
 	return nil
 }
 
+// DeleteRoom xoá một phòng chat cùng người tham gia và toàn bộ tin nhắn.
+//
+// Người tham gia và tin nhắn là con SỞ HỮU của phòng, và cả hai đều xoá cứng —
+// phòng xoá mềm không kéo theo được gì nên phải dọn tay, đúng như đang làm.
 func (s *ChatService) DeleteRoom(roomID string) error {
+	var room model.ChatRoom
+	if err := s.db.Where("id = ?", roomID).First(&room).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("không tìm thấy phòng chat")
+		}
+		return err
+	}
+
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("room_id = ?", roomID).Delete(&model.ChatParticipant{}).Error; err != nil {
 			return err

@@ -552,3 +552,94 @@ func TestOrderService_GenerateOrderCode_TakesLock(t *testing.T) {
 	assert.Equal(t, "ORD-00042", code)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// Duyệt đơn nạp tiền lần thứ hai phải bị chặn, và phải bị chặn TRƯỚC khi có
+// đồng nào chuyển đi.
+//
+// Đây là lỗi mất tiền thật: UpdateStatus đọc đơn bằng một câu SELECT trần ở
+// ngoài transaction rồi mới kiểm trạng thái, nên hai nhân viên bấm "Duyệt" cùng
+// lúc — hoặc cùng một người bấm trên điện thoại và trên máy tính — đều thấy
+// "pending" và đều cộng tiền. Guard duy nhất đáng tin là đọc lại dưới khoá bên
+// trong transaction.
+func TestOrderService_UpdateStatus_TopupRejectsSecondApproval(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	// Bản đọc ngoài transaction vẫn còn "pending" — đúng như thiết bị thứ hai
+	// nhìn thấy khi trang chưa được tải lại.
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 AND "orders"\."deleted_at" IS NULL ORDER BY "orders"\."id" LIMIT \$2`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type", "member_id", "final_amount"}).
+			AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(100000)))
+
+	mock.ExpectBegin()
+	// Dưới khoá thì sự thật lộ ra: lần duyệt trước đã chốt đơn.
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 AND "orders"\."deleted_at" IS NULL ORDER BY "orders"\."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type", "member_id", "final_amount"}).
+			AddRow("o1", "ORD-1", "completed", "topup", "mem-1", int64(100000)))
+	mock.ExpectRollback()
+
+	_, err := svc.UpdateStatus("o1", "user-1", UpdateStatusRequest{Status: "completed"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "đã được xử lý")
+	// Không có INSERT member_transactions, không có UPDATE members: mọi kỳ vọng
+	// đã khai đều khớp và không có kỳ vọng nào khác được dùng.
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Đơn nạp không gắn hội viên phải trả lỗi, không được báo thành công.
+//
+// CreateTopupOrderRequest không bắt buộc member_id. Bản cũ deref thẳng con trỏ
+// nil; panic bị recover nuốt mất, mà giá trị trả về không đặt tên nên hàm trả
+// nil — nhân viên thấy "nạp thành công" trong khi không đồng nào chuyển đi.
+func TestOrderService_UpdateStatus_TopupWithoutMemberFails(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 AND "orders"\."deleted_at" IS NULL ORDER BY "orders"\."id" LIMIT \$2`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type", "member_id", "final_amount"}).
+			AddRow("o1", "ORD-1", "pending", "topup", nil, int64(100000)))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 AND "orders"\."deleted_at" IS NULL ORDER BY "orders"\."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type", "member_id", "final_amount"}).
+			AddRow("o1", "ORD-1", "pending", "topup", nil, int64(100000)))
+	mock.ExpectRollback()
+
+	_, err := svc.UpdateStatus("o1", "user-1", UpdateStatusRequest{Status: "completed"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "không gắn hội viên")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Huỷ một đơn đã huỷ không được hoàn kho lần nữa.
+//
+// restoreStockForOrder cộng tồn kho trả lại. Chạy hai lần là sinh hàng từ hư
+// không, và bảng kiểm kê cuối ca sẽ lệch đúng bằng số hàng của đơn đó.
+func TestOrderService_UpdateStatus_CancelRejectsAlreadyCancelled(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 AND "orders"\."deleted_at" IS NULL ORDER BY "orders"\."id" LIMIT \$2`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type"}).
+			AddRow("o1", "ORD-1", "confirmed", "product"))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 AND "orders"\."deleted_at" IS NULL ORDER BY "orders"\."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type"}).
+			AddRow("o1", "ORD-1", "cancelled", "product"))
+	mock.ExpectRollback()
+
+	_, err := svc.UpdateStatus("o1", "user-1", UpdateStatusRequest{Status: "cancelled"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "đã được xử lý")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

@@ -434,6 +434,46 @@ func (h *Hub) SendToUser(userID string, event Event) {
 	}
 }
 
+// SendToUsers gửi một sự kiện tới mọi kết nối của một DANH SÁCH tài khoản.
+//
+// Gọi SendToUser trong vòng lặp cũng ra kết quả ấy nhưng quét lại toàn bộ danh
+// sách kết nối cho từng tài khoản. Thông báo của quán gửi cho vài nghìn hội viên
+// thì đó là vài nghìn lượt quét dưới cùng một khoá đọc; ở đây chỉ quét một lượt
+// và tra vào tập.
+func (h *Hub) SendToUsers(userIDs []string, event Event) {
+	if h == nil || len(userIDs) == 0 {
+		return
+	}
+
+	tap := make(map[string]struct{}, len(userIDs))
+	for _, id := range userIDs {
+		if id != "" {
+			tap[id] = struct{}{}
+		}
+	}
+	if len(tap) == 0 {
+		return
+	}
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("[WS] SendToUsers marshal error: %v", err)
+		return
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for client := range h.clients {
+		if _, ok := tap[client.UserID]; !ok {
+			continue
+		}
+		select {
+		case client.send <- data:
+		default:
+		}
+	}
+}
+
 func (h *Hub) SendToAdminsAndMachine(machineCode string, event Event) {
 	if h == nil {
 		return

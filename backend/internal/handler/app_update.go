@@ -85,10 +85,11 @@ func (h *AppUpdateHandler) SetActive(c *gin.Context) {
 // @Produce      json
 // @Param        id  path  string  true  "Update ID"
 // @Success      200  {object}  response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router       /api/app-updates/{id} [delete]
 func (h *AppUpdateHandler) Delete(c *gin.Context) {
 	if err := h.svc.Delete(c.Param("id"), middleware.GetUserID(c)); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

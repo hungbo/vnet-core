@@ -118,12 +118,13 @@ func (h *MemberHandler) Update(c *gin.Context) {
 // @Param id path string true "Member ID"
 // @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /members/{id} [delete]
 // @Security BearerAuth
 func (h *MemberHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.Delete(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -359,12 +360,13 @@ func (h *MemberHandler) UpdateGroup(c *gin.Context) {
 // @Param id path string true "Group ID"
 // @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /member-groups/{id} [delete]
 // @Security BearerAuth
 func (h *MemberHandler) DeleteGroup(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.DeleteGroup(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

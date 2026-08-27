@@ -129,7 +129,19 @@ func TestMachineService_Delete_Success(t *testing.T) {
 		WithArgs("m1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}).AddRow("m1", "M-001"))
 
+	// Máy còn bất kỳ chứng từ nào thì chỉ tắt được, không xoá.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "orders"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_bookings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "service_feedbacks"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectBegin()
+	// Tài sản gắn máy là con sở hữu, xoá theo trong cùng transaction.
+	mock.ExpectExec(`UPDATE "machine_assets" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 0))
 	// Soft delete: the row is stamped, not removed.
 	mock.ExpectExec(`UPDATE "machines" SET "deleted_at"=\$1 WHERE "machines"."id" = \$2 AND "machines"."deleted_at" IS NULL`).
 		WithArgs(anyTime{}, "m1").

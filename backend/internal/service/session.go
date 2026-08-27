@@ -379,6 +379,39 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 
 	tx := s.db.Begin()
 
+	// Mọi kiểm tra ở trên chạy trên bản đọc NGOÀI transaction. Hai lệnh mở phiên
+	// song song — nhân viên bấm ở quầy đúng lúc khách tự đăng nhập ở máy trạm —
+	// đều thấy máy còn trống và tài khoản chưa chơi ở đâu, rồi cả hai cùng mở
+	// phiên. Khoá và kiểm lại ở đây là chỗ duy nhất chặn được.
+	//
+	// Thứ tự khoá là hội viên TRƯỚC rồi mới tới máy, khớp với EndSessionAt
+	// (phiên → hội viên → máy), nếu không hai hàm sẽ khoá chéo nhau.
+	var lockedMember model.Member
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", member.ID).First(&lockedMember).Error; err != nil {
+		tx.Rollback()
+		return nil, errors.New("member not found or inactive")
+	}
+	var dangChoi int64
+	if err := tx.Model(&model.MachineSession{}).
+		Where("member_id = ? AND is_active = ?", member.ID, true).Count(&dangChoi).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if dangChoi > 0 {
+		tx.Rollback()
+		return nil, errors.New("tài khoản đang chơi ở một máy khác — hãy trả máy đó trước")
+	}
+
+	var lockedMachine model.Machine
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", machine.ID).First(&lockedMachine).Error; err != nil {
+		tx.Rollback()
+		return nil, errors.New("machine not found")
+	}
+	if lockedMachine.Status == "in_use" {
+		tx.Rollback()
+		return nil, errors.New("machine is already in use")
+	}
+
 	machine.Status = "in_use"
 	if err := tx.Save(&machine).Error; err != nil {
 		tx.Rollback()
@@ -813,6 +846,18 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 	}
 
 	tx := s.db.Begin()
+
+	// Khoá phiên rồi đọc lại. Bản đọc ở đầu hàm nằm ngoài transaction, nên hai
+	// lệnh kết thúc song song đều thấy is_active=true, đều chạy chargeSessionTo
+	// và khách bị trừ tiền hai lần cho cùng số phút.
+	var lockedSession model.MachineSession
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND is_active = ?", id, true).First(&lockedSession).Error; err != nil {
+		tx.Rollback()
+		return nil, errors.New("active session not found")
+	}
+	// chargeSessionTo khấu trừ phần đã thu dọc đường từ chính con số này.
+	session.ChargedAmount = lockedSession.ChargedAmount
 
 	session.EndedAt = &now
 	session.DurationMinutes = &durationMinutes

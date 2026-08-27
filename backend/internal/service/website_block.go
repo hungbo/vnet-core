@@ -139,10 +139,33 @@ func (s *WebsiteBlockService) UpdateRule(id string, req *UpdateRuleRequest, acto
 	return &rule, nil
 }
 
+// DeleteRule xoá một luật chặn web cùng lịch áp dụng và các nhóm máy đã gán.
+//
+// Lịch (website_blocking_schedules) và ánh xạ nhóm máy (website_rule_mappings)
+// là con SỞ HỮU của luật: không có luật thì chúng vô nghĩa, và cả hai đều xoá
+// cứng nên phải dọn tay — luật xoá mềm không kéo theo được gì.
+//
+// website_blocking_violations thì KHÔNG đụng tới: đó là nhật ký, mỗi dòng đã tự
+// giữ domain/url/tên tiến trình nên vẫn đọc được sau khi luật biến mất. Chặn
+// theo nó thì không luật nào xoá được sau ngày đầu tiên.
 func (s *WebsiteBlockService) DeleteRule(id, actorID string) error {
-	if err := s.db.Delete(&model.WebsiteBlockingRule{}, "id = ?", id).Error; err != nil {
+	var rule model.WebsiteBlockingRule
+	if err := s.db.First(&rule, "id = ?", id).Error; err != nil {
+		return errors.New("không tìm thấy luật")
+	}
+
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("rule_id = ?", id).Delete(&model.WebsiteBlockingSchedule{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("rule_id = ?", id).Delete(&model.WebsiteRuleMapping{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&rule).Error
+	}); err != nil {
 		return err
 	}
+
 	s.log("delete_website_rule", id, actorID, nil)
 	return nil
 }

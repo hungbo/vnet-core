@@ -166,6 +166,9 @@ type RedeemTopupCardRequest struct {
 	Serial   string `json:"serial" binding:"required"`
 	Secret   string `json:"secret" binding:"required"`
 	MemberID string `json:"member_id"`
+	// IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+	// MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 type RedeemResult struct {
@@ -196,6 +199,10 @@ func (s *CardService) RedeemTopupCard(req *RedeemTopupCardRequest, actorID strin
 
 	var res RedeemResult
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := giuKhoaIdempotency(tx, "card.redeem", req.IdempotencyKey); err != nil {
+			return err
+		}
+
 		var card model.TopupCard
 		// Khoá dòng thẻ NGAY: hai người nạp cùng một thẻ cùng lúc thì người
 		// thứ hai phải chờ, thấy status đã là "used" và bị từ chối.

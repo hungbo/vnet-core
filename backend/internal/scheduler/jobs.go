@@ -34,6 +34,9 @@ const (
 	hardwareHistoryMaxPerRun = 500000
 )
 
+// idempotencyKeyTTL là thời gian một khoá chống-nạp-trùng còn hiệu lực.
+const idempotencyKeyTTL = 24 * time.Hour
+
 // Register wires the standard job set. Every job here replaces a business rule
 // that was previously written down but never executed.
 func Register(s *Scheduler, db *gorm.DB, wsHub *hub.Hub, sessions *service.SessionService, curfew *service.CurfewService, members *service.MemberService, hardwareHistoryDays int) {
@@ -46,6 +49,11 @@ func Register(s *Scheduler, db *gorm.DB, wsHub *hub.Hub, sessions *service.Sessi
 		Run: func(ctx context.Context) error {
 			return pruneHardwareHistory(db, hardwareHistoryDays)
 		},
+	})
+	s.Add(Job{
+		Name:     "idempotency:prune",
+		Interval: time.Hour,
+		Run:      func(ctx context.Context) error { return pruneIdempotencyKeys(db) },
 	})
 	s.Add(Job{
 		Name:     "machines:mark-offline",
@@ -251,6 +259,22 @@ func enforceSessionLimits(db *gorm.DB, sessions *service.SessionService, wsHub *
 //
 // days <= 0 nghĩa là giữ lại tất cả — lối thoát cho ai muốn tự quản lý bằng tay,
 // và cũng là cách tắt tác vụ này mà không phải sửa code.
+// pruneIdempotencyKeys dọn khoá chống-nạp-trùng đã quá hạn.
+//
+// Khoá chỉ cần sống đủ lâu để bắt được một lần gửi lại: cú bấm đúp, trình duyệt
+// thử lại sau khi mất mạng, nhân viên bấm lại vì tưởng hỏng. Một ngày là thừa
+// rộng cho mọi trường hợp đó, và giữ lâu hơn chỉ làm bảng phình ra.
+func pruneIdempotencyKeys(db *gorm.DB) error {
+	res := db.Exec(`DELETE FROM idempotency_keys WHERE created_at < ?`, time.Now().Add(-idempotencyKeyTTL))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		log.Printf("[scheduler] đã xoá %d khoá idempotency quá hạn", res.RowsAffected)
+	}
+	return nil
+}
+
 func pruneHardwareHistory(db *gorm.DB, days int) error {
 	if days <= 0 {
 		return nil

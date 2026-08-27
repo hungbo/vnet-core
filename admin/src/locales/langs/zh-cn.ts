@@ -828,6 +828,9 @@ const local: App.I18n.Schema = {
     },
     machines: {
       title: '机器管理',
+      active: '启用',
+      activeHint: '关闭以暂停此机器 — 将无法在其上开启新会话。对已有历史记录的机器请用此替代删除。',
+      suspended: '已暂停',
       searchPlaceholder: '搜索机器编码/分组',
       add: '添加机器',
       edit: '编辑机器',

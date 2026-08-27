@@ -281,7 +281,8 @@ const form = ref({
   gpu_name: '',
   ram_gb: 8,
   storage_gb: 256,
-  os_info: ''
+  os_info: '',
+  is_active: true
 });
 
 const rules: FormRules = {
@@ -361,7 +362,12 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'status',
       label: $t('vnetPages.common.status'),
       width: 110,
-      formatter: (row: any) => h(ElTag, { type: statusType(row.status), size: 'small' }, () => statusLabel(row.status))
+      // Máy tạm ngừng vẫn nằm trong danh sách (List không lọc is_active) nên
+      // phải nhìn ra được, nếu không nhân viên tưởng máy hỏng.
+      formatter: (row: any) =>
+        row.is_active === false
+          ? h(ElTag, { type: 'info', size: 'small' }, () => $t('vnetPages.machines.suspended'))
+          : h(ElTag, { type: statusType(row.status), size: 'small' }, () => statusLabel(row.status))
     },
     { prop: 'cpu_name', label: $t('vnetPages.machines.cpu'), minWidth: 160 },
     { prop: 'gpu_name', label: $t('vnetPages.machines.gpu'), minWidth: 160 },
@@ -388,7 +394,8 @@ function openCreate() {
     gpu_name: '',
     ram_gb: 8,
     storage_gb: 256,
-    os_info: ''
+    os_info: '',
+    is_active: true
   };
   dialogVisible.value = true;
 }
@@ -403,7 +410,10 @@ function openEdit(row: any) {
     gpu_name: row.gpu_name || '',
     ram_gb: row.ram_gb || 8,
     storage_gb: row.storage_gb || 256,
-    os_info: row.os_info || ''
+    os_info: row.os_info || '',
+    // Máy cũ tạo trước khi có cột này thì backend trả true; !== false để một
+    // giá trị thiếu không vô tình hiện thành "đang tạm ngừng".
+    is_active: row.is_active !== false
   };
   dialogVisible.value = true;
 }
@@ -633,6 +643,14 @@ onBeforeUnmount(() => {
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.machines.disk')" prop="storage_gb">
           <ElInputNumber v-model="form.storage_gb" :min="0" :max="10000" style="width: 100%" />
+        </ElFormItem>
+        <ElFormItem v-if="isEdit" :label="$t('vnetPages.machines.active')">
+          <div>
+            <ElSwitch v-model="form.is_active" />
+            <div class="text-12px" style="color: var(--el-text-color-secondary); line-height: 1.4">
+              {{ $t('vnetPages.machines.activeHint') }}
+            </div>
+          </div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.machines.os')" prop="os_info">
           <ElInput v-model="form.os_info" :placeholder="$t('vnetPages.machines.osPlaceholder')" />

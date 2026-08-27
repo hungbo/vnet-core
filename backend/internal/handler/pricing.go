@@ -80,10 +80,11 @@ func (h *PricingHandler) UpdateMachinePrice(c *gin.Context) {
 // @Produce      json
 // @Param        id  path  string  true  "Price ID"
 // @Success      200  {object}  response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router       /api/machine-prices/{id} [delete]
 func (h *PricingHandler) DeleteMachinePrice(c *gin.Context) {
 	if err := h.svc.DeleteMachinePrice(c.Param("id"), middleware.GetUserID(c)); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -155,10 +156,11 @@ func (h *PricingHandler) UpdateTimePricing(c *gin.Context) {
 // @Produce      json
 // @Param        id  path  string  true  "Pricing ID"
 // @Success      200  {object}  response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router       /api/time-pricing/{id} [delete]
 func (h *PricingHandler) DeleteTimePricing(c *gin.Context) {
 	if err := h.svc.DeleteTimePricing(c.Param("id"), middleware.GetUserID(c)); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

@@ -229,12 +229,24 @@ func (s *InventoryService) UpdateSupplier(id string, req *UpdateSupplierRequest)
 	return &result, nil
 }
 
+// DeleteSupplier xoá một nhà cung cấp.
+//
+// Phiếu nhập kho là chứng từ mua hàng, còn sản phẩm thì trỏ tới nhà cung cấp để
+// biết đặt hàng ở đâu. Xoá mà bỏ lại cả hai thì trang quản trị hiện UUID thô ở
+// chỗ đáng lẽ là tên nhà cung cấp.
 func (s *InventoryService) DeleteSupplier(id string) error {
 	var supplier model.Supplier
 	if err := s.db.Where("id = ?", id).First(&supplier).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("không tìm thấy nhà cung cấp")
 		}
+		return err
+	}
+
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.Product{}, Cot: "supplier_id", Nhan: "sản phẩm"},
+		{Bang: &model.StockTransaction{}, Cot: "supplier_id", Nhan: "phiếu nhập kho"},
+	}, "hãy ngừng hợp tác (bỏ đang hoạt động) thay vì xoá"); err != nil {
 		return err
 	}
 
@@ -453,6 +465,10 @@ func (s *InventoryService) UpdateProductIngredient(id string, req *UpdateProduct
 	return &result, nil
 }
 
+// DeleteProductIngredient gỡ một nguyên liệu khỏi công thức của sản phẩm.
+//
+// Dòng công thức là con SỞ HỮU của sản phẩm, không bảng nào tham chiếu tới nó.
+// Không cần kiểm phụ thuộc.
 func (s *InventoryService) DeleteProductIngredient(id string) error {
 	var pm model.ProductIngredient
 	if err := s.db.Where("id = ?", id).First(&pm).Error; err != nil {

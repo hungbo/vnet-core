@@ -405,12 +405,32 @@ func (s *SystemManageService) UpdateUser(req *UpdateUserRequest) (*UserManageRes
 	return s.GetUserByID(user.ID)
 }
 
+// DeleteUser xoá một tài khoản nhân viên.
+//
+// Nhân viên đã làm việc là nhân viên có chứng từ mang tên mình: ca làm, phiếu
+// bàn giao tiền, đơn đã lập, giao dịch số dư đã lập, phiếu kho, phiên kiểm kê.
+// Xoá tài khoản mà bỏ lại chúng thì đối soát ca trỏ tới một người không còn.
+//
+// audit_logs KHÔNG chặn, dù nó cũng mang user_id. Nhật ký hệ thống ghi cả lần
+// đăng nhập đầu tiên, nên chặn theo nó nghĩa là mọi tài khoản từng đăng nhập
+// một lần đều vĩnh viễn không xoá được — kể cả tài khoản vừa tạo nhầm và chưa
+// làm gì. Chính hành động xoá này cũng ghi vào đó.
 func (s *SystemManageService) DeleteUser(id string) error {
 	var user model.User
 	if err := s.db.Where("id = ?", id).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("user not found")
 		}
+		return err
+	}
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.Shift{}, Cot: "user_id", Nhan: "ca làm việc"},
+		{Bang: &model.Order{}, Cot: "created_by", Nhan: "đơn hàng đã lập"},
+		{Bang: &model.MemberTransaction{}, Cot: "created_by", Nhan: "giao dịch số dư đã lập"},
+		{Bang: &model.CashHandover{}, Cot: "created_by", Nhan: "phiếu bàn giao tiền"},
+		{Bang: &model.StockTransaction{}, Cot: "created_by", Nhan: "phiếu kho"},
+		{Bang: &model.InventoryCountSession{}, Cot: "opened_by", Nhan: "phiên kiểm kê"},
+	}, "hãy khoá tài khoản (đổi trạng thái sang Ngừng) thay vì xoá"); err != nil {
 		return err
 	}
 	if err := s.db.Delete(&user).Error; err != nil {
@@ -427,20 +447,22 @@ func (s *SystemManageService) DeleteUser(id string) error {
 	return nil
 }
 
+// BatchDeleteUsers xoá nhiều tài khoản, lặp qua DeleteUser đúng như
+// BatchDeleteRoles vẫn làm.
+//
+// Bản cũ chạy một câu "WHERE id IN (...)" duy nhất, nên nó bỏ qua toàn bộ phần
+// kiểm ràng buộc VÀ không ghi audit cho từng tài khoản — chỉ một dòng gộp không
+// nói được ai đã bị xoá. Dừng ở tài khoản đầu tiên bị chặn: những cái trước đó
+// đã xoá thật và audit đã ghi, nên không có trạng thái nửa vời nào bị giấu.
 func (s *SystemManageService) BatchDeleteUsers(ids []string) error {
 	if len(ids) == 0 {
 		return errors.New("no ids provided")
 	}
-	if err := s.db.Where("id IN ?", ids).Delete(&model.User{}).Error; err != nil {
-		return err
+	for _, id := range ids {
+		if err := s.DeleteUser(id); err != nil {
+			return err
+		}
 	}
-
-	s.audit.Log(&LogAuditRequest{
-		Action:     "batch_delete",
-		EntityType: "user",
-		Metadata:   map[string]interface{}{"ids": ids, "count": len(ids)},
-	})
-
 	return nil
 }
 
@@ -581,10 +603,27 @@ func (s *SystemManageService) DeleteRole(id string) error {
 		Where("user_roles.role_id = ?", id).
 		Count(&userCount)
 	if userCount > 0 {
-		return errors.New("cannot delete role with assigned users")
+		return chanVi("không xoá được vai trò đang gán cho %d tài khoản — hãy gỡ vai trò khỏi họ trước", userCount)
 	}
 
-	if err := s.db.Delete(&role).Error; err != nil {
+	// Hai bảng nối phải dọn TRƯỚC, và đây là chỗ duy nhất trong hệ thống mà
+	// khoá ngoại thật sự tồn tại: user_roles và role_permissions do các trường
+	// many2many trong model/user.go sinh ra, cả hai đều NO ACTION (xem
+	// TestModel_ChiCoHaiKhoaNgoaiThat). Role lại xoá CỨNG, nên xoá thẳng một vai
+	// trò còn quyền sẽ bị PostgreSQL chặn bằng lỗi 23503 thô, hiện lên trang
+	// quản trị dưới dạng một câu tiếng Anh không ai hiểu.
+	//
+	// user_roles vẫn có thể còn dòng dù phần đếm ở trên đã qua: phần đếm chỉ
+	// tính tài khoản CHƯA xoá, còn tài khoản xoá mềm vẫn giữ dòng của nó.
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("role_id = ?", id).Delete(&model.RolePermission{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("role_id = ?", id).Delete(&model.UserRole{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&role).Error
+	}); err != nil {
 		return err
 	}
 

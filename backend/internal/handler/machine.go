@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
@@ -131,11 +130,12 @@ func (h *MachineHandler) Update(c *gin.Context) {
 // @Success      200   {object}  response.Response
 // @Failure      400   {object}  response.Response
 // @Failure      404   {object}  response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router       /api/machines/{id} [delete]
 func (h *MachineHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.Delete(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -263,7 +263,7 @@ func (h *MachineHandler) RemoteAction(c *gin.Context) {
 	case errors.Is(err, service.ErrMachineOffline):
 		// 409 chứ không phải 400: lệnh hợp lệ, chỉ là máy chưa kết nối. Nhân
 		// viên cần phân biệt "gõ sai lệnh" với "máy đang tắt".
-		response.Error(c, http.StatusConflict, err.Error())
+		response.Conflict(c, err.Error())
 	default:
 		response.BadRequest(c, err.Error())
 	}
@@ -352,11 +352,12 @@ func (h *MachineHandler) UpdateGroup(c *gin.Context) {
 // @Success      200   {object}  response.Response
 // @Failure      400   {object}  response.Response
 // @Failure      404   {object}  response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router       /api/machine-groups/{id} [delete]
 func (h *MachineHandler) DeleteGroup(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.DeleteGroup(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -447,11 +448,12 @@ func (h *MachineHandler) UpdateAsset(c *gin.Context) {
 // @Success      200   {object}  response.Response
 // @Failure      400   {object}  response.Response
 // @Failure      404   {object}  response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router       /api/machine-assets/{id} [delete]
 func (h *MachineHandler) DeleteAsset(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.DeleteAsset(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

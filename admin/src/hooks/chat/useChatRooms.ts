@@ -3,7 +3,7 @@ import { reactive, ref } from 'vue';
 import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import client from '@/api/client';
-import { chatUnreadCount, roomUnreadCounts } from '@/hooks/chat/chatState';
+import { chatUnreadCount } from '@/hooks/chat/chatState';
 
 export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, messagesLoaded: Ref<boolean>) {
   const rooms = ref<any[]>([]);
@@ -55,10 +55,10 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
     try {
       const res: any = await client.get('/chat/rooms');
       const items = Array.isArray(res) ? res : res?.items || [];
-      rooms.value = items.map((room: any) => ({
-        ...mapRoom(room),
-        unreadCount: (room.unread_count || 0) + (roomUnreadCounts.value[room.id] || 0),
-      }));
+      // mapRoom đã lấy room.unread_count. Bản cũ cộng thêm một bộ đếm cục bộ
+      // vào đây, nên một tin vừa làm tăng bộ đếm đó lại được máy chủ tính lần
+      // nữa — con số trên chuông nhân đôi sau mỗi lần fetchRooms().
+      rooms.value = items.map((room: any) => mapRoom(room));
       updateUnreadCount();
     } catch {
       // ignore

@@ -380,13 +380,34 @@ func (s *PromotionService) Update(id string, req *UpdatePromotionRequest) (*Prom
 	return &result, nil
 }
 
+// Delete xoá một chương trình khuyến mãi cùng điều kiện và phần thưởng của nó.
+//
+// Điều kiện và phần thưởng là con SỞ HỮU — Update (cùng file) đã xoá rồi tạo lại
+// chúng theo đúng lối này. Còn orders.promotion_id thì chặn: báo cáo hiệu quả
+// khuyến mãi đọc cột đó, xoá chương trình là báo cáo cũ mất tên.
 func (s *PromotionService) Delete(id string) error {
 	var promo model.Promotion
 	if err := s.db.Where("id = ?", id).First(&promo).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("không tìm thấy khuyến mãi")
+		}
+		return err
+	}
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.Order{}, Cot: "promotion_id", Nhan: "đơn hàng đã áp dụng"},
+	}, "hãy tắt khuyến mãi (bỏ đang chạy) thay vì xoá"); err != nil {
 		return err
 	}
 	now := time.Now()
-	if err := s.db.Model(&promo).Update("deleted_at", &now).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("promotion_id = ?", id).Delete(&model.PromotionCondition{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("promotion_id = ?", id).Delete(&model.PromotionReward{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&promo).Update("deleted_at", &now).Error
+	}); err != nil {
 		return err
 	}
 	s.audit.Log(&LogAuditRequest{

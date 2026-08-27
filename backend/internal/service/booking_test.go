@@ -157,6 +157,12 @@ func TestBookingService_Cancel_NoRefundWithoutCharge(t *testing.T) {
 			AddRow("bk-1", "pending", int64(100000), "mem-1", nil))
 
 	mock.ExpectBegin()
+	// Cancel đọc lại lịch đặt dưới khoá trong chính transaction: bản đọc ở trên
+	// nằm ngoài, nên hai lệnh huỷ song song đều hoàn cọc nếu không có bước này.
+	mock.ExpectQuery(`SELECT \* FROM "machine_bookings" WHERE id = \$1 AND "machine_bookings"\."deleted_at" IS NULL ORDER BY "machine_bookings"\."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("bk-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "deposit_amount", "member_id", "deposit_transaction_id"}).
+			AddRow("bk-1", "pending", int64(100000), "mem-1", nil))
 	mock.ExpectExec(`UPDATE "machine_bookings" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()

@@ -188,6 +188,11 @@ func (s *PrinterService) Update(id string, req *UpdatePrinterRequest) (*PrinterR
 	return &result, nil
 }
 
+// Delete xoá một cấu hình máy in.
+//
+// Danh mục trỏ tới máy in để biết in phiếu bếp ở đâu; xoá máy in mà bỏ lại
+// danh mục nghĩa là đơn của danh mục đó in vào hư không. Ánh xạ sản phẩm–máy in
+// thì ngược lại, là con SỞ HỮU nên dọn luôn.
 func (s *PrinterService) Delete(id string) error {
 	var printer model.PrinterConfig
 	if err := s.db.Where("id = ?", id).First(&printer).Error; err != nil {
@@ -197,8 +202,23 @@ func (s *PrinterService) Delete(id string) error {
 		return err
 	}
 
+	if printer.IsDefault {
+		return chanVi("không xoá được máy in mặc định — hãy đặt máy in khác làm mặc định trước")
+	}
+
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.Category{}, Cot: "printer_id", Nhan: "danh mục đang in ở máy này"},
+	}, "hãy gỡ máy in khỏi các danh mục đó trước"); err != nil {
+		return err
+	}
+
 	now := time.Now()
-	if err := s.db.Model(&printer).Update("deleted_at", &now).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("printer_id = ?", id).Delete(&model.ProductPrinterMapping{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&printer).Update("deleted_at", &now).Error
+	}); err != nil {
 		return err
 	}
 

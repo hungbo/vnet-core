@@ -29,6 +29,23 @@ func phatSoDuMoi(h *hub.Hub, memberID string, balance, bonus int64) {
 			"bonus_balance": bonus,
 		},
 	})
+
+	// Quản trị cũng phải biết, và phải biết trên MỌI thiết bị đang đăng nhập:
+	// nhân viên nạp tiền ở điện thoại thì bảng hội viên đang mở trên máy tính
+	// không được đứng nguyên con số cũ. BroadcastToType gửi tới mọi kết nối
+	// admin, tức mọi thiết bị của mọi nhân viên đang trực.
+	//
+	// Đây là sự kiện RIÊNG, không phải gửi lại "balance:updated": máy trạm của
+	// khách và trang quản trị cần hai thứ khác nhau, và trộn chung thì không
+	// tách được ai đang nghe cái gì.
+	h.BroadcastToType(hub.Event{
+		Type: "member:updated",
+		Data: map[string]interface{}{
+			"member_id":     memberID,
+			"balance":       balance,
+			"bonus_balance": bonus,
+		},
+	}, hub.ClientTypeAdmin)
 }
 
 // phatNapTien báo cho máy trạm hiện một dòng "nạp tiền thành công".

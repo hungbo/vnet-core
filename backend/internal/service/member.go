@@ -70,12 +70,18 @@ type TopupRequest struct {
 	Amount        int64  `json:"amount"`
 	PaymentMethod string `json:"payment_method"`
 	Description   string `json:"description"`
+	// IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+	// MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 type RefundRequest struct {
 	Amount      int64  `json:"amount"`
 	IsBonus     bool   `json:"is_bonus"`
 	Description string `json:"description"`
+	// IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+	// MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
+	IdempotencyKey string `json:"idempotency_key"`
 }
 
 type CreateGroupRequest struct {
@@ -425,12 +431,31 @@ func (s *MemberService) Update(id string, req *UpdateMemberRequest) (*MemberResp
 	return s.GetByID(id)
 }
 
+// Delete xoá một hội viên.
+//
+// Giao dịch số dư, đơn hàng, phiên chơi, lượt mua combo đều là chứng từ tiền:
+// xoá hội viên mà bỏ lại chúng thì báo cáo doanh thu và đối soát ca trỏ tới một
+// người không còn tồn tại. Hội viên đã tiêu tiền thì chỉ khoá được (is_active),
+// không xoá.
+//
+// lucky_spin_logs, member_notifications, member_attendances KHÔNG chặn: nhật ký
+// và hộp thư, không phải chứng từ. topup_cards.used_by/sold_to cũng không —
+// tấm thẻ đã dùng vẫn tự giữ mệnh giá và thời điểm.
 func (s *MemberService) Delete(id string) error {
 	var member model.Member
 	if err := s.db.Where("id = ?", id).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errors.New("member not found")
 		}
+		return err
+	}
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.MemberTransaction{}, Cot: "member_id", Nhan: "giao dịch số dư"},
+		{Bang: &model.MachineSession{}, Cot: "member_id", Nhan: "phiên chơi"},
+		{Bang: &model.Order{}, Cot: "member_id", Nhan: "đơn hàng"},
+		{Bang: &model.ComboPurchase{}, Cot: "member_id", Nhan: "lượt mua combo"},
+		{Bang: &model.MachineBooking{}, Cot: "member_id", Nhan: "lịch đặt máy"},
+	}, "hãy khoá tài khoản thay vì xoá — lịch sử tiêu dùng và số dư phải giữ lại"); err != nil {
 		return err
 	}
 	if err := s.db.Delete(&member).Error; err != nil {
@@ -486,6 +511,11 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 			tx.Rollback()
 		}
 	}()
+
+	if err := giuKhoaIdempotency(tx, "member.topup", req.IdempotencyKey); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
 	var member model.Member
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&member).Error; err != nil {
@@ -571,6 +601,11 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*M
 			tx.Rollback()
 		}
 	}()
+
+	if err := giuKhoaIdempotency(tx, "member.refund", req.IdempotencyKey); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
 	var member model.Member
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&member).Error; err != nil {
@@ -864,14 +899,19 @@ func (s *MemberService) DeleteGroup(id string) error {
 		return err
 	}
 
-	var memberCount int64
-	s.db.Model(&model.Member{}).Where("group_id = ?", id).Count(&memberCount)
-	if memberCount > 0 {
-		return errors.New("cannot delete group with active members")
+	// Nhóm mặc định kiểm TRƯỚC: hội viên mới rơi vào đó, xoá là hỏng luồng tạo
+	// tài khoản, và lý do đó không sửa được bằng cách chuyển hội viên đi.
+	if group.IsDefault {
+		return chanVi("không xoá được nhóm mặc định — hãy đặt nhóm khác làm mặc định trước")
 	}
 
-	if group.IsDefault {
-		return errors.New("cannot delete the default group")
+	// Bản cũ đếm hội viên nhưng KHÔNG kiểm lỗi của Count: database hỏng thì đọc
+	// ra 0 và nhóm bị xoá kèm theo. Và nó bỏ sót bảng giá theo hạng.
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.Member{}, Cot: "group_id", Nhan: "hội viên"},
+		{Bang: &model.MachinePrice{}, Cot: "member_group_id", Nhan: "dòng bảng giá theo hạng"},
+	}, "hãy chuyển họ sang nhóm khác trước"); err != nil {
+		return err
 	}
 
 	if err := s.db.Delete(&group).Error; err != nil {

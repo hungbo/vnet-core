@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { newIdempotencyKey } from '@/utils/idempotency';
 
 const { t: $t } = useI18n();
 
@@ -179,7 +180,7 @@ async function handleCancel(row: any) {
 
 const redeemVisible = ref(false);
 const redeeming = ref(false);
-const redeemForm = ref({ serial: '', secret: '', member_id: '' });
+const redeemForm = ref({ serial: '', secret: '', member_id: '', idempotency_key: newIdempotencyKey() });
 const redeemMembers = ref<any[]>([]);
 const memberLoading = ref(false);
 
@@ -200,7 +201,7 @@ async function searchMembers(query: string) {
 }
 
 function openRedeem() {
-  redeemForm.value = { serial: '', secret: '', member_id: '' };
+  redeemForm.value = { serial: '', secret: '', member_id: '', idempotency_key: newIdempotencyKey() };
   redeemMembers.value = [];
   redeemVisible.value = true;
 }
@@ -220,7 +221,8 @@ async function submitRedeem() {
     const res: any = await client.post('/topup-cards/redeem', {
       serial: f.serial,
       secret: f.secret,
-      member_id: f.member_id
+      member_id: f.member_id,
+      idempotency_key: f.idempotency_key
     });
     ElNotification({
       type: 'success',

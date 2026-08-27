@@ -150,7 +150,12 @@ func TestPrinterService_Delete_Success(t *testing.T) {
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("p1", "Test"))
 
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "categories"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectBegin()
+	// Ánh xạ sản phẩm–máy in là con sở hữu, xoá cứng theo.
+	mock.ExpectExec(`DELETE FROM "product_printer_mappings"`).
+		WillReturnResult(sqlmock.NewResult(1, 0))
 	mock.ExpectExec(`UPDATE "printer_configs" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()

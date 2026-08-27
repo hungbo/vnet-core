@@ -131,12 +131,13 @@ func (h *ProductHandler) Update(c *gin.Context) {
 // @Param id path string true "Product ID"
 // @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /products/{id} [delete]
 func (h *ProductHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.svc.Delete(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 

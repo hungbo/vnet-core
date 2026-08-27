@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useWebSocketStore } from '@/store/modules/ws';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
 import { formatRemaining } from '@/utils/remaining';
@@ -239,14 +240,27 @@ async function handleEnd(row: any) {
     ElMessage.error(e.message || $t('vnetPages.common.error'));
   }
 }
+const wsStore = useWebSocketStore();
+
+// Nhịp setInterval bên dưới chỉ đếm lại số phút đã chơi trên các dòng SẴN CÓ —
+// nó không gọi lại danh sách. Máy mở hay trả ở quầy bên cạnh, hoặc ở thiết bị
+// khác của chính người đang ngồi đây, thì bảng này đứng yên cho tới khi tải lại.
+function onSessionChanged() {
+  getData();
+}
+
 onMounted(() => {
   tick = setInterval(() => {
     now.value = Date.now();
   }, 1000);
+  wsStore.on('session:started', onSessionChanged);
+  wsStore.on('session:ended', onSessionChanged);
 });
 
 onBeforeUnmount(() => {
   if (tick) clearInterval(tick);
+  wsStore.off('session:started', onSessionChanged);
+  wsStore.off('session:ended', onSessionChanged);
 });
 </script>
 

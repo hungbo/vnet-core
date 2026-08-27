@@ -69,6 +69,10 @@ func TestInventoryService_DeleteSupplier_Success(t *testing.T) {
 		WithArgs("s1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("s1"))
 
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "products"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "stock_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "suppliers" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))

@@ -98,13 +98,14 @@ func (h *InventoryHandler) UpdateSupplier(c *gin.Context) {
 // @Param id path string true "Supplier ID"
 // @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /api/suppliers/{id} [delete]
 // @Security BearerAuth
 func (h *InventoryHandler) DeleteSupplier(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.svc.DeleteSupplier(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 
@@ -246,13 +247,14 @@ func (h *InventoryHandler) UpdateProductIngredient(c *gin.Context) {
 // @Produce json
 // @Param id path string true "ProductIngredient ID"
 // @Success 200 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /products/ingredients/{id} [delete]
 // @Security BearerAuth
 func (h *InventoryHandler) DeleteProductIngredient(c *gin.Context) {
 	id := c.Param("ingredientId")
 
 	if err := h.svc.DeleteProductIngredient(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 

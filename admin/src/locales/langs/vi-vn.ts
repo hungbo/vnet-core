@@ -830,6 +830,9 @@ const local: App.I18n.Schema = {
     },
     machines: {
       title: 'Máy',
+      active: 'Đang hoạt động',
+      activeHint: 'Tắt để tạm ngừng máy — không mở được phiên mới trên máy này. Dùng thay cho việc xoá máy đã có lịch sử.',
+      suspended: 'Tạm ngừng',
       searchPlaceholder: 'Tìm mã máy / nhóm',
       add: 'Thêm máy',
       edit: 'Sửa máy',

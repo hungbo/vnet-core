@@ -95,6 +95,7 @@ func (h *SystemManageHandler) UpdateUser(c *gin.Context) {
 // @Produce json
 // @Param id query string false "User ID"
 // @Success 200 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /systemManage/deleteUser [delete]
 // @Security BearerAuth
 func (h *SystemManageHandler) DeleteUser(c *gin.Context) {
@@ -114,7 +115,7 @@ func (h *SystemManageHandler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := h.svc.DeleteUser(body.ID); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -127,6 +128,7 @@ func (h *SystemManageHandler) DeleteUser(c *gin.Context) {
 // @Produce json
 // @Param body body object true "User IDs"
 // @Success 200 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /systemManage/batchDeleteUser [delete]
 // @Security BearerAuth
 func (h *SystemManageHandler) BatchDeleteUser(c *gin.Context) {
@@ -139,7 +141,7 @@ func (h *SystemManageHandler) BatchDeleteUser(c *gin.Context) {
 	}
 
 	if err := h.svc.BatchDeleteUsers(body.IDs); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -299,6 +301,7 @@ func (h *SystemManageHandler) UpdateRole(c *gin.Context) {
 // @Produce json
 // @Param id query string false "Role ID"
 // @Success 200 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /systemManage/deleteRole [delete]
 // @Security BearerAuth
 func (h *SystemManageHandler) DeleteRole(c *gin.Context) {
@@ -316,7 +319,7 @@ func (h *SystemManageHandler) DeleteRole(c *gin.Context) {
 		return
 	}
 	if err := h.svc.DeleteRole(body.ID); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -329,6 +332,7 @@ func (h *SystemManageHandler) DeleteRole(c *gin.Context) {
 // @Produce json
 // @Param body body object true "Role IDs"
 // @Success 200 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /systemManage/batchDeleteRole [delete]
 // @Security BearerAuth
 func (h *SystemManageHandler) BatchDeleteRole(c *gin.Context) {
@@ -340,7 +344,7 @@ func (h *SystemManageHandler) BatchDeleteRole(c *gin.Context) {
 		return
 	}
 	if err := h.svc.BatchDeleteRoles(body.IDs); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

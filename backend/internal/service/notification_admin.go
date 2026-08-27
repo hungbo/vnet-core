@@ -128,9 +128,15 @@ func (s *NotificationAdminService) Delete(id string) error {
 		}
 		return err
 	}
-	// Delete all recipient records first
-	s.db.Where("notification_id = ?", id).Delete(&model.NotificationRecipient{})
-	if err := s.db.Delete(&n).Error; err != nil {
+	// Sổ người nhận là con SỞ HỮU của thông báo. Bản cũ xoá nó rồi BỎ QUA lỗi
+	// và xoá tiếp thông báo ở một câu lệnh khác: hỏng ở bước đầu là để lại một
+	// đống dòng người nhận trỏ tới thông báo không còn tồn tại.
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("notification_id = ?", id).Delete(&model.NotificationRecipient{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&n).Error
+	}); err != nil {
 		return err
 	}
 	s.audit.Log(&LogAuditRequest{
@@ -200,7 +206,12 @@ func (s *NotificationAdminService) Dispatch(notificationID string) (int, error) 
 	}
 
 	// The desktop client already listens for this; nothing ever sent it.
-	s.hub.Broadcast(hub.Event{
+	//
+	// Gửi theo danh sách người nhận chứ không Broadcast: Broadcast đánh thức cả
+	// kết nối quản trị lẫn máy trạm chưa có ai đăng nhập, mà những chỗ đó không
+	// có hộp thư nào để mà mở. SendToUsers phủ MỌI thiết bị của từng hội viên —
+	// một người mở cả máy trạm lẫn điện thoại thì cả hai cùng sáng đèn.
+	s.hub.SendToUsers(memberIDs, hub.Event{
 		Type: "notification:new",
 		Data: map[string]interface{}{
 			"notification_id": notificationID,

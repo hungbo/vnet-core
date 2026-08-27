@@ -106,6 +106,16 @@ func TestSessionService_StartSession_WithCombo(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	mock.ExpectBegin()
+	// Mọi kiểm tra ở trên chạy ngoài transaction. StartSession khoá hội viên rồi
+	// tới máy (đúng thứ tự EndSessionAt dùng) và kiểm lại trong transaction, nếu
+	// không hai lệnh mở phiên song song đều lọt.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_active"}).AddRow("mem1", true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
 	mock.ExpectExec(`UPDATE "machines" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -165,6 +175,16 @@ func TestSessionService_StartSession_ComboNotFound(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	mock.ExpectBegin()
+	// Mọi kiểm tra ở trên chạy ngoài transaction. StartSession khoá hội viên rồi
+	// tới máy (đúng thứ tự EndSessionAt dùng) và kiểm lại trong transaction, nếu
+	// không hai lệnh mở phiên song song đều lọt.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_active"}).AddRow("mem1", true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
 	mock.ExpectExec(`UPDATE "machines" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -204,6 +224,16 @@ func TestSessionService_StartSession_ComboNotActivated(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	mock.ExpectBegin()
+	// Mọi kiểm tra ở trên chạy ngoài transaction. StartSession khoá hội viên rồi
+	// tới máy (đúng thứ tự EndSessionAt dùng) và kiểm lại trong transaction, nếu
+	// không hai lệnh mở phiên song song đều lọt.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_active"}).AddRow("mem1", true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
 	mock.ExpectExec(`UPDATE "machines" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
@@ -251,6 +281,11 @@ func TestSessionService_EndSession_WithCombo(t *testing.T) {
 
 	// Một transaction duy nhất cho toàn bộ phần ghi.
 	mock.ExpectBegin()
+
+	// Khoá phiên rồi đọc lại: bản đọc ở đầu hàm nằm ngoài transaction, nên hai
+	// lệnh trả máy song song đều thấy is_active=true và trừ tiền hai lần.
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 ORDER BY "machine_sessions"\."id" LIMIT \$3 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "charged_amount"}).AddRow("s1", int64(0)))
 
 	// Load member (snapshot GroupID)
 	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2`).
@@ -402,6 +437,10 @@ func TestSessionService_EndSession_ShortBalanceLeavesDebtNotDeadlock(t *testing.
 	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).WillReturnError(gorm.ErrRecordNotFound)
 
 	mock.ExpectBegin()
+
+	// Khoá phiên rồi đọc lại trong transaction (xem EndSessionAt).
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 ORDER BY "machine_sessions"\."id" LIMIT \$3 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "charged_amount"}).AddRow("s1", int64(0)))
 
 	// Ảnh chụp nhóm hội viên lên dòng phiên.
 	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2`).

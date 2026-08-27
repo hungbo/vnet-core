@@ -243,6 +243,9 @@ async function handleConfirm(row: any) {
 const payDialogVisible = ref(false);
 const payingOrder = ref<any>(null);
 const paying = ref(false);
+// Id đơn đang gửi lệnh duyệt. Nút không khoá thì cú bấm thứ hai bắn thêm một
+// POST nữa trong lúc cái đầu còn đang bay.
+const approvingId = ref('');
 const payForm = ref({ payment_method: 'cash', reference_code: '' });
 
 function handleComplete(row: any) {
@@ -290,10 +293,25 @@ async function handleApproveTopup(row: any) {
       $t('vnetPages.common.confirm'),
       { type: 'info' }
     );
+  } catch (_) {
+    // Người dùng bấm Huỷ trong hộp xác nhận.
+    return;
+  }
+
+  approvingId.value = row.id;
+  try {
     await client.post(`/orders/${row.id}/status`, { status: 'completed' });
     ElMessage.success(`Đã nạp ${formatPrice(row.final_amount)} thành công`);
     await fetchData();
-  } catch (_) {}
+  } catch (e: any) {
+    // Máy chủ từ chối đơn đã xử lý ("đơn đã được xử lý"). Nuốt lỗi ở đây là để
+    // lại toast xanh của lần duyệt trước trên màn hình, và nhân viên tưởng lần
+    // bấm này cũng thành công — tức là tưởng đã nạp hai lần.
+    ElMessage.error(e?.message || 'Duyệt đơn nạp tiền thất bại');
+    await fetchData();
+  } finally {
+    approvingId.value = '';
+  }
 }
 
 async function handleRejectTopup(row: any) {
@@ -520,9 +538,16 @@ async function submitSplit() {
 const { checkedRowKeys, onBatchDeleted } = useTableOperate(data, 'id', getData);
 
 async function handleBatchDelete() {
-  await client.delete('/orders/batch-delete', {
-    data: { ids: checkedRowKeys.value }
-  });
+  try {
+    await client.delete('/orders/batch-delete', {
+      data: { ids: checkedRowKeys.value }
+    });
+  } catch (e: any) {
+    // Không bắt thì 409 ("đơn đã thanh toán, không xoá được") thành unhandled
+    // rejection và onBatchDeleted vẫn chạy — bảng làm mới như thể đã xoá xong.
+    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+    return;
+  }
   onBatchDeleted();
 }
 
@@ -533,12 +558,21 @@ async function onOrderNew() {
   await getData();
 }
 
+// Đơn đổi trạng thái ở một thiết bị khác — kể cả thiết bị khác của chính người
+// đang ngồi đây. Không có handler này thì nút "Duyệt" vẫn nằm trên một đơn đã
+// nạp xong cho tới khi có người tự tải lại trang.
+async function onOrderUpdated() {
+  await getData();
+}
+
 onMounted(() => {
   wsStore.on('order:new', onOrderNew);
+  wsStore.on('order:updated', onOrderUpdated);
 });
 
 onBeforeUnmount(() => {
   wsStore.off('order:new', onOrderNew);
+  wsStore.off('order:updated', onOrderUpdated);
 });
 </script>
 
@@ -625,7 +659,14 @@ onBeforeUnmount(() => {
               </template>
             </ElDropdown>
             <template v-if="row.order_type === 'topup'">
-              <ElButton v-if="row.status === 'pending'" size="small" type="success" @click="handleApproveTopup(row)">
+              <ElButton
+                v-if="row.status === 'pending'"
+                size="small"
+                type="success"
+                :loading="approvingId === row.id"
+                :disabled="approvingId !== ''"
+                @click="handleApproveTopup(row)"
+              >
                 {{ $t('vnetPages.orders.approve') }}
               </ElButton>
               <ElButton

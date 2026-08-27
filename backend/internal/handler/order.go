@@ -117,11 +117,12 @@ func (h *OrderHandler) Update(c *gin.Context) {
 // @Param id path string true "Order ID"
 // @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /orders/{id} [delete]
 func (h *OrderHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.Delete(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -136,6 +137,7 @@ func (h *OrderHandler) Delete(c *gin.Context) {
 // @Param body body object true "Batch delete request"
 // @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /orders/batch-delete [delete]
 func (h *OrderHandler) BatchDelete(c *gin.Context) {
 	var body struct {
@@ -146,7 +148,7 @@ func (h *OrderHandler) BatchDelete(c *gin.Context) {
 		return
 	}
 	if err := h.svc.BatchDelete(body.IDs); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

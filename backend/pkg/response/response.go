@@ -107,6 +107,16 @@ func NotFound(c *gin.Context, message string) {
 	Error(c, http.StatusNotFound, message)
 }
 
+// Conflict: yêu cầu hợp lệ nhưng trạng thái dữ liệu không cho phép — điển hình
+// là xoá một bản ghi còn dữ liệu phụ thuộc.
+//
+// Tách khỏi 400 để giao diện phân biệt được "người dùng gõ sai" với "không được
+// phép lúc này": cái đầu cần sửa ô nhập, cái sau cần một thao tác khác hẳn (vô
+// hiệu hoá thay vì xoá).
+func Conflict(c *gin.Context, message string) {
+	Error(c, http.StatusConflict, message)
+}
+
 func InternalError(c *gin.Context, message string) {
 	Error(c, http.StatusInternalServerError, message)
 }

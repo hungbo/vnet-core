@@ -225,7 +225,9 @@ type TopupRequest struct {
 func (h *ChatHandler) DeleteRoom(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.DeleteRoom(id); err != nil {
-		response.InternalError(c, "Failed to delete room")
+		// InternalError nuốt mất err và luôn trả 500, nên "không tìm thấy phòng"
+		// hiện ra như một lỗi máy chủ.
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)
@@ -268,7 +270,11 @@ func (h *ChatHandler) MarkRoomMessagesRead(c *gin.Context) {
 	if !h.ensureRoomAccess(c, id) {
 		return
 	}
-	count, err := h.svc.MarkRoomMessagesRead(id)
+	readerType := "member"
+	if middleware.GetKind(c) == jwt.KindStaff {
+		readerType = "admin"
+	}
+	count, err := h.svc.MarkRoomMessagesRead(id, readerType)
 	if err != nil {
 		response.InternalError(c, "Failed to mark read")
 		return

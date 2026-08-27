@@ -90,6 +90,7 @@ func main() {
 		&model.WebsiteBlockingRule{}, &model.WebsiteRuleMapping{},
 		&model.WebsiteBlockingSchedule{}, &model.WebsiteBlockingViolation{},
 		&model.AppUpdate{},
+		&model.IdempotencyKey{},
 	); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}

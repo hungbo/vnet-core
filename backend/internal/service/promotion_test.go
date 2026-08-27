@@ -89,7 +89,14 @@ func TestPromotionService_Delete_Success(t *testing.T) {
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("p1"))
 
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "orders"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectBegin()
+	// Điều kiện và phần thưởng là con sở hữu, xoá cứng theo.
+	mock.ExpectExec(`DELETE FROM "promotion_conditions"`).
+		WillReturnResult(sqlmock.NewResult(1, 0))
+	mock.ExpectExec(`DELETE FROM "promotion_rewards"`).
+		WillReturnResult(sqlmock.NewResult(1, 0))
 	mock.ExpectExec(`UPDATE "promotions" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()

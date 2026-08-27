@@ -8,7 +8,7 @@ import { useWebSocketStore } from '@/store/modules/ws';
 import client from '@/api/client';
 import { useChatRooms } from '@/hooks/chat/useChatRooms';
 import { useChatWs } from '@/hooks/chat/useChatWs';
-import { isChatOpen, chatUnreadCount, roomUnreadCounts } from '@/hooks/chat/chatState';
+import { isChatOpen } from '@/hooks/chat/chatState';
 
 const authStore = useAuthStore();
 const wsStore = useWebSocketStore();
@@ -128,12 +128,10 @@ watch(isChatOpen, async (open) => {
 watch(currentRoomId, async (newId) => {
   if (!newId) return;
   try {
+    // Chỉ báo cho máy chủ. Máy chủ phát lại room:read cho MỌI thiết bị đang mở
+    // — kể cả thiết bị này — và handler wsRoomRead mới là chỗ tắt con số. Tự
+    // trừ ở đây rồi lại nhận sự kiện là trừ hai lần cho cùng một hành động.
     await client.put(`/chat/rooms/${newId}/read`);
-    const count = roomUnreadCounts.value[newId] || 0;
-    roomUnreadCounts.value[newId] = 0;
-    chatUnreadCount.value = Math.max(0, chatUnreadCount.value - count);
-    const room = rooms.value.find((r: any) => r.roomId === newId);
-    if (room) room.unreadCount = 0;
     fetchRooms();
   } catch {
     // ignore

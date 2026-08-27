@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { h, ref } from 'vue';
+import { h, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { formatAmount } from '@/utils/money';
+import { newIdempotencyKey } from '@/utils/idempotency';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -71,7 +73,8 @@ async function fetchMemberGroups() {
 
 const topupForm = ref({
   amount: 10000,
-  payment_method: 'cash'
+  payment_method: 'cash',
+  idempotency_key: newIdempotencyKey()
 });
 
 const rules: FormRules = {
@@ -268,11 +271,11 @@ async function uploadDoc(field: 'id_card_image_url' | 'parent_consent_file_url',
 // nên nhân viên phải sửa số dư bằng SQL khi cần trả lại tiền cho khách.
 const refundVisible = ref(false);
 const refunding = ref(false);
-const refundForm = ref({ amount: 0, is_bonus: false, description: '' });
+const refundForm = ref({ amount: 0, is_bonus: false, description: '', idempotency_key: newIdempotencyKey() });
 
 function openRefund(row: any) {
   currentMember.value = row;
-  refundForm.value = { amount: 0, is_bonus: false, description: '' };
+  refundForm.value = { amount: 0, is_bonus: false, description: '', idempotency_key: newIdempotencyKey() };
   refundVisible.value = true;
 }
 
@@ -283,7 +286,8 @@ async function handleRefund() {
     await client.post(`/members/${currentMember.value.id}/refund`, {
       amount: refundForm.value.amount,
       is_bonus: refundForm.value.is_bonus,
-      description: refundForm.value.description
+      description: refundForm.value.description,
+      idempotency_key: refundForm.value.idempotency_key
     });
     ElMessage.success($t('vnetPages.members.refundSuccess'));
     refundVisible.value = false;
@@ -297,7 +301,8 @@ async function handleRefund() {
 
 function openTopup(row: any) {
   currentMember.value = row;
-  topupForm.value = { amount: 10000, payment_method: 'cash' };
+  // Khoá mới cho mỗi lần mở hộp thoại: đây là một ý định nạp mới.
+  topupForm.value = { amount: 10000, payment_method: 'cash', idempotency_key: newIdempotencyKey() };
   topupVisible.value = true;
 }
 
@@ -431,6 +436,40 @@ async function fetchDetailSessions() {
     detailSesLoading.value = false;
   }
 }
+
+const wsStore = useWebSocketStore();
+
+/**
+ * Số dư một hội viên vừa đổi ở đâu đó — quầy bên cạnh, điện thoại của chính
+ * người đang ngồi đây, hay một đơn nạp vừa được duyệt.
+ *
+ * Vá tại chỗ thay vì gọi lại cả trang: nhân viên đang gõ ô tìm kiếm hoặc đang ở
+ * trang 3 thì một cú getData() làm bảng nhảy về đầu.
+ */
+function onMemberUpdated(payload: any) {
+  if (!payload?.member_id) return;
+
+  const row = data.value.find((m: any) => m.id === payload.member_id);
+  if (row) {
+    row.balance = payload.balance;
+    row.bonus_balance = payload.bonus_balance;
+  }
+
+  // Ngăn kéo chi tiết đang mở đúng người này thì phải khớp theo, cả số dư lẫn
+  // lịch sử giao dịch.
+  if (detailVisible.value && detailId.value === payload.member_id) {
+    fetchMemberDetail(payload.member_id);
+    if (detailTab.value === 'transactions') fetchDetailTransactions();
+  }
+}
+
+onMounted(() => {
+  wsStore.on('member:updated', onMemberUpdated);
+});
+
+onBeforeUnmount(() => {
+  wsStore.off('member:updated', onMemberUpdated);
+});
 
 async function handleTopup() {
   const valid = await topupFormRef.value?.validate().catch(() => false);

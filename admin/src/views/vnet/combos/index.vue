@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { newIdempotencyKey } from '@/utils/idempotency';
 import { formatAmount } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
@@ -39,7 +40,8 @@ const purchaseForm = ref({
   member_id: '' as string,
   customer_name: '',
   customer_phone: '',
-  payment_method: 'cash'
+  payment_method: 'cash',
+  idempotency_key: newIdempotencyKey()
 });
 const members = ref<any[]>([]);
 const memberSearchLoading = ref(false);
@@ -189,7 +191,10 @@ function openPurchase(row: any) {
     member_id: '',
     customer_name: '',
     customer_phone: '',
-    payment_method: 'cash'
+    payment_method: 'cash',
+    // Khoá mới cho mỗi lần mở hộp thoại; mọi lần bấm Xác nhận của lần mở này
+    // mang cùng khoá nên máy chủ chỉ bán một gói.
+    idempotency_key: newIdempotencyKey()
   };
   members.value = [];
   purchaseDialogVisible.value = true;
@@ -198,7 +203,10 @@ function openPurchase(row: any) {
 async function handlePurchase() {
   purchaseSubmitting.value = true;
   try {
-    const payload: any = { payment_method: purchaseForm.value.payment_method };
+    const payload: any = {
+      payment_method: purchaseForm.value.payment_method,
+      idempotency_key: purchaseForm.value.idempotency_key
+    };
     if (purchaseForm.value.member_id) {
       payload.member_id = purchaseForm.value.member_id;
     } else {

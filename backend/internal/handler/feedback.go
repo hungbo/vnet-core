@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
@@ -47,7 +46,7 @@ func (h *FeedbackHandler) Create(c *gin.Context) {
 	case err == nil:
 		response.Created(c, res)
 	case errors.Is(err, service.ErrAlreadyRated):
-		response.Error(c, http.StatusConflict, err.Error())
+		response.Conflict(c, err.Error())
 	default:
 		response.BadRequest(c, err.Error())
 	}

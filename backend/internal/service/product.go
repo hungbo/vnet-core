@@ -341,6 +341,15 @@ func (s *ProductService) Update(id string, req *UpdateProductRequest) (*ProductR
 	return &result, nil
 }
 
+// Delete xoá một sản phẩm.
+//
+// order_items khai OnDelete:RESTRICT trong model — nhưng tag đó GORM không đọc
+// (đặt trên trường ID vô hướng), và sản phẩm xoá mềm nên kể cả có khoá ngoại
+// thật thì ON DELETE cũng không chạy. Ý định "chặn" của tác giả model phải được
+// thực hiện ở đây.
+//
+// ingredient_id là chiều NGƯỢC: sản phẩm này đang được dùng làm nguyên liệu cho
+// sản phẩm khác. Xoá nó là làm hỏng công thức của món khác.
 func (s *ProductService) Delete(id string) error {
 	var product model.Product
 	if err := s.db.Where("id = ?", id).First(&product).Error; err != nil {
@@ -350,8 +359,30 @@ func (s *ProductService) Delete(id string) error {
 		return err
 	}
 
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.OrderItem{}, Cot: "product_id", Nhan: "dòng đơn hàng"},
+		{Bang: &model.StockTransaction{}, Cot: "product_id", Nhan: "phiếu kho"},
+		{Bang: &model.InventoryCount{}, Cot: "product_id", Nhan: "dòng kiểm kê"},
+		{Bang: &model.ProductIngredient{}, Cot: "ingredient_id", Nhan: "công thức của sản phẩm khác đang dùng món này làm nguyên liệu"},
+	}, "hãy tắt bán (bỏ đang bán) thay vì xoá"); err != nil {
+		return err
+	}
+
 	now := time.Now()
-	if err := s.db.Model(&product).Update("deleted_at", &now).Error; err != nil {
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Con SỞ HỮU của chính sản phẩm này: công thức của nó, tuỳ chọn của nó,
+		// ánh xạ máy in của nó. Không có sản phẩm thì chúng vô nghĩa.
+		if err := tx.Where("product_id = ?", id).Delete(&model.ProductIngredient{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("product_id = ?", id).Delete(&model.ProductOption{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("product_id = ?", id).Delete(&model.ProductPrinterMapping{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&product).Update("deleted_at", &now).Error
+	}); err != nil {
 		return err
 	}
 

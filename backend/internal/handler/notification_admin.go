@@ -105,11 +105,12 @@ func (h *NotificationAdminHandler) Update(c *gin.Context) {
 // @Security BearerAuth
 // @Param id path string true "Notification ID"
 // @Success 200 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /admin/notifications/{id} [delete]
 func (h *NotificationAdminHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.svc.Delete(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

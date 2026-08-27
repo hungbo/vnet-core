@@ -227,7 +227,22 @@ func TestProductService_Delete_Success(t *testing.T) {
 		WithArgs("p1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("p1", "Test"))
 
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "order_items"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "stock_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "inventory_counts"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "product_ingredients"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectBegin()
+	// Công thức, tuỳ chọn và ánh xạ máy in của CHÍNH sản phẩm này là con sở hữu.
+	mock.ExpectExec(`DELETE FROM "product_ingredients"`).
+		WillReturnResult(sqlmock.NewResult(1, 0))
+	mock.ExpectExec(`DELETE FROM "product_options"`).
+		WillReturnResult(sqlmock.NewResult(1, 0))
+	mock.ExpectExec(`DELETE FROM "product_printer_mappings"`).
+		WillReturnResult(sqlmock.NewResult(1, 0))
 	mock.ExpectExec(`UPDATE "products" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()

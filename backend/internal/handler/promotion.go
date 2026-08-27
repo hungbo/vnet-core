@@ -132,13 +132,14 @@ func (h *PromotionHandler) Update(c *gin.Context) {
 // @Param id path string true "Promotion ID"
 // @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /promotions/{id} [delete]
 // @Security BearerAuth
 func (h *PromotionHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.svc.Delete(id); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 
@@ -223,11 +224,12 @@ func (h *PromotionHandler) UpdateLuckySpinReward(c *gin.Context) {
 // @Param id path string true "Reward ID"
 // @Success 200 {object} response.Response
 // @Failure 400 {object} response.Response
+// @Failure 409 {object} response.Response "còn dữ liệu phụ thuộc"
 // @Router /lucky-spin/rewards/{id} [delete]
 // @Security BearerAuth
 func (h *PromotionHandler) DeleteLuckySpinReward(c *gin.Context) {
 	if err := h.svc.DeleteLuckySpinReward(c.Param("id")); err != nil {
-		response.BadRequest(c, err.Error())
+		handleDeleteError(c, err)
 		return
 	}
 	response.Success(c, nil)

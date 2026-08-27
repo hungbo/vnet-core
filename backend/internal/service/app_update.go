@@ -97,8 +97,20 @@ func (s *AppUpdateService) SetActive(id string, active bool, actorID string) err
 	return nil
 }
 
+// Delete xoá một bản cập nhật máy trạm.
+//
+// Không bảng nào tham chiếu tới app_updates, nhưng MÁY TRẠM thì có: Latest()
+// đọc bản đang bật để quyết định có tự cập nhật hay không. Xoá thẳng bản đang
+// phát hành giữa chừng làm những máy đang tải dở mất nguồn.
 func (s *AppUpdateService) Delete(id, actorID string) error {
-	if err := s.db.Delete(&model.AppUpdate{}, "id = ?", id).Error; err != nil {
+	var up model.AppUpdate
+	if err := s.db.First(&up, "id = ?", id).Error; err != nil {
+		return errors.New("không tìm thấy bản cập nhật")
+	}
+	if up.IsActive {
+		return chanVi("bản cập nhật đang phát hành — hãy tắt phát hành trước khi xoá")
+	}
+	if err := s.db.Delete(&up).Error; err != nil {
 		return err
 	}
 	s.log("delete_app_update", id, actorID, nil)
