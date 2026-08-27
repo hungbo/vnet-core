@@ -42,11 +42,11 @@ type Permission struct {
 }
 
 type UserRole struct {
-	UserID string `gorm:"type:uuid;primaryKey;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"user_id"`
-	RoleID string `gorm:"type:uuid;primaryKey;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"role_id"`
+	UserID string `gorm:"type:uuid;primaryKey" json:"user_id"`
+	RoleID string `gorm:"type:uuid;primaryKey" json:"role_id"`
 }
 
 type RolePermission struct {
-	RoleID       string `gorm:"type:uuid;primaryKey;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"role_id"`
-	PermissionID string `gorm:"type:uuid;primaryKey;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"permission_id"`
+	RoleID       string `gorm:"type:uuid;primaryKey" json:"role_id"`
+	PermissionID string `gorm:"type:uuid;primaryKey" json:"permission_id"`
 }

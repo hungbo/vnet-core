@@ -27,12 +27,12 @@ type Combo struct {
 type ComboPurchase struct {
 	ID               string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	ComboID          string     `gorm:"type:uuid;not null;index" json:"combo_id"`
-	MemberID         string     `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"member_id"`
+	MemberID         string     `gorm:"type:uuid;not null;index" json:"member_id"`
 	Price            int64      `gorm:"not null" json:"price"`
 	PaymentMethod    string     `gorm:"type:varchar(30)" json:"payment_method"`
 	Activated        bool       `gorm:"default:false" json:"activated"`
 	ActivatedAt      *time.Time `gorm:"type:timestamptz" json:"activated_at"`
-	CurrentSessionID *string    `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"current_session_id"`
+	CurrentSessionID *string    `gorm:"type:uuid" json:"current_session_id"`
 	RemainingMinutes int        `gorm:"column:remaining_minutes" json:"remaining_minutes"`
 	ExpiresAt        *time.Time `gorm:"type:timestamptz" json:"expires_at"`
 	CreatedAt        time.Time  `gorm:"default:now()" json:"created_at,omitempty"`
@@ -49,10 +49,10 @@ type TopupCard struct {
 	FaceValue  int64          `gorm:"not null" json:"face_value"`
 	BonusValue int64          `gorm:"default:0" json:"bonus_value"`
 	Status     string         `gorm:"type:varchar(20);default:active" json:"status"`
-	SoldTo     *string        `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"sold_to"`
+	SoldTo     *string        `gorm:"type:uuid" json:"sold_to"`
 	SoldAt     *time.Time     `gorm:"type:timestamptz" json:"sold_at"`
 	// Ai đã nạp thẻ và lúc nào — khác với SoldTo (bán ở quầy cho ai).
-	UsedBy    *string    `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"used_by"`
+	UsedBy    *string    `gorm:"type:uuid" json:"used_by"`
 	UsedAt    *time.Time `gorm:"type:timestamptz" json:"used_at"`
 	ExpiresAt *time.Time `gorm:"type:timestamptz" json:"expires_at"`
 	CreatedAt  time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
@@ -76,10 +76,10 @@ type GiftCard struct {
 
 type GiftCardTransaction struct {
 	ID            string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	GiftCardID    string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"gift_card_id"`
+	GiftCardID    string    `gorm:"type:uuid;not null;index" json:"gift_card_id"`
 	Amount        int64     `gorm:"not null" json:"amount"`
 	BalanceBefore int64     `gorm:"column:balance_before" json:"balance_before"`
 	BalanceAfter  int64     `gorm:"column:balance_after" json:"balance_after"`
-	OrderID       *string   `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"order_id"`
+	OrderID       *string   `gorm:"type:uuid" json:"order_id"`
 	CreatedAt     time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 }

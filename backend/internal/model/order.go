@@ -16,8 +16,8 @@ type Order struct {
 	OrderCode      string  `gorm:"type:varchar(20);not null;uniqueIndex" json:"order_code"`
 	Status         string  `gorm:"type:varchar(20);default:pending;index" json:"status"`
 	OrderType      string  `gorm:"type:varchar(20);default:product;index" json:"order_type"`
-	MemberID       *string `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"member_id"`
-	MachineID      *string `gorm:"type:uuid;index;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"machine_id"`
+	MemberID       *string `gorm:"type:uuid;index" json:"member_id"`
+	MachineID      *string `gorm:"type:uuid;index" json:"machine_id"`
 	TableNumber    string  `gorm:"type:varchar(10)" json:"table_number"`
 	TotalAmount    int64   `gorm:"not null" json:"total_amount"`
 	DiscountAmount int64   `gorm:"default:0" json:"discount_amount"`
@@ -27,8 +27,8 @@ type Order struct {
 	FinalAmount   int64          `gorm:"not null" json:"final_amount"`
 	PaymentMethod string         `gorm:"type:varchar(30)" json:"payment_method"`
 	Note          string         `gorm:"type:text" json:"note"`
-	CreatedBy     *string        `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"created_by"`
-	UpdatedBy     *string        `gorm:"type:uuid;constraint:OnUpdate:CASCADE,OnDelete:SET NULL" json:"updated_by"`
+	CreatedBy     *string        `gorm:"type:uuid" json:"created_by"`
+	UpdatedBy     *string        `gorm:"type:uuid" json:"updated_by"`
 	CompletedAt   *time.Time     `gorm:"type:timestamptz" json:"completed_at"`
 	CreatedAt     time.Time      `gorm:"default:now();index" json:"created_at,omitempty"`
 	DeletedAt     gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
@@ -36,8 +36,8 @@ type Order struct {
 
 type OrderItem struct {
 	ID          string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	OrderID     string    `gorm:"type:uuid;not null;index;constraint:OnUpdate:CASCADE,OnDelete:CASCADE" json:"order_id"`
-	ProductID   string    `gorm:"type:uuid;not null;constraint:OnUpdate:CASCADE,OnDelete:RESTRICT" json:"product_id"`
+	OrderID     string    `gorm:"type:uuid;not null;index" json:"order_id"`
+	ProductID   string    `gorm:"type:uuid;not null" json:"product_id"`
 	ProductName string    `gorm:"type:varchar(200);not null" json:"product_name"`
 	Quantity    int       `gorm:"not null;default:1" json:"quantity"`
 	UnitPrice   int64     `gorm:"not null" json:"unit_price"`
