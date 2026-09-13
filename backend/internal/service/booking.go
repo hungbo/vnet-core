@@ -115,7 +115,16 @@ func (s *BookingService) List(req *BookingListRequest) (*pagination.Result, erro
 	query := s.db
 
 	if p.Search != "" {
-		query = query.Where("customer_name ILIKE ? OR customer_phone ILIKE ?", "%"+p.Search+"%", "%"+p.Search+"%")
+		// Ô nhập trên trang Đặt chỗ ghi "Tìm theo tên / mã máy", nhưng chỗ này
+		// chỉ tra tên và số điện thoại — gõ đúng mã máy lại ra rỗng. Và tên
+		// khách là chữ tiếng Việt có dấu trong khi nhân viên gõ không dấu, nên
+		// ILIKE trần cũng không khớp. Tra mã máy bằng truy vấn con để không
+		// join (join làm hỏng Count ở dưới khi một dòng khớp cả hai vế).
+		tuKhoa := "%" + p.Search + "%"
+		query = query.Where(
+			"unaccent(customer_name) ILIKE unaccent(?) OR customer_phone ILIKE ? OR machine_id IN (SELECT id FROM machines WHERE machine_code ILIKE ? AND deleted_at IS NULL)",
+			tuKhoa, tuKhoa, tuKhoa,
+		)
 	}
 	if req.Status != "" {
 		query = query.Where("status = ?", req.Status)
@@ -208,15 +217,15 @@ func (s *BookingService) GetByID(id string) (*BookingResponse, error) {
 func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*BookingResponse, error) {
 	bookedFrom, err := time.Parse(time.RFC3339, req.BookedFrom)
 	if err != nil {
-		return nil, errors.New("invalid booked_from format, use RFC3339")
+		return nil, errors.New("giờ bắt đầu không đúng định dạng, phải theo RFC3339")
 	}
 	bookedTo, err := time.Parse(time.RFC3339, req.BookedTo)
 	if err != nil {
-		return nil, errors.New("invalid booked_to format, use RFC3339")
+		return nil, errors.New("giờ kết thúc không đúng định dạng, phải theo RFC3339")
 	}
 
 	if bookedTo.Before(bookedFrom) || bookedTo.Equal(bookedFrom) {
-		return nil, errors.New("booked_to must be after booked_from")
+		return nil, errors.New("giờ kết thúc phải sau giờ bắt đầu")
 	}
 
 	var existing int64
@@ -225,7 +234,7 @@ func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*Book
 			req.MachineID, bookedTo, bookedFrom).
 		Count(&existing)
 	if existing > 0 {
-		return nil, errors.New("machine already booked for this time period")
+		return nil, errors.New("máy đã có người đặt trong khung giờ này")
 	}
 
 	if err := s.checkLimits(req, bookedFrom); err != nil {
@@ -279,11 +288,11 @@ func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*Book
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&member, "id = ?", *memberID).Error; err != nil {
 			tx.Rollback()
-			return nil, errors.New("member not found")
+			return nil, errors.New("không tìm thấy hội viên")
 		}
 		if member.Balance < booking.DepositAmount {
 			tx.Rollback()
-			return nil, errors.New("insufficient balance for the deposit")
+			return nil, errors.New("số dư không đủ để đặt cọc")
 		}
 
 		balanceAfter := member.Balance - booking.DepositAmount
@@ -362,14 +371,14 @@ func (s *BookingService) Update(id string, req *UpdateBookingRequest, userID str
 	if req.BookedFrom != "" {
 		t, err := time.Parse(time.RFC3339, req.BookedFrom)
 		if err != nil {
-			return nil, errors.New("invalid booked_from format")
+			return nil, errors.New("giờ bắt đầu không đúng định dạng")
 		}
 		updates["booked_from"] = t
 	}
 	if req.BookedTo != "" {
 		t, err := time.Parse(time.RFC3339, req.BookedTo)
 		if err != nil {
-			return nil, errors.New("invalid booked_to format")
+			return nil, errors.New("giờ kết thúc không đúng định dạng")
 		}
 		updates["booked_to"] = t
 	}
@@ -468,13 +477,13 @@ func (s *BookingService) Cancel(id string) (*BookingResponse, error) {
 	}
 
 	if booking.Status == "cancelled" {
-		return nil, errors.New("booking already cancelled")
+		return nil, errors.New("lượt đặt chỗ đã bị huỷ")
 	}
 	if booking.Status == "checked_in" {
-		return nil, errors.New("cannot cancel a checked-in booking")
+		return nil, errors.New("không huỷ được lượt đặt chỗ khách đã nhận máy")
 	}
 	if booking.Status == "no_show" {
-		return nil, errors.New("cannot cancel a no-show booking")
+		return nil, errors.New("không huỷ được lượt đặt chỗ đã đánh dấu không đến")
 	}
 
 	// cancel_before_minutes (nhóm "limits"): huỷ sát giờ thì quán không kịp bán
@@ -515,7 +524,7 @@ func (s *BookingService) Cancel(id string) (*BookingResponse, error) {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			First(&member, "id = ?", *booking.MemberID).Error; err != nil {
 			tx.Rollback()
-			return nil, errors.New("member not found")
+			return nil, errors.New("không tìm thấy hội viên")
 		}
 
 		balanceAfter := member.Balance + booking.DepositAmount
@@ -587,10 +596,10 @@ func (s *BookingService) NoShow(id string) (*BookingResponse, error) {
 	}
 
 	if booking.Status == "no_show" {
-		return nil, errors.New("booking already marked as no-show")
+		return nil, errors.New("lượt đặt chỗ đã được đánh dấu không đến")
 	}
 	if booking.Status == "cancelled" {
-		return nil, errors.New("cannot mark cancelled booking as no-show")
+		return nil, errors.New("lượt đặt chỗ đã huỷ thì không đánh dấu không đến được")
 	}
 
 	result, err := s.updateStatus(id, "no_show", nil, "pending")

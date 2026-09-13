@@ -15,7 +15,7 @@
     `-menu` adds a 100-item sample menu (`cmd/seed/menu.go`) with images generated into `UPLOAD_DIR`;
     it is test data, kept behind a flag so the default seed stays production-safe
 - `admin/` — Vue 3 + Soybean Admin (Element Plus, UnoCSS, elegant-router)
-  - **Proxy**: Vite dev server proxies `/api` → `http://localhost:8080`
+  - **Proxy**: Vite dev server proxies `/api` → `http://localhost:20800`
   - **Auth route mode**: `VITE_AUTH_ROUTE_MODE=dynamic` — routes fetched from backend `GET /api/route/getUserRoutes`
   - **TWO HTTP clients — do not mix them** (biggest source of confusion in this repo):
     - `src/api/client.ts` — plain axios, `baseURL: '/api'`, unwraps to `data.data`, rejects when `code !== 0`.
@@ -39,7 +39,7 @@
 | Action | Path | Command |
 |--------|------|---------|
 | Dev (backend) | `backend/` | `go run ./cmd/server` (or `air` for hot-reload) |
-| Dev (admin) | `admin/` | `pnpm dev` (Vite on :3000) |
+| Dev (admin) | `admin/` | `pnpm dev` (Vite on :20900) |
 | Test (backend) | `backend/` | `go test ./...` |
 | Lint (backend) | `backend/` | `golangci-lint run` |
 | Migrate | `backend/` | `go run ./cmd/migrate` |
@@ -132,7 +132,7 @@ so `golangci-lint run` uses defaults.
 
 
 16. **The WebSocket handshake must accept same-origin requests.** The admin is embedded in the server binary
-    and served from the same host and port as the API, so the normal deployment — open `http://localhost:8080`
+    and served from the same host and port as the API, so the normal deployment — open `http://localhost:20800`
     — is same-origin. `originAllowed` used to string-match `ALLOWED_ORIGINS` only, so an operator writing
     `ALLOWED_ORIGINS=http://localhost` while browsing on port 8080 got a 403 on every handshake: the socket
     never connected and **every realtime feature died silently** — no error on screen, just nothing ever

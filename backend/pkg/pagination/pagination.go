@@ -32,7 +32,13 @@ const (
 	DefaultPageSize = 20
 	MaxPageSize     = 100
 
-	DefaultSort  = "id"
+	// Sắp theo created_at chứ không theo id: mọi khoá chính trong hệ thống là
+	// UUID sinh ngẫu nhiên, nên "id DESC" cho ra thứ tự vô nghĩa — bản ghi vừa
+	// tạo rơi vào trang bất kỳ và người dùng tưởng thao tác tạo đã hỏng.
+	//
+	// Bảng nào không có cột created_at thì service của nó phải tự đặt Sort
+	// trước khi gọi Apply; hiện chỉ có backup_logs (dùng started_at).
+	DefaultSort  = "created_at"
 	DefaultOrder = "desc"
 )
 

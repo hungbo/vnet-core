@@ -64,9 +64,12 @@ type SupplierResponse struct {
 }
 
 type CreateSupplierRequest struct {
-	Name     string `json:"name" binding:"required"`
-	Phone    string `json:"phone"`
-	Email    string `json:"email"`
+	Name  string `json:"name" binding:"required"`
+	Phone string `json:"phone"`
+	// omitempty vì email nhà cung cấp không bắt buộc; nhưng đã nhập thì phải
+	// đúng định dạng, nếu không tới lúc cần gửi đơn đặt hàng mới phát hiện địa
+	// chỉ sai và không có cách nào biết đúng là gì.
+	Email    string `json:"email" binding:"omitempty,email"`
 	Address  string `json:"address"`
 	IsActive *bool  `json:"is_active"`
 }
@@ -74,7 +77,7 @@ type CreateSupplierRequest struct {
 type UpdateSupplierRequest struct {
 	Name     *string `json:"name"`
 	Phone    *string `json:"phone"`
-	Email    *string `json:"email"`
+	Email    *string `json:"email" binding:"omitempty,email"`
 	Address  *string `json:"address"`
 	IsActive *bool   `json:"is_active"`
 }

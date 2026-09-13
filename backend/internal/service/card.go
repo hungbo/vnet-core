@@ -475,9 +475,12 @@ func (s *CardService) CancelCard(kind, id, actorID string) error {
 
 type SellTopupCardRequest struct {
 	MemberID string `json:"member_id" binding:"required"`
+	// Bắt buộc: đây chính là khoản tiền vào quán, và chốt ca phân biệt tiền mặt
+	// với chuyển khoản bằng đúng trường này.
+	PaymentMethod string `json:"payment_method" binding:"required,oneof=cash transfer ewallet"`
 }
 
-func (s *CardService) SellTopupCard(id, memberID, actorID string) (*model.TopupCard, error) {
+func (s *CardService) SellTopupCard(id, memberID, paymentMethod, actorID string) (*model.TopupCard, error) {
 	var card model.TopupCard
 	if err := s.db.First(&card, "id = ?", id).Error; err != nil {
 		return nil, errors.New("không tìm thấy thẻ")
@@ -496,19 +499,22 @@ func (s *CardService) SellTopupCard(id, memberID, actorID string) (*model.TopupC
 
 	now := time.Now()
 	if err := s.db.Model(&card).Updates(map[string]interface{}{
-		"sold_to": memberID,
-		"sold_at": now,
+		"sold_to":             memberID,
+		"sold_at":             now,
+		"sold_payment_method": paymentMethod,
 	}).Error; err != nil {
 		return nil, err
 	}
 	card.SoldTo = &memberID
 	card.SoldAt = &now
+	card.SoldPaymentMethod = paymentMethod
 
 	s.log("sell_card", "topup_card", id, actorID, map[string]interface{}{
-		"serial":      card.Code,
-		"member_id":   memberID,
-		"member_name": member.FullName,
-		"face_value":  card.FaceValue,
+		"serial":         card.Code,
+		"member_id":      memberID,
+		"member_name":    member.FullName,
+		"face_value":     card.FaceValue,
+		"payment_method": paymentMethod,
 	})
 	return &card, nil
 }

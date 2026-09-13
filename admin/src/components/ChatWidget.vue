@@ -2,13 +2,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElButton, ElDialog, ElForm, ElFormItem, ElInputNumber, ElMessage, ElOption, ElSelect } from 'element-plus';
 import { register } from 'vue-advanced-chat';
-register();
+import client from '@/api/client';
 import { useAuthStore } from '@/store/modules/auth';
 import { useWebSocketStore } from '@/store/modules/ws';
-import client from '@/api/client';
 import { useChatRooms } from '@/hooks/chat/useChatRooms';
 import { useChatWs } from '@/hooks/chat/useChatWs';
 import { isChatOpen } from '@/hooks/chat/chatState';
+register();
 
 const authStore = useAuthStore();
 const wsStore = useWebSocketStore();
@@ -27,20 +27,37 @@ const chatRef = ref<any>(null);
 
 // ── Composables ──
 const convs = useChatRooms(messages, currentRoomId, messagesLoaded);
-const { rooms, showNewRoomDialog, roomForm, users, saving,
-  fetchRooms, onFetchMessages, fetchMembers, handleCreateRoom,
-  deleteRoom, deleteAllRooms } = convs;
-const { wsChatHandler, wsStatusHandler, wsRoomDeleted, wsRoomsCleared, wsRoomNew, wsRoomRead, sortMessages, mapMessage } = useChatWs(
-  currentRoomId, messages, rooms, fetchRooms,
-);
+const {
+  rooms,
+  showNewRoomDialog,
+  roomForm,
+  users,
+  saving,
+  fetchRooms,
+  onFetchMessages,
+  fetchMembers,
+  handleCreateRoom,
+  deleteRoom,
+  deleteAllRooms
+} = convs;
+const {
+  wsChatHandler,
+  wsStatusHandler,
+  wsRoomDeleted,
+  wsRoomsCleared,
+  wsRoomNew,
+  wsRoomRead,
+  sortMessages,
+  mapMessage
+} = useChatWs(currentRoomId, messages, rooms, fetchRooms);
 // ── vue-advanced-chat config ──
 const autoScroll = {
   send: { new: true, newAfterScrollUp: false },
-  receive: { new: true, newAfterScrollUp: true },
+  receive: { new: true, newAfterScrollUp: true }
 };
 const chatStyles = {
   general: { color: '#333', borderStyle: '1px solid #e4e7ed' },
-  footer: { background: '#fff' },
+  footer: { background: '#fff' }
 };
 
 // ── Room actions ──
@@ -59,17 +76,30 @@ async function onSendMessage($event: any) {
   if (!content || !roomId) return;
   try {
     const postRes: any = await client.post('/chat/messages', {
-      room_id: roomId, message: content,
-      sender_type: 'admin', sender_id: currentUserId.value,
+      room_id: roomId,
+      message: content,
+      sender_type: 'admin',
+      sender_id: currentUserId.value
     });
     if (postRes?.id) {
-      messages.value = sortMessages([...messages.value, {
-        _id: postRes.id, content, senderId: currentUserId.value,
-        username: authStore.userInfo?.username ? `admin - ${authStore.userInfo.username}` : 'Admin', date: new Date().toLocaleDateString('vi-VN'),
-        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        createdAt: new Date().toISOString(), saved: true, distributed: false, seen: false,
-        disableActions: true, messageType: 'text', senderType: 'admin',
-      }]);
+      messages.value = sortMessages([
+        ...messages.value,
+        {
+          _id: postRes.id,
+          content,
+          senderId: currentUserId.value,
+          username: authStore.userInfo?.username ? `admin - ${authStore.userInfo.username}` : 'Admin',
+          date: new Date().toLocaleDateString('vi-VN'),
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          createdAt: new Date().toISOString(),
+          saved: true,
+          distributed: false,
+          seen: false,
+          disableActions: true,
+          messageType: 'text',
+          senderType: 'admin'
+        }
+      ]);
     }
   } catch {
     ElMessage.error('Gửi tin nhắn thất bại');
@@ -114,7 +144,7 @@ onBeforeUnmount(() => {
   wsStore.off('room:new', wsRoomNew);
 });
 
-watch(isChatOpen, async (open) => {
+watch(isChatOpen, async open => {
   if (open) {
     await fetchRooms();
     if (rooms.value.length > 0 && !currentRoomId.value) {
@@ -125,7 +155,7 @@ watch(isChatOpen, async (open) => {
   }
 });
 
-watch(currentRoomId, async (newId) => {
+watch(currentRoomId, async newId => {
   if (!newId) return;
   try {
     // Chỉ báo cho máy chủ. Máy chủ phát lại room:read cho MỌI thiết bị đang mở
@@ -138,7 +168,6 @@ watch(currentRoomId, async (newId) => {
   }
 });
 
-
 // The dialog was unreachable: nothing ever set showNewRoomDialog, and the
 // recipient list was never loaded, so staff could only reply to conversations
 // a customer had already opened.
@@ -146,7 +175,6 @@ async function openNewRoom() {
   await fetchMembers();
   showNewRoomDialog.value = true;
 }
-
 </script>
 
 <template>
@@ -160,14 +188,30 @@ async function openNewRoom() {
         <ElButton size="small" text @click.stop="isChatOpen = false">─</ElButton>
       </div>
     </div>
-    <vue-advanced-chat ref="chatRef" :current-user-id="currentUserId" :rooms="JSON.stringify(rooms)"
-      :messages="JSON.stringify(messages)" :messages-loaded="messagesLoaded" rooms-loaded
+    <VueAdvancedChat
+      ref="chatRef"
+      :current-user-id="currentUserId"
+      :rooms="JSON.stringify(rooms)"
+      :messages="JSON.stringify(messages)"
+      :messages-loaded="messagesLoaded"
+      rooms-loaded
       :room-actions="JSON.stringify(roomActions)"
-      :show-add-room="false" :show-search="false" :show-files="false" :show-audio="false" :show-emojis="false"
-      :show-reaction-emojis="false" :show-new-messages-divider="false" :auto-scroll="JSON.stringify(autoScroll)"
-      :username-options="JSON.stringify({ minUsers: 1, currentUser: true })" :styles="JSON.stringify(chatStyles)"
-      height="100%" :room-id="currentRoomId" @send-message="onSendMessage"
-      @fetch-messages="onFetchMessages" @room-action-handler="onRoomAction" />
+      :show-add-room="false"
+      :show-search="false"
+      :show-files="false"
+      :show-audio="false"
+      :show-emojis="false"
+      :show-reaction-emojis="false"
+      :show-new-messages-divider="false"
+      :auto-scroll="JSON.stringify(autoScroll)"
+      :username-options="JSON.stringify({ minUsers: 1, currentUser: true })"
+      :styles="JSON.stringify(chatStyles)"
+      height="100%"
+      :room-id="currentRoomId"
+      @send-message="onSendMessage"
+      @fetch-messages="onFetchMessages"
+      @room-action-handler="onRoomAction"
+    />
   </div>
 
   <!-- Dialog tạo hội thoại -->
@@ -227,5 +271,4 @@ async function openNewRoom() {
   flex: 1;
   min-height: 0;
 }
-
 </style>

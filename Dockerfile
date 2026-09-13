@@ -75,11 +75,11 @@ RUN mkdir -p /app/uploads && chown -R vnet:vnet /app
 
 USER vnet
 
-EXPOSE 8080
+EXPOSE 20800
 
 # /api/health is unauthenticated. wget comes from busybox in the base image,
 # so no extra package is needed.
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
-  CMD wget -q -O /dev/null http://127.0.0.1:8080/api/health || exit 1
+  CMD wget -q -O /dev/null http://127.0.0.1:20800/api/health || exit 1
 
 ENTRYPOINT ["/app/vnet-server"]

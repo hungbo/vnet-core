@@ -139,7 +139,9 @@ func (s *OrderService) List(params pagination.Params) ([]OrderResponse, int64, i
 
 	if params.Search != "" {
 		search := "%" + params.Search + "%"
-		query = query.Where("note ILIKE ?", search)
+		// Ghi chú đơn là tiếng Việt có dấu; nhân viên quầy gõ không dấu. Bỏ dấu
+		// cả hai vế đúng như trang Sản phẩm và Hội viên đang làm.
+		query = query.Where("unaccent(note) ILIKE unaccent(?)", search)
 	}
 
 	var total int64
@@ -613,7 +615,7 @@ func (s *OrderService) Delete(id string) error {
 // Dừng ở đơn đầu tiên bị chặn; những đơn trước đó đã xoá thật và đã ghi audit.
 func (s *OrderService) BatchDelete(ids []string) error {
 	if len(ids) == 0 {
-		return errors.New("no ids provided")
+		return errors.New("chưa chọn bản ghi nào")
 	}
 	for _, id := range ids {
 		if err := s.Delete(id); err != nil {
@@ -847,6 +849,20 @@ func (s *OrderService) settleOrder(tx *gorm.DB, order *model.Order, method, refe
 		}
 	}
 
+	// Đơn của hội viên cộng vào total_spent bất kể trả bằng gì: hạng hội viên
+	// phản ánh số tiền khách tiêu tại quán, không phải cách họ trả. Trước đây
+	// chỉ tiền mua gói cước được cộng nên hạng gần như đứng yên.
+	//
+	// Đơn đã hoàn tất không huỷ được (bảng chuyển trạng thái cho "completed" đi
+	// tới rỗng), nên không có đường nào phải trừ ngược lại.
+	if order.MemberID != nil && *order.MemberID != "" && order.FinalAmount > 0 &&
+		order.OrderType != model.OrderTypeTopup {
+		if err := tx.Model(&model.Member{}).Where("id = ?", *order.MemberID).
+			UpdateColumn("total_spent", gorm.Expr("total_spent + ?", order.FinalAmount)).Error; err != nil {
+			return err
+		}
+	}
+
 	payment := model.Payment{
 		OrderID:       order.ID,
 		PaymentMethod: method,
@@ -930,7 +946,7 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			tx.Rollback()
 			return nil, err
 		}
-		khoDaDoi, err := s.deductStockForOrder(tx, order.ID, order.OrderCode)
+		khoDaDoi, err := s.deductStockForOrder(tx, order.ID, order.OrderCode, updatedBy)
 		if err != nil {
 			tx.Rollback()
 			return nil, err
@@ -962,11 +978,19 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 		}
 
 	case "cancelled":
+		// Nhớ trạng thái CŨ trước khi ghi: tx.Model(&order).Updates(...) của
+		// GORM ghi ngược giá trị mới vào chính struct, nên ngay sau lệnh đó
+		// order.Status đã là "cancelled". Điều kiện trả kho ở dưới so với
+		// "confirmed" vì thế KHÔNG BAO GIỜ đúng — huỷ một đơn đã xác nhận không
+		// hoàn lại tồn kho, hàng bốc hơi khỏi sổ. Dựng lại được trên hệ thống
+		// thật: tồn 47 → xác nhận đơn 5 → 42 → huỷ đơn → vẫn 42.
+		trangThaiTruoc := order.Status
+
 		tx := s.db.Begin()
 		// Không khoá thì hai lệnh huỷ song song đều thấy status "confirmed" và
 		// đều gọi restoreStockForOrder — tồn kho được cộng lại hai lần, tức là
 		// sinh hàng từ hư không.
-		if err := khoaDonHang(tx, order.ID, order.Status); err != nil {
+		if err := khoaDonHang(tx, order.ID, trangThaiTruoc); err != nil {
 			tx.Rollback()
 			return nil, err
 		}
@@ -978,9 +1002,9 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			return nil, err
 		}
 		var khoDaDoi []string
-		if order.Status == "confirmed" && order.OrderType != model.OrderTypeTopup {
+		if trangThaiTruoc == "confirmed" && order.OrderType != model.OrderTypeTopup {
 			var err error
-			khoDaDoi, err = s.restoreStockForOrder(tx, order.ID, order.OrderCode)
+			khoDaDoi, err = s.restoreStockForOrder(tx, order.ID, order.OrderCode, updatedBy)
 			if err != nil {
 				tx.Rollback()
 				return nil, err
@@ -1021,6 +1045,14 @@ type itemDeductionSet struct {
 type itemStockUpdate struct {
 	productID    string
 	currentStock float64
+	// Ba trường dưới chỉ để ghi sổ kho. Nguyên liệu của món chế biến đã có bút
+	// toán "outbound" từ DeductItemsStock, còn hàng bán thẳng thì trước đây chỉ
+	// sửa mỗi con số current_stock — sổ Giao dịch tồn kho trống trơn trong khi
+	// tồn kho vẫn đổi, và kỳ kiểm kê không có gì để đối chiếu. Quán bán nước
+	// đóng chai, mì gói… tức là phần lớn hàng hoá, rơi đúng vào nhánh này.
+	tenSanPham string
+	khoTruoc   float64
+	soLuong    float64
 }
 
 // stockOp là chiều của một lượt tính kho.
@@ -1111,6 +1143,9 @@ func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, o
 				stockUpdates = append(stockUpdates, itemStockUpdate{
 					productID:    item.ProductID,
 					currentStock: conLai,
+					tenSanPham:   product.Name,
+					khoTruoc:     conLai - float64(item.Quantity),
+					soLuong:      float64(item.Quantity),
 				})
 				break
 			}
@@ -1127,6 +1162,9 @@ func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, o
 			stockUpdates = append(stockUpdates, itemStockUpdate{
 				productID:    item.ProductID,
 				currentStock: newStock,
+				tenSanPham:   product.Name,
+				khoTruoc:     conLai,
+				soLuong:      float64(item.Quantity),
 			})
 
 		default:
@@ -1163,7 +1201,41 @@ func (s *OrderService) computeDeductions(tx *gorm.DB, items []model.OrderItem, o
 
 // Trả về id của mọi sản phẩm có tồn kho vừa đổi — cả hàng bán thẳng lẫn nguyên
 // liệu — để người gọi phát stock:changed SAU khi commit.
-func (s *OrderService) deductStockForOrder(tx *gorm.DB, orderID string, orderCode string) ([]string, error) {
+// ghiSoKhoHangBanThang tạo bút toán cho phần tồn kho của hàng bán thẳng.
+//
+// Nguyên liệu của món chế biến đã được DeductItemsStock ghi sổ; hàng bán thẳng
+// thì trước đây chỉ đổi mỗi con số current_stock, nên trang "Giao dịch tồn kho"
+// trống trơn dù kho vẫn chạy, và kỳ kiểm kê không có gì để truy. Bút toán ở đây
+// dùng cùng kiểu "outbound"/"inbound" và cùng cách mô tả với nhánh nguyên liệu.
+func ghiSoKhoHangBanThang(tx *gorm.DB, u itemStockUpdate, loai, orderID, orderCode, actorID string) error {
+	if u.soLuong == 0 {
+		return nil
+	}
+	productID := u.productID
+	referenceID := orderID
+	moTa := fmt.Sprintf("Xuất kho theo đơn %s", orderCode)
+	if loai == "inbound" {
+		moTa = fmt.Sprintf("Hoàn kho do huỷ đơn %s", orderCode)
+	}
+	bt := model.StockTransaction{
+		ProductID:       &productID,
+		TransactionType: loai,
+		Quantity:        u.soLuong,
+		StockBefore:     u.khoTruoc,
+		StockAfter:      u.currentStock,
+		ReferenceID:     &referenceID,
+		Description:     moTa,
+	}
+	// Cột "Người thực hiện" của sổ kho: phiếu nhập/xuất thủ công có tên nhân
+	// viên, còn bút toán sinh từ đơn hàng thì bỏ trống — sổ không trả lời được
+	// "ai bán chỗ hàng này".
+	if id := uuidRongThanhNil(&actorID); id != nil {
+		bt.CreatedBy = id
+	}
+	return tx.Create(&bt).Error
+}
+
+func (s *OrderService) deductStockForOrder(tx *gorm.DB, orderID, orderCode, actorID string) ([]string, error) {
 	items := s.loadOrderItems(orderID)
 	deductions, stockUpdates, err := s.computeDeductions(tx, items, stockOpDeduct)
 	if err != nil {
@@ -1184,13 +1256,16 @@ func (s *OrderService) deductStockForOrder(tx *gorm.DB, orderID string, orderCod
 		if err := tx.Model(&model.Product{}).Where("id = ?", u.productID).Update("current_stock", u.currentStock).Error; err != nil {
 			return nil, err
 		}
+		if err := ghiSoKhoHangBanThang(tx, u, "outbound", orderID, orderCode, actorID); err != nil {
+			return nil, err
+		}
 		daDoi = append(daDoi, u.productID)
 	}
 
 	return daDoi, nil
 }
 
-func (s *OrderService) restoreStockForOrder(tx *gorm.DB, orderID string, orderCode string) ([]string, error) {
+func (s *OrderService) restoreStockForOrder(tx *gorm.DB, orderID, orderCode, actorID string) ([]string, error) {
 	items := s.loadOrderItems(orderID)
 	deductions, stockUpdates, err := s.computeDeductions(tx, items, stockOpRestore)
 	if err != nil {
@@ -1212,6 +1287,9 @@ func (s *OrderService) restoreStockForOrder(tx *gorm.DB, orderID string, orderCo
 	// giá trị rồi ghi đè nhau — đúng lỗi mà chiều trừ đã chống bằng FOR UPDATE.
 	for _, u := range stockUpdates {
 		if err := tx.Model(&model.Product{}).Where("id = ?", u.productID).Update("current_stock", u.currentStock).Error; err != nil {
+			return nil, err
+		}
+		if err := ghiSoKhoHangBanThang(tx, u, "inbound", orderID, orderCode, actorID); err != nil {
 			return nil, err
 		}
 		daDoi = append(daDoi, u.productID)
@@ -1370,7 +1448,9 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 	var khoDaDoi []string
 	if order.Status == "pending" {
 		var err error
-		khoDaDoi, err = s.deductStockForOrder(tx, order.ID, order.OrderCode)
+		// Pay không nhận người thực hiện (settleOrder ngay dưới cũng truyền ""),
+		// nên bút toán kho ở nhánh này chưa có tên nhân viên.
+		khoDaDoi, err = s.deductStockForOrder(tx, order.ID, order.OrderCode, "")
 		if err != nil {
 			tx.Rollback()
 			return nil, err

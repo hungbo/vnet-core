@@ -16,13 +16,25 @@ const search = ref('');
 const typeFilter = ref('');
 const dateRange = ref<any>(null);
 
+// Backend ghi ra 12 loại giao dịch; bản đồ này từng chỉ có 5, nên những loại
+// còn lại rơi vào nhánh `|| type` và hiện NGUYÊN KHOÁ THÔ cho nhân viên đọc —
+// bảng sổ sách hiện "attendance_bonus" thay vì "Thưởng điểm danh".
 function typeLabel(type: string) {
   const map: Record<string, string> = {
     topup: $t('vnetPages.transactions.topup'),
+    topup_bonus: $t('vnetPages.transactions.topupBonus'),
+    topup_card: $t('vnetPages.transactions.topupCard'),
     session_fee: $t('vnetPages.transactions.sessionFee'),
     refund: $t('vnetPages.transactions.refund'),
+    refund_bonus: $t('vnetPages.transactions.refundBonus'),
     cancel: $t('vnetPages.transactions.cancel'),
-    combo_purchase: $t('vnetPages.transactions.comboPurchase')
+    combo_purchase: $t('vnetPages.transactions.comboPurchase'),
+    attendance_bonus: $t('vnetPages.transactions.attendanceBonus'),
+    booking_deposit: $t('vnetPages.transactions.bookingDeposit'),
+    deposit_refund: $t('vnetPages.transactions.depositRefund'),
+    order_payment: $t('vnetPages.transactions.orderPayment'),
+    lucky_spin_balance: $t('vnetPages.transactions.luckySpinBalance'),
+    lucky_spin_bonus: $t('vnetPages.transactions.luckySpinBonus')
   };
   return map[type] || type;
 }
@@ -110,6 +122,18 @@ onMounted(() => {
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.transactions.balanceAfter')" width="130" align="right">
           <template #default="{ row }">{{ formatPrice(row.balance_after) }}</template>
+        </ElTableColumn>
+        <!--
+ Thưởng điểm danh, phí chơi trừ vào khuyến mãi, vòng quay… chỉ động
+             tới số dư khuyến mãi. Thiếu hai cột này thì dòng "+25.000₫" nằm
+             cạnh "số dư trước = số dư sau" và sổ sách không đối chiếu được —
+             API đã trả sẵn bonus_before/bonus_after từ trước. 
+-->
+        <ElTableColumn :label="$t('vnetPages.transactions.bonusBefore')" width="130" align="right">
+          <template #default="{ row }">{{ formatPrice(row.bonus_before) }}</template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.transactions.bonusAfter')" width="130" align="right">
+          <template #default="{ row }">{{ formatPrice(row.bonus_after) }}</template>
         </ElTableColumn>
         <ElTableColumn prop="payment_method" :label="$t('vnetPages.transactions.paymentMethod')" width="110" />
         <ElTableColumn

@@ -2,10 +2,13 @@ package service
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/vnet/core/internal/model"
 	"gorm.io/gorm"
+
+	"github.com/vnet/core/pkg/utils"
 )
 
 type ReportService struct {
@@ -104,26 +107,98 @@ type ReportParams struct {
 	Limit    int    `form:"limit"`
 }
 
+// donHangThuTien lọc ra những đơn thật sự mang tiền vào quầy, dùng chung cho
+// báo cáo ngày và báo cáo tháng.
+//
+//   - order_type = 'topup' là phiếu khách bấm nạp tiền từ máy trạm. Khi thanh
+//     toán xong nó đồng thời sinh một dòng ví 'topup', nên đếm cả hai là đếm
+//     một khoản tiền hai lần.
+//   - payment_method = 'balance' là trả bằng số dư — tiền đã tính lúc nạp.
+//   - payment_method = 'gift_card' là thẻ quà tặng do quán phát, không có tiền
+//     vào lúc phát cũng như lúc dùng.
+const donHangThuTien = "order_type <> 'topup' AND payment_method = 'cash'"
+
 type txRevenueRow struct {
 	Date   string
 	Amount int64
 	Count  int64
 }
 
+// Doanh thu ghi nhận theo mô hình TIỀN VÀO QUÁN: tính đúng một lần, tại lúc
+// tiền thật sự đi từ tay khách vào quầy. Khách tiêu từ ví sau đó KHÔNG tính
+// lại — số tiền ấy đã được ghi nhận từ lúc nạp.
+//
+// Bản cũ cộng thẳng SUM(amount) trên một danh sách loại giao dịch, mà sổ ví ghi
+// khoản tiêu là số ÂM. Hệ quả: tiền giờ chơi và tiền bán gói cước — hai nguồn
+// thu chính của quán — bị TRỪ khỏi doanh thu, còn tiền nạp thì bị đếm hai lần
+// cùng với đơn hàng trả bằng số dư.
+//
+// Loại trừ có chủ đích:
+//   - session_fee, order_payment, combo_purchase trả bằng số dư: khách tiêu
+//     tiền đã nạp, đã tính rồi.
+//   - topup_bonus, attendance_bonus, lucky_spin_balance, lucky_spin_bonus:
+//     quán TẶNG số dư, không có đồng nào đi vào két.
+//   - booking_deposit, deposit_refund: tiền di chuyển trong ví, không ra vào quán.
+//   - adjustment: điều chỉnh kiểm kê kho, không phải tiền khách.
+//   - refund_bonus: thu lại số dư tặng, cũng không có tiền thật đi ra.
+//
+// topup_card KHÔNG có mặt ở đây: tiền mua thẻ vào quán lúc BÁN, và khoản đó
+// nay được đếm riêng bằng thuTienBanThe. Đếm cả lúc bán lẫn lúc nạp là đếm hai
+// lần cùng một khoản.
 func (s *ReportService) txRevenueQuery(dateFrom, dateTo string, dateExpr string) ([]txRevenueRow, error) {
 	var results []txRevenueRow
 	query := s.db.Table("member_transactions").
-		Select(dateExpr + " as date, COALESCE(SUM(amount), 0) as amount, COUNT(*) as count").
-		Where("transaction_type IN ('topup', 'topup_bonus', 'session_fee', 'combo_purchase', 'refund', 'refund_bonus')")
+		// Gói cước trả bằng tiền mặt là tiền vào quầy, nhưng sổ ghi nó là số âm
+		// (số dư không đổi, tiền mặt mới là thứ đổi) nên phải lật dấu.
+		Select(dateExpr + " as date, COALESCE(SUM(CASE WHEN transaction_type = 'combo_purchase' THEN -amount ELSE amount END), 0) as amount, COUNT(*) as count").
+		// Ngoặc ngoài là bắt buộc: AND bám chặt hơn OR, nên thiếu nó thì bộ lọc
+		// ngày ghép vào sau chỉ áp cho vế cuối, và báo cáo một ngày sẽ cộng cả
+		// tiền nạp của mọi ngày khác.
+		Where("(transaction_type IN ('topup', 'refund') OR (transaction_type = 'combo_purchase' AND payment_method = 'cash'))")
 
+	// Mọi mốc ngày của báo cáo neo theo giờ Việt Nam. Bản cũ dùng time.Parse —
+	// tức nửa đêm UTC, đúng 07:00 giờ ta — nên lọc "hôm nay → hôm nay" cắt mất
+	// toàn bộ ca đêm 00:00–07:00 (giờ đông khách nhất của quán net) và lại cộng
+	// nhầm 7 tiếng đầu của ngày kế tiếp. Cùng khuôn với ListTransactions bên dưới.
 	if dateFrom != "" {
-		if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
-			query = query.Where("created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", dateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if dateTo != "" {
-		if t, err := time.Parse("2006-01-02", dateTo); err == nil {
-			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", dateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at <= ?", utils.EndOfDay(t))
+		}
+	}
+
+	query = query.Group("date").Order("date asc")
+	if err := query.Find(&results).Error; err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+// thuTienBanThe cộng mệnh giá những thẻ nạp đã bán, theo NGÀY BÁN.
+//
+// Bán thẻ là lúc tiền đi từ tay khách vào quầy, nên đây mới là thời điểm ghi
+// nhận. Thẻ đã bán mà khách chưa nạp vẫn tính — tiền đã vào két rồi. Thẻ phát
+// làm quà (không qua màn hình Bán) không có sold_at nên không lọt vào đây.
+//
+// Chỉ đếm thẻ chưa bị huỷ: huỷ thẻ là hoàn lại giao dịch bán.
+func (s *ReportService) thuTienBanThe(dateFrom, dateTo string, dateExpr string) ([]txRevenueRow, error) {
+	var results []txRevenueRow
+	query := s.db.Table("topup_cards").
+		Select(strings.ReplaceAll(dateExpr, "created_at", "sold_at") + " as date, COALESCE(SUM(face_value), 0) as amount, COUNT(*) as count").
+		Where("sold_at IS NOT NULL AND status <> 'cancelled' AND deleted_at IS NULL")
+
+	if dateFrom != "" {
+		if t, err := time.ParseInLocation("2006-01-02", dateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("sold_at >= ?", utils.StartOfDay(t))
+		}
+	}
+	if dateTo != "" {
+		if t, err := time.ParseInLocation("2006-01-02", dateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("sold_at <= ?", utils.EndOfDay(t))
 		}
 	}
 
@@ -138,16 +213,17 @@ func (s *ReportService) DailyRevenue(dateFrom, dateTo string) ([]DailyRevenueRow
 	var orderResults []DailyRevenueRow
 	orderQuery := s.db.Model(&model.Order{}).
 		Select("DATE(created_at) as date, COUNT(*) as total_orders, COALESCE(SUM(final_amount), 0) as revenue, COALESCE(SUM(discount_amount), 0) as discount").
-		Where("status = ?", "completed")
+		Where("status = ?", "completed").
+		Where(donHangThuTien)
 
 	if dateFrom != "" {
-		if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
-			orderQuery = orderQuery.Where("created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", dateFrom, utils.VietnamLocation()); err == nil {
+			orderQuery = orderQuery.Where("created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if dateTo != "" {
-		if t, err := time.Parse("2006-01-02", dateTo); err == nil {
-			orderQuery = orderQuery.Where("created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", dateTo, utils.VietnamLocation()); err == nil {
+			orderQuery = orderQuery.Where("created_at <= ?", utils.EndOfDay(t))
 		}
 	}
 	orderQuery = orderQuery.Group("DATE(created_at)").Order("date asc")
@@ -159,6 +235,12 @@ func (s *ReportService) DailyRevenue(dateFrom, dateTo string) ([]DailyRevenueRow
 	if err != nil {
 		return nil, err
 	}
+
+	theResults, err := s.thuTienBanThe(dateFrom, dateTo, "DATE(created_at)")
+	if err != nil {
+		return nil, err
+	}
+	txResults = append(txResults, theResults...)
 
 	dateMap := make(map[string]*DailyRevenueRow)
 	for i := range orderResults {
@@ -185,7 +267,8 @@ func (s *ReportService) MonthlyRevenue(year, month int) ([]MonthlyRevenueRow, er
 	var orderResults []MonthlyRevenueRow
 	orderQuery := s.db.Model(&model.Order{}).
 		Select("TO_CHAR(created_at, 'YYYY-MM') as month, COUNT(*) as total_orders, COALESCE(SUM(final_amount), 0) as revenue, COALESCE(SUM(discount_amount), 0) as discount").
-		Where("status = ?", "completed")
+		Where("status = ?", "completed").
+		Where(donHangThuTien)
 
 	if year > 0 {
 		orderQuery = orderQuery.Where("EXTRACT(YEAR FROM created_at) = ?", year)
@@ -212,6 +295,12 @@ func (s *ReportService) MonthlyRevenue(year, month int) ([]MonthlyRevenueRow, er
 	if err != nil {
 		return nil, err
 	}
+
+	theResults, err := s.thuTienBanThe(dateFrom, dateTo, "TO_CHAR(created_at, 'YYYY-MM')")
+	if err != nil {
+		return nil, err
+	}
+	txResults = append(txResults, theResults...)
 
 	monthMap := make(map[string]*MonthlyRevenueRow)
 	for i := range orderResults {
@@ -247,13 +336,13 @@ func (s *ReportService) ByMember(params ReportParams) ([]ByMemberRow, error) {
 		Where("member_id IS NOT NULL AND status = ?", "completed")
 
 	if params.DateFrom != "" {
-		if t, err := time.Parse("2006-01-02", params.DateFrom); err == nil {
-			orderQuery = orderQuery.Where("created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", params.DateFrom, utils.VietnamLocation()); err == nil {
+			orderQuery = orderQuery.Where("created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if params.DateTo != "" {
-		if t, err := time.Parse("2006-01-02", params.DateTo); err == nil {
-			orderQuery = orderQuery.Where("created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", params.DateTo, utils.VietnamLocation()); err == nil {
+			orderQuery = orderQuery.Where("created_at <= ?", utils.EndOfDay(t))
 		}
 	}
 	orderQuery = orderQuery.Group("member_id").Order("total_spent desc")
@@ -270,13 +359,13 @@ func (s *ReportService) ByMember(params ReportParams) ([]ByMemberRow, error) {
 		Where("transaction_type IN ('topup', 'session_fee') AND member_id IS NOT NULL")
 
 	if params.DateFrom != "" {
-		if t, err := time.Parse("2006-01-02", params.DateFrom); err == nil {
-			txQuery = txQuery.Where("created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", params.DateFrom, utils.VietnamLocation()); err == nil {
+			txQuery = txQuery.Where("created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if params.DateTo != "" {
-		if t, err := time.Parse("2006-01-02", params.DateTo); err == nil {
-			txQuery = txQuery.Where("created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", params.DateTo, utils.VietnamLocation()); err == nil {
+			txQuery = txQuery.Where("created_at <= ?", utils.EndOfDay(t))
 		}
 	}
 	txQuery = txQuery.Group("member_id")
@@ -326,13 +415,13 @@ func (s *ReportService) ByMachine(params ReportParams) ([]ByMachineRow, error) {
 		Where("ended_at IS NOT NULL")
 
 	if params.DateFrom != "" {
-		if t, err := time.Parse("2006-01-02", params.DateFrom); err == nil {
-			query = query.Where("started_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", params.DateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("started_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if params.DateTo != "" {
-		if t, err := time.Parse("2006-01-02", params.DateTo); err == nil {
-			query = query.Where("started_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", params.DateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("started_at <= ?", utils.EndOfDay(t))
 		}
 	}
 	query = query.Group("machine_id").Order("total_sales desc")
@@ -366,13 +455,13 @@ func (s *ReportService) ByEmployee(params ReportParams) ([]ByEmployeeRow, error)
 		Where("created_by IS NOT NULL AND status = ?", "completed")
 
 	if params.DateFrom != "" {
-		if t, err := time.Parse("2006-01-02", params.DateFrom); err == nil {
-			query = query.Where("created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", params.DateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if params.DateTo != "" {
-		if t, err := time.Parse("2006-01-02", params.DateTo); err == nil {
-			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", params.DateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at <= ?", utils.EndOfDay(t))
 		}
 	}
 	query = query.Group("created_by").Order("total_sales desc")
@@ -398,20 +487,26 @@ func (s *ReportService) ByEmployee(params ReportParams) ([]ByEmployeeRow, error)
 func (s *ReportService) TopProducts(params ReportParams) ([]TopProductRow, error) {
 	var results []TopProductRow
 
+	// Chỉ đếm đơn ĐÃ HOÀN TẤT, giống mọi báo cáo doanh thu khác trong file này.
+	// Bản cũ gộp cả đơn pending/confirmed/cancelled: một đơn nháp 999 gói mì và
+	// mấy đơn đã huỷ đủ sức đẩy "món bán chạy" lên 15 triệu trong khi doanh thu
+	// thật của ngày hôm đó là 216 nghìn — số dùng để quyết định nhập hàng.
 	query := s.db.Model(&model.OrderItem{}).
-		Select("product_id, product_name, SUM(quantity) as quantity, COALESCE(SUM(subtotal), 0) as total_sales")
+		Select("order_items.product_id, order_items.product_name, SUM(order_items.quantity) as quantity, COALESCE(SUM(order_items.subtotal), 0) as total_sales").
+		Joins("JOIN orders ON orders.id = order_items.order_id").
+		Where("orders.status = ?", "completed")
 
 	if params.DateFrom != "" {
-		if t, err := time.Parse("2006-01-02", params.DateFrom); err == nil {
-			query = query.Where("created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", params.DateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("order_items.created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if params.DateTo != "" {
-		if t, err := time.Parse("2006-01-02", params.DateTo); err == nil {
-			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", params.DateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("order_items.created_at <= ?", utils.EndOfDay(t))
 		}
 	}
-	query = query.Group("product_id, product_name").Order("total_sales desc")
+	query = query.Group("order_items.product_id, order_items.product_name").Order("total_sales desc")
 
 	if params.Limit > 0 {
 		query = query.Limit(params.Limit)
@@ -433,13 +528,13 @@ func (s *ReportService) PromotionUsage(params ReportParams) ([]PromotionUsageRow
 		Where("discount_amount > 0 AND status = ?", "completed")
 
 	if params.DateFrom != "" {
-		if t, err := time.Parse("2006-01-02", params.DateFrom); err == nil {
-			query = query.Where("created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", params.DateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if params.DateTo != "" {
-		if t, err := time.Parse("2006-01-02", params.DateTo); err == nil {
-			query = query.Where("created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", params.DateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at <= ?", utils.EndOfDay(t))
 		}
 	}
 	query = query.Group("promotion_id").Order("usage_count desc")
@@ -483,14 +578,19 @@ func (s *ReportService) ListTransactions(params *TransactionListParams) ([]Trans
 		Joins("LEFT JOIN members ON members.id = member_transactions.member_id").
 		Joins("LEFT JOIN users ON users.id = member_transactions.created_by::uuid")
 
+	// time.Parse cho ra mốc UTC, còn created_at lưu theo giờ Việt Nam (+7): lọc
+	// "từ 13/09 đến 13/09" thành ">= 13/09 00:00 UTC" tức 07:00 giờ VN, nên mọi
+	// giao dịch rạng sáng — ca đêm của quán net, đúng khung đông khách nhất —
+	// biến mất khỏi chính ngày của nó, còn tối hôm trước lại lọt vào.
+	// StartOfDay/EndOfDay đã neo sẵn vào Asia/Ho_Chi_Minh.
 	if params.DateFrom != "" {
-		if t, err := time.Parse("2006-01-02", params.DateFrom); err == nil {
-			query = query.Where("member_transactions.created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", params.DateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("member_transactions.created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if params.DateTo != "" {
-		if t, err := time.Parse("2006-01-02", params.DateTo); err == nil {
-			query = query.Where("member_transactions.created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", params.DateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("member_transactions.created_at <= ?", utils.EndOfDay(t))
 		}
 	}
 	if params.TransactionType != "" {
@@ -498,7 +598,12 @@ func (s *ReportService) ListTransactions(params *TransactionListParams) ([]Trans
 	}
 	if params.Search != "" {
 		search := "%" + params.Search + "%"
-		query = query.Where("members.full_name ILIKE ? OR members.phone ILIKE ? OR members.username ILIKE ?", search, search, search)
+		// Bỏ dấu khi so khớp: nhân viên gõ "Tran Thi" phải ra "Trần Thị Bích",
+		// giống ô tìm ở trang Hội viên.
+		query = query.Where(
+			"unaccent(members.full_name) ILIKE unaccent(?) OR members.phone ILIKE ? OR unaccent(members.username) ILIKE unaccent(?)",
+			search, search, search,
+		)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

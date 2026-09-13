@@ -31,10 +31,11 @@ export function fetchGetUserList(params?: Api.SystemManage.UserSearchParams) {
 }
 
 /** get menu list */
-export function fetchGetMenuList() {
+export function fetchGetMenuList(params?: Api.Common.CommonSearchParams) {
   return request<Api.SystemManage.MenuList>({
     url: '/systemManage/getMenuList/v2',
-    method: 'get'
+    method: 'get',
+    params
   });
 }
 

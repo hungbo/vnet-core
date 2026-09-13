@@ -2,13 +2,14 @@ package service
 
 import (
 	"encoding/json"
-	stdlog "log"
 	"fmt"
+	stdlog "log"
 	"strings"
 	"time"
 
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
+	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -66,14 +67,17 @@ func (s *AuditService) List(params pagination.Params, filters AuditLogParams) ([
 	if filters.UserID != "" {
 		query = query.Where("audit_logs.user_id = ?", filters.UserID)
 	}
+	// Mốc ngày neo theo giờ Việt Nam, cùng khuôn với report.go và
+	// ListTransactions. Dùng time.Parse là nửa đêm UTC — đúng 07:00 giờ ta —
+	// nên lọc "hôm nay → hôm nay" cắt mất mọi việc làm trong ca đêm.
 	if filters.DateFrom != "" {
-		if t, err := time.Parse("2006-01-02", filters.DateFrom); err == nil {
-			query = query.Where("audit_logs.created_at >= ?", t)
+		if t, err := time.ParseInLocation("2006-01-02", filters.DateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("audit_logs.created_at >= ?", utils.StartOfDay(t))
 		}
 	}
 	if filters.DateTo != "" {
-		if t, err := time.Parse("2006-01-02", filters.DateTo); err == nil {
-			query = query.Where("audit_logs.created_at <= ?", t.Add(24*time.Hour))
+		if t, err := time.ParseInLocation("2006-01-02", filters.DateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("audit_logs.created_at <= ?", utils.EndOfDay(t))
 		}
 	}
 
@@ -109,7 +113,12 @@ func optionalUUID(v string) *string {
 }
 
 func (s *AuditService) Log(req *LogAuditRequest) error {
-	metadata := ""
+	// Cột metadata là jsonb: chuỗi rỗng KHÔNG phải JSON hợp lệ nên PostgreSQL
+	// từ chối cả dòng nhật ký ("invalid input syntax for type json"). Chỗ gọi
+	// không kèm metadata — đổi mật khẩu là ví dụ duy nhất hiện nay — vì thế
+	// chưa bao giờ ghi được vào nhật ký, chỉ để lại một dòng cảnh báo ở log
+	// máy chủ mà không ai đọc.
+	metadata := "{}"
 	if req.Metadata != nil {
 		metadata = toString(req.Metadata)
 	}
@@ -186,7 +195,9 @@ func buildDescription(action, entityType string, metadata interface{}) string {
 		return fmt.Sprintf("Cập nhật trạng thái %s", entityLabel)
 
 	case "start_session":
-		return fmt.Sprintf("Bắt đầu phiên chơi %s", entityLabel)
+		// Đối tượng của việc này luôn là machine_session, mà nhãn của nó cũng là
+		// "phiên chơi" — ghép thêm vào thành "Bắt đầu phiên chơi phiên chơi".
+		return "Bắt đầu phiên chơi"
 
 	case "end_session":
 		cost := extractAmount(meta)
@@ -241,6 +252,16 @@ func entityLabel(entityType string) string {
 		"role":              "vai trò",
 		"chat_room":         "phòng",
 		"chat_message":      "tin nhắn",
+
+		// Các đối tượng dưới đây cũng đang hiện tên bảng thô trong câu mô tả.
+		"app_update":      "bản cập nhật máy khách",
+		"website_rule":    "luật chặn web",
+		"topup_card":      "thẻ nạp",
+		"inventory_count": "phiếu kiểm kê",
+		"notification":    "thông báo",
+		"pricing":         "bảng giá",
+		"order_item":      "món trong đơn",
+		"printer":         "máy in",
 	}
 	if label, ok := labels[entityType]; ok {
 		return label
@@ -280,6 +301,40 @@ func actionLabel(action string) string {
 		"create_room":     "Tạo phòng",
 		"send_message":    "Gửi tin nhắn",
 		"mark_read":       "Đánh dấu đã đọc",
+
+		// Những hành động dưới đây từng lọt nguyên tên hàm ra nhật ký của người
+		// trực: "publish_app_update app_update", "reset_password hội viên"…
+		//
+		// Nhãn chỉ mang ĐỘNG TỪ, vì câu mô tả được ghép theo khuôn
+		// "<hành động> <đối tượng>" — nhãn nào tự kèm danh từ sẽ thành câu lặp
+		// kiểu "Công bố bản cập nhật bản cập nhật máy khách".
+		"attendance_checkin":     "Điểm danh",
+		"batch_create":           "Tạo hàng loạt",
+		"cancel_card":            "Huỷ",
+		"open_inventory_count":   "Mở",
+		"commit_inventory_count": "Chốt",
+		"cancel_inventory_count": "Huỷ",
+		"create_machine_price":   "Tạo",
+		"create_website_rule":    "Tạo",
+		"update_website_rule":    "Sửa",
+		"delete_website_rule":    "Xoá",
+		"set_website_schedules":  "Đặt lịch cho",
+		"set_website_groups":     "Đặt phạm vi máy cho",
+		"publish_app_update":     "Công bố",
+		"set_app_update_active":  "Bật/tắt",
+		"delete_app_update":      "Xoá",
+		"dispatch":               "Gửi",
+		"generate_topup_cards":   "Phát hành",
+		"redeem_topup_card":      "Dùng",
+		"redeem_failed":          "Nhập sai mã",
+		"reset_password":         "Đặt lại mật khẩu",
+		"service_feedback":       "Đánh giá dịch vụ",
+		"create_topup_order":     "Tạo đơn nạp tiền",
+		"refresh_tiers":          "Tính lại hạng",
+		"update_permissions":     "Cập nhật quyền",
+		"update_item_status":     "Cập nhật trạng thái",
+		"set_printer_products":   "Gán món cho",
+		"curfew_enforced":        "Cưỡng chế",
 	}
 	if label, ok := labels[action]; ok {
 		return label

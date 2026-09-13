@@ -294,7 +294,7 @@ func (h *MemberHandler) GetCombos(c *gin.Context) {
 // @Router /member-groups [get]
 // @Security BearerAuth
 func (h *MemberHandler) ListGroups(c *gin.Context) {
-	groups, err := h.svc.GetGroups()
+	groups, err := h.svc.GetGroups(c.Query("search"))
 	if err != nil {
 		response.InternalError(c, "Failed to fetch groups")
 		return

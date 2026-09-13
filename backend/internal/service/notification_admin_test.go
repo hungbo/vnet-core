@@ -52,3 +52,22 @@ func TestNotificationAdminService_Dispatch_NoMembersIsNoop(t *testing.T) {
 	assert.Equal(t, 0, count)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// Bấm Gửi lần hai trên cùng một thông báo từng nhân đôi hộp thư của mọi hội
+// viên. Người đã có dòng trong sổ người nhận phải bị loại ngay từ câu truy vấn.
+func TestNotificationAdminService_Dispatch_SkipsAlreadySent(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewNotificationAdminService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "notifications"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "title", "content"}).AddRow("n1", "T", "B"))
+	mock.ExpectQuery(`SELECT "id" FROM "members" WHERE \(NOT EXISTS \(SELECT 1 FROM notification_recipients nr WHERE nr\.notification_id = \$1 AND nr\.recipient_id = members\.id\)\)`).
+		WithArgs("n1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	count, err := svc.Dispatch("n1")
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

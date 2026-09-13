@@ -69,7 +69,7 @@ type setActiveRequest struct {
 func (h *AppUpdateHandler) SetActive(c *gin.Context) {
 	var req setActiveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	if err := h.svc.SetActive(c.Param("id"), req.IsActive, middleware.GetUserID(c)); err != nil {

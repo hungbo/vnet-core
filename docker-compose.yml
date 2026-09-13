@@ -4,7 +4,7 @@
 #   # edit .env: DB_PASSWORD, JWT_SECRET, ALLOWED_ORIGINS
 #   docker compose up -d --build
 #
-# The admin UI is embedded in the server binary, so http://<host>:8080 serves
+# The admin UI is embedded in the server binary, so http://<host>:20800 serves
 # both the interface and the API. No separate web server is involved.
 #
 # Redis is intentionally absent: internal/config declares Redis settings, but
@@ -71,13 +71,13 @@ services:
       # same-origin, so this matters only for other clients.
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
 
-      SERVER_PORT: "8080"
+      SERVER_PORT: "20800"
       UPLOAD_DIR: /app/uploads
       HARDWARE_HISTORY_DAYS: ${HARDWARE_HISTORY_DAYS:-7}
     volumes:
       - uploads:/app/uploads
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_PORT:-20800}:20800"
 
   # --------------------------------------------------------------------------
   # One-shot maintenance commands. They are behind a profile so `up` never runs

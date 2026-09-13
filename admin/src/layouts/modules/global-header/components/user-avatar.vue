@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue';
 import type { VNode } from 'vue';
 import { ElMessage } from 'element-plus';
-import { useAuthStore } from '@/store/modules/auth';
 import { request } from '@/service/request';
+import { useAuthStore } from '@/store/modules/auth';
 import { useRouterPush } from '@/hooks/common/router';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { $t } from '@/locales';
@@ -18,7 +18,10 @@ function loginOrRegister() {
   toLogin();
 }
 
-type DropdownKey = 'user-center' | 'change-password' | 'logout';
+// 'user-center' đã bỏ khỏi menu: views/user-center/index.vue chỉ render
+// <LookForward /> — một trang trống ghi "Sắp ra mắt". Giữ lại khoá trong kiểu
+// này thì nhánh xử lý bên dưới cũng phải giữ, mà không còn đường nào gọi tới.
+type DropdownKey = 'change-password' | 'logout';
 
 type DropdownOption = {
   key: DropdownKey;
@@ -28,11 +31,6 @@ type DropdownOption = {
 
 const options = computed(() => {
   const opts: DropdownOption[] = [
-    {
-      label: $t('common.userCenter'),
-      key: 'user-center',
-      icon: SvgIconVNode({ icon: 'ph:user-circle', fontSize: 18 })
-    },
     {
       label: $t('common.changePassword'),
       key: 'change-password',

@@ -3,10 +3,14 @@ package service
 import (
 	"testing"
 
+	"bytes"
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
+	"net/http"
+	"net/http/httptest"
 )
 
 func TestProductService_List_All(t *testing.T) {
@@ -99,6 +103,11 @@ func TestProductService_Create(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
+	// Danh mục nay được kiểm tồn tại trước khi ghi (cột category_id không có
+	// khoá ngoại nên mã sai vẫn lưu được).
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "categories" WHERE id = \$1`).
+		WithArgs("cat1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "products"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
@@ -123,6 +132,9 @@ func TestProductService_Create_WithCurrentStock(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
 
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "categories" WHERE id = \$1`).
+		WithArgs("cat1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`INSERT INTO "products"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
@@ -249,5 +261,82 @@ func TestProductService_Delete_Success(t *testing.T) {
 
 	err := svc.Delete("p1")
 	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Bỏ trống ô danh mục phải ghi NULL, không phải chuỗi rỗng.
+//
+// Ô chọn trên trang quản trị gửi "" khi người dùng không chọn hoặc xoá lựa
+// chọn. category_id là cột uuid cho phép rỗng và PostgreSQL từ chối "" — lỗi
+// thô `invalid input syntax for type uuid: ""` từng lọt thẳng ra người dùng ở
+// cả đường tạo lẫn đường sửa sản phẩm. Đây là lần thứ ba gặp cùng bẫy này
+// (nhóm của máy, danh mục cha, rồi danh mục của sản phẩm) nên dùng chung
+// uuidRongThanhNil.
+func TestUuidRongThanhNil(t *testing.T) {
+	rong := ""
+	trang := "   "
+	that := "550e8400-e29b-41d4-a716-446655440000"
+
+	assert.Nil(t, uuidRongThanhNil(nil))
+	assert.Nil(t, uuidRongThanhNil(&rong), "chuỗi rỗng phải thành NULL")
+	assert.Nil(t, uuidRongThanhNil(&trang), "chuỗi toàn khoảng trắng phải thành NULL")
+	assert.Equal(t, &that, uuidRongThanhNil(&that), "uuid thật phải giữ nguyên")
+}
+
+// Cập nhật MỘT phần sản phẩm không được đòi phải gửi kèm giá.
+//
+// Price là *int64 với binding "min=0" nhưng thiếu omitempty: validator coi con
+// trỏ nil là vi phạm, nên gọi PUT chỉ để đổi nhà cung cấp cũng bị chặn bằng câu
+// "Giá tối thiểu là 0" — thông báo nói về một trường mà người gọi không hề đụng
+// tới. Cả repo dùng khuôn `omitempty,min=...`; đây từng là chỗ duy nhất lệch.
+func TestUpdateProductRequest_ChoPhepCapNhatMotPhan(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for ten, body := range map[string]string{
+		"chỉ đổi nhà cung cấp": `{"supplier_id":"550e8400-e29b-41d4-a716-446655440000"}`,
+		"chỉ đổi tên":          `{"name":"Tên mới"}`,
+		"có kèm giá hợp lệ":    `{"name":"Tên mới","price":15000}`,
+		"giá 0":                `{"price":0}`,
+	} {
+		t.Run(ten, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPut, "/products/x", bytes.NewBufferString(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			var req UpdateProductRequest
+			assert.NoError(t, c.ShouldBindJSON(&req))
+		})
+	}
+}
+
+// Giá âm vẫn phải bị chặn.
+func TestUpdateProductRequest_ChanGiaAm(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPut, "/products/x", bytes.NewBufferString(`{"price":-1}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	var req UpdateProductRequest
+	assert.Error(t, c.ShouldBindJSON(&req))
+}
+
+// Mã danh mục không có thật vẫn tạo được sản phẩm vì cột category_id không có
+// khoá ngoại; sản phẩm sau đó hiện "Đã xoá" ở cột danh mục mà không ai biết gõ
+// sai ở đâu.
+func TestProductService_Create_ChanDanhMucKhongTonTai(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewProductService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "categories" WHERE id = \$1`).
+		WithArgs("khong-co-that").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	catID := "khong-co-that"
+	_, err := svc.Create(&CreateProductRequest{CategoryID: &catID, Name: "Mì tôm", Price: 15000})
+
+	require.Error(t, err)
+	assert.Equal(t, "không tìm thấy danh mục", err.Error())
+	// Không có lệnh INSERT nào được gửi đi.
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

@@ -17,8 +17,6 @@ const wsStore = useWebSocketStore();
 
 const search = ref('');
 
-
-
 // --- Điều khiển từ xa -------------------------------------------------------
 // Danh sách này phải khớp remoteActions bên backend
 // (internal/service/machine.go). Backend trả 409 khi máy chưa kết nối, nên
@@ -355,8 +353,18 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     {
       prop: 'group',
       label: $t('vnetPages.machines.group'),
-      width: 120,
-      formatter: (row: any) => row.group?.name || '-'
+      width: 150,
+      // API danh sách máy trả `group_id` chứ KHÔNG kèm object `group`, nên công
+      // thức cũ (`row.group?.name`) rỗng với mọi máy — cột này chưa bao giờ hiện
+      // tên nhóm. Tra tên từ danh sách nhóm mà trang đã nạp sẵn.
+      //
+      // Máy không có nhóm thì không tra ra giá nào: phiên mở trên nó tính 0₫/giờ,
+      // nên đánh dấu hẳn bằng nhãn vàng thay vì một dấu gạch ngang.
+      formatter: (row: any) => {
+        const g = groups.value.find((x: any) => x.id === row.group_id);
+        if (g) return g.name;
+        return h(ElTag, { type: 'warning', size: 'small' }, () => $t('vnetPages.machines.noGroupTag'));
+      }
     },
     {
       prop: 'status',
@@ -382,6 +390,92 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
 
 function searchData() {
   getData();
+}
+
+// --- Tạo máy hàng loạt ------------------------------------------------------
+// Quán 50 máy mà tạo lẻ là 50 lần gõ tay, và mã máy phải khớp TỪNG KÝ TỰ với mã
+// ghi trong cấu hình máy trạm — lệch một ký tự thì máy đó vĩnh viễn hiện ngoại
+// tuyến, mà triệu chứng lại xuất hiện muộn.
+//
+// Máy chủ tạo cả lô trong một giao dịch: vướng một mã thì không tạo máy nào. Ở
+// đây gọi trước bằng dry_run để báo trước tạo được hay không, thay vì để người
+// dùng bấm rồi mới biết.
+
+const batchVisible = ref(false);
+const batchSubmitting = ref(false);
+const batchChecking = ref(false);
+const batchForm = ref({
+  prefix: 'PC-',
+  from: 1,
+  to: 20,
+  digits: 2,
+  group_id: null as string | null,
+  cpu_name: '',
+  gpu_name: '',
+  ram_gb: 8,
+  storage_gb: 256,
+  os_info: ''
+});
+const batchResult = ref<any>(null);
+let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function openBatch() {
+  batchResult.value = null;
+  batchVisible.value = true;
+  checkBatchSoon();
+}
+
+/** Mã sẽ sinh ra, tính ở client để xem trước mà không cần hỏi máy chủ. */
+function batchCodes(): string[] {
+  const { prefix, from, to, digits } = batchForm.value;
+  if (!prefix?.trim() || to < from) return [];
+  const out: string[] = [];
+  for (let n = from; n <= to && out.length <= 500; n += 1) {
+    out.push(`${prefix.trim()}${String(n).padStart(digits || 0, '0')}`);
+  }
+  return out;
+}
+
+function checkBatchSoon() {
+  batchResult.value = null;
+  if (batchTimer) clearTimeout(batchTimer);
+  batchTimer = setTimeout(checkBatch, 400);
+}
+
+async function checkBatch() {
+  if (!batchCodes().length) return;
+  batchChecking.value = true;
+  try {
+    batchResult.value = await client.post('/machines/batch', { ...batchForm.value, dry_run: true });
+  } catch (e: any) {
+    // Lỗi khoảng số hoặc mã quá dài: máy chủ nói rõ vì sao, hiện thẳng lên.
+    batchResult.value = { error: e?.message || $t('vnetPages.machines.messages.loadError') };
+  } finally {
+    batchChecking.value = false;
+  }
+}
+
+/** Lô này tạo được hay không — nguồn cho cả biểu ngữ lẫn trạng thái nút Tạo. */
+function batchOK() {
+  const r = batchResult.value;
+  return Boolean(r) && !r.error && !r.conflicts?.length && !r.deleted?.length;
+}
+
+async function submitBatch() {
+  batchSubmitting.value = true;
+  try {
+    const res: any = await client.post('/machines/batch', { ...batchForm.value, dry_run: false });
+    ElMessage.success($t('vnetPages.machines.batch.created', { n: res?.created ?? 0 }));
+    batchVisible.value = false;
+    getData();
+  } catch (e: any) {
+    // Máy chủ trả 409 kèm danh sách mã vướng. Kiểm lại để biểu ngữ hiện đúng
+    // hiện trạng — có thể người khác vừa tạo trùng trong lúc hộp thoại đang mở.
+    ElMessage.error(e?.message || $t('vnetPages.machines.batch.failed'));
+    checkBatch();
+  } finally {
+    batchSubmitting.value = false;
+  }
 }
 
 function openCreate() {
@@ -506,13 +600,16 @@ onBeforeUnmount(() => {
           />
           <ElButton type="primary" @click="searchData">{{ $t('vnetPages.common.search') }}</ElButton>
         </div>
-        <TableHeaderOperation
-          v-model:columns="columnChecks"
-          :loading="loading"
-          :show-delete="false"
-          @add="openCreate"
-          @refresh="getData"
-        />
+        <div style="display: flex; gap: 8px; align-items: center">
+          <ElButton @click="openBatch">{{ $t('vnetPages.machines.batch.open') }}</ElButton>
+          <TableHeaderOperation
+            v-model:columns="columnChecks"
+            :loading="loading"
+            :show-delete="false"
+            @add="openCreate"
+            @refresh="getData"
+          />
+        </div>
       </div>
 
       <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
@@ -531,7 +628,9 @@ onBeforeUnmount(() => {
                 <ElDropdownMenu>
                   <ElDropdownItem command="screenshot">{{ $t('vnetPages.machines.remote.screenshot') }}</ElDropdownItem>
                   <ElDropdownItem command="processes">{{ $t('vnetPages.machines.remote.processes') }}</ElDropdownItem>
-                  <ElDropdownItem command="message" divided>{{ $t('vnetPages.machines.remote.message') }}</ElDropdownItem>
+                  <ElDropdownItem command="message" divided>
+                    {{ $t('vnetPages.machines.remote.message') }}
+                  </ElDropdownItem>
                   <ElDropdownItem command="block-app" divided>
                     {{ $t('vnetPages.machines.remote.blockApp') }}
                   </ElDropdownItem>
@@ -664,6 +763,83 @@ onBeforeUnmount(() => {
       </template>
     </ElDialog>
 
+    <ElDialog v-model="batchVisible" :title="$t('vnetPages.machines.batch.title')" width="620px" top="6vh">
+      <ElForm :model="batchForm" :label-width="130">
+        <ElFormItem :label="$t('vnetPages.machines.batch.prefix')">
+          <ElInput v-model="batchForm.prefix" placeholder="PC-" style="width: 180px" @input="checkBatchSoon" />
+          <span class="text-12px" style="margin-left: 12px; color: var(--el-text-color-secondary)">
+            {{ $t('vnetPages.machines.batch.prefixHint') }}
+          </span>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.machines.batch.range')">
+          <ElInputNumber v-model="batchForm.from" :min="0" :max="99999" @change="checkBatchSoon" />
+          <span style="margin: 0 8px">→</span>
+          <ElInputNumber v-model="batchForm.to" :min="0" :max="99999" @change="checkBatchSoon" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.machines.batch.digits')">
+          <ElInputNumber v-model="batchForm.digits" :min="0" :max="6" @change="checkBatchSoon" />
+          <span class="text-12px" style="margin-left: 12px; color: var(--el-text-color-secondary)">
+            {{ $t('vnetPages.machines.batch.digitsHint') }}
+          </span>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.machines.group')">
+          <ElSelect v-model="batchForm.group_id" clearable filterable style="width: 100%">
+            <ElOption v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+          </ElSelect>
+        </ElFormItem>
+
+        <ElDivider>{{ $t('vnetPages.machines.batch.specs') }}</ElDivider>
+        <ElFormItem :label="$t('vnetPages.machines.cpu')">
+          <ElInput v-model="batchForm.cpu_name" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.machines.gpu')">
+          <ElInput v-model="batchForm.gpu_name" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.machines.ram')">
+          <ElInputNumber v-model="batchForm.ram_gb" :min="0" :max="512" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.machines.disk')">
+          <ElInputNumber v-model="batchForm.storage_gb" :min="0" :max="20000" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.machines.os')">
+          <ElInput v-model="batchForm.os_info" :placeholder="$t('vnetPages.machines.osPlaceholder')" />
+        </ElFormItem>
+      </ElForm>
+
+      <ElAlert v-if="batchChecking" type="info" :closable="false" :title="$t('vnetPages.machines.batch.checking')" />
+      <ElAlert v-else-if="batchResult?.error" type="error" :closable="false" show-icon :title="batchResult.error" />
+      <ElAlert
+        v-else-if="batchResult && batchOK()"
+        type="success"
+        :closable="false"
+        show-icon
+        :title="$t('vnetPages.machines.batch.canCreate', { n: batchResult.codes?.length ?? 0 })"
+        :description="`${batchCodes()[0]} … ${batchCodes()[batchCodes().length - 1]}`"
+      />
+      <ElAlert
+        v-else-if="batchResult"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="$t('vnetPages.machines.batch.cannotCreate')"
+      >
+        <div v-if="batchResult.conflicts?.length">
+          {{ $t('vnetPages.machines.batch.conflicts', { n: batchResult.conflicts.length }) }}:
+          {{ batchResult.conflicts.slice(0, 12).join(', ') }}
+        </div>
+        <div v-if="batchResult.deleted?.length" style="margin-top: 4px">
+          {{ $t('vnetPages.machines.batch.deleted', { n: batchResult.deleted.length }) }}:
+          {{ batchResult.deleted.slice(0, 12).join(', ') }}
+        </div>
+      </ElAlert>
+
+      <template #footer>
+        <ElButton @click="batchVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="batchSubmitting" :disabled="!batchOK()" @click="submitBatch">
+          {{ $t('vnetPages.machines.batch.submit') }}
+        </ElButton>
+      </template>
+    </ElDialog>
     <ElDialog
       v-model="shotVisible"
       :title="$t('vnetPages.machines.remote.screenshotTitle', { code: shotMachine })"
@@ -697,6 +873,5 @@ onBeforeUnmount(() => {
         </ElTableColumn>
       </ElTable>
     </ElDialog>
-
   </div>
 </template>

@@ -14,7 +14,7 @@
         },
         "version": "1.0"
     },
-    "host": "localhost:8080",
+    "host": "localhost:20800",
     "basePath": "/api",
     "paths": {
         "/api/audit-logs": {

@@ -128,7 +128,7 @@ func TestAuthService_Login_InvalidPassword(t *testing.T) {
 
 	_, err := svc.Login(&LoginRequest{Username: "admin", Password: "wrongpassword"})
 	assert.Error(t, err)
-	assert.Equal(t, "invalid username or password", err.Error())
+	assert.Equal(t, "sai tên đăng nhập hoặc mật khẩu", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -143,7 +143,7 @@ func TestAuthService_Login_UserNotFound(t *testing.T) {
 
 	_, err := svc.Login(&LoginRequest{Username: "unknown", Password: "pw"})
 	assert.Error(t, err)
-	assert.Equal(t, "invalid username or password", err.Error())
+	assert.Equal(t, "sai tên đăng nhập hoặc mật khẩu", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -165,7 +165,7 @@ func TestAuthService_Login_DisabledAccount(t *testing.T) {
 
 	_, err := svc.Login(&LoginRequest{Username: "disabled", Password: "password123"})
 	assert.Error(t, err)
-	assert.Equal(t, "account is disabled", err.Error())
+	assert.Equal(t, "tài khoản đã bị khoá — liên hệ quản lý", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -279,7 +279,7 @@ func TestAuthService_QRLogin_MemberNotFound(t *testing.T) {
 
 	_, err := svc.QRLogin(&QRLoginRequest{QRCode: "nonexistent"})
 	assert.Error(t, err)
-	assert.Equal(t, "invalid or inactive member QR code", err.Error())
+	assert.Equal(t, "mã QR không hợp lệ hoặc hội viên đã bị khoá", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -313,7 +313,7 @@ func TestAuthService_RefreshToken_Invalid(t *testing.T) {
 
 	_, err := svc.RefreshToken(&RefreshRequest{RefreshToken: "invalid-token"})
 	assert.Error(t, err)
-	assert.Equal(t, "invalid or expired refresh token", err.Error())
+	assert.Equal(t, "phiên đăng nhập đã hết hạn, hãy đăng nhập lại", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

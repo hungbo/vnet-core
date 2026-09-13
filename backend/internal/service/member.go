@@ -67,8 +67,12 @@ type UpdateMemberRequest struct {
 }
 
 type TopupRequest struct {
-	Amount        int64  `json:"amount"`
-	PaymentMethod string `json:"payment_method"`
+	Amount int64 `json:"amount"`
+	// Chốt ca đếm tiền mặt bằng cách lọc đúng chuỗi "cash". Để trường này tự do
+	// thì một giá trị gõ sai làm khoản tiền mặt đó biến mất khỏi số tiền phải có
+	// trong két — két thừa mà không ai truy ra vì sao. Danh sách này khớp đúng
+	// ô chọn trên giao diện, cộng "bonus_balance" là đường nội bộ để tặng số dư.
+	PaymentMethod string `json:"payment_method" binding:"required,oneof=cash transfer ewallet bonus_balance"`
 	Description   string `json:"description"`
 	// IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
 	// MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
@@ -84,17 +88,22 @@ type RefundRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 }
 
+// Hai mức này chỉ được giao diện kẹp lại, còn API thì nhận tuốt: gọi thẳng
+// endpoint tạo được nhóm giảm 150% hoặc -20%, và mức chi tiêu tối thiểu âm.
+// Giá phiên chơi có tự kẹp về 100 nên tiền không âm, nhưng bảng quản trị vẫn
+// hiện "150%" cho người vận hành đọc, và mọi chỗ dùng về sau đều phải tự nhớ
+// kẹp lại. Chặn ngay ở cửa vào.
 type CreateGroupRequest struct {
 	Name            string  `json:"name"`
-	MinSpent        int64   `json:"min_spent"`
-	DiscountPercent float64 `json:"discount_percent"`
+	MinSpent        int64   `json:"min_spent" binding:"omitempty,min=0"`
+	DiscountPercent float64 `json:"discount_percent" binding:"omitempty,min=0,max=100"`
 	IsDefault       bool    `json:"is_default"`
 }
 
 type UpdateGroupRequest struct {
 	Name            string  `json:"name"`
-	MinSpent        int64   `json:"min_spent"`
-	DiscountPercent float64 `json:"discount_percent"`
+	MinSpent        int64   `json:"min_spent" binding:"omitempty,min=0"`
+	DiscountPercent float64 `json:"discount_percent" binding:"omitempty,min=0,max=100"`
 	IsDefault       bool    `json:"is_default"`
 }
 
@@ -269,7 +278,14 @@ func (s *MemberService) List(params pagination.Params) ([]*MemberResponse, int64
 
 	if params.Search != "" {
 		search := "%" + params.Search + "%"
-		query = query.Where("full_name ILIKE ? OR phone ILIKE ? OR username ILIKE ?", search, search, search)
+		// Nhân viên quầy gõ không dấu ("Nguyen Van") nhưng họ tên lưu có dấu
+		// ("Nguyễn Văn Anh"), nên ILIKE trần không khớp gì cả. Trang Sản phẩm
+		// đã bỏ dấu khi tìm (product.go), ở đây thì chưa — cùng một thao tác mà
+		// hai trang cho kết quả khác nhau. Số điện thoại không có dấu nên giữ nguyên.
+		query = query.Where(
+			"unaccent(full_name) ILIKE unaccent(?) OR phone ILIKE ? OR unaccent(username) ILIKE unaccent(?)",
+			search, search, search,
+		)
 	}
 
 	var total int64
@@ -295,7 +311,7 @@ func (s *MemberService) GetByID(id string) (*MemberResponse, error) {
 	var member model.Member
 	if err := s.db.Where("id = ?", id).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("member not found")
+			return nil, errors.New("không tìm thấy hội viên")
 		}
 		return nil, err
 	}
@@ -308,7 +324,7 @@ func (s *MemberService) Create(req *CreateMemberRequest) (*MemberResponse, error
 		return nil, errors.New("username is required")
 	}
 	if req.Password == "" {
-		return nil, errors.New("password is required")
+		return nil, errors.New("phải nhập mật khẩu")
 	}
 
 	var existing model.Member
@@ -340,7 +356,7 @@ func (s *MemberService) Create(req *CreateMemberRequest) (*MemberResponse, error
 	} else {
 		var defaultGroup model.MemberGroup
 		if err := s.db.Where("is_default = ?", true).First(&defaultGroup).Error; err != nil {
-			return nil, errors.New("no default member group found. Please create at least one group first.")
+			return nil, errors.New("chưa có hạng hội viên mặc định; hãy tạo ít nhất một hạng trước")
 		}
 		member.GroupID = &defaultGroup.ID
 	}
@@ -363,7 +379,7 @@ func (s *MemberService) Update(id string, req *UpdateMemberRequest) (*MemberResp
 	var member model.Member
 	if err := s.db.Where("id = ?", id).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("member not found")
+			return nil, errors.New("không tìm thấy hội viên")
 		}
 		return nil, err
 	}
@@ -375,7 +391,7 @@ func (s *MemberService) Update(id string, req *UpdateMemberRequest) (*MemberResp
 	}
 	if req.Phone != "" {
 		if !utils.IsValidPhone(req.Phone) {
-			return nil, errors.New("invalid phone number")
+			return nil, errors.New("số điện thoại không hợp lệ")
 		}
 		updates["phone"] = req.Phone
 	}
@@ -445,7 +461,7 @@ func (s *MemberService) Delete(id string) error {
 	var member model.Member
 	if err := s.db.Where("id = ?", id).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("member not found")
+			return errors.New("không tìm thấy hội viên")
 		}
 		return err
 	}
@@ -476,7 +492,7 @@ func (s *MemberService) ResetPassword(id string, newPassword string) error {
 	var member model.Member
 	if err := s.db.Where("id = ?", id).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("member not found")
+			return errors.New("không tìm thấy hội viên")
 		}
 		return err
 	}
@@ -502,7 +518,7 @@ func (s *MemberService) ResetPassword(id string, newPassword string) error {
 
 func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*MemberResponse, error) {
 	if req.Amount <= 0 {
-		return nil, errors.New("amount must be positive")
+		return nil, errors.New("số tiền phải lớn hơn 0")
 	}
 
 	tx := s.db.Begin()
@@ -521,7 +537,7 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&member).Error; err != nil {
 		tx.Rollback()
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("member not found")
+			return nil, errors.New("không tìm thấy hội viên")
 		}
 		return nil, err
 	}
@@ -592,7 +608,7 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 
 func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*MemberResponse, error) {
 	if req.Amount <= 0 {
-		return nil, errors.New("amount must be positive")
+		return nil, errors.New("số tiền phải lớn hơn 0")
 	}
 
 	tx := s.db.Begin()
@@ -611,7 +627,7 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*M
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&member).Error; err != nil {
 		tx.Rollback()
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("member not found")
+			return nil, errors.New("không tìm thấy hội viên")
 		}
 		return nil, err
 	}
@@ -625,7 +641,7 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*M
 	if req.IsBonus {
 		if bonusBefore < req.Amount {
 			tx.Rollback()
-			return nil, errors.New("insufficient bonus balance")
+			return nil, errors.New("số dư điểm thưởng không đủ")
 		}
 		bonusAfter = bonusBefore - req.Amount
 		balanceAfter = balanceBefore
@@ -633,7 +649,7 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*M
 	} else {
 		if balanceBefore < req.Amount {
 			tx.Rollback()
-			return nil, errors.New("insufficient balance")
+			return nil, errors.New("số dư không đủ")
 		}
 		balanceAfter = balanceBefore - req.Amount
 		bonusAfter = bonusBefore
@@ -802,9 +818,19 @@ func (s *MemberService) RefreshTiers() (int, error) {
 	return moved, nil
 }
 
-func (s *MemberService) GetGroups() ([]*GroupResponse, error) {
+// GetGroups lọc theo tên nhóm khi có từ khoá.
+//
+// Trang quản trị vẫn gửi ?search= từ trước, nhưng hàm này bỏ qua hẳn: gõ gì vào
+// ô tìm kiếm cũng ra đủ danh sách, không lỗi, không dấu hiệu gì — đúng kiểu nút
+// bấm vào không làm gì. Bỏ dấu khi so khớp cho giống ô tìm hội viên.
+func (s *MemberService) GetGroups(search string) ([]*GroupResponse, error) {
+	query := s.db.Model(&model.MemberGroup{})
+	if search != "" {
+		query = query.Where("unaccent(name) ILIKE unaccent(?)", "%"+search+"%")
+	}
+
 	var groups []model.MemberGroup
-	if err := s.db.Find(&groups).Error; err != nil {
+	if err := query.Find(&groups).Error; err != nil {
 		return nil, err
 	}
 
@@ -818,7 +844,7 @@ func (s *MemberService) GetGroups() ([]*GroupResponse, error) {
 
 func (s *MemberService) CreateGroup(req *CreateGroupRequest) (*GroupResponse, error) {
 	if req.Name == "" {
-		return nil, errors.New("group name is required")
+		return nil, errors.New("phải nhập tên nhóm")
 	}
 
 	if req.IsDefault {
@@ -850,7 +876,7 @@ func (s *MemberService) UpdateGroup(id string, req *UpdateGroupRequest) (*GroupR
 	var group model.MemberGroup
 	if err := s.db.Where("id = ?", id).First(&group).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("group not found")
+			return nil, errors.New("không tìm thấy nhóm")
 		}
 		return nil, err
 	}
@@ -894,7 +920,7 @@ func (s *MemberService) DeleteGroup(id string) error {
 	var group model.MemberGroup
 	if err := s.db.Where("id = ?", id).First(&group).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("group not found")
+			return errors.New("không tìm thấy nhóm")
 		}
 		return err
 	}

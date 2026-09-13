@@ -142,7 +142,12 @@ async function handleDispatch(row: any) {
         count: res.dispatched ?? 0
       })
     );
-  } catch (_) {}
+  } catch (e: any) {
+    // Giống handleDelete: 'cancel' là người dùng bấm Huỷ, còn lại là lỗi thật
+    // (thông báo đã bị xoá ở tab khác, máy chủ lỗi…). Nuốt hết như bản cũ thì
+    // bấm Gửi xong không thấy gì, quản trị viên tưởng đã gửi được.
+    if (e !== 'cancel') ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
 }
 </script>
 

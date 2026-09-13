@@ -51,6 +51,11 @@ type TopupCard struct {
 	Status     string         `gorm:"type:varchar(20);default:active" json:"status"`
 	SoldTo     *string        `gorm:"type:uuid" json:"sold_to"`
 	SoldAt     *time.Time     `gorm:"type:timestamptz" json:"sold_at"`
+	// Bán thẻ là lúc tiền vào quán, nhưng trước đây chỉ đánh dấu sold_to/sold_at
+	// mà không ghi đồng nào: tiền mua thẻ không vào báo cáo, cũng không vào số
+	// tiền phải có trong két lúc chốt ca. Có cột này thì doanh thu và chốt ca
+	// đếm được khoản đó, và đếm đúng MỘT lần — lúc nạp thẻ không tính lại.
+	SoldPaymentMethod string `gorm:"type:varchar(20)" json:"sold_payment_method"`
 	// Ai đã nạp thẻ và lúc nào — khác với SoldTo (bán ở quầy cho ai).
 	UsedBy    *string    `gorm:"type:uuid" json:"used_by"`
 	UsedAt    *time.Time `gorm:"type:timestamptz" json:"used_at"`

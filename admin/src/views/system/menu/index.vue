@@ -15,8 +15,21 @@ import SvgIcon from '@/components/custom/svg-icon.vue';
 
 const wrapperRef = ref<HTMLElement | null>(null);
 
+// Backend phân trang danh sách menu (mặc định 20/trang trên tổng 35), nhưng lệnh
+// gọi cũ không gửi current/size: bấm sang trang 2 hay đổi số dòng/trang đều nạp
+// lại đúng 20 dòng đầu, và 15 mục cuối KHÔNG có đường nào xem được.
+const phanTrang = ref({ current: 1, size: 20 });
+
 const { columns, columnChecks, data, loading, pagination, getData } = useUIPaginatedTable({
-  api: () => fetchGetMenuList(),
+  paginationProps: {
+    currentPage: phanTrang.value.current,
+    pageSize: phanTrang.value.size
+  },
+  api: () => fetchGetMenuList({ current: phanTrang.value.current, size: phanTrang.value.size }),
+  onPaginationParamsChange: params => {
+    phanTrang.value.current = params.currentPage ?? phanTrang.value.current;
+    phanTrang.value.size = params.pageSize ?? phanTrang.value.size;
+  },
   transform: response => defaultTransform(response),
   columns: () => [
     { prop: 'id', label: $t('page.manage.menu.id') },

@@ -1,6 +1,5 @@
 <script setup lang="tsx">
 import { ref } from 'vue';
-import { enableStatusRecord } from '@/constants/business';
 import { fetchBatchDeleteRole, fetchDeleteRole, fetchGetRoleList } from '@/service/api';
 import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { $t } from '@/locales';
@@ -13,9 +12,7 @@ function getInitSearchParams(): Api.SystemManage.RoleSearchParams {
   return {
     current: 1,
     size: 10,
-    status: undefined,
-    roleName: undefined,
-    roleCode: undefined
+    roleName: undefined
   };
 }
 
@@ -34,27 +31,7 @@ const { columns, columnChecks, data, loading, getData, getDataByPage, mobilePagi
     { prop: 'selection', type: 'selection', width: 48 },
     { prop: 'index', type: 'index', label: $t('common.index'), width: 64 },
     { prop: 'roleName', label: $t('page.manage.role.roleName'), minWidth: 120 },
-    { prop: 'roleCode', label: $t('page.manage.role.roleCode'), minWidth: 120 },
     { prop: 'roleDesc', label: $t('page.manage.role.roleDesc'), minWidth: 120 },
-    {
-      prop: 'status',
-      label: $t('page.manage.role.roleStatus'),
-      width: 100,
-      formatter: row => {
-        if (row.status === undefined) {
-          return '';
-        }
-
-        const tagMap: Record<Api.Common.EnableStatus, UI.ThemeColor> = {
-          1: 'success',
-          2: 'warning'
-        };
-
-        const label = $t(enableStatusRecord[row.status]);
-
-        return <ElTag type={tagMap[row.status]}>{label}</ElTag>;
-      }
-    },
     {
       prop: 'operate',
       label: $t('common.operate'),
@@ -108,6 +85,9 @@ async function handleDelete(id: string) {
 
 function resetSearchParams() {
   searchParams.value = getInitSearchParams();
+  // Giống trang Người dùng: chỉ xoá tham số mà không nạp lại thì bảng vẫn giữ
+  // nguyên kết quả đã lọc trong khi ô tìm đã trắng.
+  getDataByPage();
 }
 
 function edit(id: string) {
@@ -140,7 +120,7 @@ function edit(id: string) {
           class="sm:h-full"
           :data="data"
           row-key="id"
-          @selection-change="checkedRowKeys = $event"
+          @selection-change="checkedRowKeys = $event.map((r: any) => r.id)"
         >
           <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         </ElTable>

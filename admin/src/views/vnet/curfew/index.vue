@@ -13,6 +13,10 @@ const loading = ref(false);
 const rows = ref<any[]>([]);
 
 function dayLabel(d: number) {
+  // el-table vẫn dựng ô mẫu một lần với row rỗng khi bảng chưa có dữ liệu, và
+  // $t('...days.undefined') in thẳng khoá thô ra ô. Cùng lỗi đã sửa ở trang
+  // Tài sản máy.
+  if (d == null) return '-';
   return $t(`vnetPages.curfew.days.${d}`);
 }
 

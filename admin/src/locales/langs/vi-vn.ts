@@ -809,12 +809,12 @@ const local: App.I18n.Schema = {
       }
     },
     dashboard: {
-      revenueToday: 'Doanh thu hôm nay',
-      revenueChart: 'Biểu đồ doanh thu',
-      revenue7d: 'Doanh thu 7 ngày',
-      revenueSeries: 'Doanh thu',
+      revenueToday: 'Tiền thu hôm nay',
+      revenueChart: 'Biểu đồ tiền thu',
+      revenue7d: 'Tiền thu 7 ngày',
+      revenueSeries: 'Tiền thu',
       ordersSeries: 'Số đơn',
-      noRevenue: 'Chưa có doanh thu nào trong 7 ngày qua',
+      noRevenue: 'Chưa thu được đồng nào trong 7 ngày qua',
       activeMachines: 'Máy đang hoạt động',
       machine: 'Máy',
       member: 'Hội viên',
@@ -825,13 +825,33 @@ const local: App.I18n.Schema = {
         members: 'Hội viên',
         onlineMachines: 'Máy online',
         playing: 'Đang chơi',
-        revenueToday: 'Doanh thu hôm nay'
+        revenueToday: 'Tiền thu hôm nay'
       }
     },
     machines: {
+      noGroupTag: 'Chưa gán nhóm — 0₫/giờ',
+      batch: {
+        open: 'Tạo hàng loạt',
+        title: 'Tạo máy hàng loạt',
+        prefix: 'Tiền tố',
+        prefixHint: 'Phải khớp mã ghi trong máy trạm',
+        range: 'Khoảng số',
+        digits: 'Số chữ số',
+        digitsHint: '2 → PC-01. Để 0 thì không đệm số 0',
+        specs: 'Cấu hình áp chung cho cả lô',
+        checking: 'Đang kiểm...',
+        canCreate: 'Tạo được {n} máy',
+        cannotCreate: 'Không tạo được — sửa tiền tố hoặc khoảng số',
+        conflicts: '{n} mã đã có máy',
+        deleted: '{n} mã thuộc máy đã xoá',
+        created: 'Đã tạo {n} máy',
+        failed: 'Tạo hàng loạt thất bại',
+        submit: 'Tạo'
+      },
       title: 'Máy',
       active: 'Đang hoạt động',
-      activeHint: 'Tắt để tạm ngừng máy — không mở được phiên mới trên máy này. Dùng thay cho việc xoá máy đã có lịch sử.',
+      activeHint:
+        'Tắt để tạm ngừng máy — không mở được phiên mới trên máy này. Dùng thay cho việc xoá máy đã có lịch sử.',
       suspended: 'Tạm ngừng',
       searchPlaceholder: 'Tìm mã máy / nhóm',
       add: 'Thêm máy',
@@ -1090,6 +1110,8 @@ const local: App.I18n.Schema = {
       }
     },
     sessions: {
+      noPricingWarning:
+        'Máy này chưa gán nhóm giá — mở phiên sẽ tính 0₫/giờ. Gán nhóm ở trang Máy trước khi cho khách ngồi.',
       start: 'Mở máy',
       switchMachine: 'Đổi máy',
       selectMachine: 'Chọn máy',
@@ -1197,7 +1219,7 @@ const local: App.I18n.Schema = {
       selectProduct: 'Chọn sản phẩm',
       options: 'Tuỳ chọn',
       machineCode: 'Máy',
-      operator: 'Thao tác',
+      operator: 'Người thực hiện',
       confirm: 'Xác nhận',
       cancel: 'Huỷ đơn',
       pay: 'Thanh toán',
@@ -1451,6 +1473,7 @@ const local: App.I18n.Schema = {
       giftTab: 'Thẻ quà tặng',
       generate: 'Sinh thẻ',
       sell: 'Bán thẻ',
+      paymentMethod: 'Hình thức thanh toán',
       sellHint: 'Ghi lại thẻ giấy này bán cho ai. Khác với nạp thẻ — người mua có thể mua tặng người khác.',
       sellTo: 'Bán cho hội viên',
       sellSuccess: 'Đã ghi nhận bán thẻ {serial} cho {member}',
@@ -1572,7 +1595,9 @@ const local: App.I18n.Schema = {
       },
       rewardTypes: {
         discount_percent: 'Giảm theo phần trăm',
-        discount_amount: 'Giảm số tiền cố định'
+        discount_amount: 'Giảm số tiền cố định',
+        balance: 'Cộng số dư',
+        bonus_points: 'Cộng điểm thưởng'
       },
       remove: 'Xoá',
       title: 'Khuyến mãi',
@@ -1596,10 +1621,6 @@ const local: App.I18n.Schema = {
       spinWin: 'Trúng "{name}" — đã cộng cho {member}',
       spinLose: 'Quay trượt — đúng với tỉ lệ đã đặt',
       spinNeedsMember: 'Chưa có hội viên nào để quay thử',
-      rewardTypes: {
-        balance: 'Cộng số dư',
-        bonus_points: 'Cộng điểm thưởng'
-      },
       value: 'Giá trị',
       probability: 'Xác suất',
       form: {
@@ -1720,7 +1741,7 @@ const local: App.I18n.Schema = {
       edit: 'Sửa combo',
       name: 'Tên combo',
       type: 'Loại',
-      fixedSlot: 'Fixed slot',
+      fixedSlot: 'Khung giờ cố định',
       prepaid: 'Trả trước',
       price: 'Giá',
       isActive: 'Kích hoạt',
@@ -1805,6 +1826,8 @@ const local: App.I18n.Schema = {
       amount: 'Số tiền',
       balanceBefore: 'Số dư trước',
       balanceAfter: 'Số dư sau',
+      bonusBefore: 'Khuyến mãi trước',
+      bonusAfter: 'Khuyến mãi sau',
       paymentMethod: 'Phương thức',
       description: 'Mô tả',
       createdBy: 'Người thực hiện',
@@ -1813,6 +1836,15 @@ const local: App.I18n.Schema = {
       refund: 'Hoàn tiền',
       cancel: 'Hủy',
       comboPurchase: 'Mua combo',
+      topupBonus: 'Thưởng nạp tiền',
+      refundBonus: 'Hoàn tiền khuyến mãi',
+      attendanceBonus: 'Thưởng điểm danh',
+      bookingDeposit: 'Đặt cọc giữ chỗ',
+      depositRefund: 'Trả lại tiền cọc',
+      orderPayment: 'Thanh toán đơn hàng',
+      topupCard: 'Nạp bằng thẻ',
+      luckySpinBalance: 'Vòng quay — tiền',
+      luckySpinBonus: 'Vòng quay — khuyến mãi',
       messages: {
         loadError: 'Lỗi tải lịch sử giao dịch'
       }

@@ -116,8 +116,7 @@ export type FlatResponseFailData<ResponseData> = {
 };
 
 export type FlatResponseData<ResponseData, ApiData> =
-  | FlatResponseSuccessData<ResponseData, ApiData>
-  | FlatResponseFailData<ResponseData>;
+  FlatResponseSuccessData<ResponseData, ApiData> | FlatResponseFailData<ResponseData>;
 
 export interface FlatRequestInstance<
   ResponseData,

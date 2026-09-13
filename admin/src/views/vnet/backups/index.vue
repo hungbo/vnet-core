@@ -61,7 +61,10 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
       prop: 'status',
       label: $t('vnetPages.backups.status'),
       width: 120,
-      formatter: (row: any) => h(ElTag, { type: statusType(row.status) }, () => statusLabel(row.status))
+      // title mang lý do hỏng: "Thất bại" trơ trọi không cho người trực biết
+      // phải sửa gì. Chuỗi lý do do backend ghi vào notes.
+      formatter: (row: any) =>
+        h(ElTag, { type: statusType(row.status), title: row.notes || undefined }, () => statusLabel(row.status))
     },
     {
       // model.BackupLog KHÔNG có created_at, chỉ có started_at — cột cũ đọc một
@@ -89,7 +92,11 @@ async function handleCreateBackup() {
     await client.post('/backups');
     ElMessage.success($t('vnetPages.backups.messages.creating'));
     await getData();
-  } catch (_) {
+  } catch (e: any) {
+    // Giống handleDelete bên dưới: 'cancel' là người dùng bấm Huỷ, còn lại là
+    // lỗi thật và phải nói ra. Nuốt hết thì bấm "Tạo sao lưu" xong màn hình
+    // không nhúc nhích, người trực tưởng bản sao lưu đang chạy.
+    if (e !== 'cancel') ElMessage.error(e?.message || $t('vnetPages.common.error'));
   } finally {
     creating.value = false;
   }
@@ -109,7 +116,9 @@ async function handleRestore(row: any) {
     await client.post(`/backups/${row.id}/restore`);
     ElMessage.success($t('vnetPages.backups.messages.restoring'));
     await getData();
-  } catch (_) {}
+  } catch (e: any) {
+    if (e !== 'cancel') ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
 }
 
 async function handleDelete(row: any) {
@@ -161,12 +170,7 @@ async function handleDelete(row: any) {
             <ElButton v-if="row.status === 'completed'" size="small" type="warning" @click="handleRestore(row)">
               {{ $t('vnetPages.backups.restore') }}
             </ElButton>
-            <ElButton
-              v-if="row.status !== 'running'"
-              size="small"
-              type="danger"
-              @click="handleDelete(row)"
-            >
+            <ElButton v-if="row.status !== 'running'" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

@@ -93,14 +93,19 @@ type SessionDetail struct {
 }
 
 type CostBreakdown struct {
-	MachineGroupName string  `json:"machine_group_name"`
-	PricePerHour     int64   `json:"price_per_hour"`
-	DurationMinutes  int     `json:"duration_minutes"`
-	BilledMinutes    int     `json:"billed_minutes"`
-	GrossCost        int64   `json:"gross_cost"`
-	DiscountPercent  float64 `json:"discount_percent"`
-	DiscountAmount   int64   `json:"discount_amount"`
-	FinalCost        int64   `json:"final_cost"`
+	MachineGroupName string `json:"machine_group_name"`
+	// NoPricing bật khi máy không tra ra được giá nào (chưa gán nhóm, hoặc nhóm
+	// để giá 0). Phiên vẫn mở được — có quán cố ý để máy miễn phí — nhưng quầy
+	// phải nhìn thấy điều đó trước khi bấm, không phải phát hiện lúc cuối tháng
+	// thấy doanh thu hụt.
+	NoPricing       bool    `json:"no_pricing"`
+	PricePerHour    int64   `json:"price_per_hour"`
+	DurationMinutes int     `json:"duration_minutes"`
+	BilledMinutes   int     `json:"billed_minutes"`
+	GrossCost       int64   `json:"gross_cost"`
+	DiscountPercent float64 `json:"discount_percent"`
+	DiscountAmount  int64   `json:"discount_amount"`
+	FinalCost       int64   `json:"final_cost"`
 }
 
 // CheckMemberMayPlay gom mọi điều kiện để một hội viên được ngồi máy.
@@ -130,7 +135,7 @@ func CheckMemberMayPlay(db *gorm.DB, curfew *CurfewService, member *model.Member
 
 	// A prepaid combo carries its own time, so it does not need a balance.
 	if !hasCombo && member.Balance == 0 && member.BonusBalance == 0 {
-		return errors.New("member has no balance; top up or use a combo")
+		return errors.New("hội viên không còn số dư; hãy nạp tiền hoặc dùng gói cước")
 	}
 
 	if curfew != nil {
@@ -246,7 +251,7 @@ func chargeSessionTo(tx *gorm.DB, session *model.MachineSession, target int64, m
 
 	var member model.Member
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", memberID).First(&member).Error; err != nil {
-		return nil, errors.New("member not found")
+		return nil, errors.New("không tìm thấy hội viên")
 	}
 
 	res.BalanceBefore = member.Balance
@@ -278,6 +283,12 @@ func chargeSessionTo(tx *gorm.DB, session *model.MachineSession, target int64, m
 	if addPlayedMinutes > 0 {
 		member.TotalPlayedMinutes += addPlayedMinutes
 	}
+
+	// total_spent quyết định hạng hội viên nhưng trước đây CHỈ tăng khi mua gói
+	// cước, nên khách tiêu hàng triệu tiền giờ vẫn nằm hạng thấp nhất và cả nút
+	// "Xếp lại hạng" lẫn tác vụ nền đều vô nghĩa. Cộng đúng số tiền THẬT SỰ đã
+	// trừ (delta), kể cả phần trả bằng điểm thưởng — khách vẫn tiêu ngần ấy.
+	member.TotalSpent += delta
 
 	if err := tx.Save(&member).Error; err != nil {
 		return nil, err
@@ -341,16 +352,16 @@ func chargeSessionTo(tx *gorm.DB, session *model.MachineSession, target int64, m
 func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error) {
 	var machine model.Machine
 	if err := s.db.Where("id = ? AND is_active = ?", req.MachineID, true).First(&machine).Error; err != nil {
-		return nil, errors.New("machine not found")
+		return nil, errors.New("không tìm thấy máy")
 	}
 
 	if machine.Status == "in_use" {
-		return nil, errors.New("machine is already in use")
+		return nil, errors.New("máy đang có người dùng")
 	}
 
 	var member model.Member
 	if err := s.db.Where("id = ? AND is_active = ?", req.MemberID, true).First(&member).Error; err != nil {
-		return nil, errors.New("member not found or inactive")
+		return nil, errors.New("không tìm thấy hội viên hoặc tài khoản đã bị khoá")
 	}
 
 	// Một tài khoản chỉ được chơi một máy tại một thời điểm. Thông báo phải nói
@@ -389,7 +400,7 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 	var lockedMember model.Member
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", member.ID).First(&lockedMember).Error; err != nil {
 		tx.Rollback()
-		return nil, errors.New("member not found or inactive")
+		return nil, errors.New("không tìm thấy hội viên hoặc tài khoản đã bị khoá")
 	}
 	var dangChoi int64
 	if err := tx.Model(&model.MachineSession{}).
@@ -405,11 +416,25 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 	var lockedMachine model.Machine
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", machine.ID).First(&lockedMachine).Error; err != nil {
 		tx.Rollback()
-		return nil, errors.New("machine not found")
+		return nil, errors.New("không tìm thấy máy")
 	}
-	if lockedMachine.Status == "in_use" {
+	// Đếm phiên đang chạy chứ KHÔNG tin cột status.
+	//
+	// status là cột bị nhiều thứ ghi đè, trong đó có tác vụ nền
+	// machines:mark-offline: máy nào ngừng gửi nhịp tim quá hạn thì bị đặt về
+	// "offline", kể cả khi khách đang ngồi chơi (máy trạm treo, rớt mạng, agent
+	// bị tắt). Khi đó chốt chặn cũ không còn nổ và quầy mở được phiên THỨ HAI
+	// trên cùng một máy: hai người bị tính tiền cho một chỗ ngồi. Bảng phiên mới
+	// là nguồn sự thật — phía hội viên ngay bên trên cũng đếm theo cách này.
+	var dangDung int64
+	if err := tx.Model(&model.MachineSession{}).
+		Where("machine_id = ? AND is_active = ?", lockedMachine.ID, true).Count(&dangDung).Error; err != nil {
 		tx.Rollback()
-		return nil, errors.New("machine is already in use")
+		return nil, err
+	}
+	if dangDung > 0 {
+		tx.Rollback()
+		return nil, fmt.Errorf("máy %s đang có người chơi — hãy kết thúc phiên đó trước", lockedMachine.MachineCode)
 	}
 
 	machine.Status = "in_use"
@@ -425,22 +450,25 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 		IsActive:  true,
 	}
 
+	// Giữ con trỏ tới gói để gắn phiên vào nó SAU khi phiên đã được tạo và có ID.
+	var dungGoi *model.ComboPurchase
+
 	if req.ComboPurchaseID != "" {
 		var purchase model.ComboPurchase
 		if err := tx.Where("id = ?", req.ComboPurchaseID).First(&purchase).Error; err != nil {
 			tx.Rollback()
-			return nil, errors.New("combo purchase not found")
+			return nil, errors.New("không tìm thấy lượt mua gói cước")
 		}
 
 		if !purchase.Activated {
 			tx.Rollback()
-			return nil, errors.New("combo purchase is not activated")
+			return nil, errors.New("gói cước này chưa được kích hoạt")
 		}
 
 		var combo model.Combo
 		if err := tx.Where("id = ?", purchase.ComboID).First(&combo).Error; err != nil {
 			tx.Rollback()
-			return nil, errors.New("combo not found")
+			return nil, errors.New("không tìm thấy gói cước")
 		}
 
 		session.ComboID = &purchase.ID
@@ -468,14 +496,13 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 		}
 
 		session.RemainingMinutes = &purchase.RemainingMinutes
-
-		tx.Model(&purchase).Update("current_session_id", session.ID)
+		dungGoi = &purchase
 	}
 
 	// Đơn giá và mốc hết tiền phải có NGAY từ lúc mở máy, không phải chờ lượt
 	// tính đầu tiên: khách vừa ngồi xuống đã nhìn đồng hồ đếm ngược. PricePerHour
 	// vốn chỉ được ghi lúc trả máy nên phiên đang chạy luôn hiện 0.
-	if cost, err := s.CalculateCost(machine.ID, member.ID, 0); err == nil {
+	if cost, err := s.CalculateCost(machine.ID, member.ID, utils.VietnamTime(), 0); err == nil {
 		session.PricePerHour = cost.PricePerHour
 		session.AffordableUntil = affordableUntil(&session, &member, session.StartedAt)
 	}
@@ -483,6 +510,20 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 	if err := tx.Create(&session).Error; err != nil {
 		tx.Rollback()
 		return nil, err
+	}
+
+	// Gắn phiên vào gói SAU khi phiên đã có ID.
+	//
+	// Lệnh này vốn nằm ngay chỗ đọc gói, tức TRƯỚC tx.Create ở trên, nên
+	// session.ID còn rỗng và PostgreSQL từ chối "" cho cột uuid. Lỗi lại không
+	// được kiểm, nên transaction hỏng âm thầm và mọi lệnh sau đó trả về
+	// "current transaction is aborted (SQLSTATE 25P02)" — người dùng nhận đúng
+	// chuỗi đó, còn mở phiên bằng gói trả trước thì không bao giờ thành công.
+	if dungGoi != nil {
+		if err := tx.Model(dungGoi).Update("current_session_id", session.ID).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 	}
 
 	// Lần ghé gần nhất: cột khai từ đầu nhưng không nơi nào ghi, nên không cách
@@ -553,7 +594,7 @@ func (s *SessionService) BackfillChargedAmount() (int, error) {
 			memberID = *sess.MemberID
 		}
 		elapsed := int(utils.VietnamTime().Sub(sess.StartedAt).Minutes())
-		cost, err := s.CalculateCost(sess.MachineID, memberID, billableMinutes(sess, elapsed))
+		cost, err := s.CalculateCost(sess.MachineID, memberID, sess.StartedAt, billableMinutes(sess, elapsed))
 		if err != nil {
 			continue
 		}
@@ -620,7 +661,7 @@ func (s *SessionService) ChargeTick(sessionID string) (*ChargeTickResult, error)
 		elapsed = 0
 	}
 
-	cost, err := s.CalculateCost(machine.ID, memberID, billableMinutes(&session, elapsed))
+	cost, err := s.CalculateCost(machine.ID, memberID, session.StartedAt, billableMinutes(&session, elapsed))
 	if err != nil {
 		tx.Rollback()
 		return nil, err
@@ -816,12 +857,12 @@ func (s *SessionService) EndSessionsOnOfflineMachines(timeout time.Duration) (in
 func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResponse, error) {
 	var session model.MachineSession
 	if err := s.db.Where("id = ? AND is_active = ?", id, true).First(&session).Error; err != nil {
-		return nil, errors.New("active session not found")
+		return nil, errors.New("không tìm thấy phiên đang chạy")
 	}
 
 	var machine model.Machine
 	if err := s.db.Where("id = ?", session.MachineID).First(&machine).Error; err != nil {
-		return nil, errors.New("machine not found")
+		return nil, errors.New("không tìm thấy máy")
 	}
 
 	// endedAt không được sớm hơn lúc phiên bắt đầu: đồng hồ lệch có thể cho ra
@@ -840,7 +881,7 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 	// Bản cũ mở một transaction chỉ để khoá ComboPurchase rồi commit ngay TRƯỚC
 	// khi trừ đồng nào — khoá đó không bảo vệ được gì. Nay số phút phải trả tiền
 	// tính từ ảnh chụp trên chính dòng phiên nên không cần đọc bảng gói.
-	costBreakdown, err := s.CalculateCost(machine.ID, memberID, billableMinutes(&session, durationMinutes))
+	costBreakdown, err := s.CalculateCost(machine.ID, memberID, session.StartedAt, billableMinutes(&session, durationMinutes))
 	if err != nil {
 		return nil, err
 	}
@@ -854,7 +895,7 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND is_active = ?", id, true).First(&lockedSession).Error; err != nil {
 		tx.Rollback()
-		return nil, errors.New("active session not found")
+		return nil, errors.New("không tìm thấy phiên đang chạy")
 	}
 	// chargeSessionTo khấu trừ phần đã thu dọc đường từ chính con số này.
 	session.ChargedAmount = lockedSession.ChargedAmount
@@ -997,10 +1038,10 @@ func (s *SessionService) GetSession(id string) (*SessionDetail, error) {
 func (s *SessionService) SwitchMachine(sessionID, newMachineID string) (*SessionDetail, error) {
 	var newMachine model.Machine
 	if err := s.db.Where("id = ? AND is_active = ?", newMachineID, true).First(&newMachine).Error; err != nil {
-		return nil, errors.New("new machine not found")
+		return nil, errors.New("không tìm thấy máy mới")
 	}
 	if newMachine.Status == "in_use" {
-		return nil, errors.New("new machine is already in use")
+		return nil, errors.New("máy mới đang có người dùng")
 	}
 
 	_, err := s.EndSession(sessionID)
@@ -1118,10 +1159,17 @@ func (s *SessionService) GetActiveSessionByMember(memberID string) (*SessionDeta
 	return toSessionDetail(&session, machineCode, memberName), nil
 }
 
-func (s *SessionService) CalculateCost(machineID string, memberID string, durationMinutes int) (*CostBreakdown, error) {
+// CalculateCost tính tiền cho khoảng [batDau, batDau+durationMinutes).
+//
+// batDau là bắt buộc vì giá có thể đổi GIỮA phiên: bảng giá theo khung giờ cho
+// phép quán đặt giá cao điểm 22:00–02:00, và một phiên bình thường của quán net
+// vắt qua mốc đó. Bản cũ chỉ nhận số phút rồi tra MỘT đơn giá tại thời điểm
+// tính tiền, nên toàn bộ thời gian đã chơi bị tính lại theo giá mới — khách
+// ngồi từ 20:00 tới 23:00 bị thu giá cao điểm cho cả ba tiếng.
+func (s *SessionService) CalculateCost(machineID string, memberID string, batDau time.Time, durationMinutes int) (*CostBreakdown, error) {
 	var machine model.Machine
 	if err := s.db.Where("id = ?", machineID).First(&machine).Error; err != nil {
-		return nil, errors.New("machine not found")
+		return nil, errors.New("không tìm thấy máy")
 	}
 
 	groupName := ""
@@ -1146,12 +1194,12 @@ func (s *SessionService) CalculateCost(machineID string, memberID string, durati
 	// machine group beats the time-of-day rate, which beats the group's base
 	// rate.
 	minBilledMinutes := 0
+	coGiaTheoHang := false
 	if machine.GroupID != nil {
 		if mp, ok := s.memberGroupRate(*machine.GroupID, member); ok {
 			pricePerHour = mp.PricePerHour
 			minBilledMinutes = mp.MinDuration
-		} else if rate, ok := s.timeBasedRate(*machine.GroupID, utils.VietnamTime()); ok {
-			pricePerHour = rate
+			coGiaTheoHang = true
 		}
 	}
 
@@ -1162,9 +1210,22 @@ func (s *SessionService) CalculateCost(machineID string, memberID string, durati
 	if billedMinutes > 0 && minBilledMinutes > billedMinutes {
 		billedMinutes = minBilledMinutes
 	}
+
 	gross := int64(0)
-	if billedMinutes > 0 {
-		gross = int64(math.Ceil(float64(billedMinutes) * float64(pricePerHour) / 60.0))
+	switch {
+	case coGiaTheoHang:
+		// Giá theo hạng hội viên không đổi theo giờ nên không cần cắt đoạn.
+		if billedMinutes > 0 {
+			gross = int64(math.Ceil(float64(billedMinutes) * float64(pricePerHour) / 60.0))
+		}
+	case machine.GroupID != nil:
+		khung := s.bangGiaKhungGio(*machine.GroupID)
+		gross = tinhTienTheoDoan(khung, pricePerHour, batDau, billedMinutes)
+		// Đơn giá đem đi hiển thị và chụp vào dòng phiên là giá ĐANG áp dụng ở
+		// cuối khoảng, tức giá của phút sắp chơi tiếp. Tiền đã tính vẫn giữ
+		// nguyên theo từng đoạn; con số này chỉ để màn hình nói đúng "bây giờ
+		// đang tính bao nhiêu một giờ".
+		pricePerHour = giaTaiThoiDiem(khung, pricePerHour, batDau.Add(time.Duration(billedMinutes)*time.Minute))
 	}
 
 	// The member-tier discount applies to whatever rate was resolved above.
@@ -1185,6 +1246,7 @@ func (s *SessionService) CalculateCost(machineID string, memberID string, durati
 
 	return &CostBreakdown{
 		MachineGroupName: groupName,
+		NoPricing:        pricePerHour <= 0,
 		PricePerHour:     pricePerHour,
 		DurationMinutes:  durationMinutes,
 		BilledMinutes:    billedMinutes,
@@ -1219,30 +1281,60 @@ func (s *SessionService) memberGroupRate(machineGroupID string, member *model.Me
 	return mp, true
 }
 
-// timeBasedRate trả về giá của khung giờ cao/thấp điểm đang phủ thời điểm này.
+// bangGiaKhungGio đọc mọi khung giờ đang bật của nhóm máy, KHÔNG lọc theo thứ
+// trong tuần: một phiên vắt qua nửa đêm nằm trên hai ngày khác nhau, lọc sẵn ở
+// SQL theo thứ hôm nay thì phần sau nửa đêm mất giá của nó.
+func (s *SessionService) bangGiaKhungGio(machineGroupID string) []model.TimeBasedPricing {
+	var rows []model.TimeBasedPricing
+	if err := s.db.
+		Where("machine_group_id = ? AND is_active = ?", machineGroupID, true).
+		Find(&rows).Error; err != nil {
+		return nil
+	}
+	return rows
+}
+
+// giaTaiThoiDiem trả về giá áp dụng đúng một thời điểm, giaGoc là giá của nhóm
+// máy khi không khung nào phủ.
 //
 // So khung giờ trong Go chứ không trong SQL, vì điều kiện
 // `start_time <= now AND end_time > now` KHÔNG khớp được khung vắt qua nửa đêm
 // — một khung cao điểm 22:00–02:00 sẽ không bao giờ áp dụng. Quán net chạy
 // xuyên đêm nên đó là khung phổ biến nhất.
-func (s *SessionService) timeBasedRate(machineGroupID string, at time.Time) (int64, bool) {
-	var rows []model.TimeBasedPricing
-	err := s.db.
-		Where("machine_group_id = ? AND is_active = ?", machineGroupID, true).
-		Where("day_of_week = ?", int(at.Weekday())).
-		Find(&rows).Error
-	if err != nil || len(rows) == 0 {
-		return 0, false
-	}
-
-	now := at.Format("15:04")
-	for _, tp := range rows {
+func giaTaiThoiDiem(khung []model.TimeBasedPricing, giaGoc int64, at time.Time) int64 {
+	gio := at.Format("15:04")
+	thu := int(at.Weekday())
+	for _, tp := range khung {
+		if tp.DayOfWeek != thu {
+			continue
+		}
 		// withinCurfew là so khung giờ trong ngày có xử lý vắt qua nửa đêm.
-		if withinCurfew(now, clockHHMM(tp.StartTime), clockHHMM(tp.EndTime)) {
-			return tp.PricePerHour, true
+		if withinCurfew(gio, clockHHMM(tp.StartTime), clockHHMM(tp.EndTime)) {
+			return tp.PricePerHour
 		}
 	}
-	return 0, false
+	return giaGoc
+}
+
+// tinhTienTheoDoan cộng tiền của từng phút, mỗi phút giữ giá của khung giờ mà
+// nó thuộc về.
+//
+// Đi theo từng phút chứ không dựng danh sách đoạn: một phiên dài nhất cũng chỉ
+// vài trăm vòng lặp trên dữ liệu đã nằm sẵn trong bộ nhớ, đổi lại không phải
+// viết logic cắt đoạn — thứ dễ sai đúng ở chỗ ranh giới và ở khung vắt nửa đêm.
+//
+// Làm tròn lên ở TỔNG chứ không ở từng phút, giữ đúng cách bản cũ làm tròn để
+// một phiên không đổi khung giờ vẫn ra đúng con số cũ.
+func tinhTienTheoDoan(khung []model.TimeBasedPricing, giaGoc int64, batDau time.Time, soPhut int) int64 {
+	if soPhut <= 0 {
+		return 0
+	}
+	tong := 0.0
+	for i := 0; i < soPhut; i++ {
+		gia := giaTaiThoiDiem(khung, giaGoc, batDau.Add(time.Duration(i)*time.Minute))
+		tong += float64(gia) / 60.0
+	}
+	return int64(math.Ceil(tong))
 }
 
 // activeDuration trả về số phút đã chơi.

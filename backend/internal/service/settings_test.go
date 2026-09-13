@@ -56,7 +56,9 @@ func TestSettingsService_GetByGroup_Found(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestSettingsService_GetByGroup_NotFound(t *testing.T) {
+// Nhóm rỗng nay trả về danh sách rỗng, không còn là lỗi: đó là trạng thái lần
+// đầu bình thường của một tab cài đặt chưa ai đụng tới.
+func TestSettingsService_GetByGroup_NhomRongTraDanhSachRong(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewSettingsService(db, NewAuditService(db))
 
@@ -64,9 +66,9 @@ func TestSettingsService_GetByGroup_NotFound(t *testing.T) {
 		WithArgs("nonexistent").
 		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
 
-	_, err := svc.GetByGroup("nonexistent")
-	assert.Error(t, err)
-	assert.Equal(t, "settings group not found", err.Error())
+	result, err := svc.GetByGroup("nonexistent")
+	require.NoError(t, err)
+	assert.Empty(t, result)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

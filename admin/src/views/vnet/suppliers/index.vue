@@ -15,7 +15,11 @@ const dialog = ref(false);
 const isEdit = ref(false);
 const formRef = ref<any>(null);
 const form = reactive<any>({ name: '', phone: '', email: '' });
-const rules = { name: [{ required: true, message: '', trigger: 'blur' }] };
+// Bỏ trống message thì người dùng chỉ thấy ô đỏ và một dòng rỗng, không biết
+// vì sao bị chặn. Khoá dịch đã có sẵn ở cả ba ngôn ngữ, chỉ là chưa nối vào.
+const rules = {
+  name: [{ required: true, message: $t('vnetPages.suppliers.form.nameRequired'), trigger: 'blur' }]
+};
 
 const { columns, columnChecks, data, getData, loading } = useUITable({
   api: () => client.get('/suppliers', { params: { page_size: 1000 } }),

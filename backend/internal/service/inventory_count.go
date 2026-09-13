@@ -90,6 +90,23 @@ func (s *InventoryCountService) Open(req *OpenCountRequest, actorID string) (*mo
 
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		tx.Exec("SELECT pg_advisory_xact_lock(?)", countCodeLockKey)
+
+		// Chỉ cho MỘT phiên kiểm kê mở tại một thời điểm.
+		//
+		// Lúc chốt, hệ thống áp CHÊNH LỆCH đã ghi lên tồn kho hiện tại (cố ý,
+		// để hàng bán ra giữa lúc đếm và lúc chốt không bị xoá mất). Nhưng nếu
+		// hai phiên cùng mở, hai người cùng đếm ra 30 trong khi sổ ghi 35 thì
+		// mỗi phiên ghi lệch -5, và chốt cả hai sẽ trừ 5 hai lần: 35 → 30 → 25
+		// trong khi kho thật có 30. Kiểm kê — việc sinh ra để sửa sai lệch —
+		// lại tự tạo ra sai lệch. Khoá advisory ở trên giữ cho phép kiểm này
+		// không bị hai lệnh mở song song lách qua.
+		var dangMo model.InventoryCountSession
+		if err := tx.Where("status = ?", CountStatusOpen).First(&dangMo).Error; err == nil {
+			return fmt.Errorf("phiên %s đang mở — hãy chốt hoặc huỷ phiên đó trước", dangMo.Code)
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
 		var last model.InventoryCountSession
 		next := 1
 		if err := tx.Where("code LIKE ?", "KK-%").Order("code DESC").First(&last).Error; err == nil {

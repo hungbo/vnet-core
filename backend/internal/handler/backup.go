@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"errors"
+	"io"
+
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/internal/service"
@@ -43,14 +46,18 @@ func (h *BackupHandler) List(c *gin.Context) {
 // @Tags Backups
 // @Accept json
 // @Produce json
-// @Param request body service.CreateBackupRequest true "Request body"
+// @Param request body service.CreateBackupRequest false "Request body"
 // @Success 201 {object} response.Response{data=model.BackupLog}
 // @Failure 400 {object} response.Response
 // @Router /api/backups [post]
 // @Security BearerAuth
 func (h *BackupHandler) Create(c *gin.Context) {
 	var req service.CreateBackupRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	// Thân request là TUỲ CHỌN: cả hai trường (ghi chú, người tạo) đều không bắt
+	// buộc, và nút "Tạo sao lưu" trên giao diện gửi POST không kèm thân. Bản cũ
+	// bắt buộc có thân nên nút đó luôn trả 400 "Dữ liệu không hợp lệ: EOF" —
+	// tính năng sao lưu chưa từng chạy được từ giao diện.
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		handleValidationError(c, err)
 		return
 	}

@@ -1975,7 +1975,7 @@ definitions:
       name:
         type: string
     type: object
-host: localhost:8080
+host: localhost:20800
 info:
   contact:
     email: support@vnet.net

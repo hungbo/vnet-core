@@ -83,7 +83,7 @@ func TestBookingService_Create_InvalidTimeFormat(t *testing.T) {
 		BookedTo:      "2026-06-25T12:00:00+07:00",
 	}, "u1")
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid booked_from")
+	assert.Contains(t, err.Error(), "giờ bắt đầu không đúng định dạng")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -142,7 +142,7 @@ func TestBookingService_Create_RejectsDepositBeyondBalance(t *testing.T) {
 	}, "u1")
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "insufficient balance")
+	assert.Contains(t, err.Error(), "số dư không đủ")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -171,4 +171,30 @@ func TestBookingService_Cancel_NoRefundWithoutCharge(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Ô tìm trên trang Đặt chỗ ghi "Tìm theo tên / mã máy" nên phải tra cả hai,
+// và phải bỏ dấu.
+//
+// Bản cũ chỉ tra customer_name và customer_phone bằng ILIKE trần: gõ đúng mã
+// máy ra rỗng (dù ô nhập hứa tìm được), còn gõ "Le Thi" không ra "Lê Thị Hồng
+// Nhung" vì tên khách luôn có dấu còn nhân viên quầy gõ không dấu.
+func TestBookingService_List_TimTheoTenBoDauVaMaMay(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewBookingService(db, NewAuditService(db))
+
+	dieuKien := `WHERE \(unaccent\(customer_name\) ILIKE unaccent\(\$1\) OR customer_phone ILIKE \$2 OR machine_id IN \(SELECT id FROM machines WHERE machine_code ILIKE \$3 AND deleted_at IS NULL\)\)`
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_bookings" `+dieuKien).
+		WithArgs("%PC-05%", "%PC-05%", "%PC-05%").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_bookings" ` + dieuKien).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "customer_name"}).
+			AddRow(testUUID, "Lê Thị Hồng Nhung"))
+
+	res, err := svc.List(&BookingListRequest{Page: 1, PageSize: 20, Search: "PC-05"})
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), res.Total)
 }

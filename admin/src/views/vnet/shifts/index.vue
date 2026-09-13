@@ -122,7 +122,15 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'expected_total',
       label: $t('vnetPages.shifts.expectedTotal'),
       width: 130,
-      formatter: (row: any) => (row.expected_total != null ? formatPrice(row.expected_total) : '-')
+      // expected_total của backend là tiền THU TRONG CA, chưa gồm tiền đầu ca.
+      // Cột này mang nhãn "Tiền dự kiến" — tức số đáng lẽ phải có trong két —
+      // nên phải cộng tiền đầu ca vào, đúng công thức mà backend dùng để tính
+      // Thừa/Thiếu: discrepancy = tiền cuối − (tiền đầu + tiền thu trong ca).
+      // Hiện thẳng expected_total làm hai cột cạnh nhau tự mâu thuẫn: ca đầu
+      // 500.000, thu 40.000, đếm được 540.000 thì bảng ghi "dự kiến 40.000"
+      // ngay cạnh "Thừa/Thiếu 0".
+      formatter: (row: any) =>
+        row.expected_total != null ? formatPrice((row.opening_balance || 0) + row.expected_total) : '-'
     },
     {
       // The two numbers a shift close exists to produce. They were computed but

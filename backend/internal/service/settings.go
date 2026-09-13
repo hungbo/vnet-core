@@ -62,10 +62,10 @@ func (s *SettingsService) GetByGroup(groupName string) ([]SettingResponse, error
 	if err := s.db.Where("group_name = ?", groupName).Order("key").Find(&settings).Error; err != nil {
 		return nil, err
 	}
-	if len(settings) == 0 {
-		return nil, errors.New("settings group not found")
-	}
-
+	// Nhóm chưa có dòng nào là trạng thái LẦN ĐẦU bình thường — trang Cài đặt
+	// mở ra trắng rồi lần Lưu đầu tiên tạo dòng. Trả 404 ở đây bắt giao diện
+	// phải đi một nhánh riêng và để lại một lỗi đỏ trong console mỗi lần mở tab
+	// chưa dùng tới.
 	result := make([]SettingResponse, len(settings))
 	for i, setting := range settings {
 		result[i] = SettingResponse{

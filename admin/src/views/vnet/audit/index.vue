@@ -14,18 +14,24 @@ const filterAction = ref(null);
 const filterEntity = ref(null);
 const dateRange = ref(null);
 
-const actionOptions = ['create', 'update', 'delete', 'login', 'logout', 'pay', 'cancel', 'export'];
+// Chỉ liệt kê giá trị mà backend thật sự ghi vào audit_logs. 'login', 'logout'
+// và 'export' không có một dòng nào trong mã nguồn — chọn chúng thì bảng luôn
+// rỗng, người trực tưởng hệ thống mất dữ liệu.
+const actionOptions = ['create', 'update', 'update_status', 'delete', 'pay', 'cancel', 'topup', 'refund'];
 const entityOptions = [
   'member',
   'machine',
   'order',
   'product',
   'category',
-  'session',
+  // Bảng ghi là 'machine_session'; 'session' không tồn tại nên đây từng là một
+  // lựa chọn chết.
+  'machine_session',
   'shift',
   'promotion',
   'combo',
-  'booking',
+  // Tương tự: bảng ghi 'machine_booking'.
+  'machine_booking',
   'user'
 ];
 
@@ -138,7 +144,7 @@ function fetchData() {
           <template #default="{ row }">
             <pre
               style="
-                background: #f5f7fa;
+                background: var(--el-fill-color-light);
                 padding: 12px;
                 border-radius: 4px;
                 font-size: 12px;

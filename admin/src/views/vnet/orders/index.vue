@@ -795,7 +795,7 @@ onBeforeUnmount(() => {
             font-family: ui-monospace, Menlo, Consolas, monospace;
             font-size: 13px;
             line-height: 1.5;
-            background: #f6f6f6;
+            background: var(--el-fill-color-light);
             padding: 16px;
             border-radius: 4px;
             overflow-x: auto;

@@ -94,3 +94,45 @@ func TestChanVi_DungChungSentinel(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrRangBuoc))
 	assert.Equal(t, "đơn đã có 2 phiếu thanh toán", err.Error())
 }
+
+// Mỗi phụ thuộc phải chỉ đúng lối thoát của nó.
+//
+// Trước đây cả danh sách dùng chung một câu gợi ý, nên xoá nhóm máy còn dòng
+// bảng giá lại khuyên "hãy chuyển chúng sang nhóm khác trước" — thao tác đó
+// không tồn tại với dòng giá, người vận hành bị chặn mà không có đường ra.
+func TestKiemTraPhuThuoc_GoiYRiengChoTungPhuThuoc(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_prices"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+
+	err := kiemTraPhuThuoc(db, "g1", []phuThuoc{
+		{Bang: &model.Machine{}, Cot: "group_id", Nhan: "máy"},
+		{Bang: &model.MachinePrice{}, Cot: "machine_group_id", Nhan: "dòng bảng giá theo hạng",
+			GoiY: "hãy xoá chúng trong hộp thoại Bảng giá của nhóm trước"},
+	}, "hãy chuyển chúng sang nhóm khác trước")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "2 dòng bảng giá theo hạng")
+	assert.Contains(t, err.Error(), "hãy xoá chúng trong hộp thoại Bảng giá")
+	assert.NotContains(t, err.Error(), "chuyển chúng sang nhóm khác")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Không khai GoiY riêng thì vẫn dùng gợi ý chung.
+func TestKiemTraPhuThuoc_KhongKhaiThiDungGoiYChung(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
+
+	err := kiemTraPhuThuoc(db, "g1", []phuThuoc{
+		{Bang: &model.Machine{}, Cot: "group_id", Nhan: "máy"},
+	}, "hãy chuyển chúng sang nhóm khác trước")
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "3 máy — hãy chuyển chúng sang nhóm khác trước")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

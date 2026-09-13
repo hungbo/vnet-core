@@ -1,7 +1,7 @@
 import type { Ref } from 'vue';
 import { reactive, ref } from 'vue';
-import dayjs from 'dayjs';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import dayjs from 'dayjs';
 import client from '@/api/client';
 import { chatUnreadCount } from '@/hooks/chat/chatState';
 
@@ -36,13 +36,14 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
             timestamp: dayjs(room.last_message.created_at).format('HH:mm'),
             saved: true,
             distributed: room.last_message.status === 'delivered' || room.last_message.status === 'read',
-            seen: room.last_message.status === 'read',
+            seen: room.last_message.status === 'read'
           }
         : undefined,
-      users: room.participants?.map((p: any) => ({
-        _id: p.id,
-        username: p.name || p.username || 'User',
-      })) || [],
+      users:
+        room.participants?.map((p: any) => ({
+          _id: p.id,
+          username: p.name || p.username || 'User'
+        })) || []
     };
   }
 
@@ -72,7 +73,9 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
       senderId: msg.sender_id,
       username: msg.sender_username
         ? `${msg.sender_type} - ${msg.sender_username}`
-        : (msg.sender_type === 'admin' ? 'Admin' : 'Hội viên'),
+        : msg.sender_type === 'admin'
+          ? 'Admin'
+          : 'Hội viên',
       date: dayjs(msg.created_at).format('DD/MM/YYYY'),
       timestamp: dayjs(msg.created_at).format('HH:mm:ss'),
       createdAt: msg.created_at,
@@ -81,7 +84,7 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
       seen: msg.status === 'read',
       disableActions: true,
       messageType: msg.message_type,
-      senderType: msg.sender_type,
+      senderType: msg.sender_type
     };
   }
 
@@ -91,7 +94,7 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
 
   async function fetchPage(roomId: string, page: number) {
     const res: any = await client.get(`/chat/rooms/${roomId}/messages`, {
-      params: { page, page_size: 20 },
+      params: { page, page_size: 20 }
     });
     return Array.isArray(res) ? res : res?.items || [];
   }
@@ -149,7 +152,7 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
       await client.post('/chat/rooms', {
         participant_id: roomForm.participant_ids[0],
         participant_type: 'member',
-        title: 'Hỗ trợ',
+        title: 'Hỗ trợ'
       });
       showNewRoomDialog.value = false;
       roomForm.participant_ids = [];
@@ -179,7 +182,7 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
     try {
       await ElMessageBox.confirm('Xoá tất cả cuộc hội thoại? Hành động này không thể hoàn tác!', {
         type: 'warning',
-        confirmButtonText: 'Xoá tất cả',
+        confirmButtonText: 'Xoá tất cả'
       });
       await client.delete('/chat/rooms');
       currentRoomId.value = '';
@@ -204,6 +207,6 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
     handleCreateRoom,
     deleteRoom,
     deleteAllRooms,
-    updateUnreadCount,
+    updateUnreadCount
   };
 }

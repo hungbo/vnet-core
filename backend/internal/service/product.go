@@ -87,10 +87,14 @@ type CreateProductRequest struct {
 }
 
 type UpdateProductRequest struct {
-	CategoryID   *string             `json:"category_id"`
-	Name         *string             `json:"name"`
-	Description  *string             `json:"description"`
-	Price        *int64              `json:"price" binding:"min=0"`
+	CategoryID  *string `json:"category_id"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	// omitempty là bắt buộc với con trỏ: thiếu nó thì validator coi nil là vi
+	// phạm min=0, nên MỌI lần cập nhật một phần không kèm giá đều bị chặn bằng
+	// câu "Giá tối thiểu là 0" — sửa mỗi nhà cung cấp của sản phẩm cũng hỏng.
+	// Cả repo đang dùng khuôn `omitempty,min=...`, đây là chỗ duy nhất lệch.
+	Price        *int64              `json:"price" binding:"omitempty,min=0"`
 	ImageURL     *string             `json:"image_url"`
 	SupplierID   *string             `json:"supplier_id"`
 	UnitID       *string             `json:"unit_id"`
@@ -166,6 +170,24 @@ func (s *ProductService) GetByID(id string) (*ProductResponse, error) {
 	return &result, nil
 }
 
+// danhMucTonTai chắc chắn mã danh mục có thật trước khi gắn vào sản phẩm.
+//
+// Cột category_id KHÔNG có khoá ngoại, nên một mã sai chính tả vẫn ghi được và
+// sản phẩm sau đó hiện "Đã xoá" ở cột danh mục — không ai biết gõ nhầm ở đâu.
+func (s *ProductService) danhMucTonTai(id *string) error {
+	if id == nil || *id == "" {
+		return nil
+	}
+	var n int64
+	if err := s.db.Model(&model.Category{}).Where("id = ?", *id).Count(&n).Error; err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("không tìm thấy danh mục")
+	}
+	return nil
+}
+
 func (s *ProductService) Create(req *CreateProductRequest) (*ProductResponse, error) {
 	active := true
 	if req.IsActive != nil {
@@ -176,8 +198,14 @@ func (s *ProductService) Create(req *CreateProductRequest) (*ProductResponse, er
 		isRetail = *req.IsRetail
 	}
 
+	danhMuc := uuidRongThanhNil(req.CategoryID)
+	if err := s.danhMucTonTai(danhMuc); err != nil {
+		return nil, err
+	}
+
 	product := model.Product{
-		CategoryID:   req.CategoryID,
+		// Ô chọn danh mục bị bỏ trống gửi xuống "" — cột uuid không nhận.
+		CategoryID:   danhMuc,
 		Name:         req.Name,
 		Description:  req.Description,
 		Price:        req.Price,
@@ -247,7 +275,16 @@ func (s *ProductService) Update(id string, req *UpdateProductRequest) (*ProductR
 
 	updates := map[string]interface{}{}
 	if req.CategoryID != nil {
-		updates["category_id"] = *req.CategoryID
+		// Bỏ danh mục của một sản phẩm là thao tác hợp lệ: ghi NULL, không ghi "".
+		c := uuidRongThanhNil(req.CategoryID)
+		if err := s.danhMucTonTai(c); err != nil {
+			return nil, err
+		}
+		if c == nil {
+			updates["category_id"] = nil
+		} else {
+			updates["category_id"] = *c
+		}
 	}
 	if req.Name != nil {
 		updates["name"] = *req.Name

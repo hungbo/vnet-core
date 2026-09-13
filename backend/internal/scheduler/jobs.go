@@ -96,8 +96,15 @@ func Register(s *Scheduler, db *gorm.DB, wsHub *hub.Hub, sessions *service.Sessi
 func markStaleMachinesOffline(db *gorm.DB, wsHub *hub.Hub) error {
 	cutoff := time.Now().Add(-HeartbeatTimeout)
 
+	// Máy đang có phiên chơi thì KHÔNG đụng tới, dù nhịp tim đã tắt.
+	//
+	// Khách vẫn đang ngồi đó; agent chỉ treo hoặc rớt mạng. Đặt về "offline"
+	// vừa báo sai cho quầy, vừa gỡ mất chốt chặn mở phiên trùng máy nếu chốt đó
+	// còn đọc cột status. Phiên kết thúc thì máy tự về "available", và nếu lúc
+	// đó nhịp tim vẫn tắt thì vòng sau của tác vụ này mới đặt nó offline.
 	var stale []model.Machine
-	if err := db.Where("status <> ? AND last_heartbeat IS NOT NULL AND last_heartbeat < ?", "offline", cutoff).
+	if err := db.Where(`status <> ? AND last_heartbeat IS NOT NULL AND last_heartbeat < ?
+		AND id NOT IN (SELECT machine_id FROM machine_sessions WHERE is_active = true)`, "offline", cutoff).
 		Find(&stale).Error; err != nil {
 		return err
 	}

@@ -1,7 +1,7 @@
 // @ts-nocheck
 const local: App.I18n.Schema = {
   system: {
-    title: 'SoybeanAdmin',
+    title: 'VNET Admin',
     updateTitle: 'System Version Update Notification',
     updateContent: 'A new version of the system has been detected. Do you want to refresh the page immediately?',
     updateConfirm: 'Refresh immediately',
@@ -809,7 +809,7 @@ const local: App.I18n.Schema = {
       }
     },
     dashboard: {
-      revenueToday: 'Revenue Today',
+      revenueToday: 'Cash In Today',
       revenueChart: 'Revenue Chart',
       revenue7d: 'Revenue, last 7 days',
       revenueSeries: 'Revenue',
@@ -825,13 +825,33 @@ const local: App.I18n.Schema = {
         members: 'Members',
         onlineMachines: 'Online Machines',
         playing: 'Playing',
-        revenueToday: "Today's Revenue"
+        revenueToday: "Today's Cash In"
       }
     },
     machines: {
+      noGroupTag: 'No price group — 0₫/hour',
+      batch: {
+        open: 'Bulk create',
+        title: 'Bulk create machines',
+        prefix: 'Prefix',
+        prefixHint: 'Must match the code set on the client',
+        range: 'Number range',
+        digits: 'Digits',
+        digitsHint: '2 → PC-01. Use 0 for no padding',
+        specs: 'Specs applied to the whole batch',
+        checking: 'Checking...',
+        canCreate: 'Ready to create {n} machines',
+        cannotCreate: 'Cannot create — adjust the prefix or range',
+        conflicts: '{n} codes already in use',
+        deleted: '{n} codes belong to deleted machines',
+        created: 'Created {n} machines',
+        failed: 'Bulk create failed',
+        submit: 'Create'
+      },
       title: 'Machines',
       active: 'Active',
-      activeHint: 'Turn off to suspend the machine — no new session can start on it. Use this instead of deleting a machine that already has history.',
+      activeHint:
+        'Turn off to suspend the machine — no new session can start on it. Use this instead of deleting a machine that already has history.',
       suspended: 'Suspended',
       searchPlaceholder: 'Search machine code / group',
       add: 'Add Machine',
@@ -1090,6 +1110,8 @@ const local: App.I18n.Schema = {
       }
     },
     sessions: {
+      noPricingWarning:
+        'This machine has no price group — the session will be billed at 0₫/hour. Assign a group on the Machines page first.',
       start: 'Start session',
       switchMachine: 'Switch machine',
       selectMachine: 'Machine',
@@ -1452,6 +1474,7 @@ const local: App.I18n.Schema = {
       giftTab: 'Gift cards',
       generate: 'Generate',
       sell: 'Sell card',
+      paymentMethod: 'Payment method',
       sellHint: 'Record who this paper card was sold to. Different from redeeming — the buyer may be gifting it.',
       sellTo: 'Sell to member',
       sellSuccess: 'Card {serial} recorded as sold to {member}',
@@ -1573,7 +1596,9 @@ const local: App.I18n.Schema = {
       },
       rewardTypes: {
         discount_percent: 'Percentage discount',
-        discount_amount: 'Fixed amount discount'
+        discount_amount: 'Fixed amount discount',
+        balance: 'Add balance',
+        bonus_points: 'Add bonus points'
       },
       remove: 'Remove',
       title: 'Promotions',
@@ -1597,10 +1622,6 @@ const local: App.I18n.Schema = {
       spinWin: 'Won "{name}" — credited to {member}',
       spinLose: 'No win — matches the configured odds',
       spinNeedsMember: 'No member available for a test spin',
-      rewardTypes: {
-        balance: 'Add balance',
-        bonus_points: 'Add bonus points'
-      },
       value: 'Value',
       probability: 'Probability',
       form: {
@@ -1808,6 +1829,8 @@ const local: App.I18n.Schema = {
       amount: 'Amount',
       balanceBefore: 'Balance Before',
       balanceAfter: 'Balance After',
+      bonusBefore: 'Bonus before',
+      bonusAfter: 'Bonus after',
       paymentMethod: 'Method',
       description: 'Description',
       createdBy: 'Created By',
@@ -1816,6 +1839,15 @@ const local: App.I18n.Schema = {
       refund: 'Refund',
       cancel: 'Cancel',
       comboPurchase: 'Combo Purchase',
+      topupBonus: 'Top-up bonus',
+      refundBonus: 'Bonus refund',
+      attendanceBonus: 'Check-in reward',
+      bookingDeposit: 'Booking deposit',
+      depositRefund: 'Deposit refund',
+      orderPayment: 'Order payment',
+      topupCard: 'Card top-up',
+      luckySpinBalance: 'Lucky spin — balance',
+      luckySpinBonus: 'Lucky spin — bonus',
       messages: {
         loadError: 'Failed to load transactions'
       }

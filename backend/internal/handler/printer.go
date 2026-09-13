@@ -182,7 +182,7 @@ func (h *PrinterHandler) ListProducts(c *gin.Context) {
 func (h *PrinterHandler) SetProducts(c *gin.Context) {
 	var req service.SetProductsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	ids, err := h.svc.SetProducts(c.Param("id"), req.ProductIDs, middleware.GetUserID(c))

@@ -560,6 +560,30 @@ def flow_orders(t: str, ids: dict) -> None:
                bal_before - bal_after == 50000,
                f"{bal_before} → {bal_after}", f"số dư không đổi ({bal_before})")
 
+    # Huỷ một đơn ĐÃ XÁC NHẬN phải hoàn lại đúng số hàng đã trừ.
+    #
+    # Nhánh hoàn kho từng nằm sẵn trong code nhưng không bao giờ chạy:
+    # tx.Model(&order).Updates(...) của GORM ghi giá trị mới ngược vào chính
+    # struct, nên ngay sau lệnh đó order.Status đã là "cancelled" và điều kiện
+    # so với "confirmed" luôn sai. Khách đổi ý, nhân viên huỷ đơn, và số hàng đã
+    # trừ bốc hơi khỏi sổ kho — sai lệch cộng dồn mỗi ngày cho tới kỳ kiểm kê.
+    st, res = call("POST", "/api/orders",
+                   {"member_id": ids["member"], "machine_id": ids["machine1"],
+                    "items": [{"product_id": ids["product"], "quantity": 1}]}, t)
+    huy_id = (data_of(res) or {}).get("id", "")
+    if huy_id:
+        kho_dau = sql(f"select current_stock from products where id = '{ids['ingredient']}'")
+        call("POST", f"/api/orders/{huy_id}/status", {"status": "confirmed"}, t)
+        kho_sau_tru = sql(f"select current_stock from products where id = '{ids['ingredient']}'")
+        call("POST", f"/api/orders/{huy_id}/status", {"status": "cancelled"}, t)
+        kho_sau_huy = sql(f"select current_stock from products where id = '{ids['ingredient']}'")
+        expect(area, "xác nhận đơn có trừ kho", kho_dau != kho_sau_tru,
+               f"{kho_dau} → {kho_sau_tru}", f"tồn kho không đổi ({kho_dau})")
+        expect(area, "huỷ đơn đã xác nhận thì hoàn lại kho",
+               kho_sau_huy == kho_dau,
+               f"{kho_sau_tru} → {kho_sau_huy}",
+               f"hàng bốc hơi: trước {kho_dau}, sau khi huỷ {kho_sau_huy}")
+
     # Sửa đơn và tách đơn: hai endpoint đã có từ lâu nhưng trang Đơn hàng không
     # có nút nào gọi tới.
     st, res = call("POST", "/api/orders",
@@ -1561,6 +1585,13 @@ def flow_inventory_count(t: str, ids: dict) -> None:
     empty = (data_of(res) or {}).get("id", "")
     st, _ = call("POST", f"/api/inventory-counts/{empty}/commit", {}, t)
     expect(area, "phiên chưa đếm gì thì không chốt được", st >= 400, detail_bad=f"HTTP {st}")
+
+    # Chỉ MỘT phiên kiểm kê được mở tại một thời điểm (hai phiên cùng đếm rồi
+    # cùng chốt sẽ áp chênh lệch hai lần). Phải dọn phiên rỗng ở trên trước khi
+    # mở phiên kế tiếp, nếu không lệnh mở sau bị từ chối và mọi kiểm tra phía
+    # dưới chạy với id rỗng.
+    st, _ = call("POST", f"/api/inventory-counts/{empty}/cancel", {}, t)
+    expect(area, "huỷ được phiên rỗng để mở phiên khác", st == 200, detail_bad=f"HTTP {st}")
 
     # Huỷ phiên không được đụng tồn kho.
     before = stock()

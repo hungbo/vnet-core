@@ -228,6 +228,12 @@ func TestOrderService_Pay_FromBalanceDeductsMember(t *testing.T) {
 		WithArgs(int64(30000), anyTime{}, "mem-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 
+	// Đơn của hội viên nay cộng vào total_spent (cột quyết định hạng) bất kể
+	// trả bằng gì — trước đây chỉ tiền mua gói cước được cộng.
+	mock.ExpectExec(`UPDATE "members" SET "total_spent"=total_spent \+ \$1`).
+		WithArgs(int64(50000), "mem-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
 	mock.ExpectQuery(`INSERT INTO "payments"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("pay-1"))
 	mock.ExpectExec(`UPDATE "orders" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
@@ -291,7 +297,7 @@ func TestOrderService_DeductStock_RejectsInsufficient(t *testing.T) {
 	mock.ExpectRollback()
 
 	tx := db.Begin()
-	_, err := svc.deductStockForOrder(tx, "o1", "ORD-00001")
+	_, err := svc.deductStockForOrder(tx, "o1", "ORD-00001", "user-1")
 	tx.Rollback()
 
 	require.Error(t, err)
@@ -322,7 +328,7 @@ func TestOrderService_DeductStock_RejectsExactlyZero(t *testing.T) {
 	mock.ExpectRollback()
 
 	tx := db.Begin()
-	_, err := svc.deductStockForOrder(tx, "o1", "ORD-1")
+	_, err := svc.deductStockForOrder(tx, "o1", "ORD-1", "user-1")
 	tx.Rollback()
 
 	require.Error(t, err)
@@ -349,10 +355,15 @@ func TestOrderService_DeductStock_ExactFitLeavesZero(t *testing.T) {
 	mock.ExpectExec(`UPDATE "products" SET "current_stock"=\$1`).
 		WithArgs(0.0, "prod-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	// Hàng bán thẳng cũng phải để lại bút toán kho, không chỉ đổi con số tồn:
+	// thiếu nó thì trang "Giao dịch tồn kho" trống trơn trong khi kho vẫn chạy,
+	// và kỳ kiểm kê không có gì để đối chiếu.
+	mock.ExpectQuery(`INSERT INTO "stock_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
 	mock.ExpectCommit()
 
 	tx := db.Begin()
-	ids, err := svc.deductStockForOrder(tx, "o1", "ORD-1")
+	ids, err := svc.deductStockForOrder(tx, "o1", "ORD-1", "user-1")
 	require.NoError(t, err)
 	require.NoError(t, tx.Commit().Error)
 
@@ -385,7 +396,7 @@ func TestOrderService_DeductStock_SameProductTwoLines(t *testing.T) {
 	mock.ExpectRollback()
 
 	tx := db.Begin()
-	_, err := svc.deductStockForOrder(tx, "o1", "ORD-1")
+	_, err := svc.deductStockForOrder(tx, "o1", "ORD-1", "user-1")
 	tx.Rollback()
 
 	require.Error(t, err, "tổng 4 trên tồn 3 phải bị chặn")
@@ -427,7 +438,7 @@ func TestOrderService_DeductStock_BOMIgnoresRawColumn(t *testing.T) {
 	mock.ExpectCommit()
 
 	tx := db.Begin()
-	ids, err := svc.deductStockForOrder(tx, "o1", "ORD-1")
+	ids, err := svc.deductStockForOrder(tx, "o1", "ORD-1", "user-1")
 	require.NoError(t, err, "món nấu từ nguyên liệu không được chặn vì cột thô bằng 0")
 	require.NoError(t, tx.Commit().Error)
 
@@ -467,7 +478,7 @@ func TestOrderService_RestoreStock_BOMDoesNotInflateSelfStock(t *testing.T) {
 	mock.ExpectCommit()
 
 	tx := db.Begin()
-	ids, err := svc.restoreStockForOrder(tx, "o1", "ORD-1")
+	ids, err := svc.restoreStockForOrder(tx, "o1", "ORD-1", "user-1")
 	require.NoError(t, err)
 	require.NoError(t, tx.Commit().Error)
 
@@ -494,10 +505,14 @@ func TestOrderService_RestoreStock_SelfStockAddsBackUnderLock(t *testing.T) {
 	mock.ExpectExec(`UPDATE "products" SET "current_stock"=\$1`).
 		WithArgs(7.0, "prod-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	// Hoàn kho cũng phải có bút toán "inbound" đối ứng với bút toán "outbound"
+	// lúc xuất, nếu không sổ kho chỉ có một vế.
+	mock.ExpectQuery(`INSERT INTO "stock_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
 	mock.ExpectCommit()
 
 	tx := db.Begin()
-	ids, err := svc.restoreStockForOrder(tx, "o1", "ORD-1")
+	ids, err := svc.restoreStockForOrder(tx, "o1", "ORD-1", "user-1")
 	require.NoError(t, err)
 	require.NoError(t, tx.Commit().Error)
 
@@ -525,7 +540,7 @@ func TestOrderService_DeductStock_BOMReadFails(t *testing.T) {
 	mock.ExpectRollback()
 
 	tx := db.Begin()
-	_, err := svc.deductStockForOrder(tx, "o1", "ORD-1")
+	_, err := svc.deductStockForOrder(tx, "o1", "ORD-1", "user-1")
 	tx.Rollback()
 
 	require.Error(t, err)

@@ -251,10 +251,14 @@ const sellVisible = ref(false);
 const selling = ref(false);
 const sellCard = ref<any>(null);
 const sellMemberId = ref('');
+// Bán thẻ là lúc tiền vào quán, nên phải ghi rõ thu bằng gì: chốt ca đếm tiền
+// mặt bằng đúng giá trị này. Mặc định tiền mặt vì đó là cách bán ở quầy.
+const sellPaymentMethod = ref('cash');
 
 function openSell(row: any) {
   sellCard.value = row;
   sellMemberId.value = '';
+  sellPaymentMethod.value = 'cash';
   redeemMembers.value = [];
   sellVisible.value = true;
 }
@@ -266,7 +270,10 @@ async function submitSell() {
   }
   selling.value = true;
   try {
-    await client.post(`/topup-cards/${sellCard.value.id}/sell`, { member_id: sellMemberId.value });
+    await client.post(`/topup-cards/${sellCard.value.id}/sell`, {
+      member_id: sellMemberId.value,
+      payment_method: sellPaymentMethod.value
+    });
     const member = redeemMembers.value.find(m => m.id === sellMemberId.value);
     ElNotification({
       type: 'success',
@@ -458,6 +465,13 @@ onMounted(load);
               :label="`${m.full_name || m.username} — ${m.phone || ''}`"
               :value="m.id"
             />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.cards.paymentMethod')">
+          <ElSelect v-model="sellPaymentMethod" style="width: 100%">
+            <ElOption :label="$t('vnetPages.members.cash')" value="cash" />
+            <ElOption :label="$t('vnetPages.members.transfer')" value="transfer" />
+            <ElOption :label="$t('vnetPages.members.eWallet')" value="ewallet" />
           </ElSelect>
         </ElFormItem>
       </ElForm>

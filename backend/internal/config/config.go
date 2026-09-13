@@ -80,7 +80,7 @@ func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Host:          getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:          getEnvInt("SERVER_PORT", 8080),
+			Port:          getEnvInt("SERVER_PORT", 20800),
 			Mode:          mode,
 			ReadTimeout:   getEnvDuration("SERVER_READ_TIMEOUT", 30*time.Second),
 			WriteTimeout:  getEnvDuration("SERVER_WRITE_TIMEOUT", 30*time.Second),

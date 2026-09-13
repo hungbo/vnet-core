@@ -255,3 +255,35 @@ func TestJSONDateTreatsBlankAsEmpty(t *testing.T) {
 		t.Fatalf("mong nil, nhận %v", p.D.Time)
 	}
 }
+
+// Chuỗi ngày người dùng nhập phải được hiểu theo giờ Việt Nam, không phải UTC.
+//
+// time.Parse mặc định neo vào UTC. Lọc "từ 13/09" khi đó thành 13/09 07:00 giờ
+// Việt Nam, nên mọi bản ghi rạng sáng — ca đêm của quán net — biến mất khỏi
+// chính ngày của nó, còn bản ghi tối hôm trước lại lọt vào.
+func TestVietnamLocation_PhanTichNgayTheoGioVietNam(t *testing.T) {
+	loc := VietnamLocation()
+
+	parsed, err := time.ParseInLocation("2006-01-02", "2026-09-13", loc)
+	if err != nil {
+		t.Fatalf("không phân tích được: %v", err)
+	}
+
+	_, offset := parsed.Zone()
+	if offset != 7*60*60 {
+		t.Fatalf("lệch múi giờ: được %d giây, cần %d", offset, 7*60*60)
+	}
+
+	// Giao dịch lúc 01:35 giờ Việt Nam ngày 13/09 phải nằm TRONG ngày 13/09.
+	giaoDich := time.Date(2026, 9, 13, 1, 35, 7, 0, loc)
+	if giaoDich.Before(StartOfDay(parsed)) || giaoDich.After(EndOfDay(parsed)) {
+		t.Fatalf("giao dịch %v rơi ra ngoài khoảng %v – %v",
+			giaoDich, StartOfDay(parsed), EndOfDay(parsed))
+	}
+
+	// Còn nếu neo vào UTC như bản cũ thì chính giao dịch đó bị loại.
+	utcParsed, _ := time.Parse("2006-01-02", "2026-09-13")
+	if !giaoDich.Before(utcParsed) {
+		t.Fatal("phép thử mất ý nghĩa: mốc UTC lẽ ra phải muộn hơn giao dịch rạng sáng")
+	}
+}

@@ -106,7 +106,7 @@ func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
 	var resp testResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.Equal(t, 401, w.Code)
-	assert.Contains(t, resp.Message, "invalid username or password")
+	assert.Contains(t, resp.Message, "sai tên đăng nhập hoặc mật khẩu")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

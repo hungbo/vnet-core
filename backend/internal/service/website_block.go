@@ -36,9 +36,12 @@ const (
 )
 
 type CreateRuleRequest struct {
-	Pattern     string `json:"pattern" binding:"required"`
-	RuleType    string `json:"rule_type"`
-	Category    string `json:"category"`
+	Pattern  string `json:"pattern" binding:"required"`
+	RuleType string `json:"rule_type"`
+	// Cột category là varchar(30). Không chặn ở đây thì lỗi cắt chuỗi của
+	// PostgreSQL lọt nguyên văn ra màn hình nhân viên:
+	// "value too long for type character varying(30) (SQLSTATE 22001)".
+	Category    string `json:"category" binding:"omitempty,max=30"`
 	Description string `json:"description"`
 	IsActive    *bool  `json:"is_active"`
 }
@@ -46,7 +49,7 @@ type CreateRuleRequest struct {
 type UpdateRuleRequest struct {
 	Pattern     *string `json:"pattern"`
 	RuleType    *string `json:"rule_type"`
-	Category    *string `json:"category"`
+	Category    *string `json:"category" binding:"omitempty,max=30"`
 	Description *string `json:"description"`
 	IsActive    *bool   `json:"is_active"`
 }
@@ -72,6 +75,12 @@ func (s *WebsiteBlockService) CreateRule(req *CreateRuleRequest, actorID string)
 	pattern := normalizeDomain(req.Pattern)
 	if pattern == "" || !strings.Contains(pattern, ".") {
 		return nil, errors.New("tên miền không hợp lệ")
+	}
+	// Kiểm SAU khi chuẩn hoá: ô nhập nhận cả URL dài (phần đường dẫn bị cắt bỏ),
+	// nên chặn theo độ dài thô sẽ từ chối oan. Không kiểm thì lỗi cắt chuỗi của
+	// PostgreSQL lọt nguyên văn ra màn hình.
+	if len(pattern) > 500 {
+		return nil, errors.New("tên miền quá dài (tối đa 500 ký tự)")
 	}
 
 	ruleType := req.RuleType
@@ -112,6 +121,9 @@ func (s *WebsiteBlockService) UpdateRule(id string, req *UpdateRuleRequest, acto
 		p := normalizeDomain(*req.Pattern)
 		if p == "" || !strings.Contains(p, ".") {
 			return nil, errors.New("tên miền không hợp lệ")
+		}
+		if len(p) > 500 {
+			return nil, errors.New("tên miền quá dài (tối đa 500 ký tự)")
 		}
 		updates["pattern"] = p
 	}

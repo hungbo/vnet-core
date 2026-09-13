@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { enableStatusOptions } from '@/constants/business';
-import { translateOptions } from '@/utils/common';
 import { $t } from '@/locales';
 
 defineOptions({ name: 'RoleSearch' });
@@ -37,23 +35,10 @@ function search() {
                 <ElInput v-model="model.roleName" :placeholder="$t('page.manage.role.form.roleName')" />
               </ElFormItem>
             </ElCol>
-            <ElCol :lg="6" :md="8" :sm="12">
-              <ElFormItem :label="$t('page.manage.role.roleCode')" prop="roleCode">
-                <ElInput v-model="model.roleCode" :placeholder="$t('page.manage.role.form.roleCode')" />
-              </ElFormItem>
-            </ElCol>
-            <ElCol :lg="6" :md="8" :sm="12">
-              <ElFormItem :label="$t('page.manage.role.roleStatus')" prop="status">
-                <ElSelect v-model="model.status" :placeholder="$t('page.manage.role.form.roleStatus')" clearable>
-                  <ElOption
-                    v-for="{ label, value } in translateOptions(enableStatusOptions)"
-                    :key="value"
-                    :label="label"
-                    :value="value"
-                  ></ElOption>
-                </ElSelect>
-              </ElFormItem>
-            </ElCol>
+            <!-- Đã bỏ hai ô "Mã vai trò" và "Trạng thái": bảng roles không có cột
+                 code (DTO trả RoleCode = role.Name) và Status bị neo cứng "1".
+                 Gõ vào hai ô đó không lọc được gì, mà giao diện vẫn tỏ ra như
+                 đang lọc. Muốn dùng thật thì phải thêm cột ở database trước. -->
             <ElCol :lg="6" :md="24" :sm="24">
               <ElSpace class="w-full justify-end" alignment="end">
                 <ElButton @click="reset">

@@ -138,6 +138,21 @@ type UpdateMachineAssetRequest struct {
 func (s *MachineService) List(params pagination.Params) (*pagination.Result, error) {
 	var machines []model.Machine
 	query := s.db.Model(&model.Machine{})
+
+	// Ô tìm kiếm trên trang Máy ghi "Tìm mã máy / nhóm" nhưng hàm này bỏ qua
+	// hẳn tham số search: gõ gì cũng ra đủ danh sách máy. Quán vài trăm máy thì
+	// đó là ô nhập duy nhất để tìm một máy cụ thể.
+	//
+	// Nhóm tra bằng truy vấn con chứ không join: join làm hỏng Count ở dưới khi
+	// một máy khớp cả hai vế. Nhóm xoá mềm không được tính.
+	if params.Search != "" {
+		search := "%" + params.Search + "%"
+		query = query.Where(
+			"unaccent(machine_code) ILIKE unaccent(?) OR group_id IN (SELECT id FROM machine_groups WHERE unaccent(name) ILIKE unaccent(?) AND deleted_at IS NULL)",
+			search, search,
+		)
+	}
+
 	var total int64
 	if err := query.Model(&model.Machine{}).Count(&total).Error; err != nil {
 		return nil, err
@@ -152,7 +167,7 @@ func (s *MachineService) GetByID(id string) (*model.Machine, error) {
 	var machine model.Machine
 	if err := s.db.Where("id = ?", id).First(&machine).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("machine not found")
+			return nil, errors.New("không tìm thấy máy")
 		}
 		return nil, err
 	}
@@ -163,17 +178,30 @@ func (s *MachineService) GetByCode(code string) (*model.Machine, error) {
 	var machine model.Machine
 	if err := s.db.Where("machine_code = ?", code).First(&machine).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("machine not found")
+			return nil, errors.New("không tìm thấy máy")
 		}
 		return nil, err
 	}
 	return &machine, nil
 }
 
+// nhomRongThanhNil biến con trỏ trỏ vào chuỗi rỗng thành nil.
+//
+// group_id là cột uuid cho phép rỗng. Bỏ chọn nhóm trên giao diện gửi xuống ""
+// chứ không phải null, mà PostgreSQL từ chối "" cho kiểu uuid — lỗi thô
+// `invalid input syntax for type uuid: ""` lọt thẳng ra người dùng ở cả ba
+// đường: tạo một máy, sửa máy, và tạo máy hàng loạt. Không nhóm thì là NULL.
+func nhomRongThanhNil(id *string) *string {
+	if id == nil || strings.TrimSpace(*id) == "" {
+		return nil
+	}
+	return id
+}
+
 func (s *MachineService) Create(req *CreateMachineRequest) (*model.Machine, error) {
 	machine := model.Machine{
 		MachineCode: req.MachineCode,
-		GroupID:     req.GroupID,
+		GroupID:     nhomRongThanhNil(req.GroupID),
 		CPUName:     req.CPUName,
 		RAMGB:       req.RAMGB,
 		GPUName:     req.GPUName,
@@ -194,17 +222,185 @@ func (s *MachineService) Create(req *CreateMachineRequest) (*model.Machine, erro
 	return &machine, nil
 }
 
+// machineCodeMaxLen khớp varchar(20) của Machine.MachineCode. Kiểm ở đây để một
+// tiền tố quá dài bị chặn với thông điệp tiếng Việt, thay vì để PostgreSQL cắt
+// ngang giữa lô bằng lỗi thô.
+const machineCodeMaxLen = 20
+
+// maxBatchMachines chặn một lần bấm nhầm sinh ra hàng chục nghìn dòng. Quán lớn
+// nhất cũng dưới vài trăm máy.
+const maxBatchMachines = 500
+
+// BatchCreateMachinesRequest sinh một dải máy theo tiền tố và khoảng số:
+// Prefix="PC-", From=1, To=50, Digits=2  ->  PC-01 ... PC-50.
+//
+// Digits là số chữ số tối thiểu, đệm 0 vào trước. Để 0 thì không đệm (PC-1).
+type BatchCreateMachinesRequest struct {
+	Prefix  string  `json:"prefix" binding:"required"`
+	From    int     `json:"from" binding:"min=0"`
+	To      int     `json:"to" binding:"min=0"`
+	Digits  int     `json:"digits" binding:"min=0,max=10"`
+	GroupID *string `json:"group_id"`
+
+	// Cấu hình áp chung cho cả lô. Máy trạm sẽ ghi đè bằng số đo thật ở nhịp
+	// tim đầu tiên, nên đây chỉ là giá trị tạm để nhìn cho có.
+	CPUName   string `json:"cpu_name"`
+	RAMGB     int    `json:"ram_gb"`
+	GPUName   string `json:"gpu_name"`
+	StorageGB int    `json:"storage_gb"`
+	OSInfo    string `json:"os_info"`
+
+	// DryRun chỉ kiểm rồi trả kết quả, không ghi gì. Giao diện gọi trước khi
+	// tạo thật để báo trước có tạo được hay không.
+	DryRun bool `json:"dry_run"`
+}
+
+// BatchCreateResult mô tả một lô: sẽ tạo những mã nào, mã nào vướng, và vướng vì
+// lý do gì.
+type BatchCreateResult struct {
+	Codes []string `json:"codes"`
+	// Conflicts là mã đã có máy đang dùng.
+	Conflicts []string `json:"conflicts"`
+	// Deleted là mã thuộc về máy ĐÃ XOÁ. Tách riêng khỏi Conflicts vì người
+	// dùng không thấy chúng ở đâu trên màn hình: machine_code có unique index
+	// thường (không phải partial theo deleted_at), nên máy xoá mềm vẫn giữ mã
+	// và vẫn chặn mã đó. Gộp chung hai loại thì thông điệp thành "PC-05 đã tồn
+	// tại" trong khi danh sách máy không có PC-05 nào.
+	Deleted []string `json:"deleted"`
+	Created int      `json:"created"`
+	DryRun  bool     `json:"dry_run"`
+}
+
+// OK cho biết lô này tạo được hay không.
+func (r *BatchCreateResult) OK() bool {
+	return len(r.Conflicts) == 0 && len(r.Deleted) == 0
+}
+
+// MoTaVuong gom mã vướng thành một câu đọc được. Cắt bớt khi quá dài — liệt kê
+// 200 mã trong một toast thì không ai đọc.
+func (r *BatchCreateResult) MoTaVuong() string {
+	var phan []string
+	if n := len(r.Conflicts); n > 0 {
+		phan = append(phan, fmt.Sprintf("%d mã đã có máy: %s", n, gomMa(r.Conflicts)))
+	}
+	if n := len(r.Deleted); n > 0 {
+		phan = append(phan, fmt.Sprintf("%d mã thuộc máy đã xoá: %s", n, gomMa(r.Deleted)))
+	}
+	return strings.Join(phan, "; ")
+}
+
+func gomMa(ds []string) string {
+	const toiDa = 10
+	if len(ds) <= toiDa {
+		return strings.Join(ds, ", ")
+	}
+	return fmt.Sprintf("%s… và %d mã khác", strings.Join(ds[:toiDa], ", "), len(ds)-toiDa)
+}
+
+// BatchCreateMachines tạo cả dải máy trong MỘT giao dịch.
+//
+// Toàn bộ hoặc không có gì: vướng dù chỉ một mã thì không máy nào được tạo. Tạo
+// nửa vời rồi bắt người dùng tự dò xem thiếu máy nào là cách chắc chắn để có một
+// dãy máy thủng lỗ chỗ mà không ai biết.
+func (s *MachineService) BatchCreateMachines(req *BatchCreateMachinesRequest) (*BatchCreateResult, error) {
+	prefix := strings.TrimSpace(req.Prefix)
+	if prefix == "" {
+		return nil, errors.New("thiếu tiền tố mã máy")
+	}
+	if req.To < req.From {
+		return nil, errors.New("số cuối phải lớn hơn hoặc bằng số đầu")
+	}
+	if n := req.To - req.From + 1; n > maxBatchMachines {
+		return nil, fmt.Errorf("một lần tạo tối đa %d máy, đang yêu cầu %d", maxBatchMachines, n)
+	}
+
+	codes := make([]string, 0, req.To-req.From+1)
+	for n := req.From; n <= req.To; n++ {
+		code := fmt.Sprintf("%s%0*d", prefix, req.Digits, n)
+		if len(code) > machineCodeMaxLen {
+			return nil, fmt.Errorf("mã %q dài %d ký tự, vượt trần %d — hãy rút ngắn tiền tố", code, len(code), machineCodeMaxLen)
+		}
+		codes = append(codes, code)
+	}
+
+	// Không cần chống trùng trong chính lô: cùng một tiền tố, hai số khác nhau
+	// luôn cho hai mã khác nhau, kể cả khi đệm 0.
+	//
+	// Unscoped: máy xoá mềm vẫn giữ mã và vẫn chặn mã đó.
+	var daCo []model.Machine
+	if err := s.db.Unscoped().
+		Select("machine_code", "deleted_at").
+		Where("machine_code IN ?", codes).
+		Find(&daCo).Error; err != nil {
+		return nil, err
+	}
+
+	res := &BatchCreateResult{Codes: codes, DryRun: req.DryRun}
+	for _, m := range daCo {
+		if m.DeletedAt.Valid {
+			res.Deleted = append(res.Deleted, m.MachineCode)
+		} else {
+			res.Conflicts = append(res.Conflicts, m.MachineCode)
+		}
+	}
+	sort.Strings(res.Conflicts)
+	sort.Strings(res.Deleted)
+
+	if req.DryRun || !res.OK() {
+		return res, nil
+	}
+
+	machines := make([]model.Machine, 0, len(codes))
+	for _, code := range codes {
+		machines = append(machines, model.Machine{
+			MachineCode: code,
+			GroupID:     nhomRongThanhNil(req.GroupID),
+			CPUName:     req.CPUName,
+			RAMGB:       req.RAMGB,
+			GPUName:     req.GPUName,
+			StorageGB:   req.StorageGB,
+			OSInfo:      req.OSInfo,
+			Status:      "offline",
+			IsActive:    true,
+		})
+	}
+	if err := s.db.Create(&machines).Error; err != nil {
+		return nil, err
+	}
+	res.Created = len(machines)
+
+	// Một dòng nhật ký cho cả lô, không phải mỗi máy một dòng: người đọc nhật ký
+	// muốn biết "ai tạo dải PC-01..PC-50 lúc nào", không muốn cuộn qua 50 dòng.
+	_ = s.audit.Log(&LogAuditRequest{
+		Action:     "batch_create",
+		EntityType: "machine",
+		Metadata: map[string]interface{}{
+			"prefix": prefix,
+			"from":   req.From,
+			"to":     req.To,
+			"count":  len(machines),
+		},
+	})
+	return res, nil
+}
+
 func (s *MachineService) Update(id string, req *UpdateMachineRequest) (*model.Machine, error) {
 	var machine model.Machine
 	if err := s.db.Where("id = ?", id).First(&machine).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("machine not found")
+			return nil, errors.New("không tìm thấy máy")
 		}
 		return nil, err
 	}
 	updates := map[string]interface{}{}
 	if req.GroupID != nil {
-		updates["group_id"] = *req.GroupID
+		// Gán nil chứ không phải "": GORM ghi NULL, còn "" thì PostgreSQL từ
+		// chối. Bỏ nhóm của một máy là thao tác hợp lệ.
+		if g := nhomRongThanhNil(req.GroupID); g == nil {
+			updates["group_id"] = nil
+		} else {
+			updates["group_id"] = *g
+		}
 	}
 	if req.CPUName != nil {
 		updates["cpu_name"] = *req.CPUName
@@ -258,7 +454,7 @@ func (s *MachineService) Delete(id string) error {
 	var machine model.Machine
 	if err := s.db.Where("id = ?", id).First(&machine).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("machine not found")
+			return errors.New("không tìm thấy máy")
 		}
 		return err
 	}
@@ -436,8 +632,8 @@ type ScreenshotReport struct {
 // ProcessInfo là một dòng trong bảng tiến trình — đã gộp theo tên phía máy trạm.
 type ProcessInfo struct {
 	Name  string `json:"name"`
-	Count int    `json:"count"`    // số tiến trình cùng tên
-	RAMMB int64  `json:"ram_mb"`   // tổng RAM, MB
+	Count int    `json:"count"`  // số tiến trình cùng tên
+	RAMMB int64  `json:"ram_mb"` // tổng RAM, MB
 }
 
 // ProcessReport là dữ liệu máy trạm gửi về sau remote:process-list / process-kill.
@@ -628,9 +824,19 @@ func errText(err error) string {
 	return err.Error()
 }
 
-func (s *MachineService) ListGroups() ([]model.MachineGroup, error) {
+// ListGroups lọc theo tên nhóm khi có từ khoá.
+//
+// Trang quản trị vẫn gửi ?search= từ trước nhưng hàm này bỏ qua hẳn: gõ gì vào
+// ô tìm kiếm cũng ra đủ danh sách, không lỗi, không dấu hiệu gì. Bỏ dấu khi so
+// khớp cho giống ô tìm hội viên và nhóm hội viên.
+func (s *MachineService) ListGroups(search string) ([]model.MachineGroup, error) {
+	query := s.db.Order("sort_order asc")
+	if search != "" {
+		query = query.Where("unaccent(name) ILIKE unaccent(?)", "%"+search+"%")
+	}
+
 	var groups []model.MachineGroup
-	if err := s.db.Order("sort_order asc").Find(&groups).Error; err != nil {
+	if err := query.Find(&groups).Error; err != nil {
 		return nil, err
 	}
 	return groups, nil
@@ -660,7 +866,7 @@ func (s *MachineService) UpdateGroup(id string, req *UpdateMachineGroupRequest) 
 	var group model.MachineGroup
 	if err := s.db.Where("id = ?", id).First(&group).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("machine group not found")
+			return nil, errors.New("không tìm thấy nhóm máy")
 		}
 		return nil, err
 	}
@@ -703,15 +909,18 @@ func (s *MachineService) DeleteGroup(id string) error {
 	var group model.MachineGroup
 	if err := s.db.Where("id = ?", id).First(&group).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("machine group not found")
+			return errors.New("không tìm thấy nhóm máy")
 		}
 		return err
 	}
 	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
 		{Bang: &model.Machine{}, Cot: "group_id", Nhan: "máy"},
-		{Bang: &model.MachinePrice{}, Cot: "machine_group_id", Nhan: "dòng bảng giá theo hạng"},
-		{Bang: &model.TimeBasedPricing{}, Cot: "machine_group_id", Nhan: "khung giá theo giờ"},
-		{Bang: &model.WebsiteRuleMapping{}, Cot: "machine_group_id", Nhan: "luật chặn web gán cho nhóm"},
+		{Bang: &model.MachinePrice{}, Cot: "machine_group_id", Nhan: "dòng bảng giá theo hạng",
+			GoiY: "hãy xoá chúng trong hộp thoại Bảng giá của nhóm trước"},
+		{Bang: &model.TimeBasedPricing{}, Cot: "machine_group_id", Nhan: "khung giá theo giờ",
+			GoiY: "hãy xoá chúng trong hộp thoại Bảng giá của nhóm trước"},
+		{Bang: &model.WebsiteRuleMapping{}, Cot: "machine_group_id", Nhan: "luật chặn web gán cho nhóm",
+			GoiY: "hãy gỡ nhóm này khỏi luật chặn web trước"},
 	}, "hãy chuyển chúng sang nhóm khác trước"); err != nil {
 		return err
 	}
@@ -771,7 +980,7 @@ func (s *MachineService) UpdateAsset(id string, req *UpdateMachineAssetRequest, 
 	var asset model.MachineAsset
 	if err := s.db.Where("id = ?", id).First(&asset).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("machine asset not found")
+			return nil, errors.New("không tìm thấy thiết bị của máy")
 		}
 		return nil, err
 	}
@@ -830,7 +1039,7 @@ func (s *MachineService) DeleteAsset(id string) error {
 	var asset model.MachineAsset
 	if err := s.db.Where("id = ?", id).First(&asset).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("machine asset not found")
+			return errors.New("không tìm thấy thiết bị của máy")
 		}
 		return err
 	}

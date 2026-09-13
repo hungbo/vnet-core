@@ -144,7 +144,9 @@ func (s *ComboService) List(req *ComboListRequest) (*pagination.Result, error) {
 	var combos []model.Combo
 	query := s.db
 	if p.Search != "" {
-		query = query.Where("name ILIKE ?", "%"+p.Search+"%")
+		// Bỏ dấu khi so khớp: nhân viên gõ "goi gio vang" phải ra "Gói giờ vàng".
+		// Cùng khuôn với ô tìm ở trang Hội viên, Nhóm máy và Giao dịch.
+		query = query.Where("unaccent(name) ILIKE unaccent(?)", "%"+p.Search+"%")
 	}
 
 	var total int64
@@ -316,7 +318,7 @@ func (s *ComboService) Delete(id string) error {
 func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userID string) (*ComboPurchaseResponse, error) {
 	var combo model.Combo
 	if err := s.db.Where("id = ? AND is_active = ?", comboID, true).First(&combo).Error; err != nil {
-		return nil, errors.New("combo not found or inactive")
+		return nil, errors.New("không tìm thấy gói cước hoặc gói đã ngừng bán")
 	}
 
 	memberID := req.MemberID
@@ -324,7 +326,7 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 
 	if memberID == "" {
 		if combo.MemberPrefix == "" {
-			return nil, errors.New("member prefix not configured on this combo")
+			return nil, errors.New("gói cước này chưa cấu hình tiền tố hội viên")
 		}
 
 		tx := s.db.Begin()
@@ -332,7 +334,7 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 		var lockedCombo model.Combo
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&lockedCombo, "id = ?", comboID).Error; err != nil {
 			tx.Rollback()
-			return nil, errors.New("combo not found")
+			return nil, errors.New("không tìm thấy gói cước")
 		}
 
 		newCount := lockedCombo.MemberCount + 1
@@ -404,14 +406,14 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 	if err := payTx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		First(&member, "id = ?", memberID).Error; err != nil {
 		payTx.Rollback()
-		return nil, errors.New("member not found")
+		return nil, errors.New("không tìm thấy hội viên")
 	}
 
 	balanceAfter := member.Balance
 	if req.PaymentMethod == PaymentMethodBalance {
 		if member.Balance < combo.Price {
 			payTx.Rollback()
-			return nil, errors.New("insufficient balance to purchase this combo")
+			return nil, errors.New("số dư không đủ để mua gói cước này")
 		}
 		balanceAfter = member.Balance - combo.Price
 	}
@@ -488,16 +490,16 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*ComboPurchaseResponse, error) {
 	var purchase model.ComboPurchase
 	if err := s.db.Where("id = ?", purchaseID).First(&purchase).Error; err != nil {
-		return nil, errors.New("purchase not found")
+		return nil, errors.New("không tìm thấy lượt mua")
 	}
 
 	if purchase.Activated {
-		return nil, errors.New("purchase already activated")
+		return nil, errors.New("lượt mua này đã được kích hoạt")
 	}
 
 	var combo model.Combo
 	if err := s.db.First(&combo, "id = ?", purchase.ComboID).Error; err != nil {
-		return nil, errors.New("combo not found")
+		return nil, errors.New("không tìm thấy gói cước")
 	}
 
 	tx := s.db.Begin()
@@ -513,23 +515,23 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 	var lockedPurchase model.ComboPurchase
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", purchaseID).First(&lockedPurchase).Error; err != nil {
 		tx.Rollback()
-		return nil, errors.New("purchase not found")
+		return nil, errors.New("không tìm thấy lượt mua")
 	}
 	if lockedPurchase.Activated {
 		tx.Rollback()
-		return nil, errors.New("purchase already activated")
+		return nil, errors.New("lượt mua này đã được kích hoạt")
 	}
 	purchase = lockedPurchase
 
 	var machine model.Machine
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND is_active = ?", req.MachineID, true).First(&machine).Error; err != nil {
 		tx.Rollback()
-		return nil, errors.New("machine not found")
+		return nil, errors.New("không tìm thấy máy")
 	}
 
 	if machine.Status == "in_use" {
 		tx.Rollback()
-		return nil, errors.New("machine is already in use")
+		return nil, errors.New("máy đang có người dùng")
 	}
 
 	now := time.Now()

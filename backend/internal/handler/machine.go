@@ -91,6 +91,43 @@ func (h *MachineHandler) Create(c *gin.Context) {
 	response.Created(c, result)
 }
 
+// BatchCreate
+// @Summary      Batch create machines
+// @Description  Tạo một dải máy theo tiền tố và khoảng số. Vướng một mã thì không tạo máy nào. Đặt dry_run để chỉ kiểm.
+// @Tags         Machines
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body      service.BatchCreateMachinesRequest  true  "Batch spec"
+// @Success      200   {object}  response.Response{data=service.BatchCreateResult}  "dry_run"
+// @Success      201   {object}  response.Response{data=service.BatchCreateResult}
+// @Failure      400   {object}  response.Response
+// @Failure      409   {object}  response.Response
+// @Router       /api/machines/batch [post]
+func (h *MachineHandler) BatchCreate(c *gin.Context) {
+	var req service.BatchCreateMachinesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	result, err := h.svc.BatchCreateMachines(&req)
+	if err != nil {
+		handleCreateError(c, err)
+		return
+	}
+	// Lần kiểm thử luôn là 200 kể cả khi vướng — giao diện cần đọc danh sách mã
+	// vướng để vẽ ra, không phải để bắt lỗi.
+	if result.DryRun {
+		response.Success(c, result)
+		return
+	}
+	if !result.OK() {
+		response.Conflict(c, "không tạo máy nào — "+result.MoTaVuong())
+		return
+	}
+	response.Created(c, result)
+}
+
 // Update
 // @Summary      Update Machine
 // @Description  Update an existing machine
@@ -280,7 +317,7 @@ func (h *MachineHandler) RemoteAction(c *gin.Context) {
 // @Failure      500   {object}  response.Response
 // @Router       /api/machine-groups [get]
 func (h *MachineHandler) ListGroups(c *gin.Context) {
-	groups, err := h.svc.ListGroups()
+	groups, err := h.svc.ListGroups(c.Query("search"))
 	if err != nil {
 		response.InternalError(c, "Failed to fetch machine groups")
 		return
@@ -489,4 +526,3 @@ func (h *MachineHandler) ReportProcesses(c *gin.Context) {
 	}
 	response.Success(c, nil)
 }
-

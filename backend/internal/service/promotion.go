@@ -170,7 +170,9 @@ func (s *PromotionService) List(req *PromotionListRequest) (*pagination.Result, 
 	var promotions []model.Promotion
 	query := s.db
 	if p.Search != "" {
-		query = query.Where("name ILIKE ?", "%"+p.Search+"%")
+		// Bỏ dấu: tên khuyến mãi là chữ tiếng Việt có dấu ("Giảm 10% cuối tuần")
+		// còn nhân viên gõ không dấu. Cùng khuôn với các ô tìm đã sửa trước đó.
+		query = query.Where("unaccent(name) ILIKE unaccent(?)", "%"+p.Search+"%")
 	}
 	if req.Type != "" {
 		query = query.Where("type = ?", req.Type)
@@ -214,14 +216,14 @@ func (s *PromotionService) Create(req *CreatePromotionRequest) (*PromotionRespon
 	if req.ValidFrom != nil {
 		t, err := time.Parse(time.RFC3339, *req.ValidFrom)
 		if err != nil {
-			return nil, errors.New("invalid valid_from format")
+			return nil, errors.New("ngày bắt đầu hiệu lực không đúng định dạng")
 		}
 		validFrom = &t
 	}
 	if req.ValidTo != nil {
 		t, err := time.Parse(time.RFC3339, *req.ValidTo)
 		if err != nil {
-			return nil, errors.New("invalid valid_to format")
+			return nil, errors.New("ngày hết hiệu lực không đúng định dạng")
 		}
 		validTo = &t
 	}
@@ -313,14 +315,14 @@ func (s *PromotionService) Update(id string, req *UpdatePromotionRequest) (*Prom
 	if req.ValidFrom != nil {
 		t, err := time.Parse(time.RFC3339, *req.ValidFrom)
 		if err != nil {
-			return nil, errors.New("invalid valid_from format")
+			return nil, errors.New("ngày bắt đầu hiệu lực không đúng định dạng")
 		}
 		updates["valid_from"] = t
 	}
 	if req.ValidTo != nil {
 		t, err := time.Parse(time.RFC3339, *req.ValidTo)
 		if err != nil {
-			return nil, errors.New("invalid valid_to format")
+			return nil, errors.New("ngày hết hiệu lực không đúng định dạng")
 		}
 		updates["valid_to"] = t
 	}
@@ -650,7 +652,7 @@ func (s *PromotionService) Spin(req *SpinRequest) (*SpinResponse, error) {
 	}
 
 	if int(dailyCount) >= maxPerDay && maxPerDay > 0 {
-		return nil, errors.New("daily spin limit reached")
+		return nil, errors.New("đã hết lượt quay trong ngày")
 	}
 
 	selected := weightedSelect(rewards)

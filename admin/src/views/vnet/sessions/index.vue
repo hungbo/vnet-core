@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
@@ -131,6 +131,14 @@ function onMemberChange(id: string) {
   startForm.value.combo_purchase_id = '';
   loadCombos(id);
 }
+
+// Máy chưa gán nhóm thì không tra ra giá nào: phiên vẫn mở được nhưng tính 0₫/h.
+// Quán thêm máy mà quên gán nhóm sẽ mất doanh thu im lặng, nên phải nói ra ngay
+// trong hộp Mở máy chứ không đợi bấm "Ước tính".
+const mayChuaCoGia = computed(() => {
+  const m = machines.value.find(x => x.id === startForm.value.machine_id);
+  return Boolean(m && !m.group_id);
+});
 
 async function calcEstimate() {
   const { machine_id, member_id, duration } = startForm.value;
@@ -314,6 +322,9 @@ onBeforeUnmount(() => {
               :value="m.id"
             />
           </ElSelect>
+          <div v-if="mayChuaCoGia" style="color: #e6a23c; font-size: 12px; line-height: 1.5; margin-top: 4px">
+            {{ $t('vnetPages.sessions.noPricingWarning') }}
+          </div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.sessions.selectMember')">
           <ElSelect v-model="startForm.member_id" filterable style="width: 100%" @change="onMemberChange">
@@ -348,6 +359,9 @@ onBeforeUnmount(() => {
         </ElFormItem>
         <ElFormItem v-if="estimate" :label="$t('vnetPages.sessions.costPreview')">
           <div>
+            <div v-if="estimate.no_pricing" style="color: #e6a23c">
+              {{ $t('vnetPages.sessions.noPricingWarning') }}
+            </div>
             <div>
               {{ formatMoney(estimate.price_per_hour) }}/h ·
               {{ estimate.machine_group_name }}

@@ -209,7 +209,7 @@ func (s *CurfewService) Delete(id string) error {
 func (s *CurfewService) Override(req *OverrideCurfewRequest, adminID string) (*CurfewResponse, error) {
 	var policy model.CurfewPolicy
 	if err := s.db.First(&policy, "id = ?", req.PolicyID).Error; err != nil {
-		return nil, errors.New("curfew policy not found")
+		return nil, errors.New("không tìm thấy chính sách giới nghiêm")
 	}
 
 	now := time.Now()
@@ -309,6 +309,15 @@ func withinCurfew(now, start, end string) bool {
 	return now >= start || now < end
 }
 
+// gioNganGon cắt phần giây khỏi chuỗi giờ để hiện cho người đọc: "22:00:00"
+// thành "22:00". Cột lưu kiểu time nên luôn có giây.
+func gioNganGon(gio string) string {
+	if len(gio) >= 5 {
+		return gio[:5]
+	}
+	return gio
+}
+
 // CheckStart reports whether a member may begin a session right now.
 func (s *CurfewService) CheckStart(member *model.Member, at time.Time) error {
 	if !IsMinor(member, at) {
@@ -320,8 +329,12 @@ func (s *CurfewService) CheckStart(member *model.Member, at time.Time) error {
 		return err
 	}
 	if policy != nil && !s.overridden(policy, at) {
-		return errors.New("curfew is in effect: minors cannot start a session between " +
-			policy.CurfewStart + " and " + policy.CurfewEnd)
+		// Câu này hiện thẳng lên màn hình khoá của khách — một bạn 15 tuổi ở
+		// quán net Việt Nam — nên phải là tiếng Việt, giống câu giới hạn giờ
+		// chơi ngay bên dưới. Cắt phần giây: cột lưu "22:00:00", người đọc chỉ
+		// cần "22:00".
+		return fmt.Errorf("đang trong khung giờ cấm: khách vị thành niên không được chơi từ %s đến %s",
+			gioNganGon(policy.CurfewStart), gioNganGon(policy.CurfewEnd))
 	}
 
 	// Trần giờ chơi trong ngày áp cả ngày, không chỉ trong khung giờ cấm, nên

@@ -52,7 +52,7 @@ func TestCategoryService_GetByID_NotFound(t *testing.T) {
 
 	_, err := svc.GetByID("nonexistent")
 	assert.Error(t, err)
-	assert.Equal(t, "category not found", err.Error())
+	assert.Equal(t, "không tìm thấy danh mục", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -136,6 +136,66 @@ func TestCategoryService_Delete_RefusesWhenProductsRemain(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
 
 	err := svc.Delete("c1")
-	assert.EqualError(t, err, "cannot delete category with products")
+	assert.EqualError(t, err, "không xoá được danh mục còn sản phẩm")
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Danh mục không được là cha của chính nó, và chuỗi cha không được tạo vòng lặp.
+//
+// Database không có ràng buộc nào, nên hai thao tác bình thường trên giao diện
+// đủ để làm hỏng: đặt A làm con của B rồi đặt B làm con của A. Khi đó không
+// danh mục nào còn parent_id rỗng, hàm dựng cây không tìm ra gốc, và
+// GET /api/categories trả về null — mất sạch cây danh mục kéo theo trang Sản
+// phẩm và thực đơn máy trạm, mà không có lỗi nào hiện ra. Dựng lại được trên
+// hệ thống thật bằng đúng hai lệnh PUT.
+func TestCategoryService_Update_ChanTuLamChaCuaChinhNo(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewCategoryService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1`).
+		WithArgs("c1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("c1", "Đồ ăn nhanh"))
+
+	chinhNo := "c1"
+	_, err := svc.Update("c1", &UpdateCategoryRequest{ParentID: &chinhNo})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cha của chính nó")
+}
+
+func TestCategoryService_Update_ChanVongLapChaCon(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewCategoryService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "categories" WHERE id = \$1`).
+		WithArgs("cha", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name"}).AddRow("cha", "Đồ ăn nhanh"))
+
+	// Đi ngược từ "con" lên: cha của "con" chính là "cha" đang sửa → vòng lặp.
+	mock.ExpectQuery(`SELECT "parent_id" FROM "categories" WHERE id = \$1`).
+		WithArgs("con", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"parent_id"}).AddRow("cha"))
+
+	con := "con"
+	_, err := svc.Update("cha", &UpdateCategoryRequest{ParentID: &con})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "vòng lặp")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// parent_id rỗng phải thành NULL, không được để PostgreSQL nổ lỗi uuid thô.
+func TestCategoryService_chaHopLe_RongThanhNil(t *testing.T) {
+	db, _ := newMockDB(t)
+	svc := NewCategoryService(db, NewAuditService(db))
+
+	for _, v := range []string{"", "   "} {
+		cha, err := svc.chaHopLe("c1", &v)
+		require.NoError(t, err)
+		assert.Nil(t, cha)
+	}
+
+	cha, err := svc.chaHopLe("c1", nil)
+	require.NoError(t, err)
+	assert.Nil(t, cha)
 }

@@ -20,7 +20,7 @@ func TestGetParams_Defaults(t *testing.T) {
 	p := GetParams(c)
 	assert.Equal(t, DefaultPage, p.Page)
 	assert.Equal(t, DefaultPageSize, p.PageSize)
-	assert.Equal(t, "id", p.Sort)
+	assert.Equal(t, "created_at", p.Sort)
 	assert.Equal(t, "desc", p.Order)
 	assert.Equal(t, "", p.Search)
 }
@@ -184,7 +184,7 @@ func TestGetParams_SanitizesSortAndOrder(t *testing.T) {
 
 	p := GetParams(c)
 
-	assert.Equal(t, "id", p.Sort)
+	assert.Equal(t, "created_at", p.Sort)
 	assert.Equal(t, "desc", p.Order)
 }
 
@@ -202,5 +202,5 @@ func TestApply_SanitizesDirectlyBuiltParams(t *testing.T) {
 	orderBy, ok := applied.Statement.Clauses["ORDER BY"].Expression.(clause.OrderBy)
 	assert.True(t, ok)
 	assert.Len(t, orderBy.Columns, 1)
-	assert.Equal(t, "id desc", orderBy.Columns[0].Column.Name)
+	assert.Equal(t, "created_at desc", orderBy.Columns[0].Column.Name)
 }

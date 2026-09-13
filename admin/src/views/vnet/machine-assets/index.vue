@@ -18,6 +18,10 @@ const machineFilter = ref('');
 const machineCode = computed(() => (id: string) => machines.value.find(m => m.id === id)?.machine_code || '-');
 
 function statusTag(status: string) {
+  // Không có tình trạng thì đừng tra khoá: $t('...status.undefined') không tồn
+  // tại ở cả ba ngôn ngữ nên nó in nguyên khoá thô ra ô cho người dùng đọc.
+  if (!status) return h('span', { style: 'color:#909399' }, '-');
+
   const map: Record<string, 'success' | 'warning' | 'danger' | 'info'> = {
     good: 'success',
     worn: 'warning',
@@ -194,7 +198,13 @@ onMounted(load);
           <template #default="{ row }">{{ machineCode(row.machine_id) }}</template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.assets.type')" width="130">
-          <template #default="{ row }">{{ $t(`vnetPages.assets.types.${row.asset_type}`) }}</template>
+          <!--
+ row rỗng: el-table vẫn dựng ô mẫu một lần khi bảng chưa có dữ liệu, và
+               $t('...types.undefined') in thẳng khoá thô ra ô. 
+-->
+          <template #default="{ row }">
+            {{ row.asset_type ? $t(`vnetPages.assets.types.${row.asset_type}`) : '-' }}
+          </template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.assets.brandModel')" min-width="180">
           <template #default="{ row }">{{ [row.brand, row.model].filter(Boolean).join(' ') || '-' }}</template>

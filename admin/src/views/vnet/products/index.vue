@@ -3,8 +3,8 @@ import { h, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
-import { useUIPaginatedTable } from '@/hooks/common/table';
 import { useWebSocketStore } from '@/store/modules/ws';
+import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
@@ -144,12 +144,31 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
   ]
 });
 
+/**
+ * Trải phẳng cây danh mục, giữ thứ tự cha trước con và thụt đầu dòng cho con.
+ *
+ * `GET /categories` trả về CÂY: chỉ danh mục gốc nằm ở mảng ngoài, danh mục con
+ * nằm trong `children`. Dùng thẳng mảng đó thì ô chọn Danh mục chỉ hiện danh
+ * mục gốc — không gán được sản phẩm vào danh mục con — và tệ hơn,
+ * getCategoryName() không tra ra danh mục con nên cột Danh mục ghi "Đã xoá"
+ * cho một danh mục vẫn đang tồn tại.
+ */
+function traiPhangDanhMuc(nodes: any[], capBac = 0): any[] {
+  const out: any[] = [];
+  (nodes || []).forEach((n: any) => {
+    out.push({ ...n, nhanHienThi: `${'　'.repeat(capBac)}${n.name}` });
+    if (n.children?.length) out.push(...traiPhangDanhMuc(n.children, capBac + 1));
+  });
+  return out;
+}
+
 async function fetchCategories() {
   try {
     const res: any = await client.get('/categories', {
       params: { page_size: 1000 }
     });
-    categories.value = Array.isArray(res) ? res : res?.items || [];
+    const list = Array.isArray(res) ? res : res?.items || [];
+    categories.value = traiPhangDanhMuc(list);
   } catch (_) {}
 }
 
@@ -585,7 +604,7 @@ async function handleStockSave() {
             clearable
             style="width: 100%"
           >
-            <ElOption v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
+            <ElOption v-for="c in categories" :key="c.id" :label="c.nhanHienThi || c.name" :value="c.id" />
           </ElSelect>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.products.price')" prop="price">

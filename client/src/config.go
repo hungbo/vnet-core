@@ -56,7 +56,7 @@ func LoadConfig() *Config {
 	fc := loadFileConfig()
 
 	cfg := &Config{
-		ServerURL:          getEnv("VNET_SERVER_URL", firstNonEmpty(fc.ServerURL, "http://localhost:8080")),
+		ServerURL:          getEnv("VNET_SERVER_URL", firstNonEmpty(fc.ServerURL, "http://localhost:20800")),
 		MachineCode:        getEnv("VNET_MACHINE_CODE", fc.MachineCode),
 		MaintenancePinHash: fc.MaintenancePin,
 		HeartbeatInterval:  15 * time.Second,

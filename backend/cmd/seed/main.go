@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/vnet/core/internal/authz"
 	"github.com/vnet/core/internal/config"
 	"github.com/vnet/core/internal/database"
 	"github.com/vnet/core/internal/model"
@@ -89,18 +90,11 @@ func seed(db *gorm.DB) error {
 		return err
 	}
 
-	perms := []model.Permission{
-		{Code: "*", Name: "Full access", Module: "all"},
-		{Code: "members.view", Name: "Xem hội viên", Module: "members"},
-		{Code: "members.create", Name: "Tạo hội viên", Module: "members"},
-		{Code: "members.topup", Name: "Nạp tiền", Module: "members"},
-		{Code: "machines.view", Name: "Xem máy", Module: "machines"},
-		{Code: "orders.view", Name: "Xem đơn hàng", Module: "orders"},
-		{Code: "orders.create", Name: "Tạo đơn hàng", Module: "orders"},
-		{Code: "orders.pay", Name: "Thanh toán", Module: "orders"},
-		{Code: "reports.view", Name: "Xem báo cáo", Module: "reports"},
-		{Code: "settings.edit", Name: "Sửa cài đặt", Module: "settings"},
-		{Code: "client.admin", Name: "Admin client", Module: "client"},
+	// Danh mục quyền là một chỗ duy nhất: internal/authz. Router gác từng API
+	// theo đúng những mã này, nên thêm quyền mới chỉ cần sửa danh mục.
+	perms := make([]model.Permission, 0, len(authz.Catalog))
+	for _, c := range authz.Catalog {
+		perms = append(perms, model.Permission{Code: c.Code, Name: c.Name, Module: c.Module})
 	}
 	for _, p := range perms {
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Where("code = ?", p.Code).FirstOrCreate(&p).Error; err != nil {
@@ -146,16 +140,20 @@ func seed(db *gorm.DB) error {
 	db.Find(&allPerms)
 	db.Model(&adminRole).Association("Permissions").Replace(&allPerms)
 
-	// Manager runs day-to-day business but not the back-office tooling (audit
-	// log, notification dispatch, database backups). "*" has to be excluded
-	// too: PermissionRequired treats it as a superuser wildcard, so keeping it
-	// would make the client.admin exclusion meaningless.
+	// Quản lý lo toàn bộ việc kinh doanh hằng ngày nhưng không chạm back-office
+	// (tài khoản nhân viên, sao lưu, nhật ký, gửi thông báo hàng loạt). "*" cũng
+	// phải loại: PermissionRequired coi nó là siêu quyền, giữ lại thì mọi giới
+	// hạn phía trên thành vô nghĩa.
 	var managerPerms []model.Permission
-	db.Where("code NOT IN ?", []string{"*", "client.admin"}).Find(&managerPerms)
+	db.Where("code IN ?", authz.ManagerCodes()).Find(&managerPerms)
 	db.Model(&managerRole).Association("Permissions").Replace(&managerPerms)
 
+	// Nhân viên quầy VẬN HÀNH chứ không CẤU HÌNH: mở/trả máy, bán hàng, nhận
+	// đặt chỗ, kiểm kê, mở/đóng ca — nhưng không đổi giá, không sửa khuyến mãi,
+	// không xoá dữ liệu nền, và tuyệt đối không chạm back-office (bản cũ cấp
+	// client.admin cho staff, đủ để họ tự tạo tài khoản owner).
 	var staffPerms []model.Permission
-	db.Where("code IN ?", []string{"members.view", "machines.view", "orders.view", "client.admin"}).Find(&staffPerms)
+	db.Where("code IN ?", authz.StaffCodes()).Find(&staffPerms)
 	db.Model(&staffRole).Association("Permissions").Replace(&staffPerms)
 
 	settings := []model.SystemSetting{

@@ -65,17 +65,17 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 	var user model.User
 	if err := s.db.Where("username = ?", req.Username).Preload("Roles").Preload("Roles.Permissions").First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("invalid username or password")
+			return nil, errors.New("sai tên đăng nhập hoặc mật khẩu")
 		}
 		return nil, err
 	}
 
 	if !user.IsActive {
-		return nil, errors.New("account is disabled")
+		return nil, errors.New("tài khoản đã bị khoá — liên hệ quản lý")
 	}
 
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
-		return nil, errors.New("invalid username or password")
+		return nil, errors.New("sai tên đăng nhập hoặc mật khẩu")
 	}
 
 	var permissions []string
@@ -127,7 +127,7 @@ type QRLoginRequest struct {
 func (s *AuthService) QRLogin(req *QRLoginRequest) (*LoginResponse, error) {
 	var member model.Member
 	if err := s.db.Where("id = ? AND is_active = ?", req.QRCode, true).First(&member).Error; err != nil {
-		return nil, errors.New("invalid or inactive member QR code")
+		return nil, errors.New("mã QR không hợp lệ hoặc hội viên đã bị khoá")
 	}
 
 	accessToken, err := s.jwtManager.GenerateAccessToken(member.ID, member.FullName, "member", "", jwt.KindMember, []string{"member.access"})
@@ -296,13 +296,13 @@ func (s *AuthService) MemberLogin(req *MemberLoginRequest) (*MemberLoginResponse
 	var member model.Member
 	if err := s.db.Where("username = ? AND is_active = ?", req.Username, true).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("invalid username or password")
+			return nil, errors.New("sai tên đăng nhập hoặc mật khẩu")
 		}
 		return nil, err
 	}
 
 	if !utils.CheckPassword(req.Password, member.PasswordHash) {
-		return nil, errors.New("invalid username or password")
+		return nil, errors.New("sai tên đăng nhập hoặc mật khẩu")
 	}
 
 	// Đây là màn hình khoá mà KHÁCH tự gõ mật khẩu vào — cửa vào máy thật sự,
@@ -360,15 +360,15 @@ type RefreshRequest struct {
 func (s *AuthService) RefreshToken(req *RefreshRequest) (*LoginResponse, error) {
 	claims, err := s.jwtManager.ValidateToken(req.RefreshToken)
 	if err != nil {
-		return nil, errors.New("invalid or expired refresh token")
+		return nil, errors.New("phiên đăng nhập đã hết hạn, hãy đăng nhập lại")
 	}
 	if claims.TokenType != jwt.TypeRefresh {
-		return nil, errors.New("invalid or expired refresh token")
+		return nil, errors.New("phiên đăng nhập đã hết hạn, hãy đăng nhập lại")
 	}
 
 	var user model.User
 	if err := s.db.Where("id = ? AND is_active = ?", claims.UserID, true).Preload("Roles").Preload("Roles.Permissions").First(&user).Error; err != nil {
-		return nil, errors.New("user not found or inactive")
+		return nil, errors.New("không tìm thấy tài khoản hoặc tài khoản đã bị khoá")
 	}
 
 	var permissions []string
@@ -475,7 +475,7 @@ func (s *AuthService) ChangePassword(userID string, isMember bool, req *ChangePa
 func (s *AuthService) changeStaffPassword(userID string, req *ChangePasswordRequest) error {
 	var user model.User
 	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
-		return errors.New("user not found")
+		return errors.New("không tìm thấy tài khoản")
 	}
 
 	if !utils.CheckPassword(req.OldPassword, user.PasswordHash) {
@@ -502,7 +502,7 @@ func (s *AuthService) changeStaffPassword(userID string, req *ChangePasswordRequ
 func (s *AuthService) changeMemberPassword(memberID string, req *ChangePasswordRequest) error {
 	var member model.Member
 	if err := s.db.Where("id = ?", memberID).First(&member).Error; err != nil {
-		return errors.New("member not found")
+		return errors.New("không tìm thấy hội viên")
 	}
 
 	if !utils.CheckPassword(req.OldPassword, member.PasswordHash) {

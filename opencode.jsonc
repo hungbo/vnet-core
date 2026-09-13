@@ -7,7 +7,7 @@
       "description": "Dev backend (Go/Gin via Air)"
     },
     "dev-admin": {
-      "template": "Start the Vue 3 admin dev server. In `admin/`, run `pnpm dev` (Vite on :3000, proxies /api → localhost:8080).",
+      "template": "Start the Vue 3 admin dev server. In `admin/`, run `pnpm dev` (Vite on :20900, proxies /api → localhost:20800).",
       "description": "Dev admin (Vue 3/Soybean)"
     },
     "test-backend": {

@@ -82,7 +82,7 @@ func (h *WebsiteBlockHandler) CreateRule(c *gin.Context) {
 func (h *WebsiteBlockHandler) UpdateRule(c *gin.Context) {
 	var req service.UpdateRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	res, err := h.svc.UpdateRule(c.Param("id"), &req, middleware.GetUserID(c))
@@ -121,7 +121,7 @@ func (h *WebsiteBlockHandler) DeleteRule(c *gin.Context) {
 func (h *WebsiteBlockHandler) SetSchedules(c *gin.Context) {
 	var req service.SetSchedulesRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	if err := h.svc.SetSchedules(c.Param("id"), &req, middleware.GetUserID(c)); err != nil {
@@ -143,7 +143,7 @@ func (h *WebsiteBlockHandler) SetSchedules(c *gin.Context) {
 func (h *WebsiteBlockHandler) SetGroups(c *gin.Context) {
 	var req service.SetGroupsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	if err := h.svc.SetGroups(c.Param("id"), &req, middleware.GetUserID(c)); err != nil {

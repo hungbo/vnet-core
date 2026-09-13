@@ -11,7 +11,7 @@
  */
 declare const window: any
 
-const DEV_SERVER = 'http://localhost:8080'
+const DEV_SERVER = 'http://localhost:20800'
 
 const DEV_CATEGORIES = [
 	{ id: 'c-mi', name: 'Mì' },
@@ -80,7 +80,7 @@ export function installDevWailsStub() {
 			App: {
 				GetWindowMode: () => ok(new URLSearchParams(location.search).get('window') || ''),
 				GetMachineCode: () => ok('KT-01'),
-				GetServerURL: () => ok('http://localhost:8080'),
+				GetServerURL: () => ok('http://localhost:20800'),
 				// Trả về đúng người vừa đăng nhập, không phải một chuỗi cứng:
 				// Dashboard đọc hàm này để dựng màn hình, nên nếu nó luôn nói
 				// "khách" thì không bao giờ xem được màn hình nhân viên.
@@ -98,7 +98,7 @@ export function installDevWailsStub() {
 				GetFeatureFlags: () => ok(JSON.stringify({ attendance_enabled: true, feedback_enabled: true })),
 				GetTopupPresets: () => ok(JSON.stringify([10000, 20000, 50000, 100000])),
 				GetNotifications: () => ok(JSON.stringify([])),
-				GetHardware: () => ok(JSON.stringify({ machine_code: 'KT-01', server_url: 'http://localhost:8080' })),
+				GetHardware: () => ok(JSON.stringify({ machine_code: 'KT-01', server_url: 'http://localhost:20800' })),
 				GetVersion: () => ok('dev'),
 				GetProducts: () => ok(JSON.stringify([])),
 				GetCategories: () => ok(JSON.stringify(DEV_CATEGORIES)),

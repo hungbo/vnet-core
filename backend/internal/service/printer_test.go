@@ -48,7 +48,8 @@ func TestPrinterService_GetByID_NotFound(t *testing.T) {
 
 	_, err := svc.GetByID("nonexistent")
 	assert.Error(t, err)
-	assert.Equal(t, "printer not found", err.Error())
+	// Câu lỗi đổi sang tiếng Việt có chủ đích: nó hiện thẳng lên màn hình nhân viên.
+	assert.Equal(t, "không tìm thấy máy in", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

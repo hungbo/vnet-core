@@ -212,7 +212,9 @@ func (s *SystemManageService) ListUsers(params *UserListParams) (*PaginatedRecor
 	if params.Search != "" {
 		search := "%" + params.Search + "%"
 		query = query.Where(
-			"username ILIKE ? OR full_name ILIKE ? OR phone ILIKE ? OR email ILIKE ?",
+			// Họ tên là chỗ duy nhất có dấu; tên đăng nhập, số điện thoại và
+			// email đều không dấu nên giữ ILIKE trần cho rẻ.
+			"username ILIKE ? OR unaccent(full_name) ILIKE unaccent(?) OR phone ILIKE ? OR email ILIKE ?",
 			search, search, search, search,
 		)
 	} else {
@@ -220,7 +222,7 @@ func (s *SystemManageService) ListUsers(params *UserListParams) (*PaginatedRecor
 			query = query.Where("username ILIKE ?", "%"+params.UserName+"%")
 		}
 		if params.NickName != "" {
-			query = query.Where("full_name ILIKE ?", "%"+params.NickName+"%")
+			query = query.Where("unaccent(full_name) ILIKE unaccent(?)", "%"+params.NickName+"%")
 		}
 		if params.UserPhone != "" {
 			query = query.Where("phone ILIKE ?", "%"+params.UserPhone+"%")
@@ -280,7 +282,7 @@ func (s *SystemManageService) CreateUser(req *CreateUserRequest) (*UserManageRes
 		return nil, errors.New("username is required")
 	}
 	if req.Password == "" {
-		return nil, errors.New("password is required")
+		return nil, errors.New("phải nhập mật khẩu")
 	}
 
 	var existing model.User
@@ -456,7 +458,7 @@ func (s *SystemManageService) DeleteUser(id string) error {
 // đã xoá thật và audit đã ghi, nên không có trạng thái nửa vời nào bị giấu.
 func (s *SystemManageService) BatchDeleteUsers(ids []string) error {
 	if len(ids) == 0 {
-		return errors.New("no ids provided")
+		return errors.New("chưa chọn bản ghi nào")
 	}
 	for _, id := range ids {
 		if err := s.DeleteUser(id); err != nil {
@@ -472,10 +474,10 @@ func (s *SystemManageService) ListRoles(params *RoleListParams) (*PaginatedRecor
 
 	if params.Search != "" {
 		search := "%" + params.Search + "%"
-		query = query.Where("name ILIKE ? OR description ILIKE ?", search, search)
+		query = query.Where("unaccent(name) ILIKE unaccent(?) OR unaccent(description) ILIKE unaccent(?)", search, search)
 	} else {
 		if params.RoleName != "" {
-			query = query.Where("name ILIKE ?", "%"+params.RoleName+"%")
+			query = query.Where("unaccent(name) ILIKE unaccent(?)", "%"+params.RoleName+"%")
 		}
 		if params.RoleCode != "" {
 			query = query.Where("name ILIKE ?", "%"+params.RoleCode+"%")
@@ -528,7 +530,7 @@ func (s *SystemManageService) GetAllRoles() ([]*AllRoleResponse, error) {
 
 func (s *SystemManageService) CreateRole(req *CreateRoleRequest) (*RoleManageResponse, error) {
 	if req.RoleName == "" {
-		return nil, errors.New("role name is required")
+		return nil, errors.New("phải nhập tên vai trò")
 	}
 
 	role := model.Role{
@@ -554,7 +556,7 @@ func (s *SystemManageService) UpdateRole(req *UpdateRoleRequest) (*RoleManageRes
 	var role model.Role
 	if err := s.db.Where("id = ?", req.ID).First(&role).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("role not found")
+			return nil, errors.New("không tìm thấy vai trò")
 		}
 		return nil, err
 	}
@@ -589,7 +591,7 @@ func (s *SystemManageService) DeleteRole(id string) error {
 	var role model.Role
 	if err := s.db.Where("id = ?", id).First(&role).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("role not found")
+			return errors.New("không tìm thấy vai trò")
 		}
 		return err
 	}
@@ -739,7 +741,12 @@ func (s *SystemManageService) GetMenuList(params *SystemListParams) (*PaginatedR
 				Order:     child.Order,
 				I18nKey:   child.I18nKey,
 			}
-			parent.Children = append(parent.Children, childMenu)
+			// Danh sách này PHẲNG: mỗi mục menu đúng một dòng, quan hệ cha–con
+			// nằm ở cột parentId. Gắn thêm childMenu vào parent.Children khiến
+			// 33 mục con xuất hiện HAI LẦN trên cùng một trang (một lần là dòng
+			// gốc, một lần là dòng con do el-table tự trải) — Vue kêu "Duplicate
+			// keys" và người xem đếm menu ra gấp đôi. Cây menu riêng đã có
+			// endpoint GetMenuTree.
 			allMenus = append(allMenus, childMenu)
 		}
 
@@ -879,7 +886,7 @@ func (s *SystemManageService) GetAllPermissions() ([]PermissionResponse, error) 
 func (s *SystemManageService) GetRolePermissions(roleID string) ([]string, error) {
 	var role model.Role
 	if err := s.db.Preload("Permissions").Where("id = ?", roleID).First(&role).Error; err != nil {
-		return nil, errors.New("role not found")
+		return nil, errors.New("không tìm thấy vai trò")
 	}
 	ids := make([]string, len(role.Permissions))
 	for i, p := range role.Permissions {
@@ -891,7 +898,7 @@ func (s *SystemManageService) GetRolePermissions(roleID string) ([]string, error
 func (s *SystemManageService) UpdateRolePermissions(roleID string, permissionIDs []string) error {
 	var role model.Role
 	if err := s.db.Where("id = ?", roleID).First(&role).Error; err != nil {
-		return errors.New("role not found")
+		return errors.New("không tìm thấy vai trò")
 	}
 
 	var perms []model.Permission

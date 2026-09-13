@@ -5,6 +5,9 @@ bán hàng, báo cáo doanh thu và hỗ trợ khách hàng qua chat real-time.
 
 > **Phiên bản:** 0.1.0-dev | **License:** AGPL-3.0
 
+> **Hướng dẫn sử dụng** — triển khai, cài máy trạm và mọi chức năng, viết cho người
+> dùng chứ không cho lập trình viên: [docs/HUONG-DAN.md](./docs/HUONG-DAN.md).
+
 ## Architecture
 
 ```
@@ -81,7 +84,7 @@ go run ./cmd/server
 ```bash
 cd admin
 pnpm install
-pnpm dev         # → http://localhost:3000 (proxies /api → :8080)
+pnpm dev         # → http://localhost:20900 (proxies /api → :20800)
 ```
 
 ### 3. Migrate & seed (lần đầu)
@@ -173,7 +176,7 @@ docker compose --profile tools run --rm seed
 docker compose --profile tools run --rm seed -menu   # tuỳ chọn: thực đơn mẫu 100 món
 ```
 
-Mở `http://localhost:8080` (hoặc `APP_PORT` bạn đặt) và đăng nhập bằng
+Mở `http://localhost:20800` (hoặc `APP_PORT` bạn đặt) và đăng nhập bằng
 `admin` / `admin123`, rồi **đổi mật khẩu ngay** ở menu avatar.
 
 ```bash
@@ -207,7 +210,7 @@ nền khởi động cùng Windows.
 **Bản chạy tay (portable)** vẫn dùng biến môi trường như trước:
 
 ```
-VNET_SERVER_URL=http://<địa chỉ máy chủ>:8080
+VNET_SERVER_URL=http://<địa chỉ máy chủ>:20800
 VNET_MACHINE_CODE=PC-01
 VNET_AGENT_TOKEN=<khoá cấp cho PC-01>
 ```

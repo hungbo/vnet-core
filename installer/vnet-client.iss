@@ -76,7 +76,7 @@ begin
   ConfigPage.Add('Địa chỉ máy chủ:', False);
   ConfigPage.Add('Mã máy:', False);
   ConfigPage.Add('PIN kỹ thuật:', False);
-  ConfigPage.Values[0] := 'http://192.168.1.10:8080';
+  ConfigPage.Values[0] := 'http://192.168.1.10:20800';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;

@@ -27,7 +27,7 @@ func NewCardHandler(svc *service.CardService) *CardHandler {
 func (h *CardHandler) GenerateTopupCards(c *gin.Context) {
 	var req service.GenerateTopupCardsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	cards, err := h.svc.GenerateTopupCards(&req, middleware.GetUserID(c))
@@ -67,7 +67,7 @@ func (h *CardHandler) ListTopupCards(c *gin.Context) {
 func (h *CardHandler) RedeemTopupCard(c *gin.Context) {
 	var req service.RedeemTopupCardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	// Hội viên tự nạp thì chỉ nạp được cho chính mình; nhân viên nạp hộ thì
@@ -114,10 +114,10 @@ func (h *CardHandler) CancelTopupCard(c *gin.Context) {
 func (h *CardHandler) SellTopupCard(c *gin.Context) {
 	var req service.SellTopupCardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
-	card, err := h.svc.SellTopupCard(c.Param("id"), req.MemberID, middleware.GetUserID(c))
+	card, err := h.svc.SellTopupCard(c.Param("id"), req.MemberID, req.PaymentMethod, middleware.GetUserID(c))
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -137,7 +137,7 @@ func (h *CardHandler) SellTopupCard(c *gin.Context) {
 func (h *CardHandler) GenerateGiftCards(c *gin.Context) {
 	var req service.GenerateGiftCardsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	cards, err := h.svc.GenerateGiftCards(&req, middleware.GetUserID(c))
@@ -180,7 +180,7 @@ type checkGiftCardRequest struct {
 func (h *CardHandler) CheckGiftCard(c *gin.Context) {
 	var req checkGiftCardRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		handleValidationError(c, err)
 		return
 	}
 	res, err := h.svc.CheckGiftCard(req.Serial, req.Secret)

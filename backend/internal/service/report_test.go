@@ -2,24 +2,31 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vnet/core/pkg/utils"
 )
 
 func TestReportService_DailyRevenue(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewReportService(db)
 
-	mock.ExpectQuery(`SELECT DATE\(created_at\) as date, COUNT\(\*\) as total_orders, COALESCE\(SUM\(final_amount\), 0\) as revenue, COALESCE\(SUM\(discount_amount\), 0\) as discount FROM "orders" WHERE status = \$1 AND "orders"\."deleted_at" IS NULL GROUP BY DATE\(created_at\) ORDER BY date asc`).
+	mock.ExpectQuery(`SELECT DATE\(created_at\) as date, COUNT\(\*\) as total_orders, COALESCE\(SUM\(final_amount\), 0\) as revenue, COALESCE\(SUM\(discount_amount\), 0\) as discount FROM "orders" WHERE status = \$1 AND \(order_type <> \'topup\' AND payment_method = \'cash\'\) AND "orders"\."deleted_at" IS NULL GROUP BY DATE\(created_at\) ORDER BY date asc`).
 		WithArgs("completed").
 		WillReturnRows(sqlmock.NewRows([]string{"date", "total_orders", "revenue", "discount"}).
 			AddRow("2026-06-25T00:00:00Z", int64(10), int64(500000), int64(50000)))
 
-	mock.ExpectQuery(`SELECT DATE\(created_at\) as date, COALESCE\(SUM\(amount\), 0\) as amount, COUNT\(\*\) as count FROM "member_transactions" WHERE transaction_type IN \('topup', 'topup_bonus', 'session_fee', 'combo_purchase', 'refund', 'refund_bonus'\) GROUP BY "date" ORDER BY date asc`).
+	mock.ExpectQuery(`SELECT DATE\(created_at\) as date, COALESCE\(SUM\(CASE WHEN transaction_type = 'combo_purchase' THEN -amount ELSE amount END\), 0\) as amount, COUNT\(\*\) as count FROM "member_transactions" WHERE \(transaction_type IN \('topup', 'refund'\) OR \(transaction_type = 'combo_purchase' AND payment_method = 'cash'\)\) GROUP BY "date" ORDER BY date asc`).
 		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}).
 			AddRow("2026-06-25T00:00:00Z", int64(100000), int64(2)))
+
+	// Nguồn thu thứ ba: tiền bán thẻ nạp, tính theo NGÀY BÁN chứ không phải
+	// ngày khách nạp thẻ.
+	mock.ExpectQuery(`SELECT DATE\(sold_at\) as date, COALESCE\(SUM\(face_value\), 0\) as amount, COUNT\(\*\) as count FROM "topup_cards" WHERE sold_at IS NOT NULL AND status <> 'cancelled' AND deleted_at IS NULL GROUP BY "date" ORDER BY date asc`).
+		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}))
 
 	result, err := svc.DailyRevenue("", "")
 	require.NoError(t, err)
@@ -34,14 +41,17 @@ func TestReportService_MonthlyRevenue(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewReportService(db)
 
-	mock.ExpectQuery(`SELECT TO_CHAR\(created_at, 'YYYY-MM'\) as month, COUNT\(\*\) as total_orders, COALESCE\(SUM\(final_amount\), 0\) as revenue, COALESCE\(SUM\(discount_amount\), 0\) as discount FROM "orders" WHERE status = \$1 AND "orders"\."deleted_at" IS NULL GROUP BY "month" ORDER BY month asc`).
+	mock.ExpectQuery(`SELECT TO_CHAR\(created_at, 'YYYY-MM'\) as month, COUNT\(\*\) as total_orders, COALESCE\(SUM\(final_amount\), 0\) as revenue, COALESCE\(SUM\(discount_amount\), 0\) as discount FROM "orders" WHERE status = \$1 AND \(order_type <> \'topup\' AND payment_method = \'cash\'\) AND "orders"\."deleted_at" IS NULL GROUP BY "month" ORDER BY month asc`).
 		WithArgs("completed").
 		WillReturnRows(sqlmock.NewRows([]string{"month", "total_orders", "revenue", "discount"}).
 			AddRow("2026-06", int64(50), int64(3000000), int64(100000)))
 
-	mock.ExpectQuery(`SELECT TO_CHAR\(created_at, 'YYYY-MM'\) as date, COALESCE\(SUM\(amount\), 0\) as amount, COUNT\(\*\) as count FROM "member_transactions" WHERE transaction_type IN \('topup', 'topup_bonus', 'session_fee', 'combo_purchase', 'refund', 'refund_bonus'\) GROUP BY "date" ORDER BY date asc`).
+	mock.ExpectQuery(`SELECT TO_CHAR\(created_at, 'YYYY-MM'\) as date, COALESCE\(SUM\(CASE WHEN transaction_type = 'combo_purchase' THEN -amount ELSE amount END\), 0\) as amount, COUNT\(\*\) as count FROM "member_transactions" WHERE \(transaction_type IN \('topup', 'refund'\) OR \(transaction_type = 'combo_purchase' AND payment_method = 'cash'\)\) GROUP BY "date" ORDER BY date asc`).
 		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}).
 			AddRow("2026-06", int64(200000), int64(5)))
+
+	mock.ExpectQuery(`SELECT TO_CHAR\(sold_at, 'YYYY-MM'\) as date, COALESCE\(SUM\(face_value\), 0\) as amount, COUNT\(\*\) as count FROM "topup_cards"`).
+		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}))
 
 	result, err := svc.MonthlyRevenue(0, 0)
 	require.NoError(t, err)
@@ -123,7 +133,10 @@ func TestReportService_TopProducts(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewReportService(db)
 
-	mock.ExpectQuery(`SELECT product_id, product_name, SUM\(quantity\) as quantity, COALESCE\(SUM\(subtotal\), 0\) as total_sales FROM "order_items" GROUP BY product_id, product_name ORDER BY total_sales desc`).
+	// Câu lệnh đổi có chủ đích: món bán chạy chỉ đếm đơn đã hoàn tất, nên phải
+	// nối sang bảng orders và lọc trạng thái.
+	mock.ExpectQuery(`SELECT order_items\.product_id, order_items\.product_name, SUM\(order_items\.quantity\) as quantity, COALESCE\(SUM\(order_items\.subtotal\), 0\) as total_sales FROM "order_items" JOIN orders ON orders\.id = order_items\.order_id WHERE orders\.status = \$1 GROUP BY order_items\.product_id, order_items\.product_name ORDER BY total_sales desc`).
+		WithArgs("completed").
 		WillReturnRows(sqlmock.NewRows([]string{"product_id", "product_name", "quantity", "total_sales"}).
 			AddRow("p1", "Pepsi", int64(100), int64(200000)))
 
@@ -151,5 +164,34 @@ func TestReportService_PromotionUsage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 	assert.Equal(t, "Happy Hour", result[0].PromotionName)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Mốc ngày của báo cáo phải là nửa đêm GIỜ VIỆT NAM. Bản cũ dùng time.Parse —
+// nửa đêm UTC, tức 07:00 giờ ta — nên lọc "hôm nay → hôm nay" cắt mất cả ca đêm
+// 00:00–07:00 và cộng nhầm 7 tiếng đầu của ngày kế tiếp.
+func TestReportService_DailyRevenue_MocNgayTheoGioVietNam(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewReportService(db)
+
+	from := time.Date(2026, 9, 13, 0, 0, 0, 0, utils.VietnamLocation())
+	to := time.Date(2026, 9, 13, 23, 59, 59, 0, utils.VietnamLocation())
+
+	mock.ExpectQuery(`SELECT DATE\(created_at\).* FROM "orders"`).
+		WithArgs("completed", from, to).
+		WillReturnRows(sqlmock.NewRows([]string{"date", "total_orders", "revenue", "discount"}))
+	// Ngoặc bao quanh vế OR phải còn nguyên khi ghép thêm bộ lọc ngày. Mất nó
+	// thì AND bám chặt hơn OR và báo cáo một ngày cộng cả tiền nạp mọi ngày.
+	mock.ExpectQuery(`FROM "member_transactions" WHERE \(\(transaction_type IN \('topup', 'refund'\) OR \(transaction_type = 'combo_purchase' AND payment_method = 'cash'\)\)\) AND created_at >= \$1 AND created_at <= \$2`).
+		WithArgs(from, to).
+		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}))
+	// Tiền bán thẻ cũng phải neo theo cùng mốc giờ Việt Nam.
+	mock.ExpectQuery(`FROM "topup_cards" WHERE \(sold_at IS NOT NULL AND status <> 'cancelled' AND deleted_at IS NULL\) AND sold_at >= \$1 AND sold_at <= \$2`).
+		WithArgs(from, to).
+		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}))
+
+	_, err := svc.DailyRevenue("2026-09-13", "2026-09-13")
+
+	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

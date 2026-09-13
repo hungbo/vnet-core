@@ -43,6 +43,7 @@ async function fetchSettings() {
       if (row?.key !== undefined) settings[row.key] = row.value;
     });
     if (activeTab.value === 'topup') presets.value = parsePresets(settings.presets);
+    if (activeTab.value === 'limits') coerceNumbers();
     if (activeTab.value === 'features') applyFeatureDefaults();
   } catch (e: any) {
     // A group with no rows yet is a normal first-run state, not an error:
@@ -52,6 +53,16 @@ async function fetchSettings() {
   } finally {
     loading.value = false;
   }
+}
+
+// Giá trị trong cột jsonb trở về dạng CHUỖI. ElInputNumber đòi số: đưa chuỗi
+// vào thì Vue cảnh báo sai kiểu ở mọi lần mở tab, và phép tăng/giảm làm việc
+// trên một thứ không phải số.
+function coerceNumbers() {
+  ['max_bookings_per_day', 'max_bookings_per_member', 'cancel_before_minutes', 'max_debt'].forEach(k => {
+    const n = Number(settings[k]);
+    settings[k] = settings[k] === '' || settings[k] === undefined || Number.isNaN(n) ? undefined : n;
+  });
 }
 
 // Nhóm "features" chưa tồn tại cho tới lần Lưu đầu tiên, và backend mặc định
@@ -116,15 +127,11 @@ onMounted(() => {
             <ElFormItem :label="$t('vnetPages.settings.phone')">
               <ElInput v-model="settings.store_phone" />
             </ElFormItem>
-            <ElFormItem :label="$t('vnetPages.settings.email')">
-              <ElInput v-model="settings.store_email" />
-            </ElFormItem>
-            <ElFormItem :label="$t('vnetPages.settings.timezone')">
-              <ElSelect v-model="settings.timezone" style="width: 100%">
-                <ElOption label="Asia/Ho_Chi_Minh (UTC+7)" value="Asia/Ho_Chi_Minh" />
-                <ElOption label="Asia/Ha_Noi (UTC+7)" value="Asia/Ha_Noi" />
-              </ElSelect>
-            </ElFormItem>
+            <!-- Đã bỏ hai ô "Email cửa hàng" và "Múi giờ": không nơi nào đọc
+                 chúng. Hoá đơn chỉ in tên/địa chỉ/điện thoại, còn toàn bộ mốc
+                 thời gian của backend neo cứng Asia/Ho_Chi_Minh trong
+                 utils.VietnamLocation(). Ô Múi giờ nguy hiểm hơn vì trông như
+                 có tác dụng: đổi xong người vận hành tưởng báo cáo đã đổi theo. -->
           </ElForm>
         </ElTabPane>
 
@@ -196,10 +203,26 @@ onMounted(() => {
                 rỗng: bind kiểu boolean thì công tắc luôn hiện "bật" và không bao
                 giờ tắt được gì.
               -->
-              <ElSwitch v-model="settings.attendance_enabled" active-value="true" inactive-value="false" />
+              <!--
+                ElTabs dựng sẵn mọi pane, nên hai công tắc này tồn tại cả khi
+                đang mở tab khác — lúc đó khoá chưa nạp và ElSwitch cảnh báo
+                "model-value must be active-value or inactive-value". Mặc định
+                "true" khớp với mặc định BẬT của backend.
+              -->
+              <ElSwitch
+                :model-value="settings.attendance_enabled ?? 'true'"
+                active-value="true"
+                inactive-value="false"
+                @update:model-value="(v: any) => (settings.attendance_enabled = v)"
+              />
             </ElFormItem>
             <ElFormItem :label="$t('vnetPages.settings.feedbackEnabled')">
-              <ElSwitch v-model="settings.feedback_enabled" active-value="true" inactive-value="false" />
+              <ElSwitch
+                :model-value="settings.feedback_enabled ?? 'true'"
+                active-value="true"
+                inactive-value="false"
+                @update:model-value="(v: any) => (settings.feedback_enabled = v)"
+              />
             </ElFormItem>
           </ElForm>
         </ElTabPane>

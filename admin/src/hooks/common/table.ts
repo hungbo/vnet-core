@@ -112,7 +112,10 @@ export function useUIPaginatedTable<ResponseData, ApiData>(options: UseUIPaginat
   const mobilePagination = computed(() => {
     const p: Partial<RemoveReadonly<PaginationProps & PaginationEmits>> = {
       ...pagination,
-      pagerCount: isMobile.value ? 3 : 9
+      // Element Plus chỉ nhận pagerCount lẻ trong khoảng 5..21; giá trị 3 bị
+      // validator loại và rơi về mặc định 7 — tức trên điện thoại dải số trang
+      // lại dài hơn chứ không ngắn đi, kèm một cảnh báo Vue ở mọi bảng.
+      pagerCount: isMobile.value ? 5 : 9
     };
 
     return p;

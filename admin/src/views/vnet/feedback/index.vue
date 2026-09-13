@@ -90,7 +90,12 @@ onMounted(() => {
     <ElCard style="margin-bottom: 16px">
       <div style="display: flex; gap: 40px; align-items: center; flex-wrap: wrap">
         <div style="text-align: center; min-width: 120px">
-          <div style="font-size: 44px; font-weight: 300; line-height: 1; color: #303133">
+          <!--
+ Màu chữ/nền phải lấy theo biến của Element Plus, không viết cứng: ở chế độ
+               tối, #303133 là chữ đen trên nền đen — con số quan trọng nhất trang này
+               biến mất hoàn toàn. 
+-->
+          <div style="font-size: 44px; font-weight: 300; line-height: 1; color: var(--el-text-color-primary)">
             {{ summary.total ? summary.average.toFixed(1) : '–' }}
           </div>
           <div style="color: #909399; font-size: 13px; margin-top: 6px">
@@ -108,7 +113,7 @@ onMounted(() => {
             style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px"
           >
             <span style="width: 34px; color: #606266; font-size: 13px">{{ star }} ★</span>
-            <div style="flex: 1; height: 10px; background: #f0f2f5; border-radius: 5px; overflow: hidden">
+            <div style="flex: 1; height: 10px; background: var(--el-fill-color); border-radius: 5px; overflow: hidden">
               <div
                 :style="{
                   width: `${((summary.distribution[String(star)] || 0) / maxCount) * 100}%`,

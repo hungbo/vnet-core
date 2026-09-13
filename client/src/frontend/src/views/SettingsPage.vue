@@ -52,7 +52,7 @@
 				<h4>Cấu hình thiết bị</h4>
 				<el-form label-position="top">
 					<el-form-item label="Địa chỉ server">
-						<el-input v-model="serverUrl" placeholder="http://localhost:8080" />
+						<el-input v-model="serverUrl" placeholder="http://localhost:20800" />
 					</el-form-item>
 					<el-button type="primary" style="width: 100%" @click="saveDevice">Lưu cấu hình</el-button>
 				</el-form>
@@ -146,7 +146,7 @@ async function downloadUpdate() {
 		downloading.value = false
 	}
 }
-const serverUrl = ref('http://localhost:8080')
+const serverUrl = ref('http://localhost:20800')
 
 // Chỉ quản trị mới thấy phần Cấu hình thiết bị. Nhân viên đăng nhập trên máy
 // trạm mang vai trò 'admin' (App.Login quy về), hội viên thì không.

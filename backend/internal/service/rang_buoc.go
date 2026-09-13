@@ -32,6 +32,12 @@ type phuThuoc struct {
 	Cot string
 	// Nhan là tên tiếng Việt số nhiều, không viết hoa, ví dụ "phiên chơi".
 	Nhan string
+	// GoiY là lối thoát RIÊNG cho phụ thuộc này, ghi đè gợi ý chung. Cần khi
+	// các phụ thuộc của cùng một bản ghi phải xử lý theo những cách khác nhau:
+	// máy thì chuyển sang nhóm khác, còn dòng bảng giá thì phải xoá — bảo người
+	// vận hành "chuyển dòng giá sang nhóm khác" là chỉ một lối thoát không tồn
+	// tại. Để trống thì dùng gợi ý chung.
+	GoiY string
 }
 
 // kiemTraPhuThuoc chặn xoá khi còn bản ghi phụ thuộc.
@@ -55,7 +61,11 @@ func kiemTraPhuThuoc(db *gorm.DB, id string, ds []phuThuoc, goiY string) error {
 			return err
 		}
 		if n > 0 {
-			return &loiRangBuoc{fmt.Sprintf("không xoá được: còn %d %s — %s", n, p.Nhan, goiY)}
+			loiThoat := goiY
+			if p.GoiY != "" {
+				loiThoat = p.GoiY
+			}
+			return &loiRangBuoc{fmt.Sprintf("không xoá được: còn %d %s — %s", n, p.Nhan, loiThoat)}
 		}
 	}
 	return nil

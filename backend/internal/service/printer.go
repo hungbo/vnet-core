@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/vnet/core/internal/model"
@@ -34,9 +35,12 @@ type PrinterResponse struct {
 }
 
 type CreatePrinterRequest struct {
-	Name         string `json:"name" binding:"required"`
-	PrinterType  string `json:"printer_type" binding:"required"`
-	IPAddress    string `json:"ip_address"`
+	Name        string `json:"name" binding:"required"`
+	PrinterType string `json:"printer_type" binding:"required"`
+	// Địa chỉ phải là IP hoặc tên máy hợp lệ: chuỗi bất kỳ vẫn lưu được, và
+	// người trực chỉ phát hiện ra lúc bấm In thử — hoặc tệ hơn, lúc bếp không
+	// nhận được phiếu giữa giờ cao điểm.
+	IPAddress    string `json:"ip_address" binding:"omitempty,ip|hostname"`
 	Port         int    `json:"port"`
 	IsDefault    bool   `json:"is_default"`
 	CharsPerLine int    `json:"chars_per_line"`
@@ -47,7 +51,7 @@ type CreatePrinterRequest struct {
 type UpdatePrinterRequest struct {
 	Name         *string `json:"name"`
 	PrinterType  *string `json:"printer_type"`
-	IPAddress    *string `json:"ip_address"`
+	IPAddress    *string `json:"ip_address" binding:"omitempty,ip|hostname"`
 	Port         *int    `json:"port"`
 	IsDefault    *bool   `json:"is_default"`
 	CharsPerLine *int    `json:"chars_per_line"`
@@ -77,7 +81,7 @@ func (s *PrinterService) GetByID(id string) (*PrinterResponse, error) {
 	var printer model.PrinterConfig
 	if err := s.db.Where("id = ?", id).First(&printer).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("printer not found")
+			return nil, errors.New("không tìm thấy máy in")
 		}
 		return nil, err
 	}
@@ -135,7 +139,7 @@ func (s *PrinterService) Update(id string, req *UpdatePrinterRequest) (*PrinterR
 	var printer model.PrinterConfig
 	if err := s.db.Where("id = ?", id).First(&printer).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("printer not found")
+			return nil, errors.New("không tìm thấy máy in")
 		}
 		return nil, err
 	}
@@ -197,7 +201,7 @@ func (s *PrinterService) Delete(id string) error {
 	var printer model.PrinterConfig
 	if err := s.db.Where("id = ?", id).First(&printer).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("printer not found")
+			return errors.New("không tìm thấy máy in")
 		}
 		return err
 	}
@@ -237,19 +241,22 @@ func (s *PrinterService) TestPrint(id string) error {
 	var printer model.PrinterConfig
 	if err := s.db.Where("id = ?", id).First(&printer).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("printer not found")
+			return errors.New("không tìm thấy máy in")
 		}
 		return err
 	}
 
 	if printer.IPAddress == "" {
-		return errors.New("printer has no IP address configured")
+		return errors.New("máy in chưa khai địa chỉ")
 	}
 
-	addr := fmt.Sprintf("%s:%d", printer.IPAddress, printer.Port)
+	// net.JoinHostPort chứ không phải Sprintf("%s:%d"): địa chỉ IPv6 phải nằm
+	// trong ngoặc vuông, nếu không chuỗi "fd00::1:9100" là địa chỉ vô nghĩa. Ô
+	// nhập nay chấp nhận IPv6 nên chỗ này chạm tới được thật.
+	addr := net.JoinHostPort(printer.IPAddress, strconv.Itoa(printer.Port))
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
-		return fmt.Errorf("cannot connect to printer at %s: %w", addr, err)
+		return fmt.Errorf("không kết nối được máy in %s: %w", addr, err)
 	}
 	defer conn.Close()
 
@@ -259,7 +266,7 @@ func (s *PrinterService) TestPrint(id string) error {
 	)
 
 	if _, err := conn.Write(testData); err != nil {
-		return fmt.Errorf("failed to send test data: %w", err)
+		return fmt.Errorf("gửi dữ liệu in thử thất bại: %w", err)
 	}
 
 	return nil
@@ -267,12 +274,12 @@ func (s *PrinterService) TestPrint(id string) error {
 
 func printerToResponse(p model.PrinterConfig) PrinterResponse {
 	return PrinterResponse{
-		ID:          p.ID,
-		Name:        p.Name,
-		PrinterType: p.PrinterType,
-		IPAddress:   p.IPAddress,
-		Port:        p.Port,
-		IsDefault:   p.IsDefault,
+		ID:           p.ID,
+		Name:         p.Name,
+		PrinterType:  p.PrinterType,
+		IPAddress:    p.IPAddress,
+		Port:         p.Port,
+		IsDefault:    p.IsDefault,
 		CharsPerLine: p.CharsPerLine,
 		Encoding:     p.Encoding,
 		CodePage:     p.CodePage,

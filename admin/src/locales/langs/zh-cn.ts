@@ -1,7 +1,7 @@
 // @ts-nocheck
 const local: App.I18n.Schema = {
   system: {
-    title: 'Soybean 管理系统',
+    title: 'VNET 管理系统',
     updateTitle: '系统版本更新通知',
     updateContent: '检测到系统有新版本发布，是否立即刷新页面？',
     updateConfirm: '立即刷新',
@@ -807,7 +807,7 @@ const local: App.I18n.Schema = {
       }
     },
     dashboard: {
-      revenueToday: '今日收入',
+      revenueToday: '今日进账',
       revenueChart: '收入图表',
       revenue7d: '近 7 天营收',
       revenueSeries: '营收',
@@ -823,10 +823,29 @@ const local: App.I18n.Schema = {
         members: '会员数',
         onlineMachines: '在线机器',
         playing: '游戏中',
-        revenueToday: '今日收入'
+        revenueToday: '今日进账'
       }
     },
     machines: {
+      noGroupTag: '未分配价格组 — 0₫/小时',
+      batch: {
+        open: '批量创建',
+        title: '批量创建机器',
+        prefix: '前缀',
+        prefixHint: '必须与客户端配置的编号一致',
+        range: '编号范围',
+        digits: '位数',
+        digitsHint: '2 → PC-01。填 0 则不补零',
+        specs: '整批通用配置',
+        checking: '检查中...',
+        canCreate: '可创建 {n} 台机器',
+        cannotCreate: '无法创建 — 请调整前缀或范围',
+        conflicts: '{n} 个编号已被占用',
+        deleted: '{n} 个编号属于已删除的机器',
+        created: '已创建 {n} 台机器',
+        failed: '批量创建失败',
+        submit: '创建'
+      },
       title: '机器管理',
       active: '启用',
       activeHint: '关闭以暂停此机器 — 将无法在其上开启新会话。对已有历史记录的机器请用此替代删除。',
@@ -1083,6 +1102,7 @@ const local: App.I18n.Schema = {
       }
     },
     sessions: {
+      noPricingWarning: '该机器未分配价格组——开台将按 0₫/小时计费。请先在机器页面分配价格组。',
       start: '开机',
       switchMachine: '换机',
       selectMachine: '选择机器',
@@ -1443,6 +1463,7 @@ const local: App.I18n.Schema = {
       giftTab: '礼品卡',
       generate: '生成卡片',
       sell: '售卡',
+      paymentMethod: '支付方式',
       sellHint: '记录这张实体卡卖给了谁。与充值不同 — 购买者可能是买来赠送的。',
       sellTo: '售给会员',
       sellSuccess: '已记录卡 {serial} 售给 {member}',
@@ -1560,7 +1581,9 @@ const local: App.I18n.Schema = {
       },
       rewardTypes: {
         discount_percent: '按百分比折扣',
-        discount_amount: '固定金额折扣'
+        discount_amount: '固定金额折扣',
+        balance: '增加余额',
+        bonus_points: '增加积分'
       },
       remove: '删除',
       title: '促销活动',
@@ -1583,10 +1606,6 @@ const local: App.I18n.Schema = {
       spinWin: '中奖"{name}" — 已发放给 {member}',
       spinLose: '未中奖 — 符合设定概率',
       spinNeedsMember: '暂无会员可供试转',
-      rewardTypes: {
-        balance: '增加余额',
-        bonus_points: '增加积分'
-      },
       value: '值',
       probability: '概率',
       form: {
@@ -1789,6 +1808,8 @@ const local: App.I18n.Schema = {
       amount: '金额',
       balanceBefore: '余额前',
       balanceAfter: '余额后',
+      bonusBefore: '赠送金(前)',
+      bonusAfter: '赠送金(后)',
       paymentMethod: '方式',
       description: '描述',
       createdBy: '操作人',
@@ -1797,6 +1818,15 @@ const local: App.I18n.Schema = {
       refund: '退款',
       cancel: '取消',
       comboPurchase: '购买套餐',
+      topupBonus: '充值赠送',
+      refundBonus: '赠送金退款',
+      attendanceBonus: '签到奖励',
+      bookingDeposit: '预约押金',
+      depositRefund: '押金退还',
+      orderPayment: '订单支付',
+      topupCard: '充值卡',
+      luckySpinBalance: '幸运抽奖 — 余额',
+      luckySpinBonus: '幸运抽奖 — 赠送金',
       messages: {
         loadError: '加载交易记录失败'
       }

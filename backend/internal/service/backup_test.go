@@ -58,7 +58,8 @@ func TestBackupService_Restore_NotFound(t *testing.T) {
 
 	err := svc.Restore("nonexistent")
 	assert.Error(t, err)
-	assert.Equal(t, "backup not found", err.Error())
+	// Câu lỗi đổi sang tiếng Việt có chủ đích: nó hiện thẳng lên toast của người trực.
+	assert.Equal(t, "không tìm thấy bản sao lưu", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -72,6 +73,6 @@ func TestBackupService_Restore_NoFile(t *testing.T) {
 
 	err := svc.Restore("b1")
 	assert.Error(t, err)
-	assert.Equal(t, "backup file not found", err.Error())
+	assert.Equal(t, "bản sao lưu này chưa có tệp trên đĩa", err.Error())
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

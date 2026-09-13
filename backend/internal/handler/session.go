@@ -5,6 +5,7 @@ import (
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/response"
+	"github.com/vnet/core/pkg/utils"
 )
 
 type SessionHandler struct {
@@ -201,7 +202,10 @@ func (h *SessionHandler) CalculateCost(c *gin.Context) {
 		return
 	}
 
-	result, err := h.svc.CalculateCost(machineID, memberID, duration)
+	// Màn hình báo giá dự tính cho một phiên MỞ NGAY BÂY GIỜ, nên mốc bắt đầu
+	// là hiện tại; nếu khoảng thời gian vắt qua mốc đổi giá thì con số dự tính
+	// đã tính đúng từng đoạn.
+	result, err := h.svc.CalculateCost(machineID, memberID, utils.VietnamTime(), duration)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

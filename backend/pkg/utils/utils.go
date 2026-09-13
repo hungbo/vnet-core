@@ -171,3 +171,16 @@ func (d JSONDate) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(d.Time)
 }
+
+// VietnamLocation trả về múi giờ quán đang chạy.
+//
+// Dùng khi cần PHÂN TÍCH một chuỗi ngày do người dùng nhập: time.Parse mặc định
+// neo vào UTC, mà mọi cột thời gian trong hệ thống lưu theo giờ Việt Nam, nên
+// "ngày 13/09" của người dùng lệch đi 7 tiếng và nuốt mất ca rạng sáng.
+func VietnamLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Ho_Chi_Minh")
+	if err != nil {
+		return time.FixedZone("ICT", 7*60*60)
+	}
+	return loc
+}

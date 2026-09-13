@@ -235,6 +235,7 @@ onMounted(load);
               clearable
               style="width: 200px"
               @keyup.enter="load"
+              @clear="load"
             />
             <ElButton @click="load">{{ $t('vnetPages.common.search') }}</ElButton>
             <ElButton type="primary" @click="openCreate">{{ $t('vnetPages.webblock.addRule') }}</ElButton>

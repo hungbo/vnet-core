@@ -59,7 +59,7 @@ func (s *NotificationAdminService) GetByID(id string) (*NotificationResponse, er
 	var n model.Notification
 	if err := s.db.First(&n, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("notification not found")
+			return nil, errors.New("không tìm thấy thông báo")
 		}
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (s *NotificationAdminService) Update(id string, req *UpdateNotificationRequ
 	var n model.Notification
 	if err := s.db.First(&n, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("notification not found")
+			return nil, errors.New("không tìm thấy thông báo")
 		}
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func (s *NotificationAdminService) Delete(id string) error {
 	var n model.Notification
 	if err := s.db.First(&n, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("notification not found")
+			return errors.New("không tìm thấy thông báo")
 		}
 		return err
 	}
@@ -152,12 +152,19 @@ func (s *NotificationAdminService) Dispatch(notificationID string) (int, error) 
 	var n model.Notification
 	if err := s.db.First(&n, "id = ?", notificationID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return 0, errors.New("notification not found")
+			return 0, errors.New("không tìm thấy thông báo")
 		}
 		return 0, err
 	}
+	// Bỏ qua hội viên đã nhận thông báo này: bấm Gửi lần hai — hoặc hai người
+	// trực cùng bấm — trước đây nhét thêm một bản sao vào hộp thư của TẤT CẢ
+	// hội viên, không có gì chặn. Sổ người nhận sinh ra để ghi "ai đã nhận",
+	// nên lấy đúng nó làm mốc chống trùng; hội viên đăng ký sau lần gửi đầu
+	// vẫn nhận được ở lần bấm sau.
 	var memberIDs []string
-	if err := s.db.Model(&model.Member{}).Pluck("id", &memberIDs).Error; err != nil {
+	if err := s.db.Model(&model.Member{}).
+		Where(`NOT EXISTS (SELECT 1 FROM notification_recipients nr WHERE nr.notification_id = ? AND nr.recipient_id = members.id)`, notificationID).
+		Pluck("id", &memberIDs).Error; err != nil {
 		return 0, err
 	}
 	if len(memberIDs) == 0 {

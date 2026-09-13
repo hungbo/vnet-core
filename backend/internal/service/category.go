@@ -6,6 +6,7 @@ import (
 
 	"github.com/vnet/core/internal/model"
 	"gorm.io/gorm"
+	"strings"
 )
 
 type CategoryService struct {
@@ -79,7 +80,7 @@ func (s *CategoryService) GetByID(id string) (*CategoryResponse, error) {
 	var category model.Category
 	if err := s.db.Where("id = ?", id).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("category not found")
+			return nil, errors.New("không tìm thấy danh mục")
 		}
 		return nil, err
 	}
@@ -94,15 +95,63 @@ func (s *CategoryService) GetByID(id string) (*CategoryResponse, error) {
 	return &result, nil
 }
 
+// chaHopLe kiểm tra danh mục cha trước khi ghi.
+//
+// Không có ràng buộc nào ở database, nên hai thao tác bình thường trên giao
+// diện là đủ để tạo vòng lặp: đặt A làm con của B rồi đặt B làm con của A. Khi
+// đó KHÔNG danh mục nào còn parent_id rỗng, hàm dựng cây không tìm ra gốc nào,
+// và `GET /api/categories` trả về null — **mất sạch cây danh mục**, kéo theo
+// trang Sản phẩm và thực đơn máy trạm. Không có lỗi nào hiện ra.
+//
+// Trả về con trỏ đã chuẩn hoá: chuỗi rỗng thành nil, vì cột parent_id là uuid
+// và PostgreSQL từ chối "".
+func (s *CategoryService) chaHopLe(id string, parentID *string) (*string, error) {
+	if parentID == nil || strings.TrimSpace(*parentID) == "" {
+		return nil, nil
+	}
+	cha := strings.TrimSpace(*parentID)
+
+	if id != "" && cha == id {
+		return nil, errors.New("danh mục không thể là cha của chính nó")
+	}
+
+	// Đi ngược lên chuỗi cha: chạm lại chính nó nghĩa là tạo vòng lặp. Giới hạn
+	// vòng lặp phòng khi dữ liệu cũ đã hỏng sẵn.
+	buoc := cha
+	for i := 0; i < 64 && buoc != ""; i++ {
+		if id != "" && buoc == id {
+			return nil, errors.New("danh mục cha tạo thành vòng lặp — hãy chọn danh mục khác")
+		}
+		var tiep model.Category
+		if err := s.db.Select("parent_id").Where("id = ?", buoc).First(&tiep).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errors.New("không tìm thấy danh mục cha")
+			}
+			return nil, err
+		}
+		if tiep.ParentID == nil {
+			break
+		}
+		buoc = *tiep.ParentID
+	}
+
+	return &cha, nil
+}
+
 func (s *CategoryService) Create(req *CreateCategoryRequest) (*CategoryResponse, error) {
 	active := true
 	if req.IsActive != nil {
 		active = *req.IsActive
 	}
 
+	cha, err := s.chaHopLe("", req.ParentID)
+	if err != nil {
+		return nil, err
+	}
+
 	category := model.Category{
 		Name:      req.Name,
-		ParentID:  req.ParentID,
+		ParentID:  cha,
 		Icon:      req.Icon,
 		PrinterID: req.PrinterID,
 		SortOrder: req.SortOrder,
@@ -130,7 +179,7 @@ func (s *CategoryService) Update(id string, req *UpdateCategoryRequest) (*Catego
 	var category model.Category
 	if err := s.db.Where("id = ?", id).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("category not found")
+			return nil, errors.New("không tìm thấy danh mục")
 		}
 		return nil, err
 	}
@@ -140,7 +189,15 @@ func (s *CategoryService) Update(id string, req *UpdateCategoryRequest) (*Catego
 		updates["name"] = *req.Name
 	}
 	if req.ParentID != nil {
-		updates["parent_id"] = *req.ParentID
+		cha, err := s.chaHopLe(id, req.ParentID)
+		if err != nil {
+			return nil, err
+		}
+		if cha == nil {
+			updates["parent_id"] = nil
+		} else {
+			updates["parent_id"] = *cha
+		}
 	}
 	if req.Icon != nil {
 		updates["icon"] = *req.Icon
@@ -179,7 +236,7 @@ func (s *CategoryService) Delete(id string) error {
 	var category model.Category
 	if err := s.db.Where("id = ?", id).First(&category).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("category not found")
+			return errors.New("không tìm thấy danh mục")
 		}
 		return err
 	}
@@ -193,7 +250,7 @@ func (s *CategoryService) Delete(id string) error {
 		return err
 	}
 	if productCount > 0 {
-		return errors.New("cannot delete category with products")
+		return errors.New("không xoá được danh mục còn sản phẩm")
 	}
 
 	var childCount int64
@@ -201,7 +258,7 @@ func (s *CategoryService) Delete(id string) error {
 		return err
 	}
 	if childCount > 0 {
-		return errors.New("cannot delete category with sub-categories")
+		return errors.New("không xoá được danh mục còn danh mục con")
 	}
 
 	now := time.Now()

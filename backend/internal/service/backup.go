@@ -46,6 +46,13 @@ func (s *BackupService) List(params pagination.Params) ([]model.BackupLog, int64
 		return nil, 0, 0, 0, err
 	}
 
+	// backup_logs không có cột created_at — mốc thời gian của nó là started_at.
+	// Mặc định của pagination là created_at nên phải chỉ định, nếu không truy
+	// vấn đổ lỗi "column does not exist".
+	if params.Sort == "" || params.Sort == pagination.DefaultSort {
+		params.Sort = "started_at"
+	}
+
 	var backups []model.BackupLog
 	if err := pagination.Apply(query, &params).Find(&backups).Error; err != nil {
 		return nil, 0, 0, 0, err
@@ -83,13 +90,13 @@ func (s *BackupService) Restore(id string) error {
 	var backup model.BackupLog
 	if err := s.db.Where("id = ?", id).First(&backup).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("backup not found")
+			return errors.New("không tìm thấy bản sao lưu")
 		}
 		return err
 	}
 
 	if backup.FilePath == "" {
-		return errors.New("backup file not found")
+		return errors.New("bản sao lưu này chưa có tệp trên đĩa")
 	}
 
 	if _, err := os.Stat(backup.FilePath); err != nil {
@@ -134,7 +141,7 @@ func (s *BackupService) Delete(id string) error {
 	var backup model.BackupLog
 	if err := s.db.Where("id = ?", id).First(&backup).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("backup not found")
+			return errors.New("không tìm thấy bản sao lưu")
 		}
 		return err
 	}
@@ -142,7 +149,7 @@ func (s *BackupService) Delete(id string) error {
 	// Bản sao lưu đang chạy chưa ghi xong tệp: xoá lúc này để lại một tệp cụt
 	// mà không dòng nào trỏ tới.
 	if backup.Status == "running" {
-		return errors.New("cannot delete a backup that is still running")
+		return errors.New("bản sao lưu đang chạy — hãy đợi nó xong rồi mới xoá")
 	}
 
 	// Chỉ cho phép xoá tệp nằm trong thư mục sao lưu. FilePath đến từ database;
@@ -158,7 +165,7 @@ func (s *BackupService) Delete(id string) error {
 			return err
 		}
 		if !strings.HasPrefix(path, dir+string(os.PathSeparator)) {
-			return errors.New("backup file is outside the backup directory")
+			return errors.New("tệp sao lưu nằm ngoài thư mục sao lưu")
 		}
 		// Tệp đã bị xoá tay từ trước không phải lỗi — dòng nhật ký vẫn phải đi.
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -212,7 +219,13 @@ func (s *BackupService) runPgDump(backup *model.BackupLog) {
 
 	if err != nil {
 		backup.Status = "failed"
-		backup.Notes = string(output)
+		// Lỗi KHÔNG đến từ chính pg_dump — thiếu lệnh, không có quyền, hết chỗ
+		// trên đĩa — thì output rỗng. Bản cũ ghi nguyên chuỗi rỗng đó, nên
+		// người trực chỉ thấy "Thất bại" mà không nơi nào nói vì sao.
+		backup.Notes = strings.TrimSpace(string(output))
+		if backup.Notes == "" {
+			backup.Notes = err.Error()
+		}
 	} else {
 		backup.Status = "completed"
 		// The real size on disk, not the exit code the old code stored here.

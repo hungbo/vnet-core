@@ -193,11 +193,11 @@ func TestComboService_List_WithSearch(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewComboService(db, NewAuditService(db))
 
-	mock.ExpectQuery(`SELECT count\(\*\) FROM "combos" WHERE name ILIKE \$1 AND "combos"\."deleted_at" IS NULL`).
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "combos" WHERE unaccent\(name\) ILIKE unaccent\(\$1\) AND "combos"\."deleted_at" IS NULL`).
 		WithArgs("%Gaming%").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 
-	mock.ExpectQuery(`SELECT \* FROM "combos" WHERE name ILIKE \$1 AND "combos"\."deleted_at" IS NULL ORDER BY created_at desc LIMIT \$2`).
+	mock.ExpectQuery(`SELECT \* FROM "combos" WHERE unaccent\(name\) ILIKE unaccent\(\$1\) AND "combos"\."deleted_at" IS NULL ORDER BY created_at desc LIMIT \$2`).
 		WithArgs("%Gaming%", 20).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "type", "created_at"}).
 			AddRow("c1", "Gaming 3h", int64(50000), "fixed_slot", testNow))
@@ -389,7 +389,7 @@ func TestComboService_Purchase_InactiveCombo(t *testing.T) {
 		MemberID:      "existing-mem",
 		PaymentMethod: "cash",
 	}, "u1")
-	assert.EqualError(t, err, "combo not found or inactive")
+	assert.EqualError(t, err, "không tìm thấy gói cước hoặc gói đã ngừng bán")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -482,7 +482,7 @@ func TestComboService_Activate_AlreadyActivated(t *testing.T) {
 			AddRow("p1", "c1", true, testNow))
 
 	_, err := svc.Activate("p1", &ActivateComboRequest{MachineID: "m1"})
-	assert.EqualError(t, err, "purchase already activated")
+	assert.EqualError(t, err, "lượt mua này đã được kích hoạt")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -495,7 +495,7 @@ func TestComboService_Activate_PurchaseNotFound(t *testing.T) {
 		WillReturnError(gorm.ErrRecordNotFound)
 
 	_, err := svc.Activate("nonexistent", &ActivateComboRequest{MachineID: "m1"})
-	assert.EqualError(t, err, "purchase not found")
+	assert.EqualError(t, err, "không tìm thấy lượt mua")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -526,7 +526,7 @@ func TestComboService_Activate_MachineNotFound(t *testing.T) {
 	mock.ExpectRollback()
 
 	_, err := svc.Activate("p1", &ActivateComboRequest{MachineID: "nonexistent"})
-	assert.EqualError(t, err, "machine not found")
+	assert.EqualError(t, err, "không tìm thấy máy")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -554,6 +554,6 @@ func TestComboService_Purchase_RejectsInsufficientBalance(t *testing.T) {
 	}, "u1")
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "insufficient balance")
+	assert.Contains(t, err.Error(), "số dư không đủ")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

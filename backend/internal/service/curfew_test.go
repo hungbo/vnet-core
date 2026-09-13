@@ -193,7 +193,11 @@ func TestCurfewService_CheckStart_BlocksMinorDuringCurfew(t *testing.T) {
 	err := svc.CheckStart(&model.Member{DateOfBirth: &born}, at)
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "curfew")
+	// Câu này hiện thẳng lên màn hình khoá của khách nên phải là tiếng Việt,
+	// và chỉ nêu giờ-phút chứ không kèm giây như cột time lưu trong database.
+	assert.Contains(t, err.Error(), "khung giờ cấm")
+	assert.Contains(t, err.Error(), "vị thành niên")
+	assert.NotContains(t, err.Error(), ":00:00", "không hiện phần giây cho người đọc")
 }
 
 func TestCurfewService_CheckStart_AllowsAdult(t *testing.T) {

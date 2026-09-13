@@ -131,7 +131,9 @@ async function handleSubmit() {
     : await fetchAddUser(body);
   submitting.value = false;
   if (error) return;
-  window.$message?.success($t('common.updateSuccess'));
+  // Thêm mới mà báo "Cập nhật thành công" thì người trực đọc xong không biết
+  // mình vừa tạo hay vừa sửa; khoá 'common.addSuccess' đã có sẵn trong locale.
+  window.$message?.success($t(isEdit.value ? 'common.updateSuccess' : 'common.addSuccess'));
   closeDrawer();
   emit('submitted');
 }

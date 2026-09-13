@@ -268,7 +268,7 @@ func (a *App) SetServerURL(url string) {
 
 func (a *App) GetServerURL() string {
 	if a.cfg.ServerURL == "" {
-		return "http://localhost:8080"
+		return "http://localhost:20800"
 	}
 	return a.cfg.ServerURL
 }

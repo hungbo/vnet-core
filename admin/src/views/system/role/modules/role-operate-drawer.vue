@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useBoolean } from '@sa/hooks';
-import { enableStatusOptions } from '@/constants/business';
 import { fetchAddRole, fetchUpdateRole } from '@/service/api';
 import { useForm, useFormRules } from '@/hooks/common/form';
 import { $t } from '@/locales';
@@ -40,25 +39,26 @@ const title = computed(() => {
   return titles[props.operateType];
 });
 
-type Model = Pick<Api.SystemManage.Role, 'roleName' | 'roleCode' | 'roleDesc' | 'status'>;
+// Bỏ roleCode và status khỏi biểu mẫu: bảng roles không có cột code (DTO trả
+// RoleCode = role.Name) và toRoleManageResponse neo cứng Status = "1". Gõ vào
+// hai ô đó thì dữ liệu bị vứt đi mà giao diện vẫn báo "lưu thành công" — nguy
+// hiểm nhất ở ô Trạng thái: người quản lý tin rằng mình vừa khoá quyền của cả
+// một nhóm nhân viên. Muốn dùng thật thì phải thêm cột ở database trước.
+type Model = Pick<Api.SystemManage.Role, 'roleName' | 'roleDesc'>;
 
 const model = ref(createDefaultModel());
 
 function createDefaultModel(): Model {
   return {
     roleName: '',
-    roleCode: '',
-    roleDesc: '',
-    status: undefined
+    roleDesc: ''
   };
 }
 
 type RuleKey = Exclude<keyof Model, 'roleDesc'>;
 
 const rules: Record<RuleKey, App.Global.FormRule> = {
-  roleName: defaultRequiredRule,
-  roleCode: defaultRequiredRule,
-  status: defaultRequiredRule
+  roleName: defaultRequiredRule
 };
 
 const roleId = computed(() => String(props.rowData?.id ?? ''));
@@ -84,16 +84,16 @@ async function handleSubmit() {
   submitting.value = true;
   const body = {
     roleName: model.value.roleName,
-    roleCode: model.value.roleCode,
-    roleDesc: model.value.roleDesc,
-    status: model.value.status
+    roleDesc: model.value.roleDesc
   };
   // Bản mẫu của Soybean hiện "lưu thành công" rồi không gửi gì. Chỉ báo thành
   // công sau khi backend thực sự nhận.
   const { error } = isEdit.value ? await fetchUpdateRole({ ...body, id: roleId.value }) : await fetchAddRole(body);
   submitting.value = false;
   if (error) return;
-  window.$message?.success($t('common.updateSuccess'));
+  // Thêm mới mà báo "Cập nhật thành công" thì người trực không biết mình vừa
+  // tạo hay vừa sửa; khoá 'common.addSuccess' đã có sẵn trong locale.
+  window.$message?.success($t(isEdit.value ? 'common.updateSuccess' : 'common.addSuccess'));
   closeDrawer();
   emit('submitted');
 }
@@ -111,14 +111,6 @@ watch(visible, () => {
     <ElForm ref="formRef" :model="model" :rules="rules" label-position="top">
       <ElFormItem :label="$t('page.manage.role.roleName')" prop="roleName">
         <ElInput v-model="model.roleName" :placeholder="$t('page.manage.role.form.roleName')" />
-      </ElFormItem>
-      <ElFormItem :label="$t('page.manage.role.roleCode')" prop="roleCode">
-        <ElInput v-model="model.roleCode" :placeholder="$t('page.manage.role.form.roleCode')" />
-      </ElFormItem>
-      <ElFormItem :label="$t('page.manage.role.roleStatus')" prop="status">
-        <ElRadioGroup v-model="model.status">
-          <ElRadio v-for="{ label, value } in enableStatusOptions" :key="value" :value="value" :label="$t(label)" />
-        </ElRadioGroup>
       </ElFormItem>
       <ElFormItem :label="$t('page.manage.role.roleDesc')" prop="roleDesc">
         <ElInput v-model="model.roleDesc" :placeholder="$t('page.manage.role.form.roleDesc')" />

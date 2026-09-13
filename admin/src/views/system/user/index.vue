@@ -146,6 +146,9 @@ async function handleDelete(id: string) {
 
 function resetSearchParams() {
   searchParams.value = getInitSearchParams();
+  // Bản mẫu chỉ xoá tham số mà không nạp lại: ô tìm trống trơn nhưng bảng vẫn
+  // giữ nguyên kết quả đã lọc, nhìn như cả danh sách chỉ còn một người.
+  getDataByPage();
 }
 
 function edit(id: number) {
@@ -178,7 +181,7 @@ function edit(id: number) {
           class="sm:h-full"
           :data="data"
           row-key="id"
-          @selection-change="checkedRowKeys = $event"
+          @selection-change="checkedRowKeys = $event.map((r: any) => r.id)"
         >
           <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         </ElTable>
