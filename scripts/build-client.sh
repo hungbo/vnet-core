@@ -53,15 +53,65 @@ npm ci 2>/dev/null || npm install
 npm run build
 cd ../..
 
+# Số phiên bản dạng a.b.c.d cho thông tin tệp của Windows. "dev" hay chuỗi lạ
+# thì ghi 0.0.0.0 — go-winres từ chối mọi thứ không phải số.
+WIN_VER=$(echo "$VERSION" | sed 's/^v//')
+echo "$WIN_VER" | grep -Eq '^[0-9]+(\.[0-9]+){0,3}$' || WIN_VER=0.0.0.0
+
 rm -rf dist && mkdir -p dist
 for arch in $ARCHS; do
   echo "-> Building windows/$arch..."
+  # Icon và thông tin phiên bản cho tệp .exe. `go build` thường (không qua
+  # `wails build`) không gắn tài nguyên nào, nên trước đây .exe hiện icon trống
+  # của Windows. Tệp .syso nằm cạnh mã nguồn thì `go build` tự nhúng; xoá ngay
+  # sau khi build để không lọt vào git.
+  #
+  # --manifest none có chủ đích: manifest đổi chế độ DPI của cửa sổ, mà vị trí
+  # thanh dọc đang được tính theo chế độ hiện tại.
+  #
+  # Icon nhúng HAI lần: tên "APP" cho File Explorer, và mã số 3 cho Wails —
+  # Wails nạp icon cửa sổ/thanh tác vụ bằng đúng mã 3 (như `wails build` nhúng).
+  # Chế độ `simply` chỉ nhúng tên "APP", nên tệp .exe có icon mà cửa sổ mở ra
+  # vẫn mang icon mặc định của Windows.
+  WINRES_DIR=$(mktemp -d)
+  cp src/build/windows/icon.ico "$WINRES_DIR/icon.ico"
+  cat > "$WINRES_DIR/winres.json" <<JSON
+{
+  "RT_GROUP_ICON": {
+    "APP": { "0000": "icon.ico" },
+    "#3": { "0000": "icon.ico" }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0000": {
+        "fixed": { "file_version": "$WIN_VER", "product_version": "$WIN_VER" },
+        "info": {
+          "0409": {
+            "CompanyName": "VNET",
+            "FileDescription": "VNET Client",
+            "FileVersion": "$WIN_VER",
+            "LegalCopyright": "VNET",
+            "OriginalFilename": "vnet-client.exe",
+            "ProductName": "VNET Client",
+            "ProductVersion": "$WIN_VER"
+          }
+        }
+      }
+    }
+  }
+}
+JSON
+  (cd src && go run github.com/tc-hib/go-winres@v0.3.3 make \
+      --in "$WINRES_DIR/winres.json" --arch "$arch" --out rsrc)
+  rm -rf "$WINRES_DIR"
+
   # CGO tắt: Wails trên Windows dùng go-webview2 thuần Go, không cần trình biên
   # dịch C — nhờ vậy biên dịch chéo từ macOS/Linux chạy được.
   GOOS=windows GOARCH="$arch" CGO_ENABLED=0 go build -buildvcs=false \
     -tags desktop,production \
     -ldflags="-s -w -H windowsgui -X main.version=$VERSION" \
     -o "dist/vnet-client-$arch.exe" ./src
+  rm -f src/rsrc_windows_*.syso
 
   # Thiếu tag `production` thì tệp vẫn build ra và vẫn chạy — chỉ hiện hộp thoại
   # lỗi rồi tắt. Không có cách nào phát hiện từ máy Mac ngoài việc soi chuỗi này

@@ -1003,10 +1003,17 @@ def flow_remote_control(t: str, ids: dict) -> None:
         return call("POST", f"/api/machines/{mid}/remote/{action}", body or {}, t)
 
     # Máy chưa kết nối: phải 409, tuyệt đối không phải 200.
-    st, res = remote("lock", {"reason": "kiểm chứng"})
+    st, res = remote("message", {"title": "VNET", "message": "kiểm chứng"})
     expect(area, "máy chưa kết nối thì báo lỗi, không báo thành công",
            st == 409, f"409 — {res.get('message', '')}",
            f"HTTP {st} — bản cũ trả 200 dù không máy nào nhận")
+
+    # Khoá/mở khoá và chặn ứng dụng từng máy đã gỡ: chặn ứng dụng là cài đặt
+    # chung (Cài đặt > Máy trạm), khoá màn hình không còn lệnh từ quầy.
+    for gone in ("lock", "unlock", "block-app", "unblock-app"):
+        st, res = remote(gone, {"process": "chrome"})
+        expect(area, f"lệnh {gone} đã gỡ thì bị từ chối", st == 400,
+               f"400 — {res.get('message', '')[:60]}", f"nhận {st}")
 
     # Lệnh ngoài danh sách cho phép.
     st, res = remote("format_c")
@@ -1030,28 +1037,22 @@ def flow_remote_control(t: str, ids: dict) -> None:
 
     try:
         time.sleep(0.3)  # hub cần một nhịp để ghi máy vào sổ đăng ký
-        st, _ = remote("lock", {"reason": "Hết giờ chơi"})
+        st, _ = remote("message", {"title": "VNET", "message": "Hết giờ chơi"})
         expect(area, "máy đã kết nối thì lệnh được chấp nhận", st == 200,
                detail_bad=f"HTTP {st}")
 
         evt = fm.recv(timeout=5)
         expect(area, "lệnh tới được máy trạm",
-               evt is not None and evt.get("type") == "remote:lock",
+               evt is not None and evt.get("type") == "remote:message",
                f"nhận {evt.get('type') if evt else None}",
                "máy trạm không nhận được gì — chuỗi điều khiển đứt")
 
-        # Lý do khoá phải tới nguyên vẹn: máy khách đọc data.payload.reason.
-        reason = ""
+        # Nội dung phải tới nguyên vẹn: máy khách đọc data.payload.message.
+        msg = ""
         if evt:
-            reason = ((evt.get("data") or {}).get("payload") or {}).get("reason", "")
-        expect(area, "nội dung lệnh tới nguyên vẹn", reason == "Hết giờ chơi",
-               f"reason={reason!r}", f"reason={reason!r}, mong 'Hết giờ chơi'")
-
-        st, _ = remote("unlock")
-        evt = fm.recv(timeout=5)
-        expect(area, "lệnh mở khoá tới được máy trạm",
-               st == 200 and evt is not None and evt.get("type") == "remote:unlock",
-               detail_bad=f"HTTP {st}, nhận {evt.get('type') if evt else None}")
+            msg = ((evt.get("data") or {}).get("payload") or {}).get("message", "")
+        expect(area, "nội dung lệnh tới nguyên vẹn", msg == "Hết giờ chơi",
+               f"message={msg!r}", f"message={msg!r}, mong 'Hết giờ chơi'")
     finally:
         fm.close()
 
@@ -1282,203 +1283,6 @@ def formatMoneyPy(v: int) -> str:
         s = s[:-3]
     parts.insert(0, s)
     return ".".join(parts)
-
-
-# --------------------------------------------------------------------------- #
-# Luồng: thẻ nạp và thẻ quà tặng
-# --------------------------------------------------------------------------- #
-
-def flow_cards(t: str, ids: dict) -> None:
-    """Thẻ là tiền. Ba thứ phải đúng: mã không lưu thô, không dùng lại được,
-    và hai người tiêu cùng lúc không ra hai lần tiền."""
-    area = "4e. Thẻ nạp & quà tặng"
-
-    # --- thẻ nạp ---
-    st, res = call("POST", "/api/topup-cards/generate",
-                   {"count": 3, "face_value": 100000, "bonus_value": 20000}, t)
-    cards = (data_of(res) or {}).get("cards") or []
-    if st != 200 or len(cards) != 3:
-        report.add(area, "sinh lô thẻ nạp", BROKEN, f"POST /api/topup-cards/generate → {st}")
-        return
-    report.add(area, "sinh lô thẻ nạp", OK, "3 thẻ, mỗi thẻ 100.000 + 20.000")
-
-    expect(area, "mã bí mật chỉ trả về lúc sinh thẻ",
-           all(c.get("secret") for c in cards),
-           detail_bad="phản hồi sinh thẻ không kèm mã — không in thẻ ra được")
-
-    # Danh sách KHÔNG được kèm mã bí mật.
-    st, res = call("GET", "/api/topup-cards", None, t)
-    rows = items_of(res)
-    expect(area, "danh sách không lộ mã bí mật",
-           bool(rows) and all("pin" not in r and "secret" not in r for r in rows),
-           detail_bad="mã bí mật lọt ra API danh sách")
-
-    # Database phải lưu băm, không lưu mã thô.
-    raw = cards[0]["secret"]
-    expect(area, "database lưu băm chứ không lưu mã thô",
-           sql(f"select count(*) from topup_cards where pin = '{raw}'") == "0"
-           and sql("select min(length(pin)) from topup_cards") == "64",
-           detail_bad="cột pin chứa mã thô — đọc được database là tiêu được thẻ")
-
-    bal_before = int(sql(f"select balance from members where id = '{ids['member']}'") or 0)
-    bonus_before = int(sql(f"select bonus_balance from members where id = '{ids['member']}'") or 0)
-    st, res = call("POST", "/api/topup-cards/redeem",
-                   {"serial": cards[0]["serial"], "secret": cards[0]["secret"],
-                    "member_id": ids["member"]}, t)
-    bal_after = int(sql(f"select balance from members where id = '{ids['member']}'") or 0)
-    bonus_after = int(sql(f"select bonus_balance from members where id = '{ids['member']}'") or 0)
-    expect(area, "nạp thẻ cộng đúng mệnh giá và khuyến mãi",
-           st == 200 and bal_after - bal_before == 100000 and bonus_after - bonus_before == 20000,
-           f"số dư +{bal_after - bal_before}, khuyến mãi +{bonus_after - bonus_before}",
-           f"HTTP {st}, số dư +{bal_after - bal_before}, khuyến mãi +{bonus_after - bonus_before}")
-
-    st, res = call("POST", "/api/topup-cards/redeem",
-                   {"serial": cards[0]["serial"], "secret": cards[0]["secret"],
-                    "member_id": ids["member"]}, t)
-    expect(area, "thẻ đã nạp không nạp lại được", st >= 400,
-           detail_bad="nạp lại được cùng một thẻ — nhân đôi tiền")
-
-    # Sai seri và sai mã phải trả CÙNG một thông báo: phân biệt được là dò ra
-    # seri nào có thật rồi mới đánh phần bí mật.
-    _, r1 = call("POST", "/api/topup-cards/redeem",
-                 {"serial": cards[1]["serial"], "secret": "SAISAISAISAISAI2",
-                  "member_id": ids["member"]}, t)
-    _, r2 = call("POST", "/api/topup-cards/redeem",
-                 {"serial": "TCKHONGCOTHAT", "secret": "SAISAISAISAISAI2",
-                  "member_id": ids["member"]}, t)
-    expect(area, "sai seri và sai mã báo lỗi giống hệt nhau",
-           r1.get("message") == r2.get("message") and bool(r1.get("message")),
-           f"{r1.get('message')!r}",
-           f"sai mã: {r1.get('message')!r} · sai seri: {r2.get('message')!r}")
-
-    expect(area, "nạp hụt có vào nhật ký",
-           sql("select count(*) from audit_logs where action = 'redeem_failed'") != "0",
-           detail_bad="không ghi lại lần nạp hụt nào — không phát hiện được người dò mã")
-
-    # Nhiều người nạp cùng một thẻ cùng lúc: đúng một người được tiền.
-    third = cards[2]
-    bal_before = int(sql(f"select balance from members where id = '{ids['member']}'") or 0)
-    codes = parallel_post("/api/topup-cards/redeem",
-                          {"serial": third["serial"], "secret": third["secret"],
-                           "member_id": ids["member"]}, t, times=8)
-    bal_after = int(sql(f"select balance from members where id = '{ids['member']}'") or 0)
-    wins = sum(1 for c in codes if c == 200)
-    expect(area, "8 người nạp cùng lúc thì đúng 1 người được tiền",
-           wins == 1 and bal_after - bal_before == 100000,
-           f"{wins}/8 thành công, số dư +{bal_after - bal_before}",
-           f"{wins}/8 thành công, số dư +{bal_after - bal_before} (mong 1 và +100.000)")
-
-    # --- thẻ quà tặng ---
-    st, res = call("POST", "/api/gift-cards/generate", {"count": 1, "value": 100000}, t)
-    gift = ((data_of(res) or {}).get("cards") or [{}])[0]
-    if not gift.get("serial"):
-        report.add(area, "sinh thẻ quà tặng", BROKEN, f"POST /api/gift-cards/generate → {st}")
-        return
-    report.add(area, "sinh thẻ quà tặng", OK, "1 thẻ 100.000")
-
-    st, res = call("POST", "/api/gift-cards/check",
-                   {"serial": gift["serial"], "secret": gift["secret"]}, t)
-    expect(area, "tra được số dư thẻ quà tặng",
-           st == 200 and (data_of(res) or {}).get("balance") == 100000,
-           detail_bad=f"HTTP {st} — {data_of(res)}")
-
-    st, res = call("POST", "/api/gift-cards/check",
-                   {"serial": gift["serial"], "secret": "SAISAISAISAISAI2"}, t)
-    expect(area, "tra số dư bằng mã sai bị từ chối", st >= 400,
-           detail_bad="chỉ cần seri là xem được số dư")
-
-    # Tiêu dần qua nhiều đơn.
-    def new_order(qty: int) -> dict:
-        """Tạo và xác nhận một đơn. Trả về dict rỗng nếu không tạo được —
-        chỗ gọi phải tự kiểm, đừng để KeyError làm sập cả bộ kiểm."""
-        st, r = call("POST", "/api/orders",
-                     {"items": [{"product_id": ids["product"], "quantity": qty}]}, t)
-        o = data_of(r) or {}
-        if not o.get("id"):
-            report.add(area, f"tạo đơn {qty} món", BROKEN,
-                       f"POST /api/orders → {st} {r.get('message', '')}"[:140])
-            return {}
-        call("POST", f"/api/orders/{o['id']}/status", {"status": "confirmed"}, t)
-        return o
-
-    o = new_order(1)
-    if not o:
-        return
-    price = o.get("final_amount", 0)
-    st, _ = call("POST", f"/api/orders/{o['id']}/pay",
-                 {"payment_method": "gift_card", "amount": price,
-                  "card_serial": gift["serial"], "card_secret": gift["secret"]}, t)
-    left = sql(f"select balance from gift_cards where serial = '{gift['serial']}'")
-    expect(area, "thanh toán bằng thẻ quà tặng trừ đúng số tiền",
-           st == 200 and int(left or 0) == 100000 - price,
-           f"còn {left}", f"HTTP {st}, còn {left}, mong {100000 - price}")
-
-    expect(area, "có bút toán trong sổ cái thẻ",
-           sql(f"select count(*) from gift_card_transactions t join gift_cards g "
-               f"on g.id = t.gift_card_id where g.serial = '{gift['serial']}' "
-               f"and t.order_id is not null") != "0",
-           detail_bad="không ghi sổ lần tiêu thẻ")
-
-    # Đơn quá số dư thẻ: phải từ chối VÀ không được chốt đơn.
-    big = new_order(20)
-    if not big:
-        return
-    st, res = call("POST", f"/api/orders/{big['id']}/pay",
-                   {"payment_method": "gift_card", "amount": big.get("final_amount", 0),
-                    "card_serial": gift["serial"], "card_secret": gift["secret"]}, t)
-    status_after = sql(f"select status from orders where id = '{big['id']}'")
-    expect(area, "thẻ không đủ tiền thì đơn KHÔNG bị chốt",
-           st >= 400 and status_after != "completed",
-           f"{st}, đơn vẫn {status_after}",
-           f"HTTP {st}, đơn thành {status_after}")
-
-    # Nhiều đơn tiêu cùng một thẻ cùng lúc: không được tiêu quá số dư.
-    st, res = call("POST", "/api/gift-cards/generate", {"count": 1, "value": price * 3}, t)
-    g2 = ((data_of(res) or {}).get("cards") or [{}])[0]
-    orders = [o for o in (new_order(1) for _ in range(8)) if o]
-    if len(orders) < 8:
-        report.add(area, "chuẩn bị 8 đơn để tiêu thẻ", BROKEN,
-                   f"chỉ tạo được {len(orders)}/8 đơn")
-        return
-    results = []
-
-    def pay(o):
-        code, _ = call("POST", f"/api/orders/{o['id']}/pay",
-                       {"payment_method": "gift_card", "amount": o.get("final_amount", 0),
-                        "card_serial": g2["serial"], "card_secret": g2["secret"]}, t)
-        results.append(code)
-
-    threads = [threading.Thread(target=pay, args=(o,)) for o in orders]
-    for th in threads:
-        th.start()
-    for th in threads:
-        th.join()
-    left = int(sql(f"select balance from gift_cards where serial = '{g2['serial']}'") or -1)
-    wins = sum(1 for c in results if c == 200)
-    expect(area, "8 đơn tiêu cùng lúc không vượt quá số dư thẻ",
-           wins == 3 and left == 0,
-           f"{wins}/8 đơn qua, thẻ còn {left}",
-           f"{wins}/8 đơn qua, thẻ còn {left} (mong 3 đơn và còn 0)")
-
-    expect(area, "tiêu hết thì thẻ tự chuyển sang đã dùng",
-           sql(f"select status from gift_cards where serial = '{g2['serial']}'") == "used",
-           detail_bad="thẻ hết tiền vẫn ở trạng thái còn dùng")
-
-    # Huỷ thẻ.
-    st, res = call("POST", "/api/topup-cards/generate",
-                   {"count": 1, "face_value": 50000}, t)
-    spare = ((data_of(res) or {}).get("cards") or [{}])[0]
-    st, _ = call("POST", f"/api/topup-cards/{spare.get('id')}/cancel", {}, t)
-    expect(area, "huỷ được thẻ chưa dùng", st == 200, detail_bad=f"HTTP {st}")
-    st, _ = call("POST", "/api/topup-cards/redeem",
-                 {"serial": spare["serial"], "secret": spare["secret"],
-                  "member_id": ids["member"]}, t)
-    expect(area, "thẻ đã huỷ không nạp được", st >= 400,
-           detail_bad="thẻ đã huỷ vẫn nạp được")
-
-    st, _ = call("POST", f"/api/topup-cards/{cards[0]['id']}/cancel", {}, t)
-    expect(area, "không huỷ được thẻ đã dùng", st >= 400,
-           detail_bad="huỷ được thẻ đã dùng — sổ sách sai")
 
 
 def parallel_post(path: str, body, token: str, times: int) -> list:
@@ -2954,31 +2758,6 @@ def flow_dead_columns(t: str, ids: dict) -> None:
         expect(area, "đơn đã huỷ thì không đổi trạng thái món", st == 400,
                f"{res.get('message', '')[:60]}", f"nhận {st} — sinh phiếu bếp cho đơn khách đã bỏ")
 
-    # --- TopupCard.SoldTo / SoldAt --------------------------------------------
-    st, res = call("POST", "/api/topup-cards/generate", {"count": 1, "face_value": 50000}, t)
-    card = ((data_of(res) or {}).get("cards") or [{}])[0]
-    cid = card.get("id", "")
-    if cid:
-        st, res = call("POST", f"/api/topup-cards/{cid}/sell", {"member_id": ids["member"]}, t)
-        expect(area, "bán thẻ ở quầy ghi được người mua", st == 200,
-               detail_bad=f"{st} — {res.get('message', '')[:70]}")
-        sold = sql(f"select sold_to is not null and sold_at is not null from topup_cards where id = '{cid}'")
-        expect(area, "sold_to/sold_at được ghi vào database", sold == "t",
-               detail_bad="hai cột vẫn rỗng sau khi bán")
-
-        st, res = call("POST", f"/api/topup-cards/{cid}/sell", {"member_id": ids["member"]}, t)
-        expect(area, "thẻ đã bán không bán lại được", st == 400,
-               f"{res.get('message', '')[:60]}", f"nhận {st}")
-
-    # --- BlockApp / UnblockApp -------------------------------------------------
-    for action in ("block-app", "unblock-app"):
-        st, res = call("POST", f"/api/machines/{ids['machine1']}/remote/{action}",
-                       {"process": "chrome"}, t)
-        # 409 = máy chưa kết nối, nghĩa là LỆNH ĐƯỢC CHẤP NHẬN; 400 mới là lệnh lạ.
-        expect(area, f"backend chấp nhận lệnh {action}", st == 409,
-               f"409 — {res.get('message', '')[:50]}",
-               f"nhận {st} — {res.get('message', '')[:70]}")
-
 
 # --------------------------------------------------------------------------- #
 # Dọn dẹp
@@ -3489,11 +3268,11 @@ def flow_remote_shutdown_ends_session(t: str, ids: dict) -> None:
     try:
         fake = FakeMachine(code, t)
         time.sleep(0.5)
-        for action in ("lock", "unlock", "message"):
+        for action in ("message",):
             st, _ = call("POST", f"/api/machines/{mach_id}/remote/{action}", {"text": "kt"}, t)
             expect(area, f"lệnh {action} KHÔNG đụng tới phiên",
                    st == 200 and sql(f"select is_active from machine_sessions where id = '{sid}'") == "t",
-                   detail_bad=f"HTTP {st} — khoá màn hình mà cũng chốt tiền thì không ai dám bấm")
+                   detail_bad=f"HTTP {st} — nhắn tin mà cũng chốt tiền thì không ai dám bấm")
         fake.close()
     except Exception as e:  # noqa: BLE001
         report.add(area, "lệnh không kết thúc phiên", BROKEN, str(e)[:60])
@@ -4412,7 +4191,6 @@ def main() -> int:
     flow_lucky_spin(t, ids)
     flow_remote_control(t, ids)
     flow_printing(t, ids)
-    flow_cards(t, ids)
     flow_inventory_count(t, ids)
     flow_attendance(t, ids)
     flow_website_block(t, ids)

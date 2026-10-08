@@ -38,11 +38,11 @@ Phần này **không kiểm được từ máy Mac/Linux** — chỉ biên dịc
 sách bắt buộc trước khi giao cho quán.
 
 1. Chạy `vnet-client-setup-<phiên bản>.exe` với quyền quản trị. Khai địa chỉ máy
-   chủ, mã máy và **khoá máy** (lấy ở trang Máy → Cấp lại khoá; khoá chỉ hiện
-   đúng một lần).
+   chủ và tài khoản quản trị máy trạm (tên, mật khẩu, nhập lại). Mã máy không hỏi.
 2. Mở `services.msc` → phải thấy **VNETClient**, trạng thái *Running*, khởi động
    *Automatic*.
-3. Mở `C:\Program Files\VNET Client\config.json` → phải có đủ ba trường.
+3. Mở `C:\Program Files\VNET Client\config.json` → phải có `server_url`,
+   `local_admin_username` và `local_admin_hash` (chuỗi `pbkdf2-sha256$...`).
 4. **Khởi động lại máy và KHÔNG đăng nhập Windows.** Ở trang quản trị:
    - máy phải hiện **online**,
    - bấm **Tắt máy** phải có tác dụng.
@@ -82,7 +82,11 @@ cũng là lỗi.
 **Giới hạn đã biết, không phải lỗi:** `Ctrl+Alt+Del` KHÔNG chặn được. Windows xử
 lý tổ hợp này ở tầng dưới hook. Lớp khoá là rào cản, không phải nhà tù.
 
-4. Trong admin: **Máy → Mở khoá** → lớp phủ biến mất, phím hoạt động lại.
+4. Trong admin: **Máy → Mở khoá** → lớp phủ biến mất, máy về đúng trạng thái
+   trước khi khoá: khách đang chơi thì thanh dọc vẫn nổi trên và phím thoát vẫn
+   bị chặn; máy chưa ai đăng nhập thì về màn hình khoá.
+5. Mở cửa sổ **Hỗ trợ** rồi khoá lại từ admin → cửa sổ hỗ trợ phải **tự đóng**,
+   không được phóng toàn màn hình đè lên lớp phủ.
 
 ## 1b. Đồng hồ đếm ngược và hết tiền giữa phiên
 
@@ -94,8 +98,11 @@ lý tổ hợp này ở tầng dưới hook. Lớp khoá là rào cản, không 
    chờ tới phút sau.
 5. Để chạy cho hết tiền. Đúng lúc số dư cạn:
    - phiên phải tự đóng,
-   - lớp phủ khoá màn hình phải hiện kèm lý do "Hết số dư — vui lòng nạp thêm tại quầy",
-   - máy phải về trạng thái sẵn sàng ở trang Máy.
+   - máy phải về **màn hình khoá có ô đăng nhập**, kèm dòng "Hết số dư — vui lòng
+     nạp thêm để chơi tiếp" (dòng này tự ẩn sau hai phút),
+   - cửa sổ phụ đang mở phải tự đóng,
+   - máy phải về trạng thái sẵn sàng ở trang Máy,
+   - nạp thêm tiền rồi đăng nhập lại được ngay, không cần ai bấm Mở khoá.
 6. Kiểm trang Giao dịch của khách: **đúng một dòng** "Tiền giờ" cho cả phiên, và
    số tiền bằng đúng phần số dư đã giảm.
 
@@ -129,12 +136,14 @@ trong trang Máy in.
    phiên bản cao hơn bản đang chạy.
 2. Admin → **Cập nhật máy khách** → công bố bản mới, dán **đúng chuỗi SHA-256**
    mà `build-client.sh` in ra.
-3. Máy khách → Cài đặt → **Kiểm tra cập nhật** → hiện bản mới.
-4. **Tải bản cập nhật** → báo đã tải xong và kiểm băm.
-5. Thử bản băm SAI: sửa một ký tự trong ô Băm rồi tải lại → phải **từ chối**,
-   không được lưu tệp.
-6. Đóng ứng dụng, chạy tệp vừa tải, mở lại → ô "Phiên bản" trong Cài đặt hiện số
-   mới.
+3. Máy khách (tài khoản nhân viên) → Cài đặt → **Kiểm tra cập nhật** → hiện bản mới.
+4. Để một khách đang chơi: xem `logs\service.log` → dòng "có bản ... nhưng máy
+   đang có khách — để lần sau", tệp .exe **không đổi**.
+5. Khách đăng xuất. Trong vòng 10 phút (khởi động lại dịch vụ thì 90 giây):
+   dòng "đã cài bản ...", giao diện tắt rồi bật lại, ô "Phiên bản" hiện số mới,
+   và không còn tệp `vnet-client.exe.old*` nào sau lần kiểm kế tiếp.
+6. Thử bản băm SAI: sửa một ký tự trong ô Băm → dịch vụ phải **từ chối**, tệp
+   .exe không đổi.
 
 ## 5. Chụp màn hình (GDI)
 
@@ -225,27 +234,29 @@ việc Wails đặt cửa sổ đúng chỗ thì chỉ Windows mới trả lời
    không phải một dải hẹp.
 9. Chưa đăng nhập: **không** có nút ẩn nào — lớp khoá không được thu gọn.
 
-### 7b. Mở khoá khi mất mạng
+### 7b. Tài khoản quản trị máy trạm
 
-Đây là đường vào DUY NHẤT không cần máy chủ. Không thử được thì đừng giao máy
-cho khách.
+Đường vào chắc chắn có khi mất mạng. Không thử được thì đừng giao máy cho khách.
 
-1. **Rút dây mạng** khỏi máy trạm. Đợi một phút.
-2. Thử đăng nhập bằng tài khoản hội viên: phải báo lỗi kết nối. Thử "Đăng nhập
-   quản trị": cũng phải báo lỗi. Máy vẫn khoá.
-3. Bấm **Mở khoá kỹ thuật**, gõ PIN **sai**: báo "PIN không đúng", máy vẫn khoá,
-   và mỗi lần sai phải chậm khoảng một giây.
-4. Gõ PIN **đúng**: màn hình mở ra, cửa sổ thu nhỏ, dùng được desktop. Không có
+1. Màn hình khoá phải hiện **tên máy** ngay dưới logo, đúng tên máy Windows.
+   Không còn nút "Mở khoá kỹ thuật" hay ô PIN.
+2. **Rút dây mạng** khỏi máy trạm. Đợi một phút. Thử tài khoản hội viên: phải
+   báo lỗi kết nối, máy vẫn khoá.
+3. Gõ tài khoản quản trị máy trạm với mật khẩu **sai**: bị từ chối, máy vẫn
+   khoá, mỗi lần sai chậm khoảng một giây.
+4. Gõ **đúng**: màn hình mở ra, cửa sổ thu nhỏ, dùng được desktop. Không có
    phiên nào được mở và không có tiền nào bị trừ.
 5. Trong lúc đang bảo trì, dừng dịch vụ nền: máy **không được tự tắt** (lớp
    chống phá đứng yên khi đang bảo trì).
 6. Đăng nhập một hội viên: chế độ bảo trì phải tắt, máy quay về hoạt động bình
    thường.
-7. Máy **chưa đặt PIN**: nút "Mở khoá kỹ thuật" phải **không hiện**. Đặt bằng
-   `vnet-client.exe --set-pin 246810` (cần quyền quản trị vì tệp nằm trong
-   Program Files) rồi khởi động lại giao diện — nút phải hiện ra.
-8. Mở `config.json` bằng Notepad: **không được thấy PIN dạng chữ thường**, chỉ
-   thấy chuỗi bắt đầu bằng `pbkdf2-sha256$`.
+7. Cắm mạng lại. Ở trang quản trị, **Cài đặt → Máy trạm**, đặt tài khoản khác
+   rồi Lưu. Trong khoảng 15 giây, tài khoản mới mở được máy, tài khoản đặt lúc
+   cài **không** mở được nữa. Rút mạng: tài khoản mới vẫn mở được.
+8. Xoá tên tài khoản ở trang quản trị rồi Lưu: máy quay về tài khoản đặt lúc cài.
+9. Mở `config.json` và `policy.json` bằng Notepad: **không được thấy mật khẩu**,
+   chỉ thấy chuỗi bắt đầu bằng `pbkdf2-sha256$`. Gọi `GET /api/settings/client`
+   bằng tài khoản hội viên: **không** được có `local_admin_hash`.
 
 ### 7c. Vào bằng tài khoản nhân viên khi mất mạng
 
@@ -269,20 +280,14 @@ thành công lúc còn mạng, máy trạm ghi lại tên và băm mật khẩu.
 7. Mở `%AppData%\..\Roaming\VNET\offline-staff.json` (Windows) bằng Notepad:
    chỉ được thấy tên tài khoản và chuỗi băm, **không có mật khẩu**.
 
-### 7d. Tài khoản mặc định của bản cài
+### 7d. Không còn tài khoản mặc định
 
-Máy **vừa cài xong, chưa từng nối được máy chủ lần nào** vẫn phải vào được.
+Bản cũ mở được mọi máy bằng `admin` / `admin` cho tới lần đăng nhập nhân viên
+đầu tiên. Cửa đó đã bỏ; đường vào lúc mới cài là tài khoản quản trị máy trạm.
 
-1. Cài lên một máy sạch, **không cắm mạng**. Đăng nhập `admin` / `admin`:
-   máy phải mở ra kèm thông báo mở khoá bằng tài khoản mặc định.
-2. Cắm mạng, đăng nhập bằng một tài khoản **nhân viên thật**: phải hiện cảnh
-   báo màu vàng "Máy này còn mở được bằng tài khoản mặc định", và cảnh báo đó
-   **không tự tắt** — phải bấm mới mất.
-3. Đăng xuất, rút mạng, thử lại `admin` / `admin`: giờ phải **bị từ chối**. Cửa
-   mặc định đã đóng sau lần đăng nhập thật đầu tiên.
-4. Thử lại tài khoản nhân viên vừa dùng ở bước 2: phải mở được.
-5. Đăng nhập bằng tài khoản **hội viên**: **không** được hiện cảnh báo này —
-   khách không làm gì được với thông tin đó.
+1. Cài lên một máy sạch, **không cắm mạng**. Đăng nhập `admin` / `admin` (khác
+   mật khẩu đã đặt lúc cài): phải **bị từ chối**.
+2. Đăng nhập bằng tài khoản quản trị máy trạm đã đặt lúc cài: phải mở được.
 
 ## 8. Lớp chống phá giờ chơi
 
@@ -293,8 +298,9 @@ Máy **vừa cài xong, chưa từng nối được máy chủ lần nào** vẫ
 2. Tắt dịch vụ bằng `sc stop VNETClientAgent`: Windows phải **tự bật lại** sau
    khoảng 5 giây. Đây là lớp bảo vệ chính, không phải lớp canh trong giao diện.
 3. Đặt dịch vụ sang **Disabled** rồi tắt nó. Giao diện sẽ thử bật lại mỗi 5 giây
-   và thất bại; sau **một phút** máy phải **tự tắt**. Xem nhật ký giao diện:
-   phải có các dòng `[guard] ... (n/12 lượt)` trước khi tắt.
+   và thất bại; sau khoảng **30 giây** máy phải **khởi động lại** (hoặc tắt, nếu
+   **Cài đặt → Máy trạm** chọn tắt máy). Xem `%LOCALAPPDATA%\VNET\logs\ui.log`:
+   phải có các dòng `[guard] ... (n/6 lượt)` trước đó.
 4. Tạo tệp `maintenance.flag` trong thư mục cài đặt rồi lặp lại bước 3: máy
    **không được tắt**. Xoá tệp đi thì mới tắt lại như bước 3.
 
@@ -351,3 +357,29 @@ diện (session của người dùng), không phải dịch vụ nền.
 Mỗi mục ghi **đạt / sai** kèm một câu mô tả thứ nhìn thấy. Mục nào sai thì chụp
 màn hình hoặc chép nguyên văn thông báo lỗi — mô tả "không chạy" không đủ để
 tìm ra nguyên nhân.
+
+---
+
+## 10. Giám sát giao diện, mất kết nối, cảnh báo
+
+Đặt **Cài đặt → Máy trạm** về 30 giây / 90 giây cho nhanh; xong thì trả lại 60 / 300.
+
+1. **Giao diện treo.** Đóng băng tiến trình giao diện (Resource Monitor → Suspend
+   Process). Trong khoảng 15–20 giây dịch vụ phải tắt nó và bật bản mới;
+   `logs\service.log` có dòng `[giám sát] giao diện không phản hồi...`.
+2. **Mất kết nối, bậc một.** Hội viên đang chơi, tắt máy chủ VNET. Sau ngưỡng khoá
+   màn hình phải phủ kín với dòng "Mất kết nối máy chủ — đang thử lại".
+3. Bật lại máy chủ trước ngưỡng khởi động lại: màn hình tự mở, phiên cũ vẫn còn.
+4. **Mất kết nối, bậc hai.** Tắt máy chủ quá ngưỡng khởi động lại: máy phải khởi
+   động lại. Bật lên (máy chủ vẫn tắt) phải ở màn hình khoá và **không** khởi
+   động lại lần nữa.
+5. **Card mạng lạ.** Cắm một USB Wi-Fi hoặc điện thoại phát mạng. Trong 30 giây
+   trang Máy hiện nhãn vàng **Có mạng lạ** và một thông báo; máy trạm không bị
+   ngắt. Rút ra thì nhãn mất.
+6. **Tài khoản Windows.** Máy đăng nhập bằng tài khoản quản trị: nhãn đỏ **TK
+   Windows quản trị**. Đổi sang tài khoản thường: nhãn mất.
+7. **Bằng tài khoản thường**, thử `sc stop VNETClient`, sửa `config.json`, tạo
+   `maintenance.flag`: cả ba phải bị từ chối. Tắt giao diện trong Task Manager:
+   bật lại trong vài giây.
+8. Đặt biến môi trường người dùng `VNET_SERVER_URL` trỏ đi nơi khác rồi tắt giao
+   diện cho nó bật lại: đăng nhập vẫn phải được (bản phát hành bỏ qua biến này).

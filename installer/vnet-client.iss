@@ -29,28 +29,46 @@ SolidCompression=yes
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
 WizardStyle=modern
+; Icon của bộ cài và của mục gỡ cài đặt trong Settings → Apps. Tệp .exe đã
+; mang sẵn icon (scripts/build-client.sh nhúng lúc build) nên lối tắt tự hiện đúng.
+SetupIconFile=..\client\src\build\windows\icon.ico
+UninstallDisplayIcon={app}\vnet-client.exe
 
 [Languages]
 Name: "vi"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 Source: "{#SourceExe}"; DestDir: "{app}"; DestName: "vnet-client.exe"; Flags: ignoreversion
+; TightVNC cho remote desktop: tải bản MSI 64-bit từ tightvnc.com, đặt tại
+; installer\tightvnc.msi. Dịch vụ nền tự cài nó khi nhận mật khẩu VNC từ máy
+; chủ. Không có tệp thì bộ cài vẫn build, chỉ là máy đó không remote được.
+Source: "tightvnc.msi"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\VNET Client"; Filename: "{app}\vnet-client.exe"
+; Lối tắt VNET trên Desktop chung (C:\Users\Public\Desktop\VNET.lnk): cửa sổ VNET
+; không có nút tắt, nên đây là đường mở lại nó. Dịch vụ nền cũng tự dựng lại tệp
+; này mỗi lần bật (shortcuts_windows.go) — máy diskless mất nó sau mỗi lần khởi
+; động — nên tên PHẢI giữ là "VNET".
+Name: "{commondesktop}\VNET"; Filename: "{app}\vnet-client.exe"; WorkingDir: "{app}"; Comment: "VNET"
+
+[UninstallDelete]
+; Inno tự xoá lối tắt nó đã tạo, nhưng bản do dịch vụ nền dựng thì nó không biết.
+Type: files; Name: "{commondesktop}\VNET.lnk"
 
 [Run]
 ; Ghi cấu hình TRƯỚC khi bật dịch vụ: dịch vụ chạy ở session 0 và không thừa
 ; hưởng biến môi trường của người cài, nên nó chỉ đọc được tệp config.json.
 Filename: "{cmd}"; \
-  Parameters: "/C echo {{""server_url"":""{code:GetServerURL}"",""machine_code"":""{code:GetMachineCode}""} > ""{app}\config.json"""; \
+  Parameters: "/C echo {{""server_url"":""{code:GetServerURL}""} > ""{app}\config.json"""; \
   Flags: runhidden
 
-; Đặt PIN TRƯỚC khi bật dịch vụ, và bằng chính .exe chứ không ghi thẳng vào tệp:
-; bộ cài không băm được, mà ghi PIN trần thì khách đọc được — config.json nằm
-; trong Program Files, chặn ghi chứ không chặn đọc.
-Filename: "{app}\vnet-client.exe"; Parameters: "--set-pin ""{code:GetPin}"""; \
-  StatusMsg: "Đang đặt PIN kỹ thuật..."; Flags: runhidden; Check: CoPin
+; Đặt tài khoản quản trị máy trạm TRƯỚC khi bật dịch vụ, và bằng chính .exe chứ
+; không ghi thẳng vào tệp: bộ cài không băm được, mà ghi mật khẩu trần thì khách
+; đọc được — config.json nằm trong Program Files, chặn ghi chứ không chặn đọc.
+Filename: "{app}\vnet-client.exe"; \
+  Parameters: "--set-admin-user ""{code:GetAdminUser}"" --set-admin-pass ""{code:GetAdminPass}"""; \
+  StatusMsg: "Đang đặt tài khoản quản trị máy trạm..."; Flags: runhidden
 
 Filename: "{app}\vnet-client.exe"; Parameters: "--install-service"; \
   StatusMsg: "Đang đăng ký dịch vụ nền..."; Flags: runhidden
@@ -67,40 +85,48 @@ procedure InitializeWizard;
 begin
   ConfigPage := CreateInputQueryPage(wpSelectDir,
     'Cấu hình máy trạm',
-    'Ba thông tin này lấy từ trang Máy trong phần quản trị.',
-    'Khoá máy là TUỲ CHỌN — để trống là được, máy cắm vào là chạy. ' +
-    'Chỉ điền khi bạn đã bấm "Cấp khoá" cho máy này ở trang Máy; từ lúc đó máy chủ ' +
-    'bắt buộc phải có khoá đúng.' + #13#10#13#10 +
-    'PIN kỹ thuật là đường vào DUY NHẤT khi mất mạng: màn hình khoá phủ kín màn hình ' +
-    'và mọi cách đăng nhập khác đều phải hỏi máy chủ. Đặt chung một PIN cho cả quán.');
+    'Địa chỉ máy chủ và tài khoản quản trị máy trạm. Mã máy là TÊN MÁY Windows, máy tự gửi lên.',
+    'Máy chủ tự thêm máy mới ở lần nối đầu tiên; sau đó vào trang Máy để xếp nhóm ' +
+    '(máy chưa có nhóm thì khách chưa đăng nhập được). Hệ diskless đặt tên máy ở máy chủ boot.' + #13#10#13#10 +
+    'Tài khoản quản trị máy trạm: nhân viên kỹ thuật gõ vào ô đăng nhập trên màn hình khoá ' +
+    'để mở máy sửa chữa, kể cả khi mất mạng. Đổi được sau này ở trang quản trị: ' +
+    'Cài đặt → Máy trạm.');
   ConfigPage.Add('Địa chỉ máy chủ:', False);
-  ConfigPage.Add('Mã máy:', False);
-  ConfigPage.Add('PIN kỹ thuật:', False);
+  ConfigPage.Add('Tài khoản quản trị máy trạm:', False);
+  ConfigPage.Add('Mật khẩu (ít nhất 6 ký tự):', True);
+  ConfigPage.Add('Nhập lại mật khẩu:', True);
   ConfigPage.Values[0] := 'http://192.168.1.10:20800';
+  ConfigPage.Values[1] := 'admin';
+end;
+
+function Loi(Msg: string): Boolean;
+begin
+  MsgBox(Msg, mbError, MB_OK);
+  Result := False;
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  User, Pass: string;
 begin
   Result := True;
-  if CurPageID = ConfigPage.ID then
-  begin
-    if (Trim(ConfigPage.Values[2]) <> '') and (Length(Trim(ConfigPage.Values[2])) < 4) then
-    begin
-      MsgBox('PIN kỹ thuật phải có ít nhất 4 ký tự.', mbError, MB_OK);
-      Result := False;
-      Exit;
-    end;
-    if Trim(ConfigPage.Values[0]) = '' then
-    begin
-      MsgBox('Chưa nhập địa chỉ máy chủ.', mbError, MB_OK);
-      Result := False;
-    end
-    else if Trim(ConfigPage.Values[1]) = '' then
-    begin
-      MsgBox('Chưa nhập mã máy.', mbError, MB_OK);
-      Result := False;
-    end;
-  end;
+  if CurPageID <> ConfigPage.ID then Exit;
+
+  User := Trim(ConfigPage.Values[1]);
+  Pass := Trim(ConfigPage.Values[2]);
+  if Trim(ConfigPage.Values[0]) = '' then
+    Result := Loi('Chưa nhập địa chỉ máy chủ.')
+  else if User = '' then
+    Result := Loi('Chưa nhập tài khoản quản trị máy trạm.')
+  else if (Pos(' ', User) > 0) or (Pos('"', User) > 0) then
+    Result := Loi('Tên tài khoản không được có khoảng trắng hay dấu nháy kép.')
+  else if Length(Pass) < 6 then
+    Result := Loi('Mật khẩu quản trị máy trạm phải có ít nhất 6 ký tự.')
+  else if Pos('"', Pass) > 0 then
+    // Mật khẩu đi qua dòng lệnh trong dấu nháy kép; một dấu nháy bên trong sẽ cắt nó làm đôi.
+    Result := Loi('Mật khẩu không được có dấu nháy kép (").')
+  else if Pass <> Trim(ConfigPage.Values[3]) then
+    Result := Loi('Hai lần nhập mật khẩu không khớp.');
 end;
 
 function GetServerURL(Param: string): string;
@@ -108,17 +134,12 @@ begin
   Result := Trim(ConfigPage.Values[0]);
 end;
 
-function GetMachineCode(Param: string): string;
+function GetAdminUser(Param: string): string;
 begin
   Result := Trim(ConfigPage.Values[1]);
 end;
 
-function GetPin(Param: string): string;
+function GetAdminPass(Param: string): string;
 begin
   Result := Trim(ConfigPage.Values[2]);
-end;
-
-function CoPin: Boolean;
-begin
-  Result := Trim(ConfigPage.Values[2]) <> '';
 end;
