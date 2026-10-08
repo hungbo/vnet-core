@@ -78,7 +78,7 @@ async function submitChangePassword() {
     ElMessage.warning($t('common.changePasswordRequired'));
     return;
   }
-  if (newPassword.length < 6) {
+  if (newPassword.length < 8) {
     ElMessage.warning($t('common.changePasswordTooShort'));
     return;
   }

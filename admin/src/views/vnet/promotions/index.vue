@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
-import { formatAmount } from '@/utils/money';
+import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -47,7 +47,7 @@ const rules: FormRules = {
     {
       required: true,
       message: $t('vnetPages.promotions.form.typeRequired'),
-      trigger: 'blur'
+      trigger: 'change'
     }
   ]
 };
@@ -170,30 +170,19 @@ async function deleteReward(row: any) {
   }
 }
 
-// Quay thử: nhân viên kiểm cấu hình trước khi mở cho khách. Dùng chính hội viên
-// đầu tiên trong danh sách vì backend bắt buộc member_id để ghi lịch sử quay.
+// Quay thử: nhân viên kiểm cấu hình trước khi mở cho khách. Gọi /simulate —
+// chỉ chọn ô theo xác suất, không ghi lịch sử, không cộng tiền cho ai. Bản cũ
+// gọi /spin thật cho hội viên mới nhất, nên mỗi lần bấm thử là một khách được
+// cộng tiền thật.
 async function testSpin() {
   spinning.value = true;
   try {
-    const list: any = await client.get('/members', {
-      params: { page_size: 1 }
-    });
-    const member = (Array.isArray(list) ? list : list?.items || [])[0];
-    if (!member) {
-      ElMessage.warning($t('vnetPages.promotions.spinNeedsMember'));
-      return;
-    }
-    const res: any = await client.post('/lucky-spin/spin', {
-      member_id: member.id
-    });
+    const res: any = await client.post('/lucky-spin/simulate');
     ElNotification({
       type: res?.is_win ? 'success' : 'info',
       title: $t('vnetPages.promotions.testSpin'),
       message: res?.is_win
-        ? $t('vnetPages.promotions.spinWin', {
-            name: res.reward?.name,
-            member: member.full_name || member.username
-          })
+        ? $t('vnetPages.promotions.spinWin', { name: res.reward?.name })
         : $t('vnetPages.promotions.spinLose')
     });
   } catch (e: any) {
@@ -215,7 +204,12 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
   transform: vnetTransform,
   columns: () => [
     { prop: 'name', label: $t('vnetPages.promotions.name'), minWidth: 160 },
-    { prop: 'type', label: $t('vnetPages.promotions.type'), width: 120 },
+    {
+      prop: 'type',
+      label: $t('vnetPages.promotions.type'),
+      width: 140,
+      formatter: (row: any) => promotionTypeLabel(row.type)
+    },
     {
       prop: 'priority',
       label: $t('vnetPages.promotions.priority'),
@@ -317,6 +311,15 @@ const CONDITION_KEYS = [
   { value: 'time_range', hint: '{"from":"18:00","to":"22:00"}' },
   { value: 'product_category', hint: '["<id danh mục>"]' }
 ];
+
+// Loại khuyến mãi là nhãn phân loại, phải khớp PromotionTypes ở backend (ô nhập
+// tự do cũ lưu được mọi chuỗi gõ sai). Bản ghi cũ mang nhãn ngoài danh sách vẫn
+// hiện nguyên chữ và vẫn lưu lại được — backend chỉ kiểm khi đổi loại.
+const PROMOTION_TYPES = ['percentage', 'fixed', 'combo'];
+
+function promotionTypeLabel(type: string) {
+  return PROMOTION_TYPES.includes(type) ? $t(`vnetPages.promotions.promotionTypes.${type}`) : type || '-';
+}
 
 const REWARD_TYPES = [
   { value: 'discount_percent', hint: '{"percent":10,"max_discount":50000}' },
@@ -475,7 +478,18 @@ async function handleDelete(row: any) {
           <ElInput v-model="form.name" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.promotions.type')" prop="type">
-          <ElInput v-model="form.type" :placeholder="$t('vnetPages.promotions.form.typePlaceholder')" />
+          <ElSelect
+            v-model="form.type"
+            :placeholder="$t('vnetPages.promotions.form.typePlaceholder')"
+            style="width: 100%"
+          >
+            <ElOption
+              v-for="pt in PROMOTION_TYPES"
+              :key="pt"
+              :label="$t(`vnetPages.promotions.promotionTypes.${pt}`)"
+              :value="pt"
+            />
+          </ElSelect>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.promotions.priority')" prop="priority">
           <ElInputNumber v-model="form.priority" :min="0" :max="999" style="width: 100%" />
@@ -552,7 +566,7 @@ async function handleDelete(row: any) {
       </template>
     </ElDialog>
 
-    <ElDialog v-model="rewardsVisible" :title="$t('vnetPages.promotions.luckySpinRewards')" width="900px">
+    <ElDialog v-model="rewardsVisible" :title="$t('vnetPages.promotions.luckySpinRewards')" width="1000px">
       <ElAlert
         :type="totalProbability > 100 ? 'error' : 'info'"
         :closable="false"
@@ -573,11 +587,17 @@ async function handleDelete(row: any) {
           <ElOption :label="$t('vnetPages.promotions.rewardTypes.balance')" value="balance" />
           <ElOption :label="$t('vnetPages.promotions.rewardTypes.bonus_points')" value="bonus_points" />
         </ElSelect>
-        <ElInputNumber v-model="rewardForm.amount" :min="1" :step="1000" style="width: 140px" />
+        <ElInputNumber v-bind="moneyInput" v-model="rewardForm.amount" :min="1" :step="1000" style="width: 140px" />
         <div style="display: flex; align-items: center; gap: 6px">
           <ElInputNumber v-model="rewardForm.probability" :min="0.01" :max="100" :precision="2" style="width: 120px" />
           <span style="color: #909399">%</span>
         </div>
+        <ElTooltip :content="$t('vnetPages.promotions.maxPerDayHint')" placement="top">
+          <div style="display: flex; align-items: center; gap: 6px">
+            <span style="color: #909399">{{ $t('vnetPages.promotions.maxPerDay') }}</span>
+            <ElInputNumber v-model="rewardForm.max_per_day" :min="0" :max="100" style="width: 100px" />
+          </div>
+        </ElTooltip>
         <ElSwitch v-model="rewardForm.is_active" :active-text="$t('vnetPages.promotions.isActive')" />
         <ElButton type="primary" :loading="savingReward" @click="saveReward">
           {{ rewardForm.id ? $t('vnetPages.common.save') : $t('vnetPages.common.add') }}
@@ -595,6 +615,9 @@ async function handleDelete(row: any) {
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.promotions.probability')" width="100" align="right">
           <template #default="{ row }">{{ ((row.probability || 0) * 100).toFixed(2) }}%</template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.promotions.maxPerDay')" width="110" align="right">
+          <template #default="{ row }">{{ row.max_per_day || 0 }}</template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.promotions.isActive')" width="90">
           <template #default="{ row }">

@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
-import { formatPrice } from '@/utils/money';
+import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -57,12 +57,15 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'transaction_type',
       label: $t('vnetPages.stockTransactions.transactionType'),
       width: 100,
-      formatter: (row: any) =>
-        h(ElTag, { type: row.transaction_type === 'inbound' ? 'success' : 'danger' }, () =>
-          row.transaction_type === 'inbound'
-            ? $t('vnetPages.stockTransactions.importLabel')
-            : $t('vnetPages.stockTransactions.exportLabel')
-        )
+      // "adjustment" do chốt kiểm kê sinh ra (số lượng là phần lệch, có thể dương)
+      // — gộp nó vào "Xuất" thì kiểm thấy dư 2 lại hiện thành "Xuất 2".
+      formatter: (row: any) => {
+        const [tag, label] = {
+          inbound: ['success', 'importLabel'],
+          adjustment: ['warning', 'adjustLabel']
+        }[row.transaction_type as string] ?? ['danger', 'exportLabel'];
+        return h(ElTag, { type: tag as any }, () => $t(`vnetPages.stockTransactions.${label}` as any));
+      }
     },
     {
       prop: 'quantity',
@@ -198,7 +201,7 @@ async function handleSave() {
           :label="$t('vnetPages.stockTransactions.unitPrice')"
           prop="unit_price"
         >
-          <ElInputNumber v-model="form.unit_price" :min="0" :precision="0" style="width: 100%" />
+          <ElInputNumber v-bind="moneyInput" v-model="form.unit_price" :min="0" :precision="0" style="width: 100%" />
         </ElFormItem>
         <ElFormItem v-if="form.transaction_type === 'inbound'" :label="$t('vnetPages.stockTransactions.totalPrice')">
           <span style="font-weight: 600; color: var(--el-color-primary)">

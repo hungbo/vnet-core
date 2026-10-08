@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
-import { formatAmount } from '@/utils/money';
+import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -349,7 +349,7 @@ async function handleDelete(row: any) {
           </ElInput>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.machineGroups.pricePerHour')" prop="price_per_hour">
-          <ElInputNumber v-model="form.price_per_hour" :min="0" :max="999999" style="width: 100%" />
+          <ElInputNumber v-bind="moneyInput" v-model="form.price_per_hour" :min="0" :max="999999" style="width: 100%" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.machineGroups.sortOrder')" prop="sort_order">
           <ElInputNumber v-model="form.sort_order" :min="0" :max="999" style="width: 100%" />
@@ -394,7 +394,13 @@ async function handleDelete(row: any) {
             >
               <ElOption v-for="g in memberGroups" :key="g.id" :label="g.name" :value="g.id" />
             </ElSelect>
-            <ElInputNumber v-model="tierForm.price_per_hour" :min="1000" :step="1000" style="width: 150px" />
+            <ElInputNumber
+              v-bind="moneyInput"
+              v-model="tierForm.price_per_hour"
+              :min="1000"
+              :step="1000"
+              style="width: 150px"
+            />
             <div style="display: flex; align-items: center; gap: 6px">
               <span style="color: #909399; font-size: 13px; white-space: nowrap">
                 {{ $t('vnetPages.machineGroups.minDurationShort') }}
@@ -471,7 +477,13 @@ async function handleDelete(row: any) {
             <ElTimePicker v-model="timeForm.start_time" format="HH:mm" value-format="HH:mm" style="width: 110px" />
             <span>–</span>
             <ElTimePicker v-model="timeForm.end_time" format="HH:mm" value-format="HH:mm" style="width: 110px" />
-            <ElInputNumber v-model="timeForm.price_per_hour" :min="1000" :step="1000" style="width: 150px" />
+            <ElInputNumber
+              v-bind="moneyInput"
+              v-model="timeForm.price_per_hour"
+              :min="1000"
+              :step="1000"
+              style="width: 150px"
+            />
             <ElButton type="primary" :loading="savingPrice" @click="addTimePrice">
               {{ $t('vnetPages.common.add') }}
             </ElButton>

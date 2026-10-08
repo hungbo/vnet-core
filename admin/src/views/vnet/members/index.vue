@@ -8,13 +8,19 @@ import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
-import { formatAmount } from '@/utils/money';
+import { usePaymentMethods } from '@/hooks/business/payment-methods';
+import { formatAmount, moneyInput } from '@/utils/money';
 import { newIdempotencyKey } from '@/utils/idempotency';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
+import MemberTopupDialog from './modules/member-topup-dialog.vue';
 
 const { t: $t } = useI18n();
+const { paymentLabel } = usePaymentMethods();
 
 const search = ref('');
+// Loại tài khoản: hội viên thường do quầy tạo, hoặc tài khoản combo sinh ra khi
+// bán gói. Mặc định chỉ hiện hội viên thường — tài khoản combo nhiều và ngắn hạn.
+const roleFilter = ref<'member' | 'combo' | ''>('member');
 
 const dialogVisible = ref(false);
 const topupVisible = ref(false);
@@ -40,7 +46,6 @@ const detailSesSize = ref(10);
 const detailSesTotal = ref(0);
 
 const formRef = ref<FormInstance>();
-const topupFormRef = ref<FormInstance>();
 
 const form = ref({
   username: '',
@@ -71,12 +76,6 @@ async function fetchMemberGroups() {
   }
 }
 
-const topupForm = ref({
-  amount: 10000,
-  payment_method: 'cash',
-  idempotency_key: newIdempotencyKey()
-});
-
 const rules: FormRules = {
   username: [
     {
@@ -94,35 +93,26 @@ const rules: FormRules = {
   ]
 };
 
-const topupRules: FormRules = {
-  amount: [
-    {
-      required: true,
-      message: $t('vnetPages.members.form.amountRequired'),
-      trigger: 'blur'
-    }
-  ],
-  payment_method: [
-    {
-      required: true,
-      message: $t('vnetPages.members.form.methodRequired'),
-      trigger: 'change'
-    }
-  ]
-};
-
 const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
   api: ({ page, pageSize }) =>
     client.get('/members', {
       params: {
         page,
         page_size: pageSize,
-        search: search.value || undefined
+        search: search.value || undefined,
+        role: roleFilter.value || undefined
       }
     }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'username', label: $t('vnetPages.members.username'), width: 120 },
+    {
+      prop: 'username',
+      label: $t('vnetPages.members.username'),
+      width: 120,
+      // Bấm tên đăng nhập để xem chi tiết — thay cho nút "Chi tiết".
+      formatter: (row: any) =>
+        h(ElLink, { type: 'primary', underline: false, onClick: () => viewDetail(row) }, () => row.username)
+    },
     {
       prop: 'full_name',
       label: $t('vnetPages.members.fullName'),
@@ -299,10 +289,41 @@ async function handleRefund() {
   }
 }
 
+// Tặng tiền: cộng vào ví KHUYẾN MÃI qua đường nạp nội bộ "bonus_balance".
+// Máy chủ ghi giao dịch topup_bonus — báo cáo doanh thu chỉ đếm topup/refund,
+// tiền két chỉ đếm khoản thu tiền mặt, nên tiền tặng không lọt vào cả hai.
+const giftVisible = ref(false);
+const gifting = ref(false);
+const giftForm = ref({ amount: 10000, description: '', idempotency_key: newIdempotencyKey() });
+
+function openGift(row: any) {
+  currentMember.value = row;
+  giftForm.value = { amount: 10000, description: '', idempotency_key: newIdempotencyKey() };
+  giftVisible.value = true;
+}
+
+async function handleGift() {
+  if (!currentMember.value || giftForm.value.amount <= 0) return;
+  gifting.value = true;
+  try {
+    await client.post(`/members/${currentMember.value.id}/topup`, {
+      amount: giftForm.value.amount,
+      payment_method: 'bonus_balance',
+      description: giftForm.value.description,
+      idempotency_key: giftForm.value.idempotency_key
+    });
+    ElMessage.success($t('vnetPages.members.giftSuccess'));
+    giftVisible.value = false;
+    getData();
+  } catch (e: any) {
+    ElMessage.error(e.message || $t('vnetPages.common.error'));
+  } finally {
+    gifting.value = false;
+  }
+}
+
 function openTopup(row: any) {
   currentMember.value = row;
-  // Khoá mới cho mỗi lần mở hộp thoại: đây là một ý định nạp mới.
-  topupForm.value = { amount: 10000, payment_method: 'cash', idempotency_key: newIdempotencyKey() };
   topupVisible.value = true;
 }
 
@@ -322,7 +343,8 @@ async function handleSubmit() {
   if (!valid) return;
   submitting.value = true;
   try {
-    const payload = { ...form.value };
+    // group_id bị bấm × thành undefined và rơi khỏi JSON; "" mới là "bỏ chọn".
+    const payload = { ...form.value, group_id: form.value.group_id || '' };
     if (!payload.password && isEdit.value) payload.password = undefined as any;
     if (isEdit.value && editingId.value) {
       await client.put(`/members/${editingId.value}`, payload);
@@ -332,8 +354,7 @@ async function handleSubmit() {
         message: $t('vnetPages.members.messages.editSuccess')
       });
     } else {
-      const { is_active, ...createPayload } = payload;
-      await client.post('/members', createPayload);
+      await client.post('/members', payload);
       ElNotification({
         type: 'success',
         title: $t('vnetPages.common.success'),
@@ -347,6 +368,11 @@ async function handleSubmit() {
   } finally {
     submitting.value = false;
   }
+}
+
+function onMoreCommand(cmd: string, row: any) {
+  if (cmd === 'reset') handleResetPassword(row);
+  else if (cmd === 'delete') handleDelete(row);
 }
 
 async function handleDelete(row: any) {
@@ -470,26 +496,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   wsStore.off('member:updated', onMemberUpdated);
 });
-
-async function handleTopup() {
-  const valid = await topupFormRef.value?.validate().catch(() => false);
-  if (!valid) return;
-  submitting.value = true;
-  try {
-    await client.post(`/members/${currentMember.value.id}/topup`, topupForm.value);
-    ElNotification({
-      type: 'success',
-      title: $t('vnetPages.common.success'),
-      message: $t('vnetPages.members.messages.topUpSuccess')
-    });
-    topupVisible.value = false;
-    getData();
-  } catch (e: any) {
-    ElMessage.error(e?.message || $t('vnetPages.members.messages.topUpError'));
-  } finally {
-    submitting.value = false;
-  }
-}
 </script>
 
 <template>
@@ -504,6 +510,11 @@ async function handleTopup() {
             style="width: 300px"
             @keyup.enter="searchData"
           />
+          <ElSelect v-model="roleFilter" class="w-160px" @change="searchData">
+            <ElOption :label="$t('vnetPages.members.roleMember')" value="member" />
+            <ElOption :label="$t('vnetPages.members.roleCombo')" value="combo" />
+            <ElOption :label="$t('vnetPages.members.roleAll')" value="" />
+          </ElSelect>
           <ElButton type="primary" @click="searchData">{{ $t('vnetPages.common.search') }}</ElButton>
         </div>
         <TableHeaderOperation
@@ -523,20 +534,41 @@ async function handleTopup() {
 
       <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
-        <ElTableColumn :label="$t('vnetPages.common.action')" width="360" fixed="right">
+        <!--
+          Các việc với tiền (Nạp, Trừ tiền, Tặng tiền) và Sửa nằm ngoài; đặt lại mật
+          khẩu và xoá gom vào "Khác". Xem chi tiết: bấm vào tên đăng nhập.
+        -->
+        <ElTableColumn :label="$t('vnetPages.common.action')" width="400" fixed="right" align="center">
           <template #default="{ row }">
-            <ElButton size="small" @click="viewDetail(row)">{{ $t('vnetPages.common.detail') }}</ElButton>
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="warning" @click="handleResetPassword(row)">
-              {{ $t('vnetPages.members.resetPassword') }}
-            </ElButton>
-            <ElButton size="small" type="success" @click="openTopup(row)">{{ $t('vnetPages.members.topUp') }}</ElButton>
-            <ElButton size="small" type="warning" plain @click="openRefund(row)">
-              {{ $t('vnetPages.members.refund') }}
-            </ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
-              {{ $t('vnetPages.common.delete') }}
-            </ElButton>
+            <div class="row-actions">
+              <!-- Tài khoản combo do hệ thống sinh khi bán gói: chỉ được đặt lại mật khẩu. -->
+              <ElButton v-if="row.role === 'combo'" size="small" @click="handleResetPassword(row)">
+                {{ $t('vnetPages.members.resetPassword') }}
+              </ElButton>
+              <template v-else>
+                <ElButton size="small" type="success" @click="openTopup(row)">
+                  {{ $t('vnetPages.members.topUp') }}
+                </ElButton>
+                <ElButton size="small" type="warning" plain @click="openRefund(row)">
+                  {{ $t('vnetPages.members.refund') }}
+                </ElButton>
+                <ElButton size="small" type="primary" plain @click="openGift(row)">
+                  {{ $t('vnetPages.members.gift') }}
+                </ElButton>
+                <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
+                <ElDropdown trigger="click" @command="(cmd: string) => onMoreCommand(cmd, row)">
+                  <ElButton size="small">{{ $t('vnetPages.members.more') }}</ElButton>
+                  <template #dropdown>
+                    <ElDropdownMenu>
+                      <ElDropdownItem command="reset">{{ $t('vnetPages.members.resetPassword') }}</ElDropdownItem>
+                      <ElDropdownItem command="delete" divided class="danger-item">
+                        {{ $t('vnetPages.common.delete') }}
+                      </ElDropdownItem>
+                    </ElDropdownMenu>
+                  </template>
+                </ElDropdown>
+              </template>
+            </div>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -651,26 +683,12 @@ async function handleTopup() {
       </template>
     </ElDialog>
 
-    <ElDialog v-model="topupVisible" :title="$t('vnetPages.members.topUpAmount')" width="400px">
-      <ElForm ref="topupFormRef" :model="topupForm" :rules="topupRules" :label-width="130">
-        <ElFormItem :label="$t('vnetPages.members.amount')" prop="amount">
-          <ElInputNumber v-model="topupForm.amount" :min="1000" :step="10000" style="width: 100%" />
-        </ElFormItem>
-        <ElFormItem :label="$t('vnetPages.members.method')" prop="payment_method">
-          <ElSelect v-model="topupForm.payment_method" style="width: 100%">
-            <ElOption :label="$t('vnetPages.members.cash')" value="cash" />
-            <ElOption :label="$t('vnetPages.members.transfer')" value="transfer" />
-            <ElOption :label="$t('vnetPages.members.eWallet')" value="ewallet" />
-          </ElSelect>
-        </ElFormItem>
-      </ElForm>
-      <template #footer>
-        <ElButton @click="topupVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
-        <ElButton type="primary" :loading="submitting" @click="handleTopup">
-          {{ $t('vnetPages.common.confirm') }}
-        </ElButton>
-      </template>
-    </ElDialog>
+    <MemberTopupDialog
+      v-model:visible="topupVisible"
+      :member-id="currentMember?.id ?? null"
+      :member-name="currentMember?.full_name || currentMember?.username"
+      @success="getData"
+    />
 
     <ElDialog v-model="detailVisible" :title="$t('vnetPages.members.detail')" width="800px" top="5vh" destroy-on-close>
       <ElCard v-loading="detailLoading" shadow="never" style="border: none">
@@ -728,7 +746,9 @@ async function handleTopup() {
               <ElTableColumn :label="$t('vnetPages.members.amount')" width="120">
                 <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
               </ElTableColumn>
-              <ElTableColumn prop="payment_method" :label="$t('vnetPages.members.method')" width="120" />
+              <ElTableColumn :label="$t('vnetPages.members.method')" width="120">
+                <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
+              </ElTableColumn>
               <ElTableColumn prop="reference_id" :label="$t('vnetPages.members.reference')" min-width="140" />
               <ElTableColumn :label="$t('vnetPages.members.createdAt')" width="160">
                 <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
@@ -781,10 +801,30 @@ async function handleTopup() {
         </ElTabs>
       </ElCard>
     </ElDialog>
+    <ElDialog v-model="giftVisible" :title="$t('vnetPages.members.gift')" width="420px">
+      <ElAlert type="info" :closable="false" show-icon style="margin-bottom: 12px">
+        {{ $t('vnetPages.members.giftHint') }}
+      </ElAlert>
+      <ElForm label-width="130px">
+        <ElFormItem :label="$t('vnetPages.members.giftAmount')">
+          <ElInputNumber v-bind="moneyInput" v-model="giftForm.amount" :min="1000" :step="10000" style="width: 100%" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.members.giftReason')">
+          <ElInput v-model="giftForm.description" type="textarea" :rows="2" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="giftVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="gifting" @click="handleGift">
+          {{ $t('vnetPages.members.gift') }}
+        </ElButton>
+      </template>
+    </ElDialog>
+
     <ElDialog v-model="refundVisible" :title="$t('vnetPages.members.refund')" width="420px">
       <ElForm label-width="170px">
         <ElFormItem :label="$t('vnetPages.members.refundAmount')">
-          <ElInputNumber v-model="refundForm.amount" :min="0" :step="10000" style="width: 100%" />
+          <ElInputNumber v-bind="moneyInput" v-model="refundForm.amount" :min="0" :step="10000" style="width: 100%" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.members.refundBonus')">
           <ElSwitch v-model="refundForm.is_bonus" />
@@ -802,3 +842,21 @@ async function handleTopup() {
     </ElDialog>
   </div>
 </template>
+
+<style scoped>
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+:global(.danger-item) {
+  color: var(--el-color-danger) !important;
+}
+</style>

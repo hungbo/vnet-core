@@ -3,9 +3,11 @@ import { onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { formatPrice } from '@/utils/money';
 
 const { t: $t } = useI18n();
+const { paymentLabel } = usePaymentMethods();
 
 const list = ref<any[]>([]);
 const loading = ref(false);
@@ -135,7 +137,9 @@ onMounted(() => {
         <ElTableColumn :label="$t('vnetPages.transactions.bonusAfter')" width="130" align="right">
           <template #default="{ row }">{{ formatPrice(row.bonus_after) }}</template>
         </ElTableColumn>
-        <ElTableColumn prop="payment_method" :label="$t('vnetPages.transactions.paymentMethod')" width="110" />
+        <ElTableColumn :label="$t('vnetPages.transactions.paymentMethod')" width="110">
+          <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
+        </ElTableColumn>
         <ElTableColumn
           prop="description"
           :label="$t('vnetPages.transactions.description')"

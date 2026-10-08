@@ -5,13 +5,15 @@ import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { newIdempotencyKey } from '@/utils/idempotency';
-import { formatAmount } from '@/utils/money';
+import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { enabledMethods } = usePaymentMethods();
 
 const search = ref('');
 
@@ -29,7 +31,7 @@ const form = ref({
   validity_days: 30,
   apply_days: [] as number[],
   minutes: 60,
-  slots: [{ start: null, end: null }],
+  slots: [{ start: null, end: null }] as { start: Date | null; end: Date | null }[],
   is_active: true
 });
 
@@ -37,15 +39,15 @@ const purchaseDialogVisible = ref(false);
 const purchaseSubmitting = ref(false);
 const purchaseFormRef = ref<FormInstance>();
 const purchaseForm = ref({
-  member_id: '' as string,
-  customer_name: '',
-  customer_phone: '',
   payment_method: 'cash',
   idempotency_key: newIdempotencyKey()
 });
 const members = ref<any[]>([]);
 const memberSearchLoading = ref(false);
 const purchaseComboId = ref('');
+const purchaseCombo = ref<any>(null);
+const purchaseResultVisible = ref(false);
+const purchaseResult = ref<any>(null);
 
 async function searchMembers(query: string) {
   if (!query) {
@@ -166,6 +168,11 @@ function openCreate() {
   dialogVisible.value = true;
 }
 
+// "HH:mm[:ss]" từ API thành Date cho ElTimePicker.
+function gioThanhNgay(gio?: string | null) {
+  return gio ? dayjs(`2000-01-01 ${gio.slice(0, 5)}`).toDate() : null;
+}
+
 function openEdit(row: any) {
   isEdit.value = true;
   editingId.value = row.id;
@@ -176,10 +183,11 @@ function openEdit(row: any) {
     description: row.description || '',
     validity_days: row.validity_days ?? 30,
     apply_days: row.apply_days ?? [],
-    minutes: row.minutes ?? 60,
-    slots: row.slots?.length
-      ? row.slots.map((s: any) => ({ start: s.start, end: s.end }))
-      : [{ start: null, end: null }],
+    // API trả total_minutes/slot_start/slot_end, không có minutes/slots. Đọc
+    // nhầm tên thì form luôn hiện 60 phút và khung giờ trống, rồi bấm Lưu là
+    // ghi đè số phút thật của combo thành 60.
+    minutes: row.total_minutes || 60,
+    slots: [{ start: gioThanhNgay(row.slot_start), end: gioThanhNgay(row.slot_end) }],
     is_active: row.is_active ?? true
   };
   dialogVisible.value = true;
@@ -187,45 +195,59 @@ function openEdit(row: any) {
 
 function openPurchase(row: any) {
   purchaseComboId.value = row.id;
+  purchaseCombo.value = row;
   purchaseForm.value = {
-    member_id: '',
-    customer_name: '',
-    customer_phone: '',
     payment_method: 'cash',
     // Khoá mới cho mỗi lần mở hộp thoại; mọi lần bấm Xác nhận của lần mở này
     // mang cùng khoá nên máy chủ chỉ bán một gói.
     idempotency_key: newIdempotencyKey()
   };
-  members.value = [];
   purchaseDialogVisible.value = true;
 }
 
 async function handlePurchase() {
   purchaseSubmitting.value = true;
   try {
-    const payload: any = {
+    // Không gắn hội viên: máy chủ tự tạo tài khoản khách theo tiền tố của gói.
+    const res: any = await client.post(`/combos/${purchaseComboId.value}/purchase`, {
       payment_method: purchaseForm.value.payment_method,
       idempotency_key: purchaseForm.value.idempotency_key
-    };
-    if (purchaseForm.value.member_id) {
-      payload.member_id = purchaseForm.value.member_id;
-    } else {
-      if (!purchaseForm.value.customer_name) throw new Error(`${$t('vnetPages.combos.customerName')} required`);
-      payload.customer_name = purchaseForm.value.customer_name;
-      payload.customer_phone = purchaseForm.value.customer_phone;
-    }
-    await client.post(`/combos/${purchaseComboId.value}/purchase`, payload);
-    purchaseDialogVisible.value = false;
-    ElNotification({
-      type: 'success',
-      title: $t('vnetPages.common.success'),
-      message: $t('vnetPages.combos.messages.purchaseSuccess')
     });
+    purchaseDialogVisible.value = false;
+    // Mã tài khoản là cách duy nhất để tìm lại gói trong "Combo đã mua" khi kích
+    // hoạt, nên hiện hộp thoại phải bấm đóng chứ không để thông báo tự tắt.
+    purchaseResult.value = { ...res, combo: purchaseCombo.value };
+    purchaseResultVisible.value = true;
     fetchData();
   } catch (e: any) {
     ElMessage.error(e?.message || $t('vnetPages.combos.messages.saveError'));
   } finally {
     purchaseSubmitting.value = false;
+  }
+}
+
+// --- Hoá đơn mua combo -------------------------------------------------------
+// Mật khẩu chỉ có trong phản hồi lúc mua (máy chủ lưu dạng băm), nên phải in
+// ngay từ hộp thoại này — đóng lại là không in lại được mật khẩu nữa.
+
+const printingReceipt = ref(false);
+
+async function handlePrintPurchase() {
+  if (!purchaseResult.value) return;
+  printingReceipt.value = true;
+  try {
+    await client.post(`/combos/${purchaseResult.value.id}/print`, {
+      password: purchaseResult.value.generated_password || ''
+    });
+    ElNotification({
+      type: 'success',
+      title: $t('vnetPages.common.success'),
+      message: $t('vnetPages.orders.printed')
+    });
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.orders.printFailed'));
+  } finally {
+    printingReceipt.value = false;
   }
 }
 
@@ -502,7 +524,7 @@ async function handleDelete(row: any) {
           </ElSelect>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.combos.price')" prop="price">
-          <ElInputNumber v-model="form.price" :min="0" :step="10000" style="width: 100%" />
+          <ElInputNumber v-bind="moneyInput" v-model="form.price" :min="0" :step="10000" style="width: 100%" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.combos.description')" prop="description">
           <ElInput v-model="form.description" type="textarea" :rows="2" />
@@ -518,7 +540,9 @@ async function handleDelete(row: any) {
           </ElCheckboxGroup>
         </ElFormItem>
         <template v-if="form.type === 'fixed_slot'">
-          <ElFormItem v-for="(slot, idx) in form.slots" :key="idx" :label="`Slot ${idx + 1}`">
+          <!-- Combo chỉ lưu MỘT khung giờ (slot_start/slot_end); trước đây form cho
+               thêm nhiều khung nhưng chỉ khung đầu được gửi đi. -->
+          <ElFormItem v-for="(slot, idx) in form.slots" :key="idx" :label="$t('vnetPages.combos.slot')">
             <div style="display: flex; gap: 8px; width: 100%">
               <ElTimePicker
                 v-model="slot.start"
@@ -532,13 +556,7 @@ async function handleDelete(row: any) {
                 :placeholder="$t('vnetPages.combos.to')"
                 style="flex: 1"
               />
-              <ElButton icon="Delete" @click="form.slots.splice(idx, 1)" />
             </div>
-          </ElFormItem>
-          <ElFormItem label=" ">
-            <ElButton type="primary" link @click="form.slots.push({ start: null, end: null })">
-              {{ $t('vnetPages.combos.addSlot') }}
-            </ElButton>
           </ElFormItem>
         </template>
         <template v-if="form.type === 'prepaid'">
@@ -558,38 +576,47 @@ async function handleDelete(row: any) {
       </template>
     </ElDialog>
 
+    <ElDialog
+      v-model="purchaseResultVisible"
+      :title="$t('vnetPages.combos.messages.purchaseSuccess')"
+      width="460px"
+      :close-on-click-modal="false"
+    >
+      <ElDescriptions v-if="purchaseResult" :column="1" border>
+        <ElDescriptionsItem :label="$t('vnetPages.combos.account')">
+          <b style="font-size: 18px">{{ purchaseResult.member_username || '-' }}</b>
+        </ElDescriptionsItem>
+        <ElDescriptionsItem v-if="purchaseResult.generated_password" :label="$t('vnetPages.combos.password')">
+          <b style="font-size: 18px">{{ purchaseResult.generated_password }}</b>
+        </ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('vnetPages.combos.name')">{{ purchaseResult.combo_name }}</ElDescriptionsItem>
+        <ElDescriptionsItem v-if="purchaseResult.combo?.type === 'fixed_slot'" :label="$t('vnetPages.combos.slot')">
+          {{ purchaseResult.combo?.slot_start?.slice(0, 5) }} - {{ purchaseResult.combo?.slot_end?.slice(0, 5) }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem v-else :label="$t('vnetPages.combos.minutes')">
+          {{ purchaseResult.remaining_minutes }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem v-if="purchaseResult.expires_at" :label="$t('vnetPages.combos.expiresAt')">
+          {{ dayjs(purchaseResult.expires_at).format('DD/MM/YYYY') }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem :label="$t('vnetPages.combos.price')">
+          {{ formatAmount(purchaseResult.price) }}
+        </ElDescriptionsItem>
+      </ElDescriptions>
+      <p style="margin-top: 12px; color: #909399">{{ $t('vnetPages.combos.messages.purchaseHint') }}</p>
+      <template #footer>
+        <ElButton @click="purchaseResultVisible = false">{{ $t('common.close') }}</ElButton>
+        <ElButton type="primary" :loading="printingReceipt" @click="handlePrintPurchase">
+          {{ $t('vnetPages.combos.printReceipt') }}
+        </ElButton>
+      </template>
+    </ElDialog>
+
     <ElDialog v-model="purchaseDialogVisible" :title="$t('vnetPages.combos.purchaseDialog')" width="450px">
       <ElForm ref="purchaseFormRef" :model="purchaseForm" :label-width="120">
-        <ElFormItem :label="$t('vnetPages.combos.selectMember')">
-          <ElSelect
-            v-model="purchaseForm.member_id"
-            filterable
-            remote
-            :remote-method="searchMembers"
-            :loading="memberSearchLoading"
-            clearable
-            style="width: 100%"
-            :placeholder="$t('vnetPages.combos.selectMember')"
-          >
-            <ElOption
-              v-for="m in members"
-              :key="m.id"
-              :label="`${m.full_name || m.username} (${m.phone || '-'})`"
-              :value="m.id"
-            />
-          </ElSelect>
-        </ElFormItem>
-        <ElFormItem :label="$t('vnetPages.combos.customerName')" prop="customer_name">
-          <ElInput v-model="purchaseForm.customer_name" :disabled="!!purchaseForm.member_id" />
-        </ElFormItem>
-        <ElFormItem :label="$t('vnetPages.combos.customerPhone')" prop="customer_phone">
-          <ElInput v-model="purchaseForm.customer_phone" :disabled="!!purchaseForm.member_id" />
-        </ElFormItem>
         <ElFormItem :label="$t('vnetPages.combos.paymentMethod')" prop="payment_method">
           <ElSelect v-model="purchaseForm.payment_method" style="width: 100%">
-            <ElOption label="Cash" value="cash" />
-            <ElOption label="Balance" value="balance" />
-            <ElOption label="Transfer" value="transfer" />
+            <ElOption v-for="m in enabledMethods" :key="m.code" :label="m.name" :value="m.code" />
           </ElSelect>
         </ElFormItem>
       </ElForm>

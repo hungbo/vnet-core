@@ -330,6 +330,9 @@ declare namespace App {
         changePasswordTooShort: string;
         changePasswordMismatch: string;
         changePasswordSuccess: string;
+        changePasswordSameAsOld: string;
+        mustChangePasswordTitle: string;
+        mustChangePasswordTip: string;
         lookForward: string;
         modify: string;
         modifySuccess: string;
@@ -740,13 +743,21 @@ declare namespace App {
         };
         dashboard: {
           revenueToday: string;
-          revenueChart: string;
           activeMachines: string;
           machine: string;
           member: string;
           startTime: string;
           duration: string;
           remaining: string;
+          actions: string;
+          topUp: string;
+          orders: string;
+          ordersTitle: string;
+          noOrders: string;
+          orderItems: string;
+          orderTotal: string;
+          orderTime: string;
+          goOrders: string;
           stats: {
             members: string;
             onlineMachines: string;
@@ -755,18 +766,30 @@ declare namespace App {
           };
         };
         machines: {
+          warnings: string;
+          warnAdmin: string;
+          warnAdminHint: string;
+          warnNetwork: string;
+          onlyWarnings: string;
+          alertTitle: string;
           title: string;
           searchPlaceholder: string;
           add: string;
           edit: string;
           code: string;
           group: string;
+          sessionCol: string;
+          played: string;
+          left: string;
           cpu: string;
           gpu: string;
           ram: string;
           disk: string;
           os: string;
           osPlaceholder: string;
+          specsAuto: string;
+          peripherals: string;
+          noPeripherals: string;
           ip: string;
           lastHeartbeat: string;
           lastSeen: string;
@@ -804,9 +827,11 @@ declare namespace App {
             remote: string;
           };
           remote: {
+            wake: string;
+            wakeSent: string;
+            wakeConfirm: string;
             shutdown: string;
             restart: string;
-            lock: string;
             message: string;
             screenshot: string;
             sendNotification: string;
@@ -845,9 +870,6 @@ declare namespace App {
           topUp: string;
           topUpAmount: string;
           topUpMethod: string;
-          cash: string;
-          transfer: string;
-          eWallet: string;
           transactions: string;
           sessions: string;
           amount: string;
@@ -887,6 +909,10 @@ declare namespace App {
           startTime: string;
           duration: string;
           remaining: string;
+          allStatus: string;
+          filterMachine: string;
+          filterMember: string;
+          cost: string;
           endTime: string;
           status: string;
           running: string;
@@ -896,6 +922,8 @@ declare namespace App {
             loadError: string;
             endConfirm: string;
             endSuccess: string;
+            deleteConfirm: string;
+            deleteSuccess: string;
           };
         };
         shifts: {
@@ -914,6 +942,7 @@ declare namespace App {
           open: string;
           closed: string;
           user: string;
+          singleShiftHint: string;
           form: {
             openingCash: string;
             closingCash: string;
@@ -924,6 +953,7 @@ declare namespace App {
             amountRequired: string;
             amountPlaceholder: string;
             handoverTypePlaceholder: string;
+            reasonRequired: string;
           };
           messages: {
             loadError: string;
@@ -1125,10 +1155,14 @@ declare namespace App {
           to: string;
           deposit: string;
           checkIn: string;
+          depositLockedHint: string;
+          depositWalkInHint: string;
+          depositRuleHint: string;
           statusLabels: {
             pending: string;
             confirmed: string;
             checkedIn: string;
+            completed: string;
             cancelled: string;
             noShow: string;
           };
@@ -1155,6 +1189,13 @@ declare namespace App {
           luckySpinRewards: string;
           value: string;
           probability: string;
+          maxPerDay: string;
+          maxPerDayHint: string;
+          promotionTypes: {
+            percentage: string;
+            fixed: string;
+            combo: string;
+          };
           form: {
             name: string;
             type: string;
@@ -1192,7 +1233,43 @@ declare namespace App {
             createError: string;
           };
         };
+        paymentMethods: {
+          balance: string;
+          giftCard: string;
+          bonusBalance: string;
+          topupCard: string;
+        };
         settings: {
+          payment: string;
+          paymentHint: string;
+          paymentName: string;
+          paymentCode: string;
+          paymentEnabled: string;
+          addPaymentMethod: string;
+          paymentCodeAuto: string;
+          client: string;
+          clientHint: string;
+          tamperAction: string;
+          tamperRestart: string;
+          tamperShutdown: string;
+          offlineLockSeconds: string;
+          offlineRebootSeconds: string;
+          offlineRebootHint: string;
+          idleShutdownMinutes: string;
+          idleShutdownHint: string;
+          blockedAppsTitle: string;
+          blockedApps: string;
+          blockedAppsPlaceholder: string;
+          blockedAppsHint: string;
+          hiddenShortcutsTitle: string;
+          hiddenShortcuts: string;
+          hiddenShortcutsPlaceholder: string;
+          hiddenShortcutsHint: string;
+          localAdminTitle: string;
+          localAdminHint: string;
+          localAdminUsername: string;
+          localAdminPassword: string;
+          localAdminPasswordPlaceholder: string;
           features: string;
           featuresHint: string;
           attendanceEnabled: string;
@@ -1216,6 +1293,8 @@ declare namespace App {
           maxBookingsPerMember: string;
           cancelBeforeMinutes: string;
           maxDebt: string;
+          minSessionCharge: string;
+          minSessionChargeHint: string;
           limitsHint: string;
           topup: string;
           topupPresets: string;
@@ -1258,7 +1337,6 @@ declare namespace App {
           isActive: string;
           from: string;
           to: string;
-          addSlot: string;
           minutes: string;
           form: {
             name: string;

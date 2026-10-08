@@ -12,6 +12,7 @@ import GlobalTab from '../modules/global-tab/index.vue';
 import GlobalContent from '../modules/global-content/index.vue';
 import GlobalFooter from '../modules/global-footer/index.vue';
 import ThemeDrawer from '../modules/theme-drawer/index.vue';
+import ForcePasswordChange from '../modules/force-password-change/index.vue';
 import { setupMixMenuContext } from '../context';
 
 defineOptions({ name: 'BaseLayout' });
@@ -140,6 +141,7 @@ function getSiderCollapsedWidth() {
     <GlobalContent />
     <ThemeDrawer />
     <ChatWidget />
+    <ForcePasswordChange />
     <template #footer>
       <GlobalFooter />
     </template>

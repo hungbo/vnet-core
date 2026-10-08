@@ -14,10 +14,12 @@ interface FormModel {
   password: string;
 }
 
-const model = ref<FormModel>({
-  userName: 'admin',
-  password: 'admin123'
-});
+// Điền sẵn tài khoản seed chỉ để tiện khi dev. Bản build KHÔNG được mang mật khẩu mặc định:
+// ai mở trang đăng nhập từ máy khách chỉ cần bấm Xác nhận là vào được. `import.meta.env.DEV` là
+// hằng số lúc build nên nhánh này bị loại hẳn khỏi bundle production.
+const model = ref<FormModel>(
+  import.meta.env.DEV ? { userName: 'admin', password: 'admin123' } : { userName: '', password: '' }
+);
 
 const rules = computed<Record<keyof FormModel, App.Global.FormRule[]>>(() => {
   const { formRules } = useFormRules();

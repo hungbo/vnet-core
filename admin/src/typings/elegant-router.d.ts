@@ -94,12 +94,12 @@ declare module "@elegant-router/types" {
     "vnet_audit": "/vnet/audit";
     "vnet_backups": "/vnet/backups";
     "vnet_bookings": "/vnet/bookings";
-    "vnet_cards": "/vnet/cards";
     "vnet_categories": "/vnet/categories";
     "vnet_combos": "/vnet/combos";
     "vnet_curfew": "/vnet/curfew";
     "vnet_dashboard": "/vnet/dashboard";
     "vnet_feedback": "/vnet/feedback";
+    "vnet_games": "/vnet/games";
     "vnet_inventory-counts": "/vnet/inventory-counts";
     "vnet_machine-assets": "/vnet/machine-assets";
     "vnet_machine-groups": "/vnet/machine-groups";
@@ -245,12 +245,12 @@ declare module "@elegant-router/types" {
     | "vnet_audit"
     | "vnet_backups"
     | "vnet_bookings"
-    | "vnet_cards"
     | "vnet_categories"
     | "vnet_combos"
     | "vnet_curfew"
     | "vnet_dashboard"
     | "vnet_feedback"
+    | "vnet_games"
     | "vnet_inventory-counts"
     | "vnet_machine-assets"
     | "vnet_machine-groups"

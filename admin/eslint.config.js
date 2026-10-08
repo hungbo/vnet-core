@@ -15,7 +15,10 @@ export default defineConfig(
         'PascalCase',
         {
           registeredComponentsOnly: false,
-          ignores: ['/^icon-/']
+          // Web component (vue-advanced-chat) phải giữ nguyên tên gạch nối: vite chỉ coi
+          // đúng tên đó là custom element. Để --fix đổi sang PascalCase thì Vue không
+          // nhận ra nó và khung chat của quản trị trắng trơn, không một lỗi nào.
+          ignores: ['/^icon-/', 'vue-advanced-chat']
         }
       ],
       'unocss/order-attributify': 'off'

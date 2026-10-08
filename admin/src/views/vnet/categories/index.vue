@@ -92,12 +92,14 @@ async function handleSave() {
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) return;
   saving.value = true;
+  // null/undefined đến backend thành nil = "không đổi"; "" mới là bỏ danh mục cha.
+  const payload = { ...form.value, parent_id: form.value.parent_id || '' };
   try {
     if (isEdit.value) {
-      await client.put(`/categories/${form.value.id}`, form.value);
+      await client.put(`/categories/${form.value.id}`, payload);
       ElMessage.success($t('vnetPages.categories.messages.editSuccess'));
     } else {
-      await client.post('/categories', form.value);
+      await client.post('/categories', payload);
       ElMessage.success($t('vnetPages.categories.messages.addSuccess'));
     }
     dialogVisible.value = false;

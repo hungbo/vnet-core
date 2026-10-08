@@ -7,10 +7,12 @@ import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
 import { useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { enabledMethods, paymentLabel } = usePaymentMethods();
 const wsStore = useWebSocketStore();
 
 const search = ref('');
@@ -62,7 +64,10 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     {
       prop: 'order_code',
       label: $t('vnetPages.orders.orderCode'),
-      width: 140
+      width: 140,
+      // Bấm mã đơn để xem chi tiết — thay cho nút "Chi tiết" ở cột thao tác.
+      formatter: (row: any) =>
+        h(ElLink, { type: 'primary', underline: false, onClick: () => viewDetail(row) }, () => row.order_code)
     },
     {
       prop: 'status',
@@ -113,7 +118,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'payment_method',
       label: $t('vnetPages.orders.paymentMethod'),
       width: 110,
-      formatter: (row: any) => row.payment_method || '-'
+      formatter: (row: any) => paymentLabel(row.payment_method)
     },
     {
       prop: 'machine_code',
@@ -273,6 +278,14 @@ async function submitPayment() {
   } finally {
     paying.value = false;
   }
+}
+
+function onMoreCommand(cmd: string, row: any) {
+  if (cmd === 'edit') openEdit(row);
+  else if (cmd === 'split') openSplit(row);
+  else if (cmd === 'receipt') handlePrint(row);
+  else if (cmd === 'stations') handlePrintStations(row);
+  else handlePreview(row);
 }
 
 async function handleCancel(row: any) {
@@ -471,8 +484,9 @@ async function submitEdit() {
     await client.put(`/orders/${editingOrder.value.id}`, {
       table_number: editForm.value.table_number,
       note: editForm.value.note,
-      member_id: editForm.value.member_id || undefined,
-      machine_id: editForm.value.machine_id || undefined
+      // "" = bỏ hội viên/máy khỏi đơn; undefined thì JSON bỏ khoá và không đổi gì.
+      member_id: editForm.value.member_id || '',
+      machine_id: editForm.value.machine_id || ''
     });
     ElMessage.success($t('vnetPages.orders.messages.editSuccess'));
     editVisible.value = false;
@@ -632,84 +646,69 @@ onBeforeUnmount(() => {
         @selection-change="checkedRowKeys = $event.map((r: any) => r.id)"
       >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
-        <ElTableColumn :label="$t('vnetPages.common.action')" width="470" fixed="right">
+        <!--
+          Hai nút chính theo trạng thái (duyệt/xác nhận/thanh toán và huỷ/từ chối),
+          còn lại gom vào menu "Khác". Bản cũ có tới bảy nút trên một dòng, cột
+          rộng 470px mà vẫn tràn. Xem chi tiết: bấm vào mã đơn.
+        -->
+        <ElTableColumn :label="$t('vnetPages.common.action')" width="260" fixed="right" align="center">
           <template #default="{ row }">
-            <ElButton size="small" @click="viewDetail(row)">{{ $t('vnetPages.common.detail') }}</ElButton>
-            <ElDropdown
-              v-if="row.order_type !== 'topup'"
-              style="margin-left: 8px; margin-right: 4px"
-              @command="
-                (cmd: string) =>
-                  cmd === 'receipt'
-                    ? handlePrint(row)
-                    : cmd === 'stations'
-                      ? handlePrintStations(row)
-                      : handlePreview(row)
-              "
-            >
-              <ElButton size="small" :loading="printBusy.startsWith(row.id)">
-                {{ $t('vnetPages.orders.print') }}
-              </ElButton>
-              <template #dropdown>
-                <ElDropdownMenu>
-                  <ElDropdownItem command="preview">{{ $t('vnetPages.orders.preview') }}</ElDropdownItem>
-                  <ElDropdownItem command="receipt" divided>{{ $t('vnetPages.orders.print') }}</ElDropdownItem>
-                  <ElDropdownItem command="stations">{{ $t('vnetPages.orders.printStations') }}</ElDropdownItem>
-                </ElDropdownMenu>
+            <div class="order-actions">
+              <template v-if="row.order_type === 'topup'">
+                <template v-if="row.status === 'pending'">
+                  <ElButton
+                    size="small"
+                    type="success"
+                    :loading="approvingId === row.id"
+                    :disabled="approvingId !== ''"
+                    @click="handleApproveTopup(row)"
+                  >
+                    {{ $t('vnetPages.orders.approve') }}
+                  </ElButton>
+                  <ElButton size="small" type="danger" plain @click="handleRejectTopup(row)">
+                    {{ $t('vnetPages.orders.reject') }}
+                  </ElButton>
+                </template>
               </template>
-            </ElDropdown>
-            <template v-if="row.order_type === 'topup'">
-              <ElButton
-                v-if="row.status === 'pending'"
-                size="small"
-                type="success"
-                :loading="approvingId === row.id"
-                :disabled="approvingId !== ''"
-                @click="handleApproveTopup(row)"
-              >
-                {{ $t('vnetPages.orders.approve') }}
-              </ElButton>
-              <ElButton
-                v-if="row.status === 'pending'"
-                size="small"
-                type="danger"
-                plain
-                @click="handleRejectTopup(row)"
-              >
-                {{ $t('vnetPages.orders.reject') }}
-              </ElButton>
-            </template>
-            <template v-else>
-              <ElButton v-if="row.status === 'pending'" size="small" type="primary" @click="handleConfirm(row)">
-                {{ $t('vnetPages.orders.confirm') }}
-              </ElButton>
-              <ElButton v-if="row.status === 'confirmed'" size="small" type="success" @click="handleComplete(row)">
-                {{ $t('vnetPages.orders.pay') }}
-              </ElButton>
-              <ElButton
-                v-if="row.status !== 'completed' && row.status !== 'cancelled'"
-                size="small"
-                @click="openEdit(row)"
-              >
-                {{ $t('vnetPages.orders.editOrder') }}
-              </ElButton>
-              <ElButton
-                v-if="row.status !== 'completed' && row.status !== 'cancelled'"
-                size="small"
-                @click="openSplit(row)"
-              >
-                {{ $t('vnetPages.orders.splitOrder') }}
-              </ElButton>
-              <ElButton
-                v-if="row.status !== 'completed' && row.status !== 'cancelled'"
-                size="small"
-                type="danger"
-                plain
-                @click="handleCancel(row)"
-              >
-                {{ $t('vnetPages.orders.cancel') }}
-              </ElButton>
-            </template>
+              <template v-else>
+                <ElButton v-if="row.status === 'pending'" size="small" type="primary" @click="handleConfirm(row)">
+                  {{ $t('vnetPages.orders.confirm') }}
+                </ElButton>
+                <ElButton v-if="row.status === 'confirmed'" size="small" type="success" @click="handleComplete(row)">
+                  {{ $t('vnetPages.orders.pay') }}
+                </ElButton>
+                <ElButton
+                  v-if="row.status !== 'completed' && row.status !== 'cancelled'"
+                  size="small"
+                  type="danger"
+                  plain
+                  @click="handleCancel(row)"
+                >
+                  {{ $t('vnetPages.orders.cancel') }}
+                </ElButton>
+                <ElDropdown trigger="click" @command="(cmd: string) => onMoreCommand(cmd, row)">
+                  <ElButton size="small" :loading="printBusy.startsWith(row.id)">
+                    {{ $t('vnetPages.orders.more') }}
+                  </ElButton>
+                  <template #dropdown>
+                    <ElDropdownMenu>
+                      <template v-if="row.status !== 'completed' && row.status !== 'cancelled'">
+                        <ElDropdownItem command="edit">{{ $t('vnetPages.orders.editOrder') }}</ElDropdownItem>
+                        <ElDropdownItem command="split">{{ $t('vnetPages.orders.splitOrder') }}</ElDropdownItem>
+                      </template>
+                      <ElDropdownItem
+                        command="preview"
+                        :divided="row.status !== 'completed' && row.status !== 'cancelled'"
+                      >
+                        {{ $t('vnetPages.orders.preview') }}
+                      </ElDropdownItem>
+                      <ElDropdownItem command="receipt">{{ $t('vnetPages.orders.print') }}</ElDropdownItem>
+                      <ElDropdownItem command="stations">{{ $t('vnetPages.orders.printStations') }}</ElDropdownItem>
+                    </ElDropdownMenu>
+                  </template>
+                </ElDropdown>
+              </template>
+            </div>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -953,12 +952,13 @@ onBeforeUnmount(() => {
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.orders.payMethod')">
           <ElSelect v-model="payForm.payment_method" style="width: 100%">
-            <ElOption :label="$t('vnetPages.orders.payCash')" value="cash" />
+            <ElOption v-for="m in enabledMethods" :key="m.code" :label="m.name" :value="m.code" />
             <ElOption :label="$t('vnetPages.orders.payBalance')" value="balance" />
-            <ElOption :label="$t('vnetPages.orders.payTransfer')" value="transfer" />
           </ElSelect>
         </ElFormItem>
-        <ElFormItem v-if="payForm.payment_method === 'transfer'" :label="$t('vnetPages.orders.payReference')">
+        <ElFormItem
+          v-if="payForm.payment_method !== 'cash' && payForm.payment_method !== 'balance'"
+          :label="$t('vnetPages.orders.payReference')">
           <ElInput v-model="payForm.reference_code" />
         </ElFormItem>
       </ElForm>
@@ -971,3 +971,17 @@ onBeforeUnmount(() => {
     </ElDialog>
   </div>
 </template>
+
+<style scoped>
+.order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+}
+
+.order-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+</style>

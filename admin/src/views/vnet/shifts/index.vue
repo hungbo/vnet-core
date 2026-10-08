@@ -6,7 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
-import { formatPrice } from '@/utils/money';
+import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -30,7 +30,12 @@ const openRules = {
 
 const closeDialog = ref(false);
 const closeFormRef = ref<any>(null);
-const closeForm = ref({ id: null, closing_balance: 0 });
+// Tiền cuối ca để trống (không mặc định 0) để nhân viên buộc phải đếm két và
+// nhập — mặc định 0 từng cho đóng ca "két rỗng" chỉ vì bấm nhầm Xác nhận.
+const closeForm = ref<{ id: string | null; closing_balance: number | undefined }>({
+  id: null,
+  closing_balance: undefined
+});
 const closeRules = {
   closing_balance: [
     {
@@ -62,6 +67,16 @@ const handoverRules = {
       required: true,
       message: $t('vnetPages.shifts.form.handoverTypePlaceholder'),
       trigger: 'change'
+    }
+  ],
+  // Backend bắt buộc lý do: tiền rút khỏi két không lý do thì cuối ca không ai
+  // giải thích được khoản lệch.
+  reason: [
+    {
+      required: true,
+      whitespace: true,
+      message: $t('vnetPages.shifts.form.reasonRequired'),
+      trigger: 'blur'
     }
   ]
 };
@@ -174,7 +189,7 @@ async function handleSaveOpen() {
 }
 
 function handleCloseShift(row: any) {
-  closeForm.value = { id: row.id, closing_balance: 0 };
+  closeForm.value = { id: row.id, closing_balance: undefined };
   closeDialog.value = true;
 }
 
@@ -263,6 +278,13 @@ async function handleSaveHandover() {
           </TableHeaderOperation>
         </div>
       </template>
+      <ElAlert
+        :title="$t('vnetPages.shifts.singleShiftHint')"
+        type="info"
+        :closable="false"
+        show-icon
+        class="mb-12px"
+      />
       <ElTable v-loading="loading" :data="data" style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="180" fixed="right">
@@ -290,7 +312,13 @@ async function handleSaveHandover() {
     <ElDialog v-model="openDialog" :title="$t('vnetPages.shifts.openShift')" width="400px">
       <ElForm ref="openFormRef" :model="openForm" :rules="openRules" :label-width="120">
         <ElFormItem :label="$t('vnetPages.shifts.form.openingCash')" prop="opening_balance">
-          <ElInputNumber v-model="openForm.opening_balance" :min="0" :precision="0" style="width: 100%" />
+          <ElInputNumber
+            v-bind="moneyInput"
+            v-model="openForm.opening_balance"
+            :min="0"
+            :precision="0"
+            style="width: 100%"
+          />
         </ElFormItem>
       </ElForm>
       <template #footer>
@@ -304,7 +332,13 @@ async function handleSaveHandover() {
     <ElDialog v-model="closeDialog" :title="$t('vnetPages.shifts.closeShift')" width="400px">
       <ElForm ref="closeFormRef" :model="closeForm" :rules="closeRules" :label-width="120">
         <ElFormItem :label="$t('vnetPages.shifts.form.closingCash')" prop="closing_balance">
-          <ElInputNumber v-model="closeForm.closing_balance" :min="0" :precision="0" style="width: 100%" />
+          <ElInputNumber
+            v-bind="moneyInput"
+            v-model="closeForm.closing_balance"
+            :min="0"
+            :precision="0"
+            style="width: 100%"
+          />
         </ElFormItem>
       </ElForm>
       <template #footer>
@@ -318,7 +352,7 @@ async function handleSaveHandover() {
     <ElDialog v-model="handoverDialog" :title="$t('vnetPages.shifts.handover')" width="420px">
       <ElForm ref="handoverFormRef" :model="handoverForm" :rules="handoverRules" :label-width="120">
         <ElFormItem :label="$t('vnetPages.shifts.amount')" prop="amount">
-          <ElInputNumber v-model="handoverForm.amount" :min="0" style="width: 100%" />
+          <ElInputNumber v-bind="moneyInput" v-model="handoverForm.amount" :min="0" style="width: 100%" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.shifts.type')" prop="handover_type">
           <ElSelect v-model="handoverForm.handover_type" style="width: 100%">

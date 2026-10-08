@@ -8,7 +8,7 @@ import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { newIdempotencyKey } from '@/utils/idempotency';
-import { formatAmount } from '@/utils/money';
+import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -16,15 +16,18 @@ const { t: $t } = useI18n();
 const search = ref('');
 const filterStatus = ref('');
 
+// Đúng năm trạng thái backend ghi. "confirmed" từng có ở đây nhưng backend
+// không bao giờ đặt nó — lọc theo nó luôn ra rỗng (giờ backend trả 400) —
+// còn "completed" thì có thật mà thiếu nhãn.
 const statusOptions = computed(() => [
   { value: 'pending', label: $t('vnetPages.bookings.statusLabels.pending') },
   {
-    value: 'confirmed',
-    label: $t('vnetPages.bookings.statusLabels.confirmed')
-  },
-  {
     value: 'checked_in',
     label: $t('vnetPages.bookings.statusLabels.checkedIn')
+  },
+  {
+    value: 'completed',
+    label: $t('vnetPages.bookings.statusLabels.completed')
   },
   {
     value: 'cancelled',
@@ -36,8 +39,8 @@ const statusOptions = computed(() => [
 function statusType(status: string): any {
   const map: Record<string, string> = {
     pending: 'warning',
-    confirmed: 'primary',
     checked_in: 'success',
+    completed: 'primary',
     cancelled: 'info',
     no_show: 'danger'
   };
@@ -47,8 +50,8 @@ function statusType(status: string): any {
 function statusLabel(status: string) {
   const map: Record<string, string> = {
     pending: $t('vnetPages.bookings.statusLabels.pending'),
-    confirmed: $t('vnetPages.bookings.statusLabels.confirmed'),
     checked_in: $t('vnetPages.bookings.statusLabels.checkedIn'),
+    completed: $t('vnetPages.bookings.statusLabels.completed'),
     cancelled: $t('vnetPages.bookings.statusLabels.cancelled'),
     no_show: $t('vnetPages.bookings.statusLabels.noShow')
   };
@@ -56,11 +59,19 @@ function statusLabel(status: string) {
 }
 
 function canCheckIn(row: any) {
-  return row.status === 'confirmed' || row.status === 'pending';
+  return row.status === 'pending';
 }
 
 function canCancel(row: any) {
-  return row.status === 'pending' || row.status === 'confirmed';
+  return row.status === 'pending';
+}
+
+// Khớp luật xoá của backend: lịch đang chờ mà còn giữ cọc phải Huỷ (để hoàn
+// cọc), lịch đã nhận máy đợi tới khi hoàn tất. Còn lại xoá được.
+function canDelete(row: any) {
+  if (row.status === 'checked_in') return false;
+  if (row.status === 'pending' && row.deposit_transaction_id) return false;
+  return true;
 }
 
 function formatDate(date: string | null | undefined) {
@@ -242,6 +253,12 @@ async function openEdit(row: any) {
   dialogVisible.value = true;
 }
 
+// Cọc chỉ trừ từ ví hội viên — khách vãng lai không có ví để giữ cọc, nên bỏ
+// chọn hội viên thì cọc về 0 (backend cũng từ chối cọc cho khách vãng lai).
+function onMemberChange() {
+  if (!form.value.member_id) form.value.deposit_amount = 0;
+}
+
 async function handleSave() {
   const f = form.value;
   if (!f.customer_name || !f.customer_phone) {
@@ -265,16 +282,17 @@ async function handleSave() {
     customer_phone: f.customer_phone,
     booked_from: dayjs(f.range[0]).toISOString(),
     booked_to: dayjs(f.range[1]).toISOString(),
-    deposit_amount: f.deposit_amount || 0,
     notes: f.notes || ''
   };
   try {
     if (isEdit.value) {
       // PUT không nhận machine_id/member_id — đổi máy thì huỷ rồi đặt lại.
+      // Cũng không gửi cọc: cọc đã trừ khỏi ví lúc tạo, backend từ chối đổi.
       await client.put(`/bookings/${editingId.value}`, body);
     } else {
       await client.post('/bookings', {
         ...body,
+        deposit_amount: f.member_id ? f.deposit_amount || 0 : 0,
         machine_id: f.machine_id,
         member_id: f.member_id || undefined,
         // Đặt chỗ có trừ cọc, nên bấm đúp là trừ cọc hai lần.
@@ -412,7 +430,7 @@ onBeforeUnmount(() => {
             <ElButton v-if="canCancel(row)" size="small" type="danger" plain @click="handleCancel(row)">
               {{ $t('vnetPages.common.cancel') }}
             </ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="canDelete(row)" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>
@@ -454,6 +472,7 @@ onBeforeUnmount(() => {
             clearable
             :placeholder="$t('vnetPages.bookings.noMember')"
             style="width: 100%"
+            @change="onMemberChange"
           >
             <ElOption
               v-for="m in members"
@@ -479,7 +498,24 @@ onBeforeUnmount(() => {
           />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.bookings.deposit')">
-          <ElInputNumber v-model="form.deposit_amount" :min="0" :step="10000" style="width: 100%" />
+          <!-- Sửa lịch: cọc chỉ xem, không sửa. Tạo lịch: chỉ nhập được khi đã chọn hội viên. -->
+          <ElInputNumber
+            v-bind="moneyInput"
+            v-model="form.deposit_amount"
+            :min="0"
+            :step="10000"
+            :disabled="isEdit || !form.member_id"
+            style="width: 100%"
+          />
+          <div class="text-12px text-gray-500">
+            {{
+              isEdit
+                ? $t('vnetPages.bookings.depositLockedHint')
+                : !form.member_id
+                  ? $t('vnetPages.bookings.depositWalkInHint')
+                  : $t('vnetPages.bookings.depositRuleHint')
+            }}
+          </div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.bookings.notes')">
           <ElInput v-model="form.notes" type="textarea" :rows="2" />

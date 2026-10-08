@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
-import { formatAmount } from '@/utils/money';
+import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -206,7 +206,7 @@ async function handleDelete(row: any) {
           <ElInput v-model="form.name" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.memberGroups.minSpent')" prop="min_spent">
-          <ElInputNumber v-model="form.min_spent" :min="0" :step="100000" style="width: 100%" />
+          <ElInputNumber v-bind="moneyInput" v-model="form.min_spent" :min="0" :step="100000" style="width: 100%" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.memberGroups.discountPercent')" prop="discount_percent">
           <ElInputNumber v-model="form.discount_percent" :min="0" :max="100" :step="1" style="width: 100%">

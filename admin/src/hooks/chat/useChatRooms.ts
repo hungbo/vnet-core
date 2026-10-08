@@ -9,7 +9,9 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
   const rooms = ref<any[]>([]);
   const unreadCount = ref(0);
   const showNewRoomDialog = ref(false);
-  const roomForm = reactive({ participant_ids: [] as string[] });
+  // Hội thoại hỗ trợ là 1-1: API nhận một participant_id. Ô chọn từng cho chọn
+  // nhiều người nhưng chỉ người đầu được gửi đi.
+  const roomForm = reactive({ participant_id: '' });
   const users = ref<any[]>([]);
   const saving = ref(false);
   let currentPage = 1;
@@ -19,10 +21,13 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
     const p = room.participants?.[0];
     let roomName = 'Hỗ trợ';
     if (p) {
-      if (p.username && p.machineCode) {
-        roomName = `${p.username} - ${p.machineCode}`;
-      } else if (p.username) {
-        roomName = p.username;
+      // Máy chủ trả machine_code (gạch dưới); bản cũ đọc machineCode nên tên
+      // máy không bao giờ hiện. Khách đã trả máy thì ghi rõ là máy lần cuối.
+      const ten = p.username || p.name;
+      if (ten && p.machine_code) {
+        roomName = p.in_session ? `${ten} · ${p.machine_code}` : `${ten} · ${p.machine_code} (đã trả máy)`;
+      } else if (ten) {
+        roomName = ten;
       }
     }
     return {
@@ -146,16 +151,16 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
   }
 
   async function handleCreateRoom() {
-    if (!roomForm.participant_ids.length) return;
+    if (!roomForm.participant_id) return;
     saving.value = true;
     try {
       await client.post('/chat/rooms', {
-        participant_id: roomForm.participant_ids[0],
+        participant_id: roomForm.participant_id,
         participant_type: 'member',
         title: 'Hỗ trợ'
       });
       showNewRoomDialog.value = false;
-      roomForm.participant_ids = [];
+      roomForm.participant_id = '';
       fetchRooms();
     } catch (e: any) {
       ElMessage.error(e.message || 'Tạo hội thoại thất bại');

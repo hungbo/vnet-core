@@ -5,9 +5,9 @@ import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
-import { useUITable } from '@/hooks/common/table';
-import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
-import { formatRemaining } from '@/utils/remaining';
+import { useUIPaginatedTable } from '@/hooks/common/table';
+import { vnetTransform } from '@/hooks/common/vnet-table';
+import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -16,7 +16,12 @@ const { t: $t } = useI18n();
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
 
-const total = ref(0);
+// Trước đây trang chỉ thấy phiên đang chạy, nên lịch sử của một máy không tra
+// được ở đâu. Trạng thái dùng 'all' chứ không để rỗng: ElSelect coi rỗng là
+// chưa chọn và hiện chữ "Chọn" thay cho "Tất cả trạng thái".
+const filterStatus = ref<'all' | 'active' | 'ended'>('all');
+const filterMachine = ref('');
+const filterMember = ref('');
 
 function formatDate(date: string | null | undefined) {
   if (!date) return '-';
@@ -27,14 +32,18 @@ function formatMoney(v: number | null | undefined) {
   return `${new Intl.NumberFormat('vi-VN').format(v || 0)}₫`;
 }
 
-const { columns, columnChecks, data, getData, loading } = useUITable({
-  api: async () => {
-    const res: any = await client.get('/sessions/active');
-    const items = Array.isArray(res) ? res : res?.items || [];
-    total.value = items.length;
-    return { items };
-  },
-  transform: vnetSimpleTransform,
+const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagination } = useUIPaginatedTable({
+  api: ({ page, pageSize }) =>
+    client.get('/sessions', {
+      params: {
+        page,
+        page_size: pageSize,
+        status: filterStatus.value === 'all' ? undefined : filterStatus.value,
+        machine: filterMachine.value.trim() || undefined,
+        member: filterMember.value.trim() || undefined
+      }
+    }),
+  transform: vnetTransform,
   columns: () => [
     {
       prop: 'machine_code',
@@ -53,17 +62,30 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
       formatter: (row: any) => formatDate(row.started_at)
     },
     {
+      prop: 'ended_at',
+      label: $t('vnetPages.sessions.endTime'),
+      width: 160,
+      formatter: (row: any) => (row.ended_at ? formatDate(row.ended_at) : '—')
+    },
+    {
       prop: 'duration_minutes',
       label: $t('vnetPages.sessions.duration'),
       width: 100,
-      formatter: (row: any) => (row.duration_minutes != null ? `${row.duration_minutes}p` : '')
+      formatter: (row: any) => formatPlayed(row.started_at, row.ended_at, now.value)
     },
     {
       // Nhân viên cần biết máy nào SẮP hết tiền, không chỉ máy nào đã ngồi lâu.
       prop: 'affordable_until',
       label: $t('vnetPages.sessions.remaining'),
       width: 110,
-      formatter: (row: any) => (row.is_active ? formatRemaining(row.affordable_until, now.value) : '—')
+      formatter: (row: any) => (row.is_active ? formatRemainingHMS(row.affordable_until, now.value) : '—')
+    },
+    {
+      // Phiên đã kết thúc có total_cost; phiên đang chạy thì là số đã trừ tới giờ.
+      prop: 'total_cost',
+      label: $t('vnetPages.sessions.cost'),
+      width: 110,
+      formatter: (row: any) => formatMoney(row.total_cost ?? row.charged_amount)
     },
     {
       prop: 'is_active',
@@ -76,6 +98,10 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
     }
   ]
 });
+
+function searchData() {
+  getDataByPage(1);
+}
 
 // --- Mở máy ------------------------------------------------------------------
 // Thao tác cốt lõi nhất của tiệm net, trước đây không làm được từ trang quản trị.
@@ -248,6 +274,32 @@ async function handleEnd(row: any) {
     ElMessage.error(e.message || $t('vnetPages.common.error'));
   }
 }
+// --- Xoá phiên --------------------------------------------------------------
+// Chỉ phiên đã kết thúc; máy chủ cũng chặn phiên đang chạy.
+
+async function handleDelete(row: any) {
+  try {
+    await ElMessageBox.confirm(
+      $t('vnetPages.sessions.messages.deleteConfirm', {
+        member: row.member_name || '—',
+        code: row.machine_code
+      }),
+      $t('vnetPages.common.confirm'),
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+
+  try {
+    await client.delete(`/sessions/${row.id}`);
+    ElMessage.success($t('vnetPages.sessions.messages.deleteSuccess'));
+    getData();
+  } catch (e: any) {
+    ElMessage.error(e.message || $t('vnetPages.common.error'));
+  }
+}
+
 const wsStore = useWebSocketStore();
 
 // Nhịp setInterval bên dưới chỉ đếm lại số phút đã chơi trên các dòng SẴN CÓ —
@@ -277,7 +329,30 @@ onBeforeUnmount(() => {
     <ElCard>
       <template #header>
         <div class="flex items-center justify-between">
-          <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.sessions.activeSessions') }}</span>
+          <div class="flex items-center gap-8px">
+            <ElSelect v-model="filterStatus" style="width: 170px" @change="searchData">
+              <ElOption :label="$t('vnetPages.sessions.allStatus')" value="all" />
+              <ElOption :label="$t('vnetPages.sessions.running')" value="active" />
+              <ElOption :label="$t('vnetPages.sessions.ended')" value="ended" />
+            </ElSelect>
+            <ElInput
+              v-model="filterMachine"
+              :placeholder="$t('vnetPages.sessions.filterMachine')"
+              clearable
+              style="width: 160px"
+              @keyup.enter="searchData"
+              @clear="searchData"
+            />
+            <ElInput
+              v-model="filterMember"
+              :placeholder="$t('vnetPages.sessions.filterMember')"
+              clearable
+              style="width: 200px"
+              @keyup.enter="searchData"
+              @clear="searchData"
+            />
+            <ElButton type="primary" @click="searchData">{{ $t('vnetPages.common.search') }}</ElButton>
+          </div>
           <div style="display: flex; gap: 8px; align-items: center">
             <ElButton type="primary" @click="openStart">{{ $t('vnetPages.sessions.start') }}</ElButton>
             <TableHeaderOperation
@@ -301,13 +376,21 @@ onBeforeUnmount(() => {
                 {{ $t('vnetPages.sessions.end') }}
               </ElButton>
             </template>
-            <span v-else>-</span>
+            <ElButton v-else size="small" type="danger" plain @click="handleDelete(row)">
+              {{ $t('vnetPages.common.delete') }}
+            </ElButton>
           </template>
         </ElTableColumn>
       </ElTable>
 
-      <div v-if="total > 0" style="margin-top: 16px; text-align: center; color: #909399; font-size: 13px">
-        {{ $t('vnetPages.sessions.totalActive', { count: total }) }}
+      <div class="mt-16px flex justify-center">
+        <ElPagination
+          v-if="mobilePagination.total"
+          layout="total, sizes, prev, pager, next"
+          v-bind="mobilePagination"
+          @current-change="mobilePagination['current-change']"
+          @size-change="mobilePagination['size-change']"
+        />
       </div>
     </ElCard>
 

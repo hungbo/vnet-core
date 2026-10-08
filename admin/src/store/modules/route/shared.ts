@@ -352,13 +352,13 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     vnet_notifications: 'carbon:notification',
     vnet_attendance: 'carbon:event',
     'vnet_machine-assets': 'carbon:tool-box',
-    vnet_cards: 'carbon:purchase',
     'vnet_inventory-counts': 'carbon:list-checked',
     vnet_feedback: 'carbon:star',
     vnet_curfew: 'carbon:moon',
     vnet_printers: 'carbon:printer',
     'vnet_website-blocking': 'carbon:content-view',
-    'vnet_app-updates': 'carbon:upgrade'
+    'vnet_app-updates': 'carbon:upgrade',
+    vnet_games: 'carbon:game-console'
   };
 
   const children = vnet.children.map(c => ({
@@ -389,13 +389,12 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
       i18nKey: 'route.vnet_business',
       icon: 'carbon:shopping-cart',
       // Bán gì và lấy hàng từ đâu. Kiểm kê nằm cạnh Tồn kho vì nó sửa chính
-      // con số đó; thẻ nạp nằm cạnh Gói dịch vụ vì cùng là thứ bán ở quầy.
+      // con số đó.
       children: [
         'vnet_orders',
         'vnet_products',
         'vnet_categories',
         'vnet_combos',
-        'vnet_cards',
         'vnet_suppliers',
         'vnet_stock-transactions',
         'vnet_inventory-counts'
@@ -427,6 +426,7 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
         'vnet_printers',
         'vnet_website-blocking',
         'vnet_app-updates',
+        'vnet_games',
         'vnet_backups',
         'vnet_audit'
       ]

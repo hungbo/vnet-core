@@ -20,3 +20,14 @@ export function formatPrice(value?: number | null) {
 export function formatAmount(value?: number | null) {
   return plain.format(value ?? 0);
 }
+
+/**
+ * Gắn vào ô nhập tiền (`<ElInputNumber v-bind="moneyInput" />`) để ô hiện
+ * `1.000.000` thay vì `1000000`. Giá trị trong v-model vẫn là số nguyên — chỉ
+ * phần hiển thị có dấu chấm. Tiền VND không có phần lẻ, nên dấu chấm ở đây
+ * luôn là phân cách hàng nghìn, không bao giờ là dấu thập phân.
+ */
+export const moneyInput = {
+  formatter: (value: string) => String(value ?? '').replace(/\B(?=(\d{3})+(?!\d))/g, '.'),
+  parser: (value: string) => String(value ?? '').replace(/[^\d-]/g, '')
+};

@@ -4,6 +4,7 @@ import { ElMessage, ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { moneyInput } from '@/utils/money';
 
 const { t: $t } = useI18n();
 
@@ -99,7 +100,7 @@ onMounted(() => {
           <div style="font-size: 13px; color: #606266; margin-bottom: 6px">
             {{ $t('vnetPages.attendance.dailyBonus') }}
           </div>
-          <ElInputNumber v-model="cfg.daily_bonus" :min="0" :step="1000" />
+          <ElInputNumber v-bind="moneyInput" v-model="cfg.daily_bonus" :min="0" :step="1000" />
         </div>
         <div>
           <div style="font-size: 13px; color: #606266; margin-bottom: 6px">
@@ -111,7 +112,7 @@ onMounted(() => {
           <div style="font-size: 13px; color: #606266; margin-bottom: 6px">
             {{ $t('vnetPages.attendance.streakBonus') }}
           </div>
-          <ElInputNumber v-model="cfg.streak_bonus" :min="0" :step="1000" />
+          <ElInputNumber v-bind="moneyInput" v-model="cfg.streak_bonus" :min="0" :step="1000" />
         </div>
         <ElButton type="primary" :loading="savingCfg" @click="saveConfig">
           {{ $t('vnetPages.common.save') }}

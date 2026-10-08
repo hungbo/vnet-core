@@ -6,9 +6,11 @@ import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { formatAmount } from '@/utils/money';
 
 const { t: $t } = useI18n();
+const { paymentLabel } = usePaymentMethods();
 const route = useRoute();
 const memberId = route.params.id as string;
 
@@ -162,7 +164,10 @@ onMounted(() => {
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>{{ $t('vnetPages.members.title') }}: {{ member?.full_name || member?.username }}</span>
-          <ElButton type="primary" size="small" @click="openEdit">{{ $t('vnetPages.common.edit') }}</ElButton>
+          <!-- Tài khoản combo chỉ được đổi mật khẩu (ở danh sách hội viên), không sửa thông tin. -->
+          <ElButton v-if="member?.role !== 'combo'" type="primary" size="small" @click="openEdit">
+            {{ $t('vnetPages.common.edit') }}
+          </ElButton>
         </div>
       </template>
 
@@ -202,7 +207,9 @@ onMounted(() => {
             <ElTableColumn :label="$t('vnetPages.members.amount')" width="120">
               <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
             </ElTableColumn>
-            <ElTableColumn prop="payment_method" :label="$t('vnetPages.members.method')" width="120" />
+            <ElTableColumn :label="$t('vnetPages.members.method')" width="120">
+              <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
+            </ElTableColumn>
             <ElTableColumn prop="reference_id" :label="$t('vnetPages.members.reference')" min-width="140" />
             <ElTableColumn :label="$t('vnetPages.members.createdAt')" width="160">
               <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
@@ -258,7 +265,9 @@ onMounted(() => {
             <ElTableColumn :label="$t('vnetPages.combos.price')" width="100">
               <template #default="{ row }">{{ formatAmount(row.price) }}</template>
             </ElTableColumn>
-            <ElTableColumn prop="payment_method" :label="$t('vnetPages.combos.paymentMethod')" width="110" />
+            <ElTableColumn :label="$t('vnetPages.combos.paymentMethod')" width="110">
+              <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
+            </ElTableColumn>
             <ElTableColumn :label="$t('vnetPages.combos.status')" width="120">
               <template #default="{ row }">
                 <ElTag :type="row.activated ? 'success' : 'info'" size="small">

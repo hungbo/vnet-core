@@ -684,15 +684,6 @@ export const generatedRoutes = [
         }
       },
       {
-        name: 'vnet_cards',
-        path: '/vnet/cards',
-        component: 'view.vnet_cards',
-        meta: {
-          title: 'vnet_cards',
-          i18nKey: 'route.vnet_cards'
-        }
-      },
-      {
         name: 'vnet_categories',
         path: '/vnet/categories',
         component: 'view.vnet_categories',
@@ -735,6 +726,15 @@ export const generatedRoutes = [
         meta: {
           title: 'vnet_feedback',
           i18nKey: 'route.vnet_feedback'
+        }
+      },
+      {
+        name: 'vnet_games',
+        path: '/vnet/games',
+        component: 'view.vnet_games',
+        meta: {
+          title: 'vnet_games',
+          i18nKey: 'route.vnet_games'
         }
       },
       {

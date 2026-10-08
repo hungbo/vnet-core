@@ -53,6 +53,7 @@
     "@antv/g6": "5.1.0",
     "@better-scroll/core": "2.5.1",
     "@iconify/vue": "5.0.0",
+    "@novnc/novnc": "^1.7.0",
     "@sa/alova": "workspace:*",
     "@sa/axios": "workspace:*",
     "@sa/color": "workspace:*",

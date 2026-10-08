@@ -6,7 +6,7 @@ import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
-import { formatPrice } from '@/utils/money';
+import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 import ImageUpload from '@/components/common/ImageUpload.vue';
 
@@ -15,6 +15,9 @@ const { t: $t } = useI18n();
 const saving = ref(false);
 const search = ref('');
 const filterRetail = ref<boolean | null>(null);
+const filterSupplier = ref<string | null>(null);
+const filterCategory = ref<string | null>(null);
+const filterActive = ref<boolean | null>(null);
 const categories = ref<any[]>([]);
 const suppliers = ref<any[]>([]);
 const searchResults = ref<any[]>([]);
@@ -34,6 +37,7 @@ const form = ref<any>({
   name: '',
   category_id: null,
   is_retail: true,
+  is_active: true,
   unit_id: 'cai',
   min_stock: 0,
   supplier_id: null,
@@ -94,6 +98,9 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
         page,
         page_size: pageSize,
         search: search.value || undefined,
+        supplier_id: filterSupplier.value || undefined,
+        category_id: filterCategory.value || undefined,
+        is_active: filterActive.value ?? undefined,
         is_retail: filterRetail.value !== null ? filterRetail.value : undefined
       }
     }),
@@ -133,6 +140,18 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
         h(ElTag, { type: row.is_retail ? 'success' : 'info', size: 'small' }, () =>
           row.is_retail ? $t('vnetPages.common.yes') : $t('vnetPages.common.no')
         )
+    },
+    {
+      prop: 'is_active',
+      label: $t('vnetPages.common.status'),
+      width: 100,
+      align: 'center',
+      formatter: (row: any) =>
+        h(ElSwitch, {
+          modelValue: row.is_active,
+          loading: row.toggling,
+          onChange: (v: string | number | boolean) => toggleActive(row, Boolean(v))
+        })
     },
     {
       prop: 'current_stock',
@@ -292,6 +311,7 @@ function resetForm() {
     name: '',
     category_id: null,
     is_retail: true,
+    is_active: true,
     unit_id: 'cai',
     min_stock: 0,
     supplier_id: null,
@@ -340,6 +360,7 @@ function handleEdit(row: any) {
     name: row.name,
     category_id: row.category_id || null,
     is_retail: row.is_retail ?? true,
+    is_active: row.is_active ?? true,
     unit_id: row.unit_id || 'cai',
     min_stock: row.min_stock ?? 0,
     supplier_id: row.supplier_id || null,
@@ -367,13 +388,20 @@ async function handleSave() {
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) return;
   saving.value = true;
+  // Bấm × ở ô chọn đặt giá trị về undefined, mà JSON bỏ hẳn khoá undefined —
+  // backend không thấy trường nên giữ nguyên. Gửi "" để backend ghi NULL.
+  const payload = {
+    ...form.value,
+    category_id: form.value.category_id || '',
+    supplier_id: form.value.supplier_id || ''
+  };
   try {
     let product: any;
     if (isEdit.value) {
-      product = await client.put(`/products/${form.value.id}`, form.value);
+      product = await client.put(`/products/${form.value.id}`, payload);
       ElMessage.success($t('vnetPages.products.messages.editSuccess'));
     } else {
-      product = await client.post('/products', form.value);
+      product = await client.post('/products', payload);
       ElMessage.success($t('vnetPages.products.messages.addSuccess'));
       if (productIngredients.value.length > 0) {
         for (const ing of productIngredients.value) {
@@ -390,6 +418,20 @@ async function handleSave() {
     ElMessage.error(e.message || $t('vnetPages.products.messages.saveError'));
   } finally {
     saving.value = false;
+  }
+}
+
+// Bật/tắt ngay trên bảng: món ngưng bán biến khỏi thực đơn máy trạm và backend
+// từ chối đặt, nên quầy cần tắt được nhanh khi hết hàng mà không mở form.
+async function toggleActive(row: any, value: boolean) {
+  row.toggling = true;
+  try {
+    await client.put(`/products/${row.id}`, { is_active: value });
+    row.is_active = value;
+  } catch (e: any) {
+    ElMessage.error(e.message || $t('vnetPages.products.messages.saveError'));
+  } finally {
+    row.toggling = false;
   }
 }
 
@@ -524,6 +566,36 @@ async function handleStockSave() {
                 <ElRadio :value="true">{{ $t('vnetPages.products.isRetail') }}</ElRadio>
                 <ElRadio :value="false">{{ $t('vnetPages.products.nonRetail') }}</ElRadio>
               </ElRadioGroup>
+              <ElSelect
+                v-model="filterCategory"
+                :placeholder="$t('vnetPages.products.category')"
+                clearable
+                filterable
+                style="width: 180px"
+                @change="getData"
+              >
+                <ElOption v-for="c in categories" :key="c.id" :label="c.nhanHienThi || c.name" :value="c.id" />
+              </ElSelect>
+              <ElSelect
+                v-model="filterActive"
+                :placeholder="$t('vnetPages.common.status')"
+                clearable
+                style="width: 140px"
+                @change="getData"
+              >
+                <ElOption :value="true" :label="$t('vnetPages.products.isActive')" />
+                <ElOption :value="false" :label="$t('vnetPages.common.inactive')" />
+              </ElSelect>
+              <ElSelect
+                v-model="filterSupplier"
+                :placeholder="$t('vnetPages.products.supplier')"
+                clearable
+                filterable
+                style="width: 180px"
+                @change="getData"
+              >
+                <ElOption v-for="s in suppliers" :key="s.id" :label="s.name" :value="s.id" />
+              </ElSelect>
               <ElInput
                 v-model="search"
                 :placeholder="$t('vnetPages.products.searchPlaceholder')"
@@ -586,6 +658,12 @@ async function handleStockSave() {
         <ElFormItem :label="$t('vnetPages.products.name')" prop="name">
           <ElInput v-model="form.name" />
         </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.common.status')" prop="is_active">
+          <ElSwitch v-model="form.is_active" />
+          <span style="margin-left: 8px; color: #666">
+            {{ form.is_active ? $t('vnetPages.products.isActive') : $t('vnetPages.common.inactive') }}
+          </span>
+        </ElFormItem>
         <ElFormItem :label="$t('vnetPages.products.isRetail')" prop="is_retail">
           <ElSwitch v-model="form.is_retail" />
           <span style="margin-left: 8px; color: #666">
@@ -608,7 +686,7 @@ async function handleStockSave() {
           </ElSelect>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.products.price')" prop="price">
-          <ElInputNumber v-model="form.price" :min="0" :precision="0" style="width: 100%" />
+          <ElInputNumber v-bind="moneyInput" v-model="form.price" :min="0" :precision="0" style="width: 100%" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.products.description')" prop="description">
           <ElInput v-model="form.description" type="textarea" :rows="2" />
@@ -737,7 +815,13 @@ async function handleStockSave() {
           <ElInput v-model="stockForm.note" type="textarea" :rows="2" />
         </ElFormItem>
         <ElFormItem v-if="isStockIn" :label="$t('vnetPages.products.stockUnitPrice')" prop="unit_price">
-          <ElInputNumber v-model="stockForm.unit_price" :min="0" :precision="0" style="width: 100%" />
+          <ElInputNumber
+            v-bind="moneyInput"
+            v-model="stockForm.unit_price"
+            :min="0"
+            :precision="0"
+            style="width: 100%"
+          />
         </ElFormItem>
       </ElForm>
       <template #footer>

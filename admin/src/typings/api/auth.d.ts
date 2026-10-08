@@ -15,6 +15,8 @@ declare namespace Api {
       avatar_url: string;
       role: string;
       permissions: string[];
+      /** Máy chủ báo tài khoản còn dùng mật khẩu mặc định: giao diện phải buộc đổi. */
+      must_change_password?: boolean;
     }
   }
 }

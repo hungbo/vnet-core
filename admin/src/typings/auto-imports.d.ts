@@ -9,9 +9,12 @@ declare global {
   const ElButton: typeof import('element-plus/es').ElButton
   const ElCard: typeof import('element-plus/es').ElCard
   const ElForm: typeof import('element-plus/es').ElForm
+  const ElLink: typeof import('element-plus/es').ElLink
   const ElMessage: typeof import('element-plus/es').ElMessage
   const ElMessageBox: typeof import('element-plus/es').ElMessageBox
   const ElNotification: typeof import('element-plus/es').ElNotification
+  const ElSwitch: typeof import('element-plus/es').ElSwitch
   const ElTable: typeof import('element-plus/es').ElTable
   const ElTag: typeof import('element-plus/es').ElTag
+  const ElTooltip: typeof import('element-plus/es').ElTooltip
 }

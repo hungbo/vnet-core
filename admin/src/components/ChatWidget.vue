@@ -60,6 +60,22 @@ const chatStyles = {
   footer: { background: '#fff' }
 };
 
+// Chữ mặc định của vue-advanced-chat là tiếng Anh ("No messages", "Type message").
+const textMessages = {
+  ROOMS_EMPTY: 'Chưa có cuộc trò chuyện',
+  ROOM_EMPTY: 'Chọn một cuộc trò chuyện',
+  NEW_MESSAGES: 'Tin nhắn mới',
+  MESSAGE_DELETED: 'Tin nhắn đã bị xoá',
+  MESSAGES_EMPTY: 'Chưa có tin nhắn',
+  CONVERSATION_STARTED: 'Bắt đầu trò chuyện:',
+  TYPE_MESSAGE: 'Nhập tin nhắn',
+  SEARCH: 'Tìm',
+  IS_ONLINE: 'đang trực tuyến',
+  LAST_SEEN: 'truy cập lần cuối ',
+  IS_TYPING: 'đang nhập...',
+  CANCEL_SELECT_MESSAGE: 'Huỷ'
+};
+
 // ── Room actions ──
 const roomActions = [{ name: 'deleteRoom', title: 'Xoá' }];
 function onRoomAction($event: any) {
@@ -81,7 +97,10 @@ async function onSendMessage($event: any) {
       sender_type: 'admin',
       sender_id: currentUserId.value
     });
-    if (postRes?.id) {
+    // Máy chủ phát tin qua WebSocket TRƯỚC khi trả lời lệnh gửi này, nên
+    // wsChatHandler thường đã chèn tin vào rồi. Không kiểm trùng ở đây thì
+    // tin của quầy hiện hai lần.
+    if (postRes?.id && !messages.value.some((m: any) => m._id === postRes.id)) {
       messages.value = sortMessages([
         ...messages.value,
         {
@@ -188,7 +207,7 @@ async function openNewRoom() {
         <ElButton size="small" text @click.stop="isChatOpen = false">─</ElButton>
       </div>
     </div>
-    <VueAdvancedChat
+    <vue-advanced-chat
       ref="chatRef"
       :current-user-id="currentUserId"
       :rooms="JSON.stringify(rooms)"
@@ -206,6 +225,7 @@ async function openNewRoom() {
       :auto-scroll="JSON.stringify(autoScroll)"
       :username-options="JSON.stringify({ minUsers: 1, currentUser: true })"
       :styles="JSON.stringify(chatStyles)"
+      :text-messages="JSON.stringify(textMessages)"
       height="100%"
       :room-id="currentRoomId"
       @send-message="onSendMessage"
@@ -217,8 +237,8 @@ async function openNewRoom() {
   <!-- Dialog tạo hội thoại -->
   <ElDialog v-model="showNewRoomDialog" title="Tạo phòng mới" width="350px" :close-on-click-modal="false">
     <ElForm label-width="100px">
-      <ElFormItem label="Người nhận" prop="participant_ids">
-        <ElSelect v-model="roomForm.participant_ids" multiple placeholder="Chọn người nhận" style="width: 100%">
+      <ElFormItem label="Người nhận" prop="participant_id">
+        <ElSelect v-model="roomForm.participant_id" filterable placeholder="Chọn người nhận" style="width: 100%">
           <ElOption v-for="u in users" :key="u.id" :label="u.username || u.full_name" :value="u.id" />
         </ElSelect>
       </ElFormItem>
