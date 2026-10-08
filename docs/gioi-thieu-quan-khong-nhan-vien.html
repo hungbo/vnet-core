@@ -1,0 +1,408 @@
+<title>VNET không cần quầy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+  :root {
+    --bg: #F4F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #E9EDF2;
+    --ink: #16202A;
+    --muted: #5B6673;
+    --line: #D3DAE2;
+    --accent: #1F5FBF;
+    --accent-ink: #FFFFFF;
+    --accent-soft: #E3ECFA;
+    --ok: #2E7D4F;
+    --ok-soft: #E1F1E7;
+    --warn: #B4701A;
+    --warn-soft: #FBEEDC;
+    --screen: #0B1118;
+    --screen-ink: #E8EEF5;
+    --screen-dim: #7C8896;
+    --screen-accent: #F2B544;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #0F1419; --surface: #171E26; --surface-2: #1F2831;
+      --ink: #E6EBF0; --muted: #98A4B1; --line: #2C3742;
+      --accent: #7FAEF5; --accent-ink: #0B1118; --accent-soft: #1B2A42;
+      --ok: #6CC594; --ok-soft: #16301F; --warn: #E6A64A; --warn-soft: #3A2A12;
+      --screen: #05090D;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0F1419; --surface: #171E26; --surface-2: #1F2831;
+    --ink: #E6EBF0; --muted: #98A4B1; --line: #2C3742;
+    --accent: #7FAEF5; --accent-ink: #0B1118; --accent-soft: #1B2A42;
+    --ok: #6CC594; --ok-soft: #16301F; --warn: #E6A64A; --warn-soft: #3A2A12;
+    --screen: #05090D;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Source Sans 3", "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 17px;
+    line-height: 1.55;
+    padding-inline: 20px;
+    padding-block: 0 64px;
+  }
+  h1, h2, h3 {
+    font-family: "Be Vietnam Pro", "Segoe UI", Roboto, Arial, sans-serif;
+    text-wrap: balance;
+    line-height: 1.15;
+    margin: 0;
+  }
+  h1 { font-size: clamp(32px, 6vw, 52px); font-weight: 800; letter-spacing: -0.02em; }
+  h2 { font-size: clamp(24px, 3.6vw, 32px); font-weight: 700; letter-spacing: -0.01em; }
+  h3 { font-size: 19px; font-weight: 700; }
+  p { margin: 0; }
+  a { color: var(--accent); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  strong { font-weight: 600; }
+  code {
+    font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 0.88em;
+    background: var(--surface-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  .wrap { max-width: 880px; margin: 0 auto; }
+  .prose { max-width: 66ch; }
+  .eyebrow {
+    font-family: "Be Vietnam Pro", sans-serif;
+    font-size: 12px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  /* ---- header ---- */
+  .top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; padding-block: 22px;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    font-family: "Be Vietnam Pro", sans-serif; font-weight: 800;
+    font-size: 20px; letter-spacing: -0.01em;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .brand i {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: var(--accent); display: inline-block;
+    box-shadow: 0 0 0 4px var(--accent-soft);
+  }
+  .top small { color: var(--muted); font-size: 14px; }
+
+  /* ---- hero ---- */
+  .hero {
+    display: grid; grid-template-columns: 1.1fr 0.9fr;
+    gap: 40px; align-items: center;
+    padding-block: 56px 48px;
+  }
+  .hero .lead { font-size: 20px; color: var(--muted); margin-top: 20px; max-width: 48ch; }
+  .hero .thesis {
+    margin-top: 24px; font-weight: 600; font-size: 18px;
+    border-left: 3px solid var(--accent); padding-left: 14px;
+  }
+
+  .screen {
+    background: var(--screen); color: var(--screen-ink);
+    border-radius: 14px; padding: 22px 22px 18px;
+    box-shadow: 0 30px 60px -30px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.06);
+    font-family: "Be Vietnam Pro", sans-serif;
+    max-width: 100%;
+  }
+  .screen .bar {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: var(--screen-dim); letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .screen .bar b { color: var(--screen-ink); font-weight: 700; }
+  .screen .dot { width: 8px; height: 8px; border-radius: 50%; background: #45D483; display: inline-block; margin-right: 6px; box-shadow: 0 0 8px #45D483; }
+  .screen .label { margin-top: 26px; font-size: 13px; color: var(--screen-dim); }
+  .screen .clock {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(40px, 7vw, 56px); font-weight: 500;
+    color: var(--screen-accent); line-height: 1; margin-top: 6px;
+    letter-spacing: 0.02em;
+  }
+  .screen .row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 22px;
+  }
+  .screen .cell { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 10px 12px; }
+  .screen .cell small { display: block; font-size: 11px; color: var(--screen-dim); letter-spacing: 0.06em; text-transform: uppercase; }
+  .screen .cell span { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .screen .note {
+    margin-top: 18px; font-size: 13px; color: var(--screen-dim);
+    border-top: 1px dashed rgba(255,255,255,0.12); padding-top: 12px;
+  }
+  .screen .note b { color: var(--screen-accent); font-weight: 700; }
+
+  /* ---- sections ---- */
+  section { padding-block: 44px; border-top: 1px solid var(--line); }
+  section > .wrap > h2 { margin-top: 8px; }
+  .intro { color: var(--muted); margin-top: 12px; max-width: 62ch; }
+
+  /* timeline */
+  .day { list-style: none; padding: 0; margin: 28px 0 0; display: grid; gap: 0; }
+  .day li {
+    display: grid; grid-template-columns: 56px 1fr; gap: 16px;
+    padding-block: 16px; border-top: 1px solid var(--line);
+  }
+  .day li:first-child { border-top: 0; }
+  .day time {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 14px; color: var(--accent); font-weight: 500; padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .day b { display: block; font-weight: 600; font-family: "Be Vietnam Pro", sans-serif; }
+  .day p { color: var(--muted); margin-top: 4px; }
+  .day .you {
+    margin-top: 8px; background: var(--accent-soft); border-radius: 10px;
+    padding: 14px 16px; grid-column: 1 / -1;
+  }
+  .day .you b { color: var(--accent); }
+
+  /* compare table */
+  .tablewrap { overflow-x: auto; margin-top: 28px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 16px; }
+  th, td { text-align: left; padding: 12px 16px; vertical-align: top; }
+  thead th {
+    font-family: "Be Vietnam Pro", sans-serif; font-size: 12px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+  }
+  tbody tr + tr td { border-top: 1px solid var(--line); }
+  td:first-child { font-weight: 600; width: 26%; }
+  td.old { color: var(--muted); }
+  td.new { color: var(--ink); }
+  td.new::before { content: "✓"; color: var(--ok); font-weight: 700; margin-right: 8px; }
+
+  /* control grid */
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 24px; }
+  .grid .item {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .grid .item b { display: block; font-family: "Be Vietnam Pro", sans-serif; font-weight: 700; margin-bottom: 4px; }
+  .grid .item p { color: var(--muted); font-size: 15px; }
+  .grid .wide { grid-column: 1 / -1; }
+
+  /* topup split */
+  .split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 24px; }
+  .col { border-radius: 12px; padding: 20px 22px; background: var(--surface); border: 1px solid var(--line); }
+  .col h3 { display: flex; align-items: center; gap: 10px; }
+  .col h3 .pill {
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 99px; font-weight: 700;
+  }
+  .col.ok { border-color: var(--ok); }
+  .col.ok .pill { background: var(--ok-soft); color: var(--ok); }
+  .col.warn { border-color: var(--warn); }
+  .col.warn .pill { background: var(--warn-soft); color: var(--warn); }
+  .col ul { padding-left: 0; list-style: none; margin: 16px 0 0; display: grid; gap: 14px; }
+  .col li b { font-weight: 600; }
+  .col li p { color: var(--muted); font-size: 15px; margin-top: 2px; }
+
+  /* plain lists */
+  .list { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 12px; }
+  .list li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; }
+  .list li::before { content: "—"; color: var(--accent); font-weight: 700; }
+  .list b { font-weight: 600; }
+  .list .sub { color: var(--muted); font-size: 15px; }
+
+  .caveats { border-radius: 12px; background: var(--warn-soft); padding: 22px 24px; margin-top: 24px; }
+  .caveats h3 { color: var(--warn); }
+  .caveats ul { margin: 12px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+
+  .roadmap {
+    margin-top: 24px; border-radius: 12px; padding: 24px 26px;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  .roadmap h3 { font-size: 22px; }
+  .roadmap p { margin-top: 10px; max-width: 62ch; opacity: 0.92; }
+  .roadmap .tag {
+    display: inline-block; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    font-weight: 700; border: 1px solid currentColor; border-radius: 99px; padding: 3px 9px; margin-bottom: 12px;
+  }
+
+  footer { color: var(--muted); font-size: 14px; padding-top: 40px; border-top: 1px solid var(--line); margin-top: 20px; }
+
+  @media (max-width: 720px) {
+    body { font-size: 16px; }
+    .hero { grid-template-columns: 1fr; gap: 32px; padding-block: 40px 36px; }
+    .grid, .split { grid-template-columns: 1fr; }
+    .day li { grid-template-columns: 44px 1fr; gap: 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><i></i>VNET</div>
+    <small>Phần mềm quản lý tiệm net · mã nguồn mở</small>
+  </header>
+
+  <div class="hero">
+    <div>
+      <div class="eyebrow">Dành cho quán không có người đứng quầy</div>
+      <h1 style="margin-top:12px">Khách tự vào, tự chơi, tự trả tiền. Bạn xem từ điện thoại.</h1>
+      <p class="lead">Không thuê người ngồi quầy cả ngày, nhưng quán vẫn phải chạy đúng: mở máy đúng người, trừ tiền đúng phút, khoá máy đúng lúc.</p>
+      <p class="thesis">VNET được xây theo một giả định: mọi việc lặp đi lặp lại đều do máy làm, con người chỉ xuất hiện khi thực sự cần.</p>
+    </div>
+
+    <div class="screen" aria-label="Mô phỏng màn hình máy trạm">
+      <div class="bar"><span><span class="dot"></span>Máy <b>M07</b></span><span>Đang sử dụng</span></div>
+      <div class="label">Thời gian còn lại</div>
+      <div class="clock" id="clock">01:42:15</div>
+      <div class="row">
+        <div class="cell"><small>Số dư</small><span>34.000đ</span></div>
+        <div class="cell"><small>Điểm thưởng</small><span>5.000đ</span></div>
+      </div>
+      <div class="note">Hết tiền → phiên tự đóng, màn hình khoá hiện <b>“Hết số dư — vui lòng nạp thêm”</b>. Không ai phải ra nhắc.</div>
+    </div>
+  </div>
+
+  <section id="ngay">
+    <div class="wrap">
+      <div class="eyebrow">Một ngày ở quán</div>
+      <h2>Không ai đứng quầy, mà việc nào cũng có người lo</h2>
+      <ol class="day">
+        <li><time>14:02</time><div><b>Khách ngồi vào máy, tự đăng nhập</b><p>Màn hình khoá hiện sẵn. Gõ tài khoản + mật khẩu, hoặc quét mã QR trên điện thoại. Phiên mở, đồng hồ chạy. Không ai bấm gì ở quầy.</p></div></li>
+        <li><time>14:03</time><div><b>Tiền trừ theo từng phút</b><p>Đồng hồ trên máy đếm ngược tới đúng lúc hết tiền. Khách thấy trước, không bị cắt bất ngờ.</p></div></li>
+        <li><time>16:45</time><div><b>Hết tiền, máy tự khoá</b><p>Phiên kết thúc, màn hình khoá phủ lên, máy trở về trạng thái sẵn sàng cho người tiếp theo.</p></div></li>
+        <li><time>16:50</time><div><b>Khách muốn chơi tiếp</b><p>Mua gói giờ đã kèm sẵn tài khoản, hoặc nhờ quầy nạp từ xa. Xem mục <a href="#nap">Nạp tiền không cần quầy</a>.</p></div></li>
+        <li><time>19:20</time><div><b>Khách về mà quên đăng xuất</b><p>Đồng hồ vẫn trừ tới khi hết tiền, hoặc bạn khoá máy từ xa. Bấm Đăng xuất là trả máy, dừng trừ tiền. Máy mất điện hay khởi động lại giữa chừng thì phiên được chốt đúng lúc máy tắt và phần lỡ trừ thêm được hoàn lại.</p></div></li>
+        <li><time>22:00</time><div><b>Khách vị thành niên chạm giờ giới nghiêm</b><p>Hệ thống tự trả máy đúng giờ, không đợi ai nhắc.</p></div></li>
+        <li class="you-row"><div class="you"><b>Còn bạn</b> — ở nhà, mở điện thoại: máy nào đang có người, doanh thu hôm nay bao nhiêu, khách nào vừa nhắn.</div></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="tu-lam">
+    <div class="wrap">
+      <div class="eyebrow">Thay nhân viên</div>
+      <h2>Việc gì lặp lại, hệ thống tự làm</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Việc</th><th>Nhân viên trước đây</th><th>VNET</th></tr></thead>
+          <tbody>
+            <tr><td>Mở máy cho khách</td><td class="old">Bấm mở ở quầy</td><td class="new">Khách tự đăng nhập, phiên tự mở</td></tr>
+            <tr><td>Tính tiền</td><td class="old">Nhìn đồng hồ, ghi sổ</td><td class="new">Trừ theo phút, mỗi phút một lượt</td></tr>
+            <tr><td>Hết tiền</td><td class="old">Ra tận máy nhắc</td><td class="new">Tự đóng phiên, tự khoá màn hình</td></tr>
+            <tr><td>Máy hỏng, treo</td><td class="old">Đi kiểm tra</td><td class="new">Tự báo ngoại tuyến sau 45 giây mất tín hiệu</td></tr>
+            <tr><td>Đặt chỗ mà không đến</td><td class="old">Gọi điện hỏi</td><td class="new">Tự đánh vắng sau 15 phút, trả máy</td></tr>
+            <tr><td>Trẻ em chơi khuya</td><td class="old">Đuổi về</td><td class="new">Giới nghiêm theo thứ + trần giờ mỗi ngày, tự trả máy</td></tr>
+            <tr><td>Xếp hạng thành viên</td><td class="old">Tính tay cuối tháng</td><td class="new">Tự xếp theo tổng chi tiêu</td></tr>
+            <tr><td>Chống nạp trùng</td><td class="old">“Ủa em nạp rồi mà”</td><td class="new">Hai thiết bị cùng duyệt vẫn chỉ cộng một lần</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="dien-thoai">
+    <div class="wrap">
+      <div class="eyebrow">Chủ quán</div>
+      <h2>Điện thoại của bạn là quầy</h2>
+      <p class="intro">Trang quản trị chạy trên trình duyệt, không cài gì. Số dư, đơn mới, tin nhắn, máy bật tắt đều đẩy thẳng lên màn hình, không cần tải lại.</p>
+      <div class="grid">
+        <div class="item"><b>Nhắn lên màn hình khách</b><p>Một dòng chữ hiện ngay trên máy đang chơi.</p></div>
+        <div class="item"><b>Chụp màn hình</b><p>Xem khách đang gặp gì trước khi quyết định.</p></div>
+        <div class="item"><b>Xem và tắt ứng dụng</b><p>Danh sách tiến trình kèm RAM, tắt cái đang treo.</p></div>
+        <div class="item"><b>Khoá / mở khoá máy</b><p>Kèm lý do khách đọc được trên màn hình.</p></div>
+        <div class="item"><b>Chặn ứng dụng</b><p>Cấm một phần mềm cụ thể chạy trên một máy.</p></div>
+        <div class="item"><b>Khởi động lại, tắt máy</b><p>Kết thúc phiên, nhưng chỉ khi lệnh chắc chắn đã tới máy.</p></div>
+        <div class="item wide"><b>Chat với khách, xem báo cáo, đọc nhật ký</b><p>Ô “Hỗ trợ” trên máy trạm nhắn thẳng tới bạn. Doanh thu ngày/tháng, theo máy, theo hội viên. Nhật ký ghi mọi thao tác quản trị: ai làm gì, lúc nào, từ đâu.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="nap">
+    <div class="wrap">
+      <div class="eyebrow">Câu hỏi lớn nhất</div>
+      <h2>Nạp tiền không cần quầy</h2>
+      <p class="intro">Nói thẳng cái gì làm được hôm nay và cái gì chưa, để bạn tính đúng cách vận hành.</p>
+      <div class="split">
+        <div class="col ok">
+          <h3>Làm được ngay <span class="pill">Có sẵn</span></h3>
+          <ul>
+            <li><b>Gói giờ kèm tài khoản</b><p>Bán gói 3 giờ tối hoặc 300 phút trả trước, hệ thống tự tạo tài khoản kiểu <code>Goi3h1</code> + mật khẩu 6 số. Khách vãng lai cầm tài khoản là chơi. Gói chỉ trừ giờ từ lúc kích hoạt trên máy.</p></li>
+            <li><b>Nạp từ xa cho khách quen</b><p>Khách chuyển khoản, bạn bấm Nạp trên điện thoại, số dư trên máy khách đổi tức thì.</p></li>
+          </ul>
+        </div>
+        <div class="col warn">
+          <h3>Chưa có <span class="pill">Nói trước</span></h3>
+          <ul>
+            <li><b>Tự xác nhận chuyển khoản</b><p>Nút Nạp tiền trên máy trạm hiện chỉ gửi yêu cầu, vẫn cần một người bấm duyệt. Chưa nối cổng thanh toán VietQR hay Momo. Hạng mục này nằm trong kế hoạch Cloud Hub và app di động.</p></li>
+            <li><b>Đồ ăn hoàn toàn tự phục vụ</b><p>Khách tự đặt món trên máy, phiếu chạy ra máy in bếp, nhưng xác nhận và thanh toán vẫn cần người. Quán không nhân viên nên tắt mục này hoặc dùng tủ mát tự phục vụ.</p></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="bao-ve">
+    <div class="wrap">
+      <div class="eyebrow">Không ai trông</div>
+      <h2>Phần mềm phải khó bị qua mặt</h2>
+      <ul class="list">
+        <li><div><b>Máy trạm là dịch vụ Windows chạy nền 24/7</b>, kể cả khi chưa ai đăng nhập. <span class="sub">Khách tắt giao diện thì dịch vụ tự dựng lại. Bạn vẫn khoá, tắt được máy trống.</span></div></li>
+        <li><div><b>Rút dây mạng không mở được máy.</b> <span class="sub">Đăng nhập ngoại tuyến chỉ chấp nhận tài khoản nhân viên, không bao giờ chấp nhận hội viên.</span></div></li>
+        <li><div><b>Mã máy không sửa được từ giao diện.</b> <span class="sub">Chỉ nằm trong tệp cấu hình do bộ cài ghi, khách không giả danh máy khác.</span></div></li>
+        <li><div><b>Chặn website</b> theo tên miền, theo lịch, theo nhóm máy, có nhật ký vi phạm. <span class="sub">Chỉ chặn được HTTP; trang HTTPS báo lỗi kết nối chứ không hiện trang giải thích.</span></div></li>
+        <li><div><b>Nợ có trần.</b> <span class="sub">Trừ tiền không bao giờ bị từ chối để khách không bị cắt ngang, nhưng nợ quá mức bạn đặt thì không mở được phiên mới.</span></div></li>
+        <li><div><b>Sao lưu và khôi phục</b> cơ sở dữ liệu ngay trên trang quản trị.</div></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="cai-dat">
+    <div class="wrap">
+      <div class="eyebrow">Triển khai</div>
+      <h2>Một máy chủ, một tệp</h2>
+      <ul class="list">
+        <li><div><b>Máy chủ</b> là một tệp thực thi, trang quản trị đã nhúng sẵn bên trong. <span class="sub">Không cần nginx. Có sẵn Docker Compose. Cần PostgreSQL.</span></div></li>
+        <li><div><b>Máy trạm</b> cài lên từng PC Windows bằng bộ cài, khai mã máy một lần. <span class="sub">Cập nhật phiên bản máy khách từ trang quản trị.</span></div></li>
+        <li><div><b>Quầy</b> không cần thiết bị. <span class="sub">Điện thoại của bạn là quầy.</span></div></li>
+        <li><div><b>Mã nguồn mở AGPL-3.0</b>, không phí bản quyền cho phần lõi. <span class="sub">Dữ liệu nằm trên máy chủ của bạn.</span></div></li>
+      </ul>
+
+      <div class="caveats">
+        <h3>Điều cần chấp nhận trước khi dùng</h3>
+        <ul>
+          <li>Nạp tiền mặt tại máy vẫn cần một người bấm duyệt.</li>
+          <li>Chốt ca và sao lưu không tự chạy, phải bấm tay.</li>
+          <li>Máy trạm chỉ có bản Windows.</li>
+          <li>Bạn tự dựng máy chủ một lần theo hướng dẫn, hoặc thuê người dựng.</li>
+        </ul>
+      </div>
+
+      <div class="roadmap">
+        <span class="tag">Sắp tới</span>
+        <h3>Cloud Hub và app di động cho game thủ</h3>
+        <p>Khách đăng ký bằng số điện thoại, xem số dư ở mọi quán dùng VNET, nạp từ xa qua Momo hoặc VietQR và tiền tự cộng vào ví tại quán, nhận thông báo “còn 5 phút” trên điện thoại. Với quán không nhân viên, đây là mảnh ghép khép kín vòng tự phục vụ.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>VNET Core · phiên bản 0.1.0-dev · Hướng dẫn triển khai đầy đủ nằm trong <code>docs/HUONG-DAN.md</code> của mã nguồn.</footer>
+</div>
+
+<script>
+  (function () {
+    var el = document.getElementById('clock');
+    if (!el || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var s = 1 * 3600 + 42 * 60 + 15;
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+    setInterval(function () {
+      s = s > 0 ? s - 1 : 0;
+      el.textContent = pad(Math.floor(s / 3600)) + ':' + pad(Math.floor(s % 3600 / 60)) + ':' + pad(s % 60);
+    }, 1000);
+  })();
+</script>

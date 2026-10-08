@@ -230,7 +230,7 @@ Ba tiến trình sau khi cài:
 | `vnet-client.exe` | Thanh điều khiển dán mép phải, luôn nổi. Khoá màn hình và chặn phím |
 | `vnet-client.exe --window order\|support` | Cửa sổ gọi món / hỗ trợ, tách rời |
 | `vnet-client.exe --ensure-service` | Bật lại dịch vụ nếu nó đang dừng — hai tác vụ theo lịch gọi lệnh này |
-| `vnet-client.exe --set-pin <PIN>` | Đặt PIN kỹ thuật — đường mở khoá khi mất mạng và chưa ai từng đăng nhập |
+| `vnet-client.exe --set-admin-user <tên> --set-admin-pass <mật khẩu>` | Đặt tài khoản quản trị máy trạm — bộ cài gọi lệnh này |
 
 Máy trạm có **một ô đăng nhập** cho cả nhân viên lẫn hội viên: máy chủ nhìn tên
 tài khoản rồi tự chọn đường (`POST /api/auth/client-login`). Tên có trong bảng
@@ -240,15 +240,14 @@ là hội viên và phiên bắt đầu ngay.
 Mất mạng thì có **hai** đường vào máy trạm, cả hai đều chỉ mở khoá chứ không mở
 phiên và không tính tiền:
 
-1. **Tài khoản nhân viên đã từng đăng nhập trên chính máy đó.** Không phải cấu
+1. **Tài khoản quản trị máy trạm.** Bộ cài đặt lần đầu; đổi cho cả quán ở
+   **Cài đặt → Máy trạm** trên trang quản trị, máy nhận qua nhịp tim. Gõ vào chính
+   ô đăng nhập, máy trạm kiểm ngay tại chỗ, không hỏi máy chủ.
+2. **Tài khoản nhân viên đã từng đăng nhập trên chính máy đó.** Không phải cấu
    hình gì: mỗi lần đăng nhập thành công lúc còn mạng, máy trạm lưu lại tên và
-   băm mật khẩu (hạn 30 ngày). Đây là đường dùng hằng ngày.
-2. **PIN kỹ thuật** đặt lúc cài. Dành cho máy vừa cài xong, chưa ai kịp đăng
-   nhập lần nào.
-3. **`admin` / `admin` có sẵn trong bản build**, dùng được khi máy **chưa từng**
-   có nhân viên nào đăng nhập qua máy chủ. Lần đăng nhập nhân viên đầu tiên là
-   nó tự tắt. Chừng nào còn hiệu lực, mỗi lần nhân viên đăng nhập máy trạm sẽ
-   hiện cảnh báo — vì mọi máy cài từ cùng bản build đều mở được bằng đúng cặp đó.
+   băm mật khẩu (hạn 30 ngày).
+
+Cặp `admin` / `admin` cứng trong bản build và PIN kỹ thuật đã bỏ.
 
 ## Kiểm chứng
 

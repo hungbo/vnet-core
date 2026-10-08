@@ -296,45 +296,47 @@ Kết quả:
 
 Cuối lệnh in ra mã băm SHA-256 của từng tệp `.exe`. Giữ lại: chuỗi này phải dán vào ô **Băm SHA-256** khi công bố bản cập nhật ở trang **Cập nhật máy khách**.
 
-## 2.2. Khai máy trong hệ thống trước
+## 2.2. Mã máy là tên máy Windows, không phải khai
 
-Máy trạm chỉ nối được nếu mã máy đã tồn tại trong hệ thống. Khai trước, rồi cài sau.
+Máy trạm lấy **tên máy Windows** làm mã máy và gửi lên ở mỗi nhịp tim. Máy chủ gặp mã chưa có thì **tự thêm máy mới**, kèm thông báo trên trang Máy. Vậy nên:
 
-Quán vài chục máy thì đừng tạo lẻ. Vào **Quản lý → Máy → Tạo hàng loạt**:
+- Hệ **diskless**: đặt tên máy ở máy chủ boot (`MAY01`, `MAY02`...) là xong. Cài VNET một lần vào bản gốc, không khai gì thêm.
+- Máy có ổ cứng: đặt tên máy trong Windows (Settings → System → About → Rename this PC) trước khi cài.
+
+Tên máy tối đa 256 ký tự, chữ cái, số và dấu gạch. Máy đã xoá trên trang quản trị mà vẫn còn cắm thì ở nhịp tim kế tiếp sẽ được thêm lại như máy mới.
+
+**Máy tự thêm chưa có nhóm**, nên hiện nhãn vàng "Chưa gán nhóm — 0₫/giờ" và **không ai đăng nhập được** trên máy đó: màn hình khoá báo *máy chưa được thêm vào hệ thống — báo quầy xếp nhóm cho máy này*. Sau khi cả phòng máy đã lên, vào **Quản lý → Máy**, bấm **Sửa** từng máy hoặc dùng **Tạo hàng loạt** từ trước để xếp nhóm. Nhóm quyết định giá, nên bước này không được bỏ.
+
+**Tạo hàng loạt** vẫn dùng được nếu muốn xếp nhóm sẵn trước khi cắm máy: vào **Quản lý → Máy → Tạo hàng loạt**:
 
 | Ô | Ví dụ |
 |---|---|
-| **Tiền tố** | `PC-` |
+| **Tiền tố** | `MAY` |
 | **Khoảng số** | 1 → 50 |
-| **Số chữ số** | 2 (cho ra `PC-01`, không phải `PC-1`) |
+| **Số chữ số** | 2 (cho ra `MAY01`, không phải `MAY1`) |
 | **Nhóm máy** | VIP hoặc Thường |
 
-Hệ thống **kiểm trước và báo ngay** có tạo được hay không, trước khi bạn bấm Tạo. Vướng dù chỉ một mã thì **không máy nào được tạo** — không có chuyện tạo nửa vời rồi phải tự dò xem thiếu máy nào.
-
-Hai loại vướng được báo tách riêng:
-
-- **Mã đã có máy** — đang dùng, nhìn thấy trong danh sách.
-- **Mã thuộc máy đã xoá** — không thấy ở đâu trên màn hình, nhưng vẫn chiếm mã. Máy xoá rồi vẫn giữ mã của nó.
-
-Cấu hình CPU, RAM, ổ cứng điền ở đây chỉ là giá trị tạm — máy trạm tự ghi đè bằng số đo thật ngay ở nhịp tim đầu tiên.
+Mã tạo ở đây phải trùng với tên máy Windows. Hệ thống **kiểm trước và báo ngay** có tạo được hay không, vướng một mã thì không máy nào được tạo. Vướng ở đây chỉ có một kiểu: mã đã có máy đang dùng. Mã của máy đã xoá tạo lại được bình thường.
 
 Một lần tạo tối đa **500 máy**.
 
 ## 2.3. Cài bằng bộ cài
 
-Chạy `vnet-client-setup-*.exe` với quyền quản trị. Trình cài hỏi **ba** thông tin:
+Chạy `vnet-client-setup-*.exe` với quyền quản trị. Trình cài hỏi:
 
 | Ô | Điền gì |
 |---|---|
 | **Địa chỉ máy chủ** | `http://192.168.1.10:20800` — đúng địa chỉ và cổng máy chủ trong mạng LAN |
-| **Mã máy** | Ví dụ `PC-01`. Phải **trùng khớp** với mã đã tạo ở trang **Máy** |
-| **PIN kỹ thuật** | Đường vào duy nhất khi mất mạng. Đặt chung một PIN cho cả quán |
+| **Tài khoản quản trị máy trạm** | Tên đăng nhập cho nhân viên kỹ thuật, mặc định `admin` |
+| **Mật khẩu**, **Nhập lại mật khẩu** | Ít nhất 6 ký tự, không có dấu nháy kép. Đặt chung một mật khẩu cho cả quán |
 
-> **Bỏ qua dòng chữ về "Khoá máy" trên màn hình trình cài.** Đó là văn bản còn sót từ phiên bản cũ; trình cài không có ô nhập khoá và hệ thống không còn dùng khoá máy trạm nữa.
+Mã máy không hỏi: máy trạm dùng tên máy Windows (mục 2.2).
 
-**PIN kỹ thuật quan trọng hơn vẻ ngoài của nó.** Màn hình khoá phủ kín màn hình, và mọi cách đăng nhập khác đều phải hỏi máy chủ. Mất mạng mà không có PIN thì không ai vào được máy đó.
+**Tài khoản quản trị máy trạm là đường vào chắc chắn có khi mất mạng.** Nhân viên kỹ thuật gõ nó vào chính ô đăng nhập trên màn hình khoá. Máy mở ở chế độ bảo trì: không mở phiên, không tính tiền, không bị khoá hay khởi động lại vì mất kết nối. Máy trạm kiểm tài khoản này ngay tại máy, không hỏi máy chủ.
 
-Trình cài làm ba việc, theo thứ tự: ghi tệp cấu hình, băm PIN rồi lưu, đăng ký dịch vụ Windows.
+**Đổi tài khoản cho cả quán** ở trang quản trị, **Cài đặt → Máy trạm**. Mọi máy nhận tài khoản mới ở nhịp tim kế tiếp, khoảng 15 giây, và bỏ tài khoản đặt lúc cài. Xoá tên tài khoản ở đó thì các máy quay về tài khoản đặt lúc cài.
+
+Trình cài làm ba việc, theo thứ tự: ghi tệp cấu hình, băm mật khẩu rồi lưu, đăng ký dịch vụ Windows. Tệp `config.json` chỉ chứa băm, không chứa mật khẩu.
 
 ## 2.4. Cài tay
 
@@ -342,23 +344,24 @@ Chép `vnet-client-amd64.exe` vào một thư mục, ví dụ `C:\Program Files\
 
 ```json
 {
-  "server_url": "http://192.168.1.10:20800",
-  "machine_code": "PC-01"
+  "server_url": "http://192.168.1.10:20800"
 }
 ```
+
+Muốn mã máy khác tên máy Windows thì thêm `"machine_code": "PC-01"`; bình thường không cần.
 
 Rồi mở Command Prompt với quyền quản trị:
 
 ```
-vnet-client.exe --set-pin 4271
+vnet-client.exe --set-admin-user admin --set-admin-pass "MatKhauKyThuat"
 vnet-client.exe --install-service
 ```
 
 **Cấu hình nằm trong tệp, không phải biến môi trường.** Lý do: dịch vụ Windows chạy ở phiên số 0 và **không thừa hưởng biến môi trường của người đang đăng nhập**. Đặt `VNET_SERVER_URL` trong Windows thì giao diện đọc được còn dịch vụ nền thì không, và máy sẽ hoạt động nửa vời theo cách rất khó truy.
 
-Nếu vẫn muốn dùng biến môi trường (chỉ nên khi thử nghiệm), chúng **ghi đè** tệp cấu hình: `VNET_SERVER_URL`, `VNET_MACHINE_CODE`, `VNET_GUARD` (đặt `0` để tắt lớp chống gian lận).
+**Bản phát hành bỏ qua hẳn biến môi trường.** `VNET_SERVER_URL`, `VNET_MACHINE_CODE`, `VNET_GUARD` chỉ còn tác dụng ở bản tự build không gắn số phiên bản (`dev`). Lý do: giao diện chạy bằng tài khoản của người ngồi máy, mà biến môi trường của mình thì tài khoản nào cũng tự đặt được.
 
-Bỏ trống mã máy thì hệ thống lấy **tên máy Windows** làm mã.
+Bỏ trống mã máy (cách thường) thì hệ thống lấy **tên máy Windows** làm mã.
 
 ## 2.5. Cờ dòng lệnh
 
@@ -367,7 +370,7 @@ Bỏ trống mã máy thì hệ thống lấy **tên máy Windows** làm mã.
 | `--install-service` | Đăng ký dịch vụ Windows |
 | `--uninstall-service` | Gỡ dịch vụ Windows |
 | `--service` | Chạy như tiến trình nền (Windows tự gọi, không gõ tay) |
-| `--set-pin <PIN>` | Băm PIN kỹ thuật rồi ghi vào cấu hình |
+| `--set-admin-user <tên> --set-admin-pass <mật khẩu>` | Đặt tài khoản quản trị máy trạm: băm mật khẩu rồi ghi vào `config.json` |
 | `--ensure-service` | Bật lại dịch vụ nếu nó đang dừng (tác vụ theo lịch tự gọi) |
 | `--window order\|support\|topup` | Mở một cửa sổ phụ |
 | *(không cờ)* | Mở giao diện chính — thanh dọc dán mép phải màn hình |
@@ -380,17 +383,71 @@ Dịch vụ nền được giữ sống bằng **ba lớp**, cố ý chồng lê
 
 1. **Windows tự bật lại** sau 5 giây, 5 giây, rồi 15 giây nếu dịch vụ chết.
 2. **Người dùng thường được cấp quyền BẬT** dịch vụ (không được dừng, không được sửa) — để nhân viên khắc phục được mà không cần tài khoản quản trị.
-3. **Hai tác vụ theo lịch**: một chạy mỗi phút và mỗi lần khởi động máy; một bắt sự kiện Windows số 7036 báo dịch vụ đã dừng.
+3. **Hai tác vụ theo lịch**: một chạy mỗi phút, bắt đầu ngay từ lúc cài; một bắt sự kiện Windows số 7036 báo dịch vụ đã dừng.
 
-Lớp 3 cần thiết vì lớp 1 **không kích hoạt** khi ai đó dừng dịch vụ một cách sạch sẽ bằng `sc stop` hoặc bảng Services — Windows coi đó là dừng có chủ ý, không phải sự cố.
+Lớp 3 cần thiết vì lớp 1 **không kích hoạt** khi ai đó dừng dịch vụ một cách sạch sẽ bằng `sc stop` hoặc bảng Services — Windows coi đó là dừng có chủ ý, không phải sự cố. Trên máy thật, dừng dịch vụ và tắt giao diện cùng lúc thì tác vụ mỗi phút bật lại cả hai trong vòng một phút.
+
+> **Trên Windows 11, tác vụ theo sự kiện không bao giờ kích**: `sc stop` không ghi sự kiện 7036 vào nhật ký System. Tác vụ mỗi phút mới là lớp đáng tin.
 
 Muốn gỡ hẳn thì chạy `--uninstall-service`, hoặc gỡ qua Control Panel — bộ gỡ cài đặt tự làm việc đó trước khi xoá tệp.
+
+### Khi các lớp trên không cứu được
+
+Dịch vụ nền và giao diện canh lẫn nhau, và hành động cuối cùng là **khởi động lại máy** (đổi thành tắt máy ở **Cài đặt → Máy trạm**):
+
+| Chuyện xảy ra | Máy trạm làm gì |
+|---|---|
+| Dịch vụ nền bị vô hiệu hoá, giao diện không bật lại được nó | Khởi động lại sau khoảng 30 giây |
+| Giao diện treo, không phản hồi 15 giây | Dịch vụ tắt giao diện và bật bản mới; tới lần thứ ba trong 5 phút thì khởi động lại máy |
+| Phiên kết thúc mà giao diện không về màn hình khoá trong 10 giây | Dịch vụ bật lại giao diện |
+| Mất kết nối máy chủ 60 giây, đang có hội viên đăng nhập | Khoá màn hình "Mất kết nối máy chủ"; có lại thì tự mở nếu phiên còn |
+| Mất kết nối máy chủ 5 phút, đang có hội viên đăng nhập | Khởi động lại |
+
+Hai ngưỡng 60 giây và 5 phút chỉnh được ở **Cài đặt → Máy trạm**. Máy chưa ai đăng nhập, nhân viên đang đăng nhập, và chế độ bảo trì (đăng nhập bằng tài khoản quản trị máy trạm hoặc tệp `maintenance.flag`) thì không bị khoá hay khởi động lại vì mất kết nối.
+
+> **Trước khi tắt máy chủ để bảo trì quá 5 phút**, nhớ rằng mọi máy đang có khách sẽ khởi động lại. Làm lúc quán vắng, hoặc tạm đặt ngưỡng khởi động lại về 0.
+
+## 2.6a. Tài khoản Windows cho khách, và máy diskless
+
+**Khách phải dùng tài khoản Windows THƯỜNG, không phải Administrator.** Mọi lớp bảo vệ ở trên dựa vào việc người ngồi máy không có quyền quản trị: tài khoản thường không dừng được dịch vụ, không sửa được `config.json`, không tạo được tệp cờ bảo trì — đã kiểm trên máy thật, cả ba đều bị Windows từ chối. Tài khoản quản trị thì làm được hết, và không phần mềm nào chặn nổi.
+
+Trang **Máy** hiện nhãn đỏ **TK Windows quản trị** cho máy nào đang chạy bằng tài khoản quản trị; tích **Chỉ máy có cảnh báo** để lọc ra.
+
+Với hệ thống **diskless**, làm trên bản gốc (super client):
+
+1. Tạo tài khoản thường, ví dụ `Khach`, và **đăng nhập vào nó một lần** để qua màn hình thiết lập lần đầu của Windows ("Choose privacy settings..."). Bỏ qua bước này thì màn hình đó che màn hình khoá VNET ở mọi máy.
+2. Bằng tài khoản quản trị, cài VNET (mục 2.3 hoặc 2.4).
+3. Đặt Windows tự đăng nhập vào tài khoản `Khach` (mục 2.6b).
+4. Lưu bản gốc.
+
+Máy diskless khởi động lại là về đúng bản gốc, nên "khởi động lại" ở bảng trên cũng là cách xoá mọi thứ người ngồi máy đã đổi trong phiên đó.
+
+## 2.6b. Để Windows tự đăng nhập
+
+Quán thường để Windows tự đăng nhập một tài khoản dùng chung, còn ai được dùng máy thì màn hình khoá VNET quyết định. Muốn vậy phải bật `AutoAdminLogon` **và tắt chế độ đăng nhập không mật khẩu** của Windows 11 — chế độ này bật sẵn và làm `AutoAdminLogon` mất tác dụng: máy bật lên nằm ở màn hình đăng nhập Windows, và giao diện VNET không lên được.
+
+```
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\PasswordLess\Device" /v DevicePasswordLessBuildVersion /t REG_DWORD /d 0 /f
+```
+
+Rồi mở `netplwiz`, bỏ tích **Users must enter a user name and password**, nhập mật khẩu tài khoản dùng chung.
+
+## 2.6c. Nhật ký máy trạm
+
+| Tệp | Của |
+|---|---|
+| `C:\Program Files\VNET Client\logs\service.log` | Dịch vụ nền: nối máy chủ, chặn ứng dụng, tự cập nhật, lớp canh |
+| `%LOCALAPPDATA%\VNET\logs\ui.log` | Thanh điều khiển của tài khoản Windows đang đăng nhập |
+| `%LOCALAPPDATA%\VNET\logs\ui-order.log`, `ui-support.log`, `ui-topup.log` | Các cửa sổ phụ |
+
+Quá 5 MB thì tệp cũ đổi tên thành `.1` lúc khởi động.
 
 ## 2.7. Kiểm tra máy đã nối chưa
 
 Vào trang **Máy** trên trang quản trị. Máy vừa cài phải:
 
-1. Hiện trong danh sách với mã đúng như đã điền.
+1. Hiện trong danh sách với mã đúng bằng tên máy Windows.
+   Bấm **Sửa** máy đó sẽ thấy CPU, GPU, RAM, ổ đĩa, hệ điều hành và danh sách **thiết bị ngoại vi** (màn hình, bàn phím, chuột, âm thanh) do máy tự báo ở nhịp tim đầu tiên.
 2. Trạng thái chuyển từ **Ngoại tuyến** sang **Sẵn sàng** trong vòng 15 giây.
 3. Cột **Lần cuối heartbeat** cập nhật liên tục.
 
@@ -402,14 +459,16 @@ Không thấy đổi thì xem [phần D](#d-vận-hành-và-sự-cố).
 
 ## 3.1. Màn hình khoá và cách đăng nhập
 
-Máy chưa ai dùng thì hiện màn hình khoá phủ kín. Có bốn đường vào:
+Máy chưa ai dùng thì hiện màn hình khoá phủ kín. Ngay dưới logo là **tên máy**, đúng mã trên trang Máy, để khách báo quầy "máy nào". Có bốn đường vào:
 
 | Đường | Ai dùng |
 |---|---|
 | **Tên tài khoản + mật khẩu** | Cả khách lẫn nhân viên — chung một ô |
 | **Quét mã QR** | Hội viên, quét mã trên điện thoại |
-| **Mở khoá kỹ thuật** | Nhân viên, nhập PIN kỹ thuật |
-| **Đăng nhập ngoại tuyến** | Chỉ khi máy chủ không với tới được, và **chỉ tài khoản nhân viên** |
+| **Tài khoản quản trị máy trạm** | Nhân viên kỹ thuật, gõ vào chính ô đăng nhập. Mở chế độ bảo trì, **dùng được cả khi mất mạng** (mục 2.3) |
+| **Đăng nhập ngoại tuyến** | Chỉ khi máy chủ không với tới được, và **chỉ tài khoản nhân viên** từng đăng nhập trên máy đó |
+
+Máy chưa được thêm vào hệ thống hoặc chưa xếp nhóm thì khách đăng nhập sẽ bị báo *máy chưa được thêm vào hệ thống — báo quầy*. Nhân viên và tài khoản quản trị máy trạm vẫn vào được.
 
 **Ô đăng nhập chỉ có một, nhưng tên tài khoản quyết định chuyện gì xảy ra:**
 
@@ -427,7 +486,7 @@ Sau khi đăng nhập, khách thấy màn hình chính với các ô:
 
 | Ô | Ai thấy | Việc |
 |---|---|---|
-| **Nạp tiền** | Chỉ hội viên | Gửi yêu cầu nạp lên quầy. Số tiền chọn từ danh sách mệnh giá cấu hình ở **Cài đặt → Nạp tiền** |
+| **Nạp tiền** | Chỉ hội viên | Gửi yêu cầu nạp lên quầy, số tiền chọn từ danh sách mệnh giá cấu hình ở **Cài đặt → Nạp tiền** |
 | **Giờ chơi** | Chỉ nhân viên | Hiện dòng "Phiên quản trị — không tính giờ" |
 | **Đồ ăn** | Mọi người trừ nhân viên | Xem thực đơn, đặt món. Đơn nhảy thẳng lên trang **Đơn hàng** |
 | **Hỗ trợ** | Mọi người | Nhắn tin với quầy |
@@ -447,9 +506,9 @@ Phân biệt bằng thời điểm máy bật, không phải bằng thời gian 
 
 ## 3.4. Trang Cài đặt trên máy trạm
 
-Khách vào được: **đổi mật khẩu** và **đổi PIN**.
+Khách vào được: **đổi mật khẩu**.
 
-Chỉ nhân viên vào được: **địa chỉ máy chủ**. Gõ nhầm một ký tự là máy trạm mất liên lạc hoàn toàn, nên ô này khoá lại.
+Chỉ nhân viên thấy: **địa chỉ máy chủ** và **mã máy**, chỉ để xem. Muốn đổi thì sửa `config.json` cạnh `vnet-client.exe` (cần quyền quản trị) rồi khởi động lại máy. Địa chỉ máy chủ chỉ có một nguồn là tệp đó, nơi dịch vụ nền cũng đọc; bản cũ cho sửa ở giao diện và làm giao diện với dịch vụ nền nói chuyện với hai máy chủ khác nhau.
 
 **Mã máy không sửa được từ giao diện.** Nó chỉ có một nguồn duy nhất là tệp cấu hình do trình cài ghi. Cho sửa hai nơi là mở đường cho hai nơi lệch nhau.
 
@@ -471,6 +530,8 @@ Một người chỉ được mở **một** ca tại một thời điểm. Chư
 
 **Cách thường: khách tự đăng nhập ở máy.** Khách ngồi vào máy, nhập tài khoản và mật khẩu trên màn hình khoá. Phiên chơi mở ra và bắt đầu tính tiền ngay. Nhân viên không phải làm gì — trạng thái máy tự chuyển sang **Đang sử dụng** trên trang quản trị.
 
+**Khách bấm Đăng xuất là trả máy**: phiên kết thúc, tiền dừng trừ, máy về **Sẵn sàng** cho người sau.
+
 **Cách thứ hai: nhân viên mở hộ từ quầy.**
 
 1. Vào **Quản lý → Phiên**, bấm **Mở máy**.
@@ -484,8 +545,18 @@ Một người chỉ được mở **một** ca tại một thời điểm. Chư
 Ba điều kiện phải thoả, nếu không hệ thống từ chối mở máy:
 
 - Máy đang **Sẵn sàng** — không phải đang có người, không phải Tạm ngừng.
-- Hội viên còn tiền, hoặc số nợ chưa vượt trần cấu hình ở **Cài đặt → Giới hạn → Nợ tối đa**.
+- Hội viên còn tiền, hoặc số nợ chưa vượt trần cấu hình ở **Cài đặt → Giới hạn → Nợ tối đa**. Nếu có đặt **Tiền tối thiểu mỗi lần đăng nhập**, số dư phải đủ mức đó.
 - Không vướng giới nghiêm, nếu khách là vị thành niên.
+
+**Tiền tối thiểu mỗi lần đăng nhập** (**Cài đặt → Giới hạn**). Tiền giờ tính theo phút đã chơi trọn, nên khách đăng nhập rồi thoát trong vòng một phút không mất đồng nào. Đặt mức này thì đăng nhập là trừ ngay số đó. Nó trả trước cho những phút đầu chứ không cộng thêm:
+
+| Giá 10.000₫/giờ, mức tối thiểu 3.000₫ | Khách trả |
+|---|---|
+| Thoát sau 30 giây | 3.000₫ |
+| Chơi 10 phút (theo phút là 1.667₫) | 3.000₫ |
+| Chơi 30 phút (theo phút là 5.000₫) | 5.000₫ |
+
+Không áp cho phiên dùng gói cước và máy chưa có giá. Để 0 là tắt.
 
 **Một tài khoản chỉ chơi được một máy.** Cố mở máy thứ hai thì hệ thống báo rõ khách đang ngồi máy nào.
 
@@ -510,8 +581,6 @@ Từ chối thì bấm **Từ chối**.
 
 > **Hai thiết bị cùng bấm duyệt không cộng tiền hai lần.** Hệ thống khoá đơn lại khi xử lý; thiết bị thứ hai nhận câu "đơn đã được xử lý". Nhân viên có thể vừa mở trang quản trị trên điện thoại vừa mở trên máy tính mà không sợ nhầm.
 
-**Nạp bằng thẻ:** xem A.6.
-
 ## A.4. Khách gọi đồ ăn
 
 **Khách tự đặt trên máy:** đơn hiện ở **Kinh doanh → Đơn hàng**, trạng thái **Chờ xác nhận**.
@@ -533,7 +602,7 @@ Muốn theo dõi bếp thì đổi trạng thái từng món: **Chờ làm → �
 ## A.5. Bán gói dịch vụ
 
 1. Vào **Kinh doanh → Gói dịch vụ**, chọn gói, bấm **Mua**.
-2. Chọn hội viên. **Bỏ trống thì hệ thống tự tạo tài khoản mới** với mã dạng `TÊNGÓI-0001` và mật khẩu ngẫu nhiên — tiện cho khách vãng lai mua gói theo giờ.
+2. Chọn phương thức thanh toán. Hệ thống **tự tạo tài khoản mới**: tên đăng nhập là tên gói viết liền không dấu cộng số thứ tự (gói "Gói Đêm" → `GoiDem1`, `GoiDem2`…), mật khẩu 6 chữ số — tiện cho khách vãng lai mua gói theo giờ.
 
 > **Mật khẩu tài khoản tự tạo chỉ hiện đúng một lần.** Chép ra trước khi đóng cửa sổ.
 
@@ -546,21 +615,7 @@ Hai loại gói:
 - **Fixed slot** — khung giờ cố định, ví dụ 20h đến 23h. Trong khung đó không tính thêm tiền theo giờ. Hết khung, hệ thống tự trả máy.
 - **Trả trước** — mua sẵn số phút. Hết phút thì tự trả máy.
 
-## A.6. Bán và đổi thẻ nạp
-
-**Sinh thẻ:** vào **Kinh doanh → Thẻ nạp & quà tặng**, tab **Thẻ nạp**, bấm **Sinh thẻ**. Nhập số lượng, mệnh giá, khuyến mãi, hạn dùng.
-
-> **Mã bí mật chỉ hiện MỘT LẦN.** Bấm **Tải CSV** lưu lại ngay. Đóng cửa sổ mà chưa lưu là mất cả lô — hệ thống chỉ giữ bản băm, không giữ mã gốc.
-
-**Bán thẻ giấy:** bấm **Bán thẻ** để ghi nhận thẻ đã bán cho ai. Việc này khác với nạp — người mua có thể mua để tặng.
-
-**Đổi thẻ thành tiền:** bấm **Đổi thẻ nạp**, nhập seri và mã bí mật, chọn hội viên. Khách cũng tự làm được từ máy trạm.
-
-Đổi thẻ cộng vào **hai** ví cùng lúc: mệnh giá vào số dư chính, phần khuyến mãi vào điểm thưởng.
-
-Hai người cùng đổi một thẻ thì người sau nhận báo thẻ đã dùng. Mọi lần nhập sai mã đều vào nhật ký — dùng để phát hiện người đang dò mã.
-
-## A.7. Đặt chỗ trước
+## A.6. Đặt chỗ trước
 
 1. Vào **Vận hành → Đặt chỗ → Thêm**.
 2. Nhập tên khách và số điện thoại, hoặc chọn hội viên có sẵn.
@@ -575,22 +630,24 @@ Trùng lịch cùng một máy thì hệ thống từ chối ngay.
 
 **Huỷ** thì tiền cọc hoàn lại tự động. Dùng **Huỷ** chứ đừng dùng **Xoá** nếu muốn giữ lịch sử.
 
-## A.8. Khách hết tiền giữa chừng
+## A.7. Khách hết tiền giữa chừng
 
-**Không cần làm gì.** Hệ thống tự lo, mỗi phút một lượt:
+**Không cần làm gì.** Hệ thống tự lo:
 
 1. Trừ tiền theo số phút đã chơi.
-2. Hết sạch tiền thì **tự kết thúc phiên**.
-3. Đẩy màn hình khoá lên máy khách kèm dòng **"Hết số dư — vui lòng nạp thêm tại quầy"**.
-4. Máy chuyển về **Sẵn sàng**.
+2. Số dư **không đủ trả phút kế tiếp** thì **tự kết thúc phiên ngay khi đồng hồ trên máy khách về 0** (trong khoảng một giây). Phần tiền lẻ chưa đủ một phút vẫn nằm trong tài khoản khách, số dư không bị âm.
+3. Máy khách tự đăng xuất về **màn hình khoá có ô đăng nhập**, kèm dòng **"Hết số dư — vui lòng nạp thêm để chơi tiếp"**. Cửa sổ phụ đang mở (thực đơn, hỗ trợ, nạp tiền) tự đóng.
+4. Máy chuyển về **Sẵn sàng**. Khách nạp thêm (quầy nạp từ xa) là đăng nhập lại được ngay, **không cần ai bấm Mở khoá**.
+
+Cùng cách đó cho mọi lý do phiên kết thúc: hết gói, giới nghiêm, quầy bấm **Trả máy**. Dòng lý do tự ẩn sau hai phút để khách kế tiếp không đọc nhầm.
 
 Đồng hồ trên máy khách đếm ngược tới đúng thời điểm hết tiền, nên khách thấy trước chứ không bị cắt đột ngột.
 
 **Thứ tự tiêu tiền:** điểm thưởng tiêu **trước**, tiền thật tiêu **sau**.
 
-**Về nợ:** việc trừ tiền không bao giờ bị từ chối. Thiếu tiền thì số dư xuống âm và thành nợ, hiện ở cột **Còn nợ** trang Hội viên. Cửa chặn nợ chồng nợ nằm ở lúc **mở phiên mới**: hệ thống so số nợ với **Cài đặt → Giới hạn → Nợ tối đa** và từ chối nếu vượt.
+**Về nợ:** hết tiền giữa chừng không còn làm số dư âm. Nhưng việc trừ tiền vẫn không bao giờ bị từ chối, ví dụ khi giá lên giữa phiên: thiếu tiền thì số dư xuống âm và thành nợ, hiện ở cột **Còn nợ** trang Hội viên. Cửa chặn nợ chồng nợ nằm ở lúc **mở phiên mới**: hệ thống so số nợ với **Cài đặt → Giới hạn → Nợ tối đa** và từ chối nếu vượt.
 
-## A.9. Khách báo lỗi máy
+## A.8. Khách báo lỗi máy
 
 1. Vào **Quản lý → Máy**, tìm máy, mở tab **Điều khiển**.
 2. Chọn việc:
@@ -602,7 +659,7 @@ Trùng lịch cùng một máy thì hệ thống từ chối ngay.
 | **Xem ứng dụng** | Danh sách tiến trình đang chạy kèm mức RAM |
 | **Tắt ứng dụng** | Tắt một tiến trình đang treo |
 | **Khoá** / **Mở khoá** | Khoá màn hình, kèm lý do khách đọc được |
-| **Chặn ứng dụng** / **Bỏ chặn** | Cấm một ứng dụng chạy trên máy đó |
+| **Chặn ứng dụng** / **Bỏ chặn** | Cấm một ứng dụng chạy trên máy đó. Gõ tên tiến trình, ví dụ `chrome.exe`. Dịch vụ nền tắt nó trong vòng hai giây mỗi lần nó được mở, kể cả sau khi máy khởi động lại. Không chặn được tiến trình hệ thống (`explorer`, `svchost`...) và chính máy trạm |
 | **Khởi động lại** / **Tắt máy** | **Kết thúc phiên chơi** |
 
 **Máy chưa kết nối thì lệnh không tới nơi** và hệ thống báo rõ — không im lặng nuốt.
@@ -613,7 +670,7 @@ Muốn đổi máy cho khách mà giữ nguyên phiên: vào **Quản lý → Ph
 
 **Máy hỏng cần ngừng nhận khách:** vào **Máy → Sửa**, tắt công tắc **Đang hoạt động**. Máy chuyển sang **Tạm ngừng**, không mở phiên mới được nữa nhưng vẫn nằm trong danh sách để bật lại. **Đừng xoá máy** — xoá là mất toàn bộ lịch sử phiên chơi và doanh thu gắn với nó. Hệ thống sẽ chặn nếu máy còn dữ liệu.
 
-## A.10. Nhận hàng nhập kho
+## A.9. Nhận hàng nhập kho
 
 1. Vào **Kinh doanh → Tồn kho**, tạo phiếu.
 2. Chọn loại **Nhập**, chọn sản phẩm, nhập số lượng và đơn giá.
@@ -622,7 +679,7 @@ Tồn kho cập nhật ngay, và mọi màn hình đang mở tự vẽ lại con
 
 Hàng hỏng, hàng mất thì tạo phiếu **Xuất**.
 
-## A.11. Kiểm kê cuối tháng
+## A.10. Kiểm kê cuối tháng
 
 1. Vào **Kinh doanh → Kiểm kê kho**, bấm **Mở phiên kiểm kê**. Ghi chú ví dụ "kiểm kê cuối tháng 8".
 2. Bấm **Đếm hàng**. Với mỗi mặt hàng: chọn tên, nhập số đếm thực, bấm **Ghi số đếm**. Màn hình hiện luôn số sổ sách và chênh lệch.
@@ -633,7 +690,7 @@ Hàng hỏng, hàng mất thì tạo phiếu **Xuất**.
 
 Bấm **Huỷ phiên** thì tồn kho không bị đụng tới.
 
-## A.12. Chốt ca, giao tiền
+## A.11. Chốt ca, giao tiền
 
 1. Vào **Vận hành → Ca làm việc**.
 2. Bấm **Đóng ca**.
@@ -646,7 +703,7 @@ Bấm **Huỷ phiên** thì tồn kho không bị đụng tới.
 
 > **Không có việc tự động chốt ca.** Quên đóng ca thì ca cứ mở mãi.
 
-## A.13. Xem báo cáo
+## A.12. Xem báo cáo
 
 Vào **Vận hành → Báo cáo**. Bảy loại:
 
@@ -688,7 +745,7 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 
 **Điều dễ nhầm.**
 - **Hai ví, không phải một.** Cột **Số dư** là tiền thật; **Điểm thưởng** là tiền khuyến mãi. Điểm thưởng tiêu trước.
-- Cột **Còn nợ** hiện khi số dư âm. Đó không phải lỗi — xem [A.8](#a8-khách-hết-tiền-giữa-chừng).
+- Cột **Còn nợ** hiện khi số dư âm. Đó không phải lỗi — xem [A.7](#a7-khách-hết-tiền-giữa-chừng).
 - Khi hoàn tiền, nhớ tích **Trừ vào số dư khuyến mãi** nếu khoản đó vốn là khuyến mãi.
 - **Hội viên đã có giao dịch, phiên chơi hoặc đơn hàng thì không xoá được.** Muốn ngừng phục vụ thì bỏ tích **Kích hoạt**.
 - **Xếp lại hạng** chạy tự động mỗi 15 phút; nút này chỉ để chạy ngay.
@@ -724,6 +781,7 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 
 **Điều dễ nhầm.**
 - **Chỉ có ba trạng thái**: Ngoại tuyến → Sẵn sàng → Đang sử dụng. Không có trạng thái "bảo trì".
+- **Cột Cảnh báo** có hai nhãn do máy trạm tự báo. **TK Windows quản trị** (đỏ): tài khoản Windows trên máy đó có quyền quản trị, người ngồi máy gỡ được mọi lớp bảo vệ — xem [mục 2.6a](#26a-tài-khoản-windows-cho-khách-và-máy-diskless). **Có mạng lạ** (vàng): máy vừa có thêm một card mạng (Wi-Fi, điện thoại phát mạng); rê chuột để xem tên và IP. Máy trạm không tự ngắt gì, chỉ báo. Tích **Chỉ máy có cảnh báo** để lọc.
 - **Muốn tạm ngừng một máy thì tắt công tắc Đang hoạt động, đừng xoá.** Máy tạm ngừng vẫn hiện trong danh sách để bật lại; máy đã xoá thì mất lịch sử.
 - Máy còn phiên chơi, đơn hàng hoặc lịch đặt thì không xoá được.
 - Lệnh điều khiển cần máy đang kết nối. Máy chưa nối thì hệ thống báo "chưa kết nối — lệnh không tới nơi", không im lặng.
@@ -790,7 +848,7 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 - Trạng thái đi một chiều: Chờ xác nhận → Đã xác nhận → Hoàn thành. Từ hai trạng thái đầu có thể sang Đã hủy. **Không quay lui được.**
 - **Tồn kho trừ ở bước Xác nhận, không phải lúc tạo đơn.**
 - **Đơn đã xác nhận hoặc đã hoàn thành không xoá được** — dùng Huỷ.
-- Đơn đã có phiếu thanh toán, hoá đơn điện tử hoặc đã tiêu thẻ quà tặng thì cũng không xoá được.
+- Đơn đã có phiếu thanh toán hoặc hoá đơn điện tử thì cũng không xoá được.
 - **Chỉ MỘT khuyến mãi được áp cho một đơn.** Nhiều chương trình cùng thoả thì chương trình có **Ưu tiên** cao thắng; bằng nhau thì chương trình giảm nhiều tiền hơn thắng.
 
 ### Sản phẩm
@@ -824,18 +882,6 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 - **Hiệu lực (ngày)** tính từ lúc mua — mua rồi để quên quá hạn thì gói hỏng dù chưa kích hoạt.
 - Gói **Fixed slot** cần khai **Ngày áp dụng** và các **slot** giờ.
 - Gói đã có người mua thì không xoá được.
-
-### Thẻ nạp & quà tặng
-
-**Để làm gì.** Thẻ giấy bán ở quầy hoặc bán qua đại lý.
-
-**Thao tác chính.** Hai tab. **Thẻ nạp**: Sinh thẻ · Bán thẻ · **Đổi thẻ nạp** · Huỷ thẻ · Tải CSV. **Thẻ quà tặng**: Sinh thẻ · **Tra thẻ quà tặng** · Huỷ thẻ.
-
-**Điều dễ nhầm.**
-- **Mã bí mật chỉ hiện một lần khi sinh thẻ.** Tải CSV ngay.
-- Thẻ nạp cộng vào **hai** ví: mệnh giá vào số dư, khuyến mãi vào điểm thưởng.
-- Thẻ quà tặng là **phương thức thanh toán đơn hàng**, không nạp vào ví.
-- Thẻ đã dùng hoặc đã huỷ không dùng lại được.
 
 ### Nhà cung cấp
 
@@ -950,7 +996,7 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 
 ### Báo cáo
 
-**Để làm gì.** Bảy báo cáo doanh thu và vận hành. Xem [A.13](#a13-xem-báo-cáo).
+**Để làm gì.** Bảy báo cáo doanh thu và vận hành. Xem [A.12](#a12-xem-báo-cáo).
 
 **Điều dễ nhầm.** Cần quyền **Xem báo cáo**. Mọi báo cáo lọc theo khoảng ngày Từ–Đến.
 
@@ -962,15 +1008,16 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 
 ### Cài đặt
 
-**Để làm gì.** Cấu hình toàn quán. Năm tab.
+**Để làm gì.** Cấu hình toàn quán. Sáu tab.
 
 | Tab | Gồm |
 |---|---|
 | **Chung** | Tên cửa hàng, địa chỉ, SĐT, email, múi giờ |
-| **Giới hạn** | Giới hạn đặt chỗ mỗi ngày và mỗi hội viên, thời gian huỷ trước, **Nợ tối đa** |
+| **Giới hạn** | Giới hạn đặt chỗ mỗi ngày và mỗi hội viên, thời gian huỷ trước, **Nợ tối đa**, **Tiền tối thiểu mỗi lần đăng nhập** |
 | **Hóa đơn** | Tiêu đề, chân trang, mã số thuế in trên hoá đơn |
 | **Nạp tiền** | **Mệnh giá nạp** — danh sách số tiền hiện trên máy khách |
 | **Tính năng** | Bật/tắt **Cho phép điểm danh** và **Cho phép đánh giá dịch vụ** |
+| **Máy trạm** | Máy trạm làm gì khi phần mềm bị tắt (khởi động lại hay tắt máy), mất kết nối bao lâu thì khoá, bao lâu thì khởi động lại, và **tài khoản quản trị máy trạm** cho cả quán (để trống mật khẩu là giữ nguyên). Máy trạm nhận giá trị mới trong khoảng 15 giây |
 
 **Điều dễ nhầm.**
 - **Nợ tối đa** là thứ quyết định khách nợ được bao nhiêu trước khi bị chặn mở máy.
@@ -1007,8 +1054,9 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 **Thao tác chính.** **Công bố bản mới** · bật/tắt · Xoá.
 
 **Điều dễ nhầm.**
+- **Máy trạm tự cài, không ai phải đi từng máy.** Dịch vụ nền hỏi máy chủ mỗi 10 phút; có bản mới thì tải, kiểm băm, và chỉ cài khi máy **không có khách** — đang có phiên thì hoãn tới lần hỏi sau. Cài xong giao diện khởi động lại bằng bản mới trong khoảng 15 giây.
+- **Tệp công bố là chính tệp `vnet-client-<kiến trúc>.exe`**, không phải bộ cài. Nền tảng ghi `windows-amd64` hoặc `windows-arm64` cho đúng máy.
 - **Ô Băm SHA-256 bắt buộc đúng.** Máy trạm tải xong sẽ kiểm băm, lệch thì xoá tệp và không cài. Chuỗi này in ra ở cuối lệnh `scripts/build-client.sh`.
-- Tích **Bắt buộc** thì máy trạm không cho bỏ qua.
 - **Bản đang phát hành phải tắt trước khi xoá.**
 
 ### Sao lưu
@@ -1055,7 +1103,7 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 | `*` | Toàn quyền | Bỏ qua mọi lần kiểm khác |
 | `members.view` | Xem hội viên | Menu Điểm danh, Giới nghiêm |
 | `members.create` | Tạo hội viên | Nút thêm hội viên |
-| `members.topup` | Nạp tiền | Nạp, hoàn tiền, menu Thẻ nạp |
+| `members.topup` | Nạp tiền | Nạp, hoàn tiền |
 | `machines.view` | Xem máy | Menu Tài sản máy, Chặn website |
 | `orders.view` | Xem đơn hàng | **Chỉ lọc menu** |
 | `orders.create` | Tạo đơn hàng | **Chỉ lọc menu** |

@@ -46,6 +46,7 @@
 | Seed | `backend/` | `go run ./cmd/seed` (thêm `-menu` để có thực đơn mẫu 100 món) |
 | Build server | `./scripts/` | `bash build-server.sh` |
 | Build client | `./scripts/` | `bash build-client.sh` |
+| Build server installer (Windows) | repo root | `bash scripts/build-server-windows.sh 1.2.0` → `dist/vnet-server-setup-1.2.0.exe` (needs `brew install makensis`) |
 | Lint (admin) | `admin/` | `pnpm lint` |
 | Typecheck (admin) | `admin/` | `pnpm typecheck` |
 | Regenerate routes | `admin/` | `pnpm gen-route` (after adding `views/vnet/{feature}/index.vue`) |
