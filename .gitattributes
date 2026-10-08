@@ -1,0 +1,3 @@
+# Script shell phải giữ xuống dòng kiểu Unix: core.autocrlf=true (trên máy Mac
+# đang dùng) đổi chúng thành CRLF mỗi lần git ghi tệp, và bash không chạy được.
+*.sh text eol=lf

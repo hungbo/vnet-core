@@ -57,3 +57,20 @@ client/tmp/
 # Kết quả và cache của scripts/verify.py
 __pycache__/
 /verify-results.json
+
+# Tài nguyên Windows (icon) do scripts/build-client.sh / build-server-windows.sh sinh ra lúc build
+client/src/*.syso
+backend/cmd/server/*.syso
+
+# Bộ cài TightVNC tải từ tightvnc.com, đóng gói kèm client (xem installer/vnet-client.iss)
+installer/tightvnc.msi
+
+# Binary máy chủ dựng ngay tại backend/: build-server.sh ghi vnet-server (hơn 300MB vì
+# nhúng sẵn trang quản trị), còn `go build ./cmd/server` / `./cmd/migrate` ghi server /
+# migrate — cùng cảnh với /backend/seed ở trên.
+/backend/vnet-server
+/backend/server
+/backend/migrate
+
+# Log chạy thử ở backend/ (go run ./cmd/server > server.log)
+/backend/*.log
