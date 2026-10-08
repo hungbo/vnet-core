@@ -1,0 +1,17 @@
+// Ghi đè kiểu cho swag — dùng để sinh lại backend/docs (swag v1.16.6, đúng bản trong go.mod).
+//
+// Chạy từ backend/:
+//   swag init -g cmd/server/main.go -o docs --overridesFile docs/.swaggo
+//
+// Vì sao cần: model dùng gorm.DeletedAt và DTO dùng json.RawMessage, nhưng swag không
+// đọc gói phụ thuộc nếu không bật --parseDependency; bật cờ đó thì tên định nghĩa đổi
+// thành "github_com_vnet_core_internal_service.X" và mọi $ref đổi theo. Ghi đè hai kiểu
+// này giữ nguyên tên "service.X" / "model.X" như bản docs đã commit. Không có tệp này,
+// "swag init" dừng với "cannot find type definition: gorm.DeletedAt" và không ghi gì.
+// Khoá là tên kiểu như viết trong mã nguồn (gorm.DeletedAt), không phải import path.
+
+// DeletedAt luôn tuần tự hoá thành chuỗi thời gian (hoặc bị ẩn bởi omitempty).
+replace gorm.DeletedAt string
+
+// Giá trị JSON tự do (ví dụ condition_value của khuyến mãi).
+replace json.RawMessage object

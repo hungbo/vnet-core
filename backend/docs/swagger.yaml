@@ -4,104 +4,131 @@ definitions:
     properties:
       action:
         type: string
-      createdAt:
+      created_at:
         type: string
-      entityID:
+      description:
         type: string
-      entityType:
+      entity_id:
+        description: |-
+          Con trỏ chứ không phải string: cột là uuid, và PostgreSQL từ chối chuỗi
+          rỗng làm uuid. Trước đây mọi bản ghi không gắn với một thực thể cụ thể
+          (đổi cài đặt, sinh lô thẻ, nạp thẻ hụt) đều bị từ chối trong im lặng.
+        type: string
+      entity_type:
         type: string
       id:
         type: string
-      ipaddress:
+      ip_address:
         type: string
       metadata:
         type: string
-      userID:
+      user_id:
         type: string
     type: object
   model.BackupLog:
     properties:
-      completedAt:
+      completed_at:
         type: string
-      createdBy:
+      created_by:
         type: string
-      fileName:
+      file_name:
         type: string
-      filePath:
+      file_path:
         type: string
-      fileSize:
+      file_size:
         type: integer
       id:
         type: string
       notes:
         type: string
-      startedAt:
+      started_at:
         type: string
       status:
         type: string
     type: object
   model.Machine:
     properties:
-      cpuname:
+      booted_at:
+        description: |-
+          Thời điểm máy khởi động lần gần nhất, suy ra từ uptime trong heartbeat.
+          Trên máy đóng băng (diskless), reboot làm giá trị này nhảy về hiện tại;
+          phiên nào bắt đầu TRƯỚC mốc này là phiên còn sót từ trước khi reboot.
         type: string
-      cputemp:
+      cpu_name:
+        type: string
+      cpu_temp:
         type: number
-      createdAt:
+      created_at:
         type: string
-      deletedAt:
+      deleted_at:
         type: string
-      gpuname:
+      extra_network:
         type: string
-      gputemp:
+      gpu_name:
+        type: string
+      gpu_temp:
         type: number
-      groupID:
+      group_id:
         type: string
       id:
         type: string
-      ipaddress:
+      ip_address:
         type: string
-      isActive:
+      is_active:
         type: boolean
-      lastHeartbeat:
+      last_heartbeat:
         type: string
-      macAddress:
+      mac_address:
         type: string
-      machineCode:
+      machine_code:
         type: string
-      osinfo:
+      os_info:
         type: string
-      ramgb:
-        type: integer
-      status:
-        type: string
-      storageGB:
-        type: integer
-      storeID:
-        type: string
-      updatedAt:
-        type: string
-    type: object
-  model.MachineAsset:
-    properties:
-      assetType:
-        type: string
-      brand:
-        type: string
-      checkPhotos:
+      peripherals:
+        description: |-
+          Thiết bị ngoại vi máy trạm tự đọc lúc khởi động: màn hình, bàn phím,
+          chuột, âm thanh. Mỗi dòng dạng "Màn hình: Samsung S24F350 (serial)".
         items:
           type: string
         type: array
-      checkedAt:
+      ram_gb:
+        type: integer
+      status:
         type: string
-      checkedBy:
+      storage_gb:
+        type: integer
+      updated_at:
         type: string
-      createdAt:
+      user_is_admin:
+        description: |-
+          Hai dấu hiệu máy trạm tự báo để trang Máy cảnh báo chủ quán.
+          UserIsAdmin: tài khoản Windows đang đăng nhập có quyền quản trị — khi đó
+          người ngồi máy gỡ được mọi lớp bảo vệ của máy trạm.
+          ExtraNetwork: card mạng xuất hiện SAU khi máy khởi động (Wi-Fi, USB phát
+          mạng), dạng "tên (IP)". Rỗng là không có.
+        type: boolean
+    type: object
+  model.MachineAsset:
+    properties:
+      asset_type:
         type: string
-      deletedAt:
+      brand:
+        type: string
+      check_photos:
+        items:
+          type: string
+        type: array
+      checked_at:
+        type: string
+      checked_by:
+        type: string
+      created_at:
+        type: string
+      deleted_at:
         type: string
       id:
         type: string
-      machineID:
+      machine_id:
         type: string
       model:
         type: string
@@ -111,16 +138,16 @@ definitions:
         type: string
       status:
         type: string
-      updatedAt:
+      updated_at:
         type: string
     type: object
   model.MachineGroup:
     properties:
       color:
         type: string
-      createdAt:
+      created_at:
         type: string
-      deletedAt:
+      deleted_at:
         type: string
       description:
         type: string
@@ -128,79 +155,50 @@ definitions:
         type: string
       name:
         type: string
-      sortOrder:
+      price_per_hour:
         type: integer
-      storeID:
-        type: string
+      sort_order:
+        type: integer
     type: object
   model.MachineHardwareSnapshot:
     properties:
-      cputemp:
+      cpu_temp:
         type: number
-      cpuusage:
+      cpu_usage:
         type: number
-      createdAt:
+      created_at:
+        description: |-
+          Có chỉ mục vì hai đường đọc đều đi qua cột này: bảng nhật ký sắp theo
+          thời gian giảm dần, và tác vụ dọn dẹp xoá theo mốc thời gian. Không có
+          chỉ mục thì cả hai quét toàn bảng — mà đây là bảng lớn nhất hệ thống.
         type: string
-      diskUsage:
+      disk_usage:
         type: number
-      gputemp:
+      gpu_temp:
         type: number
       id:
         type: string
-      machineID:
+      machine_id:
         type: string
-      ramusage:
+      ram_usage:
         type: number
-    type: object
-  model.MachinePrice:
-    properties:
-      createdAt:
-        type: string
-      effectiveFrom:
-        type: string
-      effectiveTo:
-        type: string
-      id:
-        type: string
-      machineGroupID:
-        type: string
-      memberTierID:
-        type: string
-      minDuration:
-        type: integer
-      pricePerHour:
+      uptime:
+        description: |-
+          Số giây máy đã bật. Máy trạm vẫn gửi lên từ trước nhưng không có cột nào
+          nhận, nên con số rơi vào hư không ở mỗi lần báo.
         type: integer
     type: object
   model.Permission:
     properties:
       code:
         type: string
-      createdAt:
+      created_at:
         type: string
       id:
         type: string
       module:
         type: string
       name:
-        type: string
-    type: object
-  model.Store:
-    properties:
-      address:
-        type: string
-      code:
-        type: string
-      createdAt:
-        type: string
-      deletedAt:
-        type: string
-      id:
-        type: string
-      isActive:
-        type: boolean
-      name:
-        type: string
-      phone:
         type: string
     type: object
   response.PaginatedData:
@@ -228,6 +226,78 @@ definitions:
     required:
     - machine_id
     type: object
+  service.AllRoleResponse:
+    properties:
+      id:
+        type: string
+      roleCode:
+        type: string
+      roleName:
+        type: string
+    type: object
+  service.BatchCreateMachinesRequest:
+    properties:
+      cpu_name:
+        description: |-
+          Cấu hình áp chung cho cả lô. Máy trạm sẽ ghi đè bằng số đo thật ở nhịp
+          tim đầu tiên, nên đây chỉ là giá trị tạm để nhìn cho có.
+        type: string
+      digits:
+        maximum: 10
+        minimum: 0
+        type: integer
+      dry_run:
+        description: |-
+          DryRun chỉ kiểm rồi trả kết quả, không ghi gì. Giao diện gọi trước khi
+          tạo thật để báo trước có tạo được hay không.
+        type: boolean
+      from:
+        minimum: 0
+        type: integer
+      gpu_name:
+        type: string
+      group_id:
+        type: string
+      os_info:
+        type: string
+      prefix:
+        type: string
+      ram_gb:
+        type: integer
+      storage_gb:
+        type: integer
+      to:
+        minimum: 0
+        type: integer
+    required:
+    - prefix
+    type: object
+  service.BatchCreateResult:
+    properties:
+      codes:
+        items:
+          type: string
+        type: array
+      conflicts:
+        description: Conflicts là mã đã có máy đang dùng.
+        items:
+          type: string
+        type: array
+      created:
+        type: integer
+      deleted:
+        description: |-
+          Deleted là mã thuộc về máy ĐÃ XOÁ. Tách riêng khỏi Conflicts vì người
+          dùng không thấy chúng ở đâu trên màn hình: machine_code có unique index
+          thường (không phải partial theo deleted_at), nên máy xoá mềm vẫn giữ mã
+          và vẫn chặn mã đó. Gộp chung hai loại thì thông điệp thành "PC-05 đã tồn
+          tại" trong khi danh sách máy không có PC-05 nào.
+        items:
+          type: string
+        type: array
+      dry_run:
+        type: boolean
+    type: object
   service.BookingResponse:
     properties:
       booked_from:
@@ -249,6 +319,12 @@ definitions:
       deposit_transaction_id:
         type: string
       id:
+        type: string
+      machine_code:
+        description: |-
+          Cột "Mã máy" trên trang Đặt chỗ đọc trường này. Không trả về thì ô đó
+          luôn trống, và câu xác nhận check-in thành "tại máy ." — nhân viên không
+          biết đang giữ máy nào.
         type: string
       machine_id:
         type: string
@@ -274,14 +350,20 @@ definitions:
     type: object
   service.ByMachineRow:
     properties:
+      machine_code:
+        description: |-
+          Máy không có tên riêng, chỉ có mã (model.Machine). Trường cũ tên
+          machine_name khiến giao diện dựng hai cột "Máy" và "Tên máy" trong đó một
+          cột luôn trống.
+        type: string
       machine_id:
         type: string
-      machine_name:
-        type: string
+      session_count:
+        type: integer
       total_sales:
         type: integer
       usage_hours:
-        type: integer
+        type: number
     type: object
   service.ByMemberRow:
     properties:
@@ -293,6 +375,21 @@ definitions:
         type: integer
       visit_count:
         type: integer
+    type: object
+  service.CashHandoverResponse:
+    properties:
+      amount:
+        type: integer
+      created_at:
+        type: string
+      handover_type:
+        type: string
+      id:
+        type: string
+      reason:
+        type: string
+      shift_id:
+        type: string
     type: object
   service.CategoryResponse:
     properties:
@@ -328,9 +425,29 @@ definitions:
     - new_password
     - old_password
     type: object
+  service.ClientLoginResponse:
+    properties:
+      access_token:
+        type: string
+      kind:
+        description: |-
+          "staff" hoặc "member". Máy trạm cần biết để dựng đúng màn hình: nhân viên
+          vào máy thì không mở phiên và không tính tiền.
+        type: string
+      refresh_token:
+        type: string
+      session_id:
+        type: string
+      user:
+        $ref: '#/definitions/service.UserResponse'
+    type: object
   service.CloseShiftRequest:
     properties:
       closing_balance:
+        description: |-
+          Đóng ca với két rỗng là hợp lệ, nên 0 phải được chấp nhận — vì thế là con
+          trỏ: thiếu hẳn trường thì phải báo lỗi chứ không ngầm hiểu là két rỗng.
+        minimum: 0
         type: integer
       notes:
         type: string
@@ -345,15 +462,24 @@ definitions:
         type: string
       combo_id:
         type: string
+      combo_name:
+        type: string
       created_at:
         type: string
       current_session_id:
         type: string
       expires_at:
         type: string
+      generated_password:
+        type: string
       id:
         type: string
       member_id:
+        type: string
+      member_username:
+        description: |-
+          MemberUsername chỉ có khi vừa mua: mã tài khoản khách để quầy tra lại gói
+          trong "Combo đã mua" lúc kích hoạt.
         type: string
       payment_method:
         type: string
@@ -395,48 +521,43 @@ definitions:
       validity_days:
         type: integer
     type: object
-  service.ConversationResponse:
-    properties:
-      created_at:
-        type: string
-      id:
-        type: string
-      is_group:
-        type: boolean
-      last_message:
-        $ref: '#/definitions/service.MessageResponse'
-      title:
-        type: string
-      unread_count:
-        type: integer
-    type: object
   service.CostBreakdown:
     properties:
-      base_price_per_hour:
-        type: integer
       billed_minutes:
         type: integer
-      breakdown_items:
-        items:
-          $ref: '#/definitions/service.CostItem'
-        type: array
+      discount_amount:
+        type: integer
+      discount_percent:
+        type: number
       duration_minutes:
         type: integer
       final_cost:
         type: integer
-      grace_minutes:
+      gross_cost:
         type: integer
       machine_group_name:
         type: string
-      tier_discount_percent:
-        type: number
-    type: object
-  service.CostItem:
-    properties:
-      amount:
+      no_pricing:
+        description: |-
+          NoPricing bật khi máy không tra ra được giá nào (chưa gán nhóm, hoặc nhóm
+          để giá 0). Phiên vẫn mở được — có quán cố ý để máy miễn phí — nhưng quầy
+          phải nhìn thấy điều đó trước khi bấm, không phải phát hiện lúc cuối tháng
+          thấy doanh thu hụt.
+        type: boolean
+      price_per_hour:
         type: integer
-      label:
+    type: object
+  service.CountLineRequest:
+    properties:
+      actual_qty:
+        minimum: 0
+        type: number
+      note:
         type: string
+      product_id:
+        type: string
+    required:
+    - product_id
     type: object
   service.CreateBackupRequest:
     properties:
@@ -457,6 +578,11 @@ definitions:
         type: string
       deposit_amount:
         type: integer
+      idempotency_key:
+        description: |-
+          IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+          MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
+        type: string
       machine_id:
         type: string
       member_id:
@@ -496,10 +622,13 @@ definitions:
       description:
         type: string
       is_active:
+        description: 'Con trỏ: không gửi = bật như trước nay; gửi false = tạo ở trạng
+          thái tắt.'
         type: boolean
       name:
         type: string
       price:
+        description: required và min=0 mâu thuẫn nhau; gói miễn phí là hợp lệ.
         minimum: 0
         type: integer
       slot_end:
@@ -517,20 +646,7 @@ definitions:
         type: integer
     required:
     - name
-    - price
     - type
-    type: object
-  service.CreateConversationRequest:
-    properties:
-      participant_id:
-        type: string
-      participant_type:
-        type: string
-      title:
-        type: string
-    required:
-    - participant_id
-    - participant_type
     type: object
   service.CreateCurfewRequest:
     properties:
@@ -539,17 +655,54 @@ definitions:
       curfew_start:
         type: string
       day_of_week:
+        description: Chủ nhật là 0; "required" sẽ coi đó là thiếu dữ liệu nên chỉ
+          dùng min/max.
         maximum: 6
         minimum: 0
         type: integer
       is_active:
         type: boolean
       max_minor_hours:
+        description: |-
+          Con trỏ: không gửi = mặc định của cột (2 giờ, bật); gửi 0 / false thì
+          phải ra đúng 0 / tắt.
+        minimum: 0
         type: integer
     required:
     - curfew_end
     - curfew_start
-    - day_of_week
+    type: object
+  service.CreateFeedbackRequest:
+    properties:
+      content:
+        type: string
+      machine_id:
+        description: Chỉ nhân viên gửi hộ mới được chỉ định máy; hội viên tự gửi thì
+          bỏ qua.
+        type: string
+      order_id:
+        type: string
+      rating:
+        description: |-
+          1–5. Không dùng "required" vì validator coi 0 là thiếu dữ liệu; min=1 đã
+          loại 0 rồi mà thông báo lỗi lại đúng nghĩa hơn.
+        maximum: 5
+        minimum: 1
+        type: integer
+    type: object
+  service.CreateGroupRequest:
+    properties:
+      discount_percent:
+        maximum: 100
+        minimum: 0
+        type: number
+      is_default:
+        type: boolean
+      min_spent:
+        minimum: 0
+        type: integer
+      name:
+        type: string
     type: object
   service.CreateMachineAssetRequest:
     properties:
@@ -557,6 +710,13 @@ definitions:
         type: string
       brand:
         type: string
+      check_photos:
+        description: |-
+          Ảnh chụp lúc kiểm tra. Trường này có trong model từ đầu nhưng request
+          không hề nhận nó, nên chưa bao giờ lưu được ảnh nào.
+        items:
+          type: string
+        type: array
       machine_id:
         type: string
       model:
@@ -579,28 +739,12 @@ definitions:
         type: string
       name:
         type: string
+      price_per_hour:
+        type: integer
       sort_order:
         type: integer
     required:
     - name
-    type: object
-  service.CreateMachinePriceRequest:
-    properties:
-      effective_from:
-        type: string
-      effective_to:
-        type: string
-      machine_group_id:
-        type: string
-      member_tier_id:
-        type: string
-      min_duration:
-        type: integer
-      price_per_hour:
-        type: integer
-    required:
-    - effective_from
-    - price_per_hour
     type: object
   service.CreateMachineRequest:
     properties:
@@ -621,44 +765,49 @@ definitions:
     required:
     - machine_code
     type: object
-  service.CreateMaterialRequest:
-    properties:
-      current_stock:
-        type: number
-      is_active:
-        type: boolean
-      min_stock:
-        type: number
-      name:
-        type: string
-      price_per_unit:
-        type: integer
-      unit_id:
-        type: string
-    required:
-    - name
-    - unit_id
-    type: object
   service.CreateMemberRequest:
     properties:
       date_of_birth:
-        type: string
+        $ref: '#/definitions/utils.JSONDate'
       email:
         type: string
       full_name:
         type: string
+      group_id:
+        type: string
+      id_card_image_url:
+        description: |-
+          Hai đường dẫn ảnh dưới đây lưu được nhưng trước nay KHÔNG DTO nào nhận,
+          nên cột luôn rỗng. Giấy đồng ý của phụ huynh gắn thẳng với giới nghiêm:
+          không có nó thì quán không chứng minh được vì sao cho trẻ vị thành niên
+          ngồi máy.
+        type: string
       id_card_number:
         type: string
+      is_active:
+        type: boolean
       notes:
+        type: string
+      parent_consent_file_url:
         type: string
       password:
         type: string
       phone:
         type: string
-      store_id:
+      username:
         type: string
-      tier_id:
+    type: object
+  service.CreateNotificationRequest:
+    properties:
+      content:
         type: string
+      title:
+        type: string
+      type:
+        type: string
+    required:
+    - title
+    - type
     type: object
   service.CreateOrderRequest:
     properties:
@@ -666,20 +815,30 @@ definitions:
         items:
           $ref: '#/definitions/service.OrderItemRequest'
         type: array
+      machine_code:
+        type: string
       machine_id:
         type: string
       member_id:
         type: string
       note:
         type: string
-      order_type:
-        type: string
       table_number:
         type: string
     type: object
   service.CreatePrinterRequest:
     properties:
+      chars_per_line:
+        type: integer
+      code_page:
+        type: integer
+      encoding:
+        type: string
       ip_address:
+        description: |-
+          Địa chỉ phải là IP hoặc tên máy hợp lệ: chuỗi bất kỳ vẫn lưu được, và
+          người trực chỉ phát hiện ra lúc bấm In thử — hoặc tệ hơn, lúc bếp không
+          nhận được phiếu giữa giờ cao điểm.
         type: string
       is_default:
         type: boolean
@@ -689,16 +848,27 @@ definitions:
         type: integer
       printer_type:
         type: string
-      store_id:
-        type: string
     required:
     - name
     - printer_type
+    type: object
+  service.CreateProductIngredientRequest:
+    properties:
+      ingredient_id:
+        type: string
+      quantity:
+        type: number
+      unit_id:
+        type: string
+    required:
+    - ingredient_id
     type: object
   service.CreateProductRequest:
     properties:
       category_id:
         type: string
+      current_stock:
+        type: number
       description:
         type: string
       has_stock:
@@ -707,7 +877,12 @@ definitions:
         type: string
       is_active:
         type: boolean
+      is_retail:
+        type: boolean
+      min_stock:
+        type: number
       name:
+        maxLength: 200
         type: string
       options:
         items:
@@ -718,19 +893,19 @@ definitions:
         type: integer
       sort_order:
         type: integer
+      supplier_id:
+        type: string
+      unit_id:
+        type: string
     required:
-    - category_id
     - name
-    - price
     type: object
   service.CreatePromotionCondition:
     properties:
       condition_key:
         type: string
       condition_value:
-        items:
-          type: integer
-        type: array
+        type: object
     required:
     - condition_key
     - condition_value
@@ -768,20 +943,29 @@ definitions:
       reward_type:
         type: string
       reward_value:
-        items:
-          type: integer
-        type: array
+        type: object
     required:
     - reward_type
     - reward_value
+    type: object
+  service.CreateRoleRequest:
+    properties:
+      roleCode:
+        type: string
+      roleDesc:
+        type: string
+      roleName:
+        type: string
     type: object
   service.CreateStockTransactionRequest:
     properties:
       description:
         type: string
-      material_id:
+      product_id:
         type: string
       quantity:
+        description: Với loại adjustment, đây là số tồn kho mục tiêu — chỉnh về 0
+          là hợp lệ.
         type: number
       reference_id:
         type: string
@@ -797,32 +981,18 @@ definitions:
         type: string
       unit_price:
         type: integer
-      warehouse_id:
-        type: string
     required:
-    - material_id
-    - quantity
     - transaction_type
-    type: object
-  service.CreateStoreRequest:
-    properties:
-      address:
-        type: string
-      code:
-        type: string
-      name:
-        type: string
-      phone:
-        type: string
-    required:
-    - code
-    - name
     type: object
   service.CreateSupplierRequest:
     properties:
       address:
         type: string
       email:
+        description: |-
+          omitempty vì email nhà cung cấp không bắt buộc; nhưng đã nhập thì phải
+          đúng định dạng, nếu không tới lúc cần gửi đơn đặt hàng mới phát hiện địa
+          chỉ sai và không có cách nào biết đúng là gì.
         type: string
       is_active:
         type: boolean
@@ -833,25 +1003,38 @@ definitions:
     required:
     - name
     type: object
-  service.CreateTierRequest:
+  service.CreateTopupOrderRequest:
     properties:
-      discount_percent:
-        type: number
-      min_spent:
+      amount:
         type: integer
-      name:
+      machine_code:
+        type: string
+      member_id:
         type: string
     type: object
-  service.CreateWarehouseRequest:
+  service.CreateUserRequest:
     properties:
-      address:
+      nickName:
         type: string
-      is_active:
-        type: boolean
-      name:
+      password:
         type: string
-    required:
-    - name
+      status:
+        description: |-
+          "2" = tạo ở trạng thái vô hiệu. Form gửi trường này từ đầu nhưng request
+          không nhận, nên người dùng mới luôn ở trạng thái hoạt động.
+        type: string
+      userEmail:
+        type: string
+      userGender:
+        type: string
+      userName:
+        type: string
+      userPhone:
+        type: string
+      userRoles:
+        items:
+          type: string
+        type: array
     type: object
   service.CurfewResponse:
     properties:
@@ -875,8 +1058,6 @@ definitions:
         type: string
       override_reason:
         type: string
-      store_id:
-        type: string
     type: object
   service.DailyRevenueRow:
     properties:
@@ -891,9 +1072,13 @@ definitions:
     type: object
   service.EndSessionResponse:
     properties:
+      amount_unpaid:
+        type: integer
       balance_after:
         type: integer
       balance_before:
+        type: integer
+      bonus_used:
         type: integer
       cost_breakdown:
         $ref: '#/definitions/service.CostBreakdown'
@@ -910,6 +1095,49 @@ definitions:
       total_cost:
         type: integer
     type: object
+  service.GameMenu:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/service.GameMenuItem'
+        type: array
+      root:
+        type: string
+    type: object
+  service.GameMenuItem:
+    properties:
+      category:
+        type: string
+      display_name:
+        type: string
+      launch_args:
+        type: string
+      launcher:
+        type: string
+      name:
+        type: string
+      progress:
+        type: integer
+      status:
+        type: string
+      version:
+        type: integer
+    type: object
+  service.GroupResponse:
+    properties:
+      created_at:
+        type: string
+      discount_percent:
+        type: number
+      id:
+        type: string
+      is_default:
+        type: boolean
+      min_spent:
+        type: integer
+      name:
+        type: string
+    type: object
   service.HandoverRequest:
     properties:
       amount:
@@ -920,21 +1148,62 @@ definitions:
         - cash_out
         type: string
       reason:
+        description: |-
+          Bắt buộc: tiền rút khỏi két không lý do thì cuối ca không ai giải thích
+          được khoản lệch.
         type: string
     required:
-    - amount
     - handover_type
+    - reason
     type: object
   service.HeartbeatRequest:
     properties:
+      cpu_name:
+        description: |-
+          Cấu hình máy do máy trạm tự khai. Bốn cột này trước đây chỉ nhập tay ở
+          trang quản trị, trong khi máy trạm đọc được chính xác hơn người gõ.
+          Đều là tuỳ chọn: gói tin không khai thì giữ nguyên giá trị đang có.
+        type: string
       cpu_temp:
         type: number
+      cpu_usage:
+        description: |-
+          Máy trạm vẫn luôn gửi ba chỉ số này nhưng DTO cũ không có nên bị bỏ đi,
+          dù bảng lịch sử phần cứng có sẵn cột để lưu.
+        type: number
+      disk_usage:
+        type: number
+      extra_network:
+        type: string
+      gpu_name:
+        type: string
       gpu_temp:
         type: number
       ip:
         type: string
       mac:
         type: string
+      os_info:
+        type: string
+      peripherals:
+        description: Thiết bị ngoại vi, máy trạm đọc một lần lúc khởi động. Rỗng =
+          không khai.
+        items:
+          type: string
+        type: array
+      ram_gb:
+        type: integer
+      ram_usage:
+        type: number
+      storage_gb:
+        type: integer
+      uptime:
+        type: integer
+      user_is_admin:
+        description: |-
+          Con trỏ: nil nghĩa là gói tin KHÔNG khai (máy trạm bản cũ, hoặc chưa ai
+          đăng nhập Windows nên không biết), khi đó giữ nguyên giá trị đang có.
+        type: boolean
     type: object
   service.LoginRequest:
     properties:
@@ -950,13 +1219,47 @@ definitions:
     properties:
       access_token:
         type: string
+      must_change_password:
+        description: |-
+          MustChangePassword: vừa đăng nhập bằng mật khẩu mặc định của cmd/seed. Chỉ
+          giao diện bị chặn; token vẫn gọi API bình thường để script cũ chạy tiếp.
+        type: boolean
       refresh_token:
         type: string
       user:
         $ref: '#/definitions/service.UserResponse'
     type: object
+  service.LuckySpinRewardRequest:
+    properties:
+      amount:
+        description: 'Amount thay cho jsonb thô: cả hai loại được hỗ trợ đều tiêu
+          đúng một số.'
+        type: integer
+      is_active:
+        type: boolean
+      max_per_day:
+        description: |-
+          MaxPerDay khai trên từng ô nhưng được dùng như giới hạn lượt quay MỖI
+          HỘI VIÊN MỖI NGÀY của cả bàn quay: Spin lấy số lớn nhất trong các ô đang
+          bật, tối thiểu 1. Xem spinLimit.
+        type: integer
+      name:
+        type: string
+      probability:
+        type: number
+      reward_type:
+        type: string
+    required:
+    - name
+    - reward_type
+    type: object
   service.LuckySpinRewardResponse:
     properties:
+      amount:
+        description: |-
+          Amount là con số bên trong RewardValue, bóc sẵn cho giao diện. Bắt màn
+          hình tự đọc jsonb là cách chắc chắn sinh ra ô trống khi khoá đổi tên.
+        type: integer
       id:
         type: string
       is_active:
@@ -970,30 +1273,19 @@ definitions:
       reward_type:
         type: string
       reward_value:
-        items:
-          type: integer
-        type: array
+        type: object
     type: object
-  service.MaterialResponse:
+  service.MemberLoginRequest:
     properties:
-      created_at:
+      machine_code:
         type: string
-      current_stock:
-        type: number
-      id:
+      password:
         type: string
-      is_active:
-        type: boolean
-      min_stock:
-        type: number
-      name:
+      username:
         type: string
-      price_per_unit:
-        type: integer
-      unit_id:
-        type: string
-      unit_name:
-        type: string
+    required:
+    - password
+    - username
     type: object
   service.MemberResponse:
     properties:
@@ -1003,8 +1295,6 @@ definitions:
         type: integer
       bonus_balance:
         type: integer
-      code:
-        type: string
       created_at:
         type: string
       date_of_birth:
@@ -1012,6 +1302,10 @@ definitions:
       email:
         type: string
       full_name:
+        type: string
+      group:
+        $ref: '#/definitions/service.GroupResponse'
+      group_id:
         type: string
       id:
         type: string
@@ -1029,17 +1323,17 @@ definitions:
         type: string
       phone:
         type: string
-      store_id:
+      role:
+        description: Role "combo" là tài khoản sinh khi bán gói — trang quản trị chỉ
+          cho đổi mật khẩu.
         type: string
-      tier:
-        $ref: '#/definitions/service.TierResponse'
-      tier_id:
-        type: string
-      total_played_hours:
+      total_played_minutes:
         type: integer
       total_spent:
         type: integer
       updated_at:
+        type: string
+      username:
         type: string
     type: object
   service.MemberTransactionResponse:
@@ -1068,26 +1362,20 @@ definitions:
         type: string
       reference_id:
         type: string
-      store_id:
-        type: string
       transaction_type:
         type: string
     type: object
-  service.MessageResponse:
+  service.MenuTreeResponse:
     properties:
-      conversation_id:
-        type: string
-      created_at:
-        type: string
+      children:
+        items:
+          $ref: '#/definitions/service.MenuTreeResponse'
+        type: array
       id:
         type: string
-      message:
+      label:
         type: string
-      message_type:
-        type: string
-      sender_id:
-        type: string
-      sender_type:
+      pId:
         type: string
     type: object
   service.MonthlyRevenueRow:
@@ -1101,11 +1389,25 @@ definitions:
       total_orders:
         type: integer
     type: object
+  service.NotificationResponse:
+    properties:
+      content:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+    type: object
   service.OpenShiftRequest:
     properties:
       notes:
         type: string
       opening_balance:
+        minimum: 0
         type: integer
     type: object
   service.OrderItemRequest:
@@ -1125,6 +1427,10 @@ definitions:
         type: string
       note:
         type: string
+      option_list:
+        items:
+          $ref: '#/definitions/service.OrderOption'
+        type: array
       options:
         type: string
       order_id:
@@ -1141,6 +1447,17 @@ definitions:
         type: integer
       unit_price:
         type: integer
+    type: object
+  service.OrderOption:
+    properties:
+      name:
+        type: string
+      option_id:
+        type: string
+      price:
+        type: integer
+      quantity:
+        type: number
     type: object
   service.OrderResponse:
     properties:
@@ -1160,9 +1477,15 @@ definitions:
         items:
           $ref: '#/definitions/service.OrderItemResponse'
         type: array
+      machine_code:
+        type: string
       machine_id:
         type: string
       member_id:
+        type: string
+      member_name:
+        type: string
+      member_username:
         type: string
       note:
         type: string
@@ -1170,18 +1493,26 @@ definitions:
         type: string
       order_type:
         type: string
+      payment_method:
+        type: string
       payments:
         items:
           $ref: '#/definitions/service.PaymentResponse'
         type: array
-      status:
+      promotion_id:
         type: string
-      store_id:
+      promotion_name:
+        type: string
+      status:
         type: string
       table_number:
         type: string
       total_amount:
         type: integer
+      updated_by:
+        type: string
+      updated_by_name:
+        type: string
     type: object
   service.OverrideCurfewRequest:
     properties:
@@ -1193,6 +1524,16 @@ definitions:
     - override_reason
     - policy_id
     type: object
+  service.PaginatedRecords:
+    properties:
+      current:
+        type: integer
+      records: {}
+      size:
+        type: integer
+      total:
+        type: integer
+    type: object
   service.PayRequest:
     properties:
       amount:
@@ -1200,6 +1541,15 @@ definitions:
       payment_method:
         type: string
       reference_code:
+        type: string
+    type: object
+  service.PaymentMethodOption:
+    properties:
+      code:
+        type: string
+      enabled:
+        type: boolean
+      name:
         type: string
     type: object
   service.PaymentResponse:
@@ -1221,9 +1571,27 @@ definitions:
       status:
         type: string
     type: object
+  service.PermissionResponse:
+    properties:
+      code:
+        type: string
+      id:
+        type: string
+      module:
+        type: string
+      name:
+        type: string
+    type: object
   service.PrinterResponse:
     properties:
+      chars_per_line:
+        description: 'Cấu hình in: xem escpos.go.'
+        type: integer
+      code_page:
+        type: integer
       created_at:
+        type: string
+      encoding:
         type: string
       id:
         type: string
@@ -1237,15 +1605,36 @@ definitions:
         type: integer
       printer_type:
         type: string
-      store_id:
+    type: object
+  service.ProductIngredientResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      ingredient_id:
+        type: string
+      ingredient_name:
+        type: string
+      product_id:
+        type: string
+      quantity:
+        type: number
+      unit_id:
+        type: string
+      unit_name:
         type: string
     type: object
   service.ProductOptionItem:
     properties:
       group_id:
         type: string
+      ingredient_id:
+        type: string
       name:
         type: string
+      quantity:
+        type: number
       sort_order:
         type: integer
     required:
@@ -1253,12 +1642,20 @@ definitions:
     type: object
   service.ProductOptionResponse:
     properties:
+      current_price:
+        type: integer
       group_id:
         type: string
       id:
         type: string
+      ingredient_id:
+        type: string
+      ingredient_name:
+        type: string
       name:
         type: string
+      quantity:
+        type: number
       sort_order:
         type: integer
     type: object
@@ -1268,6 +1665,8 @@ definitions:
         type: string
       created_at:
         type: string
+      current_stock:
+        type: number
       description:
         type: string
       has_stock:
@@ -1276,8 +1675,16 @@ definitions:
         type: string
       image_url:
         type: string
+      ingredients:
+        items:
+          $ref: '#/definitions/service.ProductIngredientResponse'
+        type: array
       is_active:
         type: boolean
+      is_retail:
+        type: boolean
+      min_stock:
+        type: number
       name:
         type: string
       options:
@@ -1288,15 +1695,19 @@ definitions:
         type: integer
       sort_order:
         type: integer
+      supplier_id:
+        type: string
+      supplier_name:
+        type: string
+      unit_id:
+        type: string
     type: object
   service.PromotionConditionResponse:
     properties:
       condition_key:
         type: string
       condition_value:
-        items:
-          type: integer
-        type: array
+        type: object
       id:
         type: string
     type: object
@@ -1336,9 +1747,7 @@ definitions:
       reward_type:
         type: string
       reward_value:
-        items:
-          type: integer
-        type: array
+        type: object
     type: object
   service.PromotionUsageRow:
     properties:
@@ -1356,6 +1765,11 @@ definitions:
       customer_name:
         type: string
       customer_phone:
+        type: string
+      idempotency_key:
+        description: |-
+          IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+          MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
         type: string
       member_id:
         type: string
@@ -1384,29 +1798,55 @@ definitions:
         type: integer
       description:
         type: string
+      idempotency_key:
+        description: |-
+          IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+          MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
+        type: string
       is_bonus:
         type: boolean
     type: object
-  service.SendMessageRequest:
+  service.ResetPasswordRequest:
     properties:
-      conversation_id:
-        type: string
-      message:
-        type: string
-      message_type:
-        type: string
-      sender_id:
-        type: string
-      sender_type:
+      password:
+        minLength: 1
         type: string
     required:
-    - conversation_id
-    - message
-    - sender_id
-    - sender_type
+    - password
+    type: object
+  service.RoleManageResponse:
+    properties:
+      createBy:
+        type: string
+      createTime:
+        type: string
+      id:
+        type: string
+      roleCode:
+        type: string
+      roleDesc:
+        type: string
+      roleName:
+        type: string
+      status:
+        type: string
+      updateBy:
+        type: string
+      updateTime:
+        type: string
     type: object
   service.SessionDetail:
     properties:
+      affordable_until:
+        type: string
+      billed_minutes:
+        type: integer
+      charged_amount:
+        description: |-
+          ChargedAmount là tiền ĐÃ trừ tới lúc này; AffordableUntil là thời điểm số
+          dư cạn theo đơn giá đang áp dụng. Cả hai nằm sẵn trên dòng phiên nên mọi
+          màn hình có được miễn phí, không phát sinh truy vấn nào.
+        type: integer
       combo_id:
         type: string
       combo_type:
@@ -1425,19 +1865,29 @@ definitions:
         type: boolean
       machine_code:
         type: string
+      machine_group_id:
+        description: |-
+          Snapshot fields (populated when session ends).
+          PricePerHour là ngoại lệ: có từ lúc mở máy nên KHÔNG omitempty — phiên
+          đang chạy cần đơn giá để màn hình tính lại khi khách vừa nạp tiền.
+        type: string
+      machine_group_name:
+        type: string
       machine_id:
+        type: string
+      member_group_id:
         type: string
       member_id:
         type: string
       member_name:
         type: string
+      price_per_hour:
+        type: integer
       remaining_minutes:
         type: integer
       slot_end:
         type: string
       started_at:
-        type: string
-      store_id:
         type: string
       total_cost:
         type: integer
@@ -1470,10 +1920,15 @@ definitions:
         type: string
       started_at:
         type: string
-      store_id:
-        type: string
       total_cost:
         type: integer
+    type: object
+  service.SetProductsRequest:
+    properties:
+      product_ids:
+        items:
+          type: string
+        type: array
     type: object
   service.SettingResponse:
     properties:
@@ -1508,9 +1963,12 @@ definitions:
         type: string
       status:
         type: string
-      store_id:
-        type: string
       user_id:
+        type: string
+      user_name:
+        description: |-
+          Cột "Người dùng" trên trang Ca làm việc đọc trường này. Không trả về thì
+          bảng hiện UUID thô — nhân viên không đọc được ai đã trực ca nào.
         type: string
     type: object
   service.SpinRequest:
@@ -1563,13 +2021,15 @@ definitions:
         type: string
       created_by:
         type: string
+      created_by_name:
+        type: string
       description:
         type: string
       id:
         type: string
-      material_id:
+      product_id:
         type: string
-      material_name:
+      product_name:
         type: string
       quantity:
         type: number
@@ -1589,10 +2049,6 @@ definitions:
         type: string
       unit_price:
         type: integer
-      warehouse_id:
-        type: string
-      warehouse_name:
-        type: string
     type: object
   service.SupplierResponse:
     properties:
@@ -1618,19 +2074,6 @@ definitions:
     required:
     - new_machine_id
     type: object
-  service.TierResponse:
-    properties:
-      created_at:
-        type: string
-      discount_percent:
-        type: number
-      id:
-        type: string
-      min_spent:
-        type: integer
-      name:
-        type: string
-    type: object
   service.TopProductRow:
     properties:
       product_id:
@@ -1648,7 +2091,53 @@ definitions:
         type: integer
       description:
         type: string
+      idempotency_key:
+        description: |-
+          IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
+          MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
+        type: string
       payment_method:
+        description: |-
+          Chốt ca đếm tiền mặt bằng cách lọc đúng chuỗi "cash". Để trường này tự do
+          thì một giá trị gõ sai làm khoản tiền mặt đó biến mất khỏi số tiền phải có
+          trong két — két thừa mà không ai truy ra vì sao. Topup kiểm nó với danh
+          sách ở Cài đặt > Thanh toán, cộng "bonus_balance" là đường nội bộ để tặng
+          số dư.
+        type: string
+    required:
+    - payment_method
+    type: object
+  service.TransactionLogRow:
+    properties:
+      amount:
+        type: integer
+      balance_after:
+        type: integer
+      balance_before:
+        type: integer
+      bonus_after:
+        type: integer
+      bonus_before:
+        type: integer
+      created_at:
+        type: string
+      created_by:
+        type: string
+      created_by_name:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      member_id:
+        type: string
+      member_name:
+        type: string
+      member_username:
+        type: string
+      payment_method:
+        type: string
+      transaction_type:
         type: string
     type: object
   service.UnitResponse:
@@ -1715,6 +2204,7 @@ definitions:
         - prepaid
         type: string
       validity_days:
+        minimum: 0
         type: integer
     type: object
   service.UpdateCurfewRequest:
@@ -1732,11 +2222,41 @@ definitions:
       max_minor_hours:
         type: integer
     type: object
+  service.UpdateGroupRequest:
+    properties:
+      discount_percent:
+        maximum: 100
+        minimum: 0
+        type: number
+      is_default:
+        type: boolean
+      min_spent:
+        minimum: 0
+        type: integer
+      name:
+        type: string
+    type: object
+  service.UpdateItemStatusRequest:
+    properties:
+      status:
+        type: string
+    required:
+    - status
+    type: object
   service.UpdateMachineAssetRequest:
     properties:
       asset_type:
         type: string
       brand:
+        type: string
+      check_photos:
+        items:
+          type: string
+        type: array
+      machine_id:
+        description: |-
+          Chuyển thiết bị sang máy khác. Form sửa cho chọn máy nhưng trước đây
+          request không nhận trường này nên đổi máy báo thành công mà không đổi gì.
         type: string
       model:
         type: string
@@ -1755,22 +2275,9 @@ definitions:
         type: string
       name:
         type: string
-      sort_order:
-        type: integer
-    type: object
-  service.UpdateMachinePriceRequest:
-    properties:
-      effective_from:
-        type: string
-      effective_to:
-        type: string
-      machine_group_id:
-        type: string
-      member_tier_id:
-        type: string
-      min_duration:
-        type: integer
       price_per_hour:
+        type: integer
+      sort_order:
         type: integer
     type: object
   service.UpdateMachineRequest:
@@ -1781,39 +2288,58 @@ definitions:
         type: string
       group_id:
         type: string
+      is_active:
+        description: |-
+          IsActive là công tắc tạm ngừng máy, và là ĐƯỜNG THAY CHO VIỆC XOÁ.
+
+          Máy đã có phiên chơi, đơn hàng hay lịch đặt thì không xoá được nữa (xem
+          Delete bên dưới): lịch sử phải giữ lại. Không có công tắc này thì quản trị
+          viên muốn ngừng một máy hỏng chỉ còn cách xoá — đúng thao tác nguy hiểm
+          nhất trong service này.
+
+          StartSession lọc "is_active = true" (session.go), nên đặt false là chặn
+          mở phiên mới ngay lập tức. List KHÔNG lọc cột này, nên máy đã tắt vẫn hiện
+          trên trang quản trị để bật lại được.
+
+          Con trỏ vì đây là bản vá từng phần: bỏ trống nghĩa là không đổi.
+        type: boolean
       os_info:
         type: string
       ram_gb:
         type: integer
       status:
+        description: |-
+          Ba trạng thái, không hơn.
+
+          omitempty vì đây là bản vá từng phần: bỏ trống nghĩa là không đổi trạng
+          thái, và oneof chỉ chạy khi có giá trị. Không có ràng buộc này thì
+          {"status":"abcxyz"} ghi thẳng vào cột: máy đó rơi ra ngoài mọi phép so
+          sánh — không bị chặn mở phiên vì nó không phải "in_use", và trang quản
+          trị hiện chuỗi thô vì không có nhãn nào khớp.
+
+          "maintenance" từng nằm trong danh sách nhưng chưa bao giờ là trạng thái
+          thật: không dòng code nào đặt hay đọc nó, chỉ có một nhãn trên giao diện.
+        enum:
+        - offline
+        - available
+        - in_use
         type: string
       storage_gb:
         type: integer
-    type: object
-  service.UpdateMaterialRequest:
-    properties:
-      current_stock:
-        type: number
-      is_active:
-        type: boolean
-      min_stock:
-        type: number
-      name:
-        type: string
-      price_per_unit:
-        type: integer
-      unit_id:
-        type: string
     type: object
   service.UpdateMemberRequest:
     properties:
       avatar_url:
         type: string
       date_of_birth:
-        type: string
+        $ref: '#/definitions/utils.JSONDate'
       email:
         type: string
       full_name:
+        type: string
+      group_id:
+        type: string
+      id_card_image_url:
         type: string
       id_card_number:
         type: string
@@ -1821,15 +2347,43 @@ definitions:
         type: boolean
       notes:
         type: string
+      parent_consent_file_url:
+        type: string
       password:
         type: string
       phone:
         type: string
-      tier_id:
+      username:
+        type: string
+    type: object
+  service.UpdateNotificationRequest:
+    properties:
+      content:
+        type: string
+      title:
+        type: string
+      type:
+        type: string
+    type: object
+  service.UpdateOrderRequest:
+    properties:
+      machine_id:
+        type: string
+      member_id:
+        type: string
+      note:
+        type: string
+      table_number:
         type: string
     type: object
   service.UpdatePrinterRequest:
     properties:
+      chars_per_line:
+        type: integer
+      code_page:
+        type: integer
+      encoding:
+        type: string
       ip_address:
         type: string
       is_default:
@@ -1840,11 +2394,18 @@ definitions:
         type: integer
       printer_type:
         type: string
-      store_id:
-        type: string
+    type: object
+  service.UpdateProductIngredientRequest:
+    properties:
+      quantity:
+        type: number
     type: object
   service.UpdateProductRequest:
     properties:
+      category_id:
+        type: string
+      current_stock:
+        type: number
       description:
         type: string
       has_stock:
@@ -1853,17 +2414,31 @@ definitions:
         type: string
       is_active:
         type: boolean
+      is_retail:
+        type: boolean
+      min_stock:
+        type: number
       name:
+        maxLength: 200
         type: string
       options:
         items:
           $ref: '#/definitions/service.ProductOptionItem'
         type: array
       price:
+        description: |-
+          omitempty là bắt buộc với con trỏ: thiếu nó thì validator coi nil là vi
+          phạm min=0, nên MỌI lần cập nhật một phần không kèm giá đều bị chặn bằng
+          câu "Giá tối thiểu là 0" — sửa mỗi nhà cung cấp của sản phẩm cũng hỏng.
+          Cả repo đang dùng khuôn `omitempty,min=...`, đây là chỗ duy nhất lệch.
         minimum: 0
         type: integer
       sort_order:
         type: integer
+      supplier_id:
+        type: string
+      unit_id:
+        type: string
     type: object
   service.UpdatePromotionRequest:
     properties:
@@ -1886,26 +2461,32 @@ definitions:
       type:
         type: string
       valid_from:
+        description: |-
+          RawMessage thay vì *string để phân biệt "không gửi" (giữ nguyên) với
+          null hoặc "" (xoá mốc ngày). Với *string cả hai đều ra nil, nên một khuyến
+          mãi đã đặt ngày hết hạn không bao giờ bỏ hạn được nữa.
         type: string
       valid_to:
+        type: string
+    type: object
+  service.UpdateRoleRequest:
+    properties:
+      id:
+        type: string
+      roleCode:
+        type: string
+      roleDesc:
+        description: Con trỏ để xoá trống được mô tả; chuỗi thường thì "" bị coi là
+          "không gửi".
+        type: string
+      roleName:
+        type: string
+      status:
         type: string
     type: object
   service.UpdateStatusRequest:
     properties:
       status:
-        type: string
-    type: object
-  service.UpdateStoreRequest:
-    properties:
-      address:
-        type: string
-      code:
-        type: string
-      is_active:
-        type: boolean
-      name:
-        type: string
-      phone:
         type: string
     type: object
   service.UpdateSupplierRequest:
@@ -1921,23 +2502,62 @@ definitions:
       phone:
         type: string
     type: object
-  service.UpdateTierRequest:
+  service.UpdateUserRequest:
     properties:
-      discount_percent:
-        type: number
-      min_spent:
-        type: integer
-      name:
+      id:
         type: string
+      nickName:
+        type: string
+      password:
+        type: string
+      status:
+        type: string
+      userEmail:
+        type: string
+      userGender:
+        type: string
+      userName:
+        type: string
+      userPhone:
+        type: string
+      userRoles:
+        items:
+          type: string
+        type: array
     type: object
-  service.UpdateWarehouseRequest:
+  service.UserManageResponse:
     properties:
-      address:
+      createBy:
         type: string
-      is_active:
-        type: boolean
-      name:
+      createTime:
         type: string
+      id:
+        type: string
+      lastLoginTime:
+        description: |-
+          last_login_at ĐƯỢC ghi ở AuthService.Login nhưng chưa API nào trả ra, nên
+          không cách nào biết tài khoản nào lâu rồi không ai dùng.
+        type: string
+      nickName:
+        type: string
+      status:
+        type: string
+      updateBy:
+        type: string
+      updateTime:
+        type: string
+      userEmail:
+        type: string
+      userGender:
+        type: string
+      userName:
+        type: string
+      userPhone:
+        type: string
+      userRoles:
+        items:
+          type: string
+        type: array
     type: object
   service.UserResponse:
     properties:
@@ -1949,6 +2569,16 @@ definitions:
         type: string
       id:
         type: string
+      kind:
+        description: |-
+          Kind: "staff" hoặc "member", lấy từ chính token. Máy trạm dùng nó khi khôi
+          phục đăng nhập để biết dựng màn hình nào, thay vì tin giá trị tự lưu.
+        type: string
+      must_change_password:
+        description: |-
+          Luôn có mặt (không omitempty): giao diện gộp user này vào state hiện có, nên
+          thiếu trường thì cờ true của lần đăng nhập trước còn nguyên sang tài khoản sau.
+        type: boolean
       permissions:
         items:
           type: string
@@ -1957,22 +2587,23 @@ definitions:
         type: string
       role:
         type: string
-      store_id:
-        type: string
       username:
         type: string
     type: object
-  service.WarehouseResponse:
+  service.WakeResult:
     properties:
-      address:
+      mac_address:
         type: string
-      created_at:
+      machine_code:
         type: string
-      id:
-        type: string
-      is_active:
-        type: boolean
-      name:
+      targets:
+        items:
+          type: string
+        type: array
+    type: object
+  utils.JSONDate:
+    properties:
+      time:
         type: string
     type: object
 host: localhost:20800
@@ -1988,6 +2619,296 @@ info:
   title: VNET Core API
   version: "1.0"
 paths:
+  /admin/notifications:
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      items:
+                        items:
+                          $ref: '#/definitions/service.NotificationResponse'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List admin notifications
+      tags:
+      - Admin Notifications
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notification data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateNotificationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.NotificationResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Create notification
+      tags:
+      - Admin Notifications
+  /admin/notifications/{id}:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete notification
+      tags:
+      - Admin Notifications
+    get:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.NotificationResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get notification by ID
+      tags:
+      - Admin Notifications
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Notification update data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateNotificationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.NotificationResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Update notification
+      tags:
+      - Admin Notifications
+  /admin/notifications/{id}/dispatch:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Notification ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: integer
+                  type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Dispatch notification to all members
+      tags:
+      - Admin Notifications
+  /api/app-updates:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Danh sách bản cập nhật đã công bố
+      tags:
+      - AppUpdates
+    post:
+      consumes:
+      - application/json
+      description: 'Băm SHA-256 là bắt buộc: máy trạm kiểm băm trước khi chạy tệp
+        tải về.'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Công bố một bản cập nhật
+      tags:
+      - AppUpdates
+  /api/app-updates/{id}:
+    delete:
+      parameters:
+      - description: Update ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Xoá một bản cập nhật
+      tags:
+      - AppUpdates
+  /api/app-updates/{id}/active:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Update ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Bật/tắt một bản cập nhật
+      tags:
+      - AppUpdates
+  /api/attendance:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Danh sách lượt điểm danh
+      tags:
+      - Attendance
+  /api/attendance/checkin:
+    post:
+      consumes:
+      - application/json
+      description: Hội viên tự điểm danh cho chính mình; nhân viên điểm danh hộ thì
+        truyền member_id.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: hôm nay đã điểm danh
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Điểm danh hằng ngày
+      tags:
+      - Attendance
+  /api/attendance/status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Trạng thái điểm danh hôm nay và chuỗi ngày
+      tags:
+      - Attendance
   /api/audit-logs:
     get:
       consumes:
@@ -2094,6 +3015,42 @@ paths:
       summary: Change Password
       tags:
       - Auth
+  /api/auth/client-login:
+    post:
+      consumes:
+      - application/json
+      description: Một ô đăng nhập cho cả nhân viên lẫn hội viên; tên tài khoản quyết
+        định đường đi
+      parameters:
+      - description: Tài khoản, mật khẩu, mã máy
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.MemberLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ClientLoginResponse'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "429":
+          description: Sai quá nhiều lần — kèm header Retry-After
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Client Login (staff or member)
+      tags:
+      - Auth
   /api/auth/login:
     post:
       consumes:
@@ -2124,6 +3081,10 @@ paths:
             $ref: '#/definitions/response.Response'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "429":
+          description: Sai quá nhiều lần — kèm header Retry-After
           schema:
             $ref: '#/definitions/response.Response'
       summary: Login
@@ -2157,6 +3118,45 @@ paths:
       security:
       - BearerAuth: []
       summary: Get Current User
+      tags:
+      - Auth
+  /api/auth/member-login:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate member with username and password
+      parameters:
+      - description: Member login credentials
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.MemberLoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LoginResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+        "429":
+          description: Sai quá nhiều lần — kèm header Retry-After
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Member Login
       tags:
       - Auth
   /api/auth/permissions:
@@ -2303,7 +3303,6 @@ paths:
       - description: Request body
         in: body
         name: request
-        required: true
         schema:
           $ref: '#/definitions/service.CreateBackupRequest'
       produces:
@@ -2325,6 +3324,37 @@ paths:
       security:
       - BearerAuth: []
       summary: Create backup
+      tags:
+      - Backups
+  /api/backups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a backup log entry and its .sql file on disk
+      parameters:
+      - description: Backup ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete backup
       tags:
       - Backups
   /api/backups/{id}/restore:
@@ -2354,107 +3384,134 @@ paths:
       summary: Restore backup
       tags:
       - Backups
-  /api/chat/conversations:
-    get:
-      consumes:
-      - application/json
-      description: Get a paginated list of conversations
-      parameters:
-      - description: Participant ID
-        in: query
-        name: participant_id
-        type: string
-      - description: Participant type
-        in: query
-        name: participant_type
-        type: string
-      - description: Page number
-        in: query
-        name: page
-        type: integer
-      - description: Page size
-        in: query
-        name: page_size
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  allOf:
-                  - $ref: '#/definitions/response.PaginatedData'
-                  - properties:
-                      data:
-                        items:
-                          $ref: '#/definitions/service.ConversationResponse'
-                        type: array
-                    type: object
-              type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: List conversations
-      tags:
-      - Chat
+  /api/combos/{id}/print:
     post:
       consumes:
       - application/json
-      description: Create a new conversation
+      description: id là ID lượt mua. Mật khẩu chỉ lưu dạng băm nên quầy gửi kèm mật
+        khẩu vừa nhận khi mua; bỏ trống thì phiếu không in dòng mật khẩu.
       parameters:
-      - description: Request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/service.CreateConversationRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/service.ConversationResponse'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Create conversation
-      tags:
-      - Chat
-  /api/chat/conversations/{id}/messages:
-    get:
-      consumes:
-      - application/json
-      description: Get paginated messages for a conversation
-      parameters:
-      - description: Conversation ID
+      - description: Purchase ID
         in: path
         name: id
         required: true
         type: string
-      - description: Page number
-        in: query
-        name: page
-        type: integer
-      - description: Page size
-        in: query
-        name: page_size
-        type: integer
+      - description: printer_id, password
+        in: body
+        name: body
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "502":
+          description: không in được
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: In hoá đơn mua combo (tài khoản, mật khẩu, chi tiết gói)
+      tags:
+      - Combos
+  /api/feedback:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Danh sách đánh giá
+      tags:
+      - Feedback
+    post:
+      consumes:
+      - application/json
+      description: 'Hội viên tự gửi: máy được suy ra từ phiên đang chơi, không lấy
+        từ request.'
+      parameters:
+      - description: Điểm và nhận xét
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateFeedbackRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: đơn đã được đánh giá
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Gửi đánh giá dịch vụ
+      tags:
+      - Feedback
+  /api/feedback/summary:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Điểm trung bình và phân bố sao
+      tags:
+      - Feedback
+  /api/game-catalog:
+    get:
+      parameters:
+      - description: GAME_CATALOG_KEY
+        in: header
+        name: X-Game-Key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Catalog game của master cho các quán
+      tags:
+      - Games
+  /api/game-catalog/{name}/torrent:
+    get:
+      parameters:
+      - description: GAME_CATALOG_KEY
+        in: header
+        name: X-Game-Key
+        required: true
+        type: string
+      - description: Tên game
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/x-bittorrent
+      responses:
+        "200":
+          description: OK
+      summary: Tệp .torrent của bản mới nhất
+      tags:
+      - Games
+  /api/game-menu:
+    get:
+      description: Game đang bật và có tệp chạy, kèm root (GAME_ROOT như máy trạm
+        thấy). Hội viên và nhân viên đều gọi được.
       produces:
       - application/json
       responses:
@@ -2465,57 +3522,247 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  allOf:
-                  - $ref: '#/definitions/response.PaginatedData'
-                  - properties:
-                      data:
-                        items:
-                          $ref: '#/definitions/service.MessageResponse'
-                        type: array
-                    type: object
+                  $ref: '#/definitions/service.GameMenu'
               type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: Get messages
+      summary: Menu game cho máy trạm
       tags:
-      - Chat
-  /api/chat/messages:
+      - Games
+  /api/games:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Danh sách game và trạng thái cập nhật
+      tags:
+      - Games
     post:
       consumes:
       - application/json
-      description: Send a message in a conversation
-      parameters:
-      - description: Request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/service.SendMessageRequest'
+      description: Thư mục GAME_ROOT/<name> phải có sẵn.
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/service.MessageResponse'
-              type: object
-        "400":
-          description: Bad Request
+            $ref: '#/definitions/response.Response'
+      summary: Thêm game để phân phối (chỉ master)
+      tags:
+      - Games
+  /api/games/{id}:
+    delete:
+      parameters:
+      - description: Game ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
           schema:
             $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Send message
+      summary: Bỏ game khỏi danh mục (chỉ master, tệp trên ổ giữ nguyên)
       tags:
-      - Chat
+      - Games
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Game ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 'Sửa game: bật/tắt, tự cập nhật, ưu tiên (master sửa được cả tên, launcher)'
+      tags:
+      - Games
+  /api/games/{id}/publish:
+    post:
+      parameters:
+      - description: Game ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Publish ngay bản hiện tại của một game (chỉ master)
+      tags:
+      - Games
+  /api/games/{id}/sync:
+    post:
+      parameters:
+      - description: Game ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Tải ngay một game từ master (chỉ máy chủ quán)
+      tags:
+      - Games
+  /api/games/info:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Vai trò cập nhật game của máy chủ này
+      tags:
+      - Games
+  /api/inventory-counts:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Danh sách phiên kiểm kê
+      tags:
+      - InventoryCount
+    post:
+      consumes:
+      - application/json
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Mở phiên kiểm kê
+      tags:
+      - InventoryCount
+  /api/inventory-counts/{id}:
+    get:
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Chi tiết phiên kiểm kê kèm các dòng đếm
+      tags:
+      - InventoryCount
+  /api/inventory-counts/{id}/cancel:
+    post:
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Huỷ phiên kiểm kê, không đụng tồn kho
+      tags:
+      - InventoryCount
+  /api/inventory-counts/{id}/commit:
+    post:
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Chốt phiên kiểm kê và điều chỉnh tồn kho
+      tags:
+      - InventoryCount
+  /api/inventory-counts/{id}/lines:
+    post:
+      consumes:
+      - application/json
+      description: Gọi lại cùng sản phẩm sẽ ghi đè dòng cũ.
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Sản phẩm và số đếm
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CountLineRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Ghi số đếm thực của một mặt hàng
+      tags:
+      - InventoryCount
+  /api/inventory-counts/{id}/lines/{product_id}:
+    delete:
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Product ID
+        in: path
+        name: product_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Bỏ một dòng đếm khỏi phiên
+      tags:
+      - InventoryCount
   /api/machine-assets:
     get:
       consumes:
@@ -2605,6 +3852,10 @@ paths:
             $ref: '#/definitions/response.Response'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
           schema:
             $ref: '#/definitions/response.Response'
       security:
@@ -2739,6 +3990,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Delete Machine Group
@@ -2787,11 +4042,8 @@ paths:
       - MachineGroups
   /api/machine-prices:
     get:
-      consumes:
-      - application/json
-      description: Get machine prices, optionally filtered by machine group
       parameters:
-      - description: Filter by machine group ID
+      - description: Lọc theo nhóm máy
         in: query
         name: machine_group_id
         type: string
@@ -2801,62 +4053,27 @@ paths:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/model.MachinePrice'
-                  type: array
-              type: object
-        "500":
-          description: Internal Server Error
-          schema:
             $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: List Machine Prices
+      summary: Bảng giá theo hạng hội viên
       tags:
-      - MachinePrices
+      - Pricing
     post:
       consumes:
       - application/json
-      description: Create a new machine price entry
-      parameters:
-      - description: Machine price data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/service.CreateMachinePriceRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/model.MachinePrice'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
             $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Create Machine Price
+      summary: Thêm giá cho một hạng hội viên
       tags:
-      - MachinePrices
+      - Pricing
   /api/machine-prices/{id}:
     delete:
-      consumes:
-      - application/json
-      description: Delete a machine price by its ID
       parameters:
-      - description: Machine Price ID
+      - description: Price ID
         in: path
         name: id
         required: true
@@ -2868,60 +4085,32 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
+        "409":
+          description: còn dữ liệu phụ thuộc
           schema:
             $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Delete Machine Price
+      summary: Xoá một dòng giá theo hạng
       tags:
-      - MachinePrices
+      - Pricing
     put:
       consumes:
       - application/json
-      description: Update an existing machine price
       parameters:
-      - description: Machine Price ID
+      - description: Price ID
         in: path
         name: id
         required: true
         type: string
-      - description: Machine price update data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/service.UpdateMachinePriceRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/model.MachinePrice'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
             $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Update Machine Price
+      summary: Sửa một dòng giá theo hạng
       tags:
-      - MachinePrices
+      - Pricing
   /api/machines:
     get:
       consumes:
@@ -2948,6 +4137,11 @@ paths:
         in: query
         name: search
         type: string
+      - description: 1 = chỉ máy có cảnh báo (tài khoản Windows quản trị hoặc card
+          mạng lạ)
+        in: query
+        name: warning
+        type: integer
       produces:
       - application/json
       responses:
@@ -3034,6 +4228,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Delete Machine
@@ -3109,38 +4307,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Update Machine
-      tags:
-      - Machines
-  /api/machines/{id}/action/{action}:
-    post:
-      consumes:
-      - application/json
-      description: Perform a remote action on a machine (e.g. restart, shutdown)
-      parameters:
-      - description: Machine ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Action name (restart, shutdown, etc.)
-        in: path
-        name: action
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Remote Machine Action
       tags:
       - Machines
   /api/machines/{id}/hardware:
@@ -3231,20 +4397,104 @@ paths:
       summary: Machine Heartbeat
       tags:
       - Machines
-  /api/materials:
+  /api/machines/{id}/remote-desktop:
     get:
+      description: Kiểm tra máy đang bật, nối thử được TightVNC (cổng 5900), rồi trả
+        mật khẩu VNC cho trình xem noVNC
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '{ password }'
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  additionalProperties:
+                    type: string
+                  type: object
+              type: object
+        "409":
+          description: máy tắt, chưa có IP, hoặc VNC không trả lời
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Prepare Remote Desktop
+      tags:
+      - Machines
+  /api/machines/{id}/remote-desktop/ws:
+    get:
+      description: WebSocket cho noVNC, chuyển byte hai chiều tới TightVNC trên máy
+        trạm. Token qua ?token=
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "101":
+          description: Switching Protocols
+      security:
+      - BearerAuth: []
+      summary: Remote Desktop WebSocket
+      tags:
+      - Machines
+  /api/machines/{id}/remote/{action}:
+    post:
       consumes:
       - application/json
-      description: Get a paginated list of materials
+      description: Perform a remote action on a machine (e.g. restart, shutdown)
       parameters:
-      - description: Page number
-        in: query
-        name: page
-        type: integer
-      - description: Page size
-        in: query
-        name: page_size
-        type: integer
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Lệnh: lock, unlock, shutdown, restart, message'
+        in: path
+        name: action
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: máy trạm chưa kết nối
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Remote Machine Action
+      tags:
+      - Machines
+  /api/machines/{id}/wake:
+    post:
+      description: Broadcast a magic packet on the shop LAN to power on a machine
+        that is off. Needs the MAC address the machine reported in a past heartbeat
+        and Wake-on-LAN enabled in its BIOS/NIC.
+      parameters:
+      - description: Machine ID
+        in: path
+        name: id
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -3255,38 +4505,46 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  allOf:
-                  - $ref: '#/definitions/response.PaginatedData'
-                  - properties:
-                      data:
-                        items:
-                          $ref: '#/definitions/service.MaterialResponse'
-                        type: array
-                    type: object
+                  $ref: '#/definitions/service.WakeResult'
               type: object
-        "500":
-          description: Internal Server Error
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: máy đang bật
           schema:
             $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: List materials
+      summary: Wake a machine (Wake-on-LAN)
       tags:
-      - Inventory
+      - Machines
+  /api/machines/batch:
     post:
       consumes:
       - application/json
-      description: Create a new material
+      description: Tạo một dải máy theo tiền tố và khoảng số. Vướng một mã thì không
+        tạo máy nào. Đặt dry_run để chỉ kiểm.
       parameters:
-      - description: Request body
+      - description: Batch spec
         in: body
-        name: request
+        name: body
         required: true
         schema:
-          $ref: '#/definitions/service.CreateMaterialRequest'
+          $ref: '#/definitions/service.BatchCreateMachinesRequest'
       produces:
       - application/json
       responses:
+        "200":
+          description: dry_run
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.BatchCreateResult'
+              type: object
         "201":
           description: Created
           schema:
@@ -3294,24 +4552,182 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/service.MaterialResponse'
+                  $ref: '#/definitions/service.BatchCreateResult'
               type: object
         "400":
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: Create material
+      summary: Batch create machines
       tags:
-      - Inventory
-  /api/materials/{id}:
-    delete:
+      - Machines
+  /api/machines/by-code/{code}:
+    get:
+      description: Get a machine by its machine code
+      parameters:
+      - description: Machine Code
+        in: path
+        name: code
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/model.Machine'
+              type: object
+      summary: Get Machine By Code
+      tags:
+      - Machines
+  /api/machines/by-code/{code}/app-update:
+    get:
+      description: Xác thực bằng khoá máy trạm như heartbeat.
+      parameters:
+      - description: Machine code
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: windows-amd64
+        in: query
+        name: platform
+        required: true
+        type: string
+      - description: Phiên bản đang chạy
+        in: query
+        name: current
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Máy trạm hỏi có bản mới hơn không
+      tags:
+      - AppUpdates
+  /api/machines/by-code/{code}/blocklist:
+    get:
+      description: Máy trạm gọi định kỳ. Xác thực bằng khoá máy trạm như heartbeat.
+      parameters:
+      - description: Machine code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Danh sách tên miền máy trạm phải chặn ngay lúc này
+      tags:
+      - WebsiteBlocking
+  /api/machines/by-code/{code}/blocklist/violations:
+    post:
       consumes:
       - application/json
-      description: Delete a material
       parameters:
-      - description: Material ID
+      - description: Machine code
+        in: path
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Máy trạm báo một lần truy cập bị chặn
+      tags:
+      - WebsiteBlocking
+  /api/members/refresh-tiers:
+    post:
+      description: |-
+        Chạy lại phép so tổng chi tiêu với ngưỡng của từng hạng. Tác vụ
+        nền đã làm việc này mỗi 15 phút; endpoint cho phép chạy ngay sau
+        khi quán vừa sửa ngưỡng, thay vì chờ.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Xếp lại hạng hội viên ngay
+      tags:
+      - Members
+  /api/orders/{id}/print:
+    post:
+      consumes:
+      - application/json
+      description: Không truyền printer_id thì dùng máy in mặc định.
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: printer_id
+        in: body
+        name: body
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "502":
+          description: không in được
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: In hoá đơn cho khách
+      tags:
+      - Orders
+  /api/orders/{id}/print-stations:
+    post:
+      parameters:
+      - description: Order ID
         in: path
         name: id
         required: true
@@ -3327,27 +4743,35 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Delete material
+        "502":
+          description: không in được
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: In phiếu chế biến theo bảng phân luồng máy in
       tags:
-      - Inventory
-    put:
-      consumes:
-      - application/json
-      description: Update an existing material
+      - Orders
+  /api/orders/{id}/receipt-preview:
+    get:
       parameters:
-      - description: Material ID
+      - description: Order ID
         in: path
         name: id
         required: true
         type: string
-      - description: Request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/service.UpdateMaterialRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Xem trước hoá đơn dạng chữ, không gửi xuống máy in
+      tags:
+      - Orders
+  /api/payment-methods:
+    get:
+      description: Danh sách phương thức thanh toán ở Cài đặt > Thanh toán (kể cả
+        mục đang tắt)
       produces:
       - application/json
       responses:
@@ -3358,17 +4782,58 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/service.MaterialResponse'
+                  items:
+                    $ref: '#/definitions/service.PaymentMethodOption'
+                  type: array
               type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: Update material
+      summary: List payment methods
       tags:
-      - Inventory
+      - Settings
+  /api/printers/{id}/products:
+    get:
+      parameters:
+      - description: Printer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Danh sách món gán cho máy in
+      tags:
+      - Printers
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Printer ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Danh sách mã sản phẩm
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.SetProductsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Gán món cho máy in (thay toàn bộ danh sách)
+      tags:
+      - Printers
   /api/reports/by-employee:
     get:
       consumes:
@@ -3382,10 +4847,6 @@ paths:
       - description: End date
         in: query
         name: date_to
-        type: string
-      - description: Store ID
-        in: query
-        name: store_id
         type: string
       - description: Limit
         in: query
@@ -3428,10 +4889,6 @@ paths:
         in: query
         name: date_to
         type: string
-      - description: Store ID
-        in: query
-        name: store_id
-        type: string
       - description: Limit
         in: query
         name: limit
@@ -3472,10 +4929,6 @@ paths:
       - description: End date
         in: query
         name: date_to
-        type: string
-      - description: Store ID
-        in: query
-        name: store_id
         type: string
       - description: Limit
         in: query
@@ -3592,10 +5045,6 @@ paths:
         in: query
         name: date_to
         type: string
-      - description: Store ID
-        in: query
-        name: store_id
-        type: string
       - description: Limit
         in: query
         name: limit
@@ -3636,10 +5085,6 @@ paths:
       - description: End date
         in: query
         name: date_to
-        type: string
-      - description: Store ID
-        in: query
-        name: store_id
         type: string
       - description: Limit
         in: query
@@ -3778,6 +5223,14 @@ paths:
         in: query
         name: page_size
         type: integer
+      - description: Staff name or username
+        in: query
+        name: search
+        type: string
+      - description: open | closed
+        in: query
+        name: status
+        type: string
       produces:
       - application/json
       responses:
@@ -3871,6 +5324,14 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Close shift
@@ -3880,7 +5341,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Handover a shift to another user
+      description: Record a non-sale cash movement (cash_in / cash_out) on an open
+        shift. Cash-out cannot exceed the drawer amount.
       parameters:
       - description: Shift ID
         in: path
@@ -3903,22 +5365,31 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/service.ShiftResponse'
+                  $ref: '#/definitions/service.CashHandoverResponse'
               type: object
         "400":
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: Handover shift
+      summary: Record cash in/out
       tags:
       - Shifts
   /api/shifts/open:
     post:
       consumes:
       - application/json
-      description: Open a new shift
+      description: Open a new shift. Only one shift may be open in the whole shop
+        (one cash drawer).
       parameters:
       - description: Request body
         in: body
@@ -3953,10 +5424,6 @@ paths:
       - application/json
       description: Get a paginated list of stock transactions
       parameters:
-      - description: Filter by material ID
-        in: query
-        name: material_id
-        type: string
       - description: Page number
         in: query
         name: page
@@ -4025,195 +5492,6 @@ paths:
       summary: Create stock transaction
       tags:
       - StockTransactions
-  /api/stores:
-    get:
-      consumes:
-      - application/json
-      description: Get paginated list of stores
-      parameters:
-      - description: Page number
-        in: query
-        name: page
-        type: integer
-      - description: Page size
-        in: query
-        name: page_size
-        type: integer
-      - description: Sort field
-        in: query
-        name: sort
-        type: string
-      - description: Sort order (asc/desc)
-        in: query
-        name: order
-        type: string
-      - description: Search keyword
-        in: query
-        name: search
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  allOf:
-                  - $ref: '#/definitions/response.PaginatedData'
-                  - properties:
-                      data:
-                        items:
-                          $ref: '#/definitions/model.Store'
-                        type: array
-                    type: object
-              type: object
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: List Stores
-      tags:
-      - Stores
-    post:
-      consumes:
-      - application/json
-      description: Create a new store
-      parameters:
-      - description: Store data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/service.CreateStoreRequest'
-      produces:
-      - application/json
-      responses:
-        "201":
-          description: Created
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/model.Store'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Create Store
-      tags:
-      - Stores
-  /api/stores/{id}:
-    delete:
-      consumes:
-      - application/json
-      description: Delete a store by its ID
-      parameters:
-      - description: Store ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Delete Store
-      tags:
-      - Stores
-    get:
-      consumes:
-      - application/json
-      description: Get a single store by its ID
-      parameters:
-      - description: Store ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/model.Store'
-              type: object
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Get Store by ID
-      tags:
-      - Stores
-    put:
-      consumes:
-      - application/json
-      description: Update an existing store
-      parameters:
-      - description: Store ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Store update data
-        in: body
-        name: body
-        required: true
-        schema:
-          $ref: '#/definitions/service.UpdateStoreRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/model.Store'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/response.Response'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Update Store
-      tags:
-      - Stores
   /api/suppliers:
     get:
       consumes:
@@ -4296,6 +5574,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Delete supplier
@@ -4338,6 +5620,137 @@ paths:
       summary: Update supplier
       tags:
       - Suppliers
+  /api/time-pricing:
+    get:
+      parameters:
+      - description: Lọc theo nhóm máy
+        in: query
+        name: machine_group_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Bảng giá theo khung giờ
+      tags:
+      - Pricing
+    post:
+      consumes:
+      - application/json
+      description: 'Khung chồng nhau trong cùng ngày bị từ chối: máy tính tiền không
+        phân định được giá nào thắng.'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Thêm khung giá cao/thấp điểm
+      tags:
+      - Pricing
+  /api/time-pricing/{id}:
+    delete:
+      parameters:
+      - description: Pricing ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Xoá một khung giá
+      tags:
+      - Pricing
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Pricing ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Sửa một khung giá
+      tags:
+      - Pricing
+  /api/transactions:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated list of all member transactions
+      parameters:
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      - description: Start date
+        in: query
+        name: date_from
+        type: string
+      - description: End date
+        in: query
+        name: date_to
+        type: string
+      - description: Filter by type (topup, session_fee, refund, etc)
+        in: query
+        name: transaction_type
+        type: string
+      - description: Search by member name/phone/username
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      data:
+                        items:
+                          $ref: '#/definitions/service.TransactionLogRow'
+                        type: array
+                    type: object
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List transactions
+      tags:
+      - Reports
   /api/units:
     get:
       consumes:
@@ -4366,73 +5779,35 @@ paths:
       summary: List units
       tags:
       - Units
-  /api/warehouses:
+  /api/website-rules:
     get:
-      consumes:
-      - application/json
-      description: Get a list of warehouses
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  items:
-                    $ref: '#/definitions/service.WarehouseResponse'
-                  type: array
-              type: object
-        "500":
-          description: Internal Server Error
-          schema:
             $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: List warehouses
+      summary: Danh sách luật chặn website
       tags:
-      - Warehouses
+      - WebsiteBlocking
     post:
       consumes:
       - application/json
-      description: Create a new warehouse
-      parameters:
-      - description: Request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/service.CreateWarehouseRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/service.WarehouseResponse'
-              type: object
-        "400":
-          description: Bad Request
-          schema:
             $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Create warehouse
+      summary: Thêm luật chặn website
       tags:
-      - Warehouses
-  /api/warehouses/{id}:
+      - WebsiteBlocking
+  /api/website-rules/{id}:
     delete:
-      consumes:
-      - application/json
-      description: Delete a warehouse
       parameters:
-      - description: Warehouse ID
+      - description: Rule ID
         in: path
         name: id
         required: true
@@ -4444,52 +5819,103 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/response.Response'
-        "400":
-          description: Bad Request
+        "409":
+          description: còn dữ liệu phụ thuộc
           schema:
             $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Delete warehouse
+      summary: Xoá luật chặn website
       tags:
-      - Warehouses
+      - WebsiteBlocking
+    get:
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Chi tiết luật kèm lịch và phạm vi máy
+      tags:
+      - WebsiteBlocking
     put:
       consumes:
       - application/json
-      description: Update an existing warehouse
       parameters:
-      - description: Warehouse ID
+      - description: Rule ID
         in: path
         name: id
         required: true
         type: string
-      - description: Request body
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/service.UpdateWarehouseRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            allOf:
-            - $ref: '#/definitions/response.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/service.WarehouseResponse'
-              type: object
-        "400":
-          description: Bad Request
+            $ref: '#/definitions/response.Response'
+      summary: Sửa luật chặn website
+      tags:
+      - WebsiteBlocking
+  /api/website-rules/{id}/groups:
+    put:
+      consumes:
+      - application/json
+      description: Danh sách rỗng nghĩa là áp cho mọi máy.
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
           schema:
             $ref: '#/definitions/response.Response'
-      security:
-      - BearerAuth: []
-      summary: Update warehouse
+      summary: Gán luật cho nhóm máy (thay toàn bộ)
       tags:
-      - Warehouses
+      - WebsiteBlocking
+  /api/website-rules/{id}/schedules:
+    put:
+      consumes:
+      - application/json
+      description: Không có lịch nào nghĩa là luật áp dụng 24/7.
+      parameters:
+      - description: Rule ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Đặt lịch áp dụng cho luật (thay toàn bộ)
+      tags:
+      - WebsiteBlocking
+  /api/website-violations:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Nhật ký các lần truy cập bị chặn
+      tags:
+      - WebsiteBlocking
   /bookings:
     get:
       consumes:
@@ -4609,6 +6035,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Delete booking
@@ -4648,7 +6078,9 @@ paths:
     put:
       consumes:
       - application/json
-      description: Update the details of an existing booking
+      description: Update a pending booking. deposit_amount cannot be changed after
+        creation (400 if it differs); omitted fields keep their value. Changing the
+        time re-runs the create checks (overlap, limits, cancel deadline).
       parameters:
       - description: Booking ID
         in: path
@@ -4722,7 +6154,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Mark a booking as checked in when the customer arrives
+      description: Mark a booking as checked in (allowed from 30 minutes before start
+        until booked_to). The deposit is refunded to the member's balance.
       parameters:
       - description: Booking ID
         in: path
@@ -4754,7 +6187,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Mark a booking as no-show when the customer did not arrive
+      description: Mark a booking as no-show (allowed from 15 minutes after start,
+        same cutoff as the scheduler). The deposit is forfeited.
       parameters:
       - description: Booking ID
         in: path
@@ -4862,6 +6296,10 @@ paths:
             $ref: '#/definitions/response.Response'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
           schema:
             $ref: '#/definitions/response.Response'
       security:
@@ -5042,6 +6480,10 @@ paths:
             $ref: '#/definitions/response.Response'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
           schema:
             $ref: '#/definitions/response.Response'
       security:
@@ -5307,6 +6749,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Delete curfew policy
@@ -5445,6 +6891,126 @@ paths:
       summary: Get lucky spin rewards
       tags:
       - LuckySpin
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Reward
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.LuckySpinRewardRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LuckySpinRewardResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create lucky spin reward
+      tags:
+      - LuckySpin
+  /lucky-spin/rewards/{id}:
+    delete:
+      parameters:
+      - description: Reward ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete lucky spin reward
+      tags:
+      - LuckySpin
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Reward ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Reward
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.LuckySpinRewardRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.LuckySpinRewardResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Update lucky spin reward
+      tags:
+      - LuckySpin
+  /lucky-spin/simulate:
+    post:
+      description: Pick a reward by the configured odds without logging the spin or
+        crediting any member. Used by the admin "test spin" button.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.SpinResponse'
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Simulate a lucky spin (dry run)
+      tags:
+      - LuckySpin
   /lucky-spin/spin:
     post:
       consumes:
@@ -5473,16 +7039,20 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "404":
+          description: hội viên không tồn tại
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Spin the wheel
       tags:
       - LuckySpin
-  /member-tiers:
+  /member-groups:
     get:
       consumes:
       - application/json
-      description: Get all available member tiers
+      description: Get all available member groups
       produces:
       - application/json
       responses:
@@ -5494,7 +7064,7 @@ paths:
             - properties:
                 data:
                   items:
-                    $ref: '#/definitions/service.TierResponse'
+                    $ref: '#/definitions/service.GroupResponse'
                   type: array
               type: object
         "500":
@@ -5503,20 +7073,20 @@ paths:
             $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: List member tiers
+      summary: List member groups
       tags:
-      - MemberTiers
+      - MemberGroups
     post:
       consumes:
       - application/json
-      description: Create a new member tier
+      description: Create a new member group
       parameters:
-      - description: Tier details
+      - description: Group details
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/service.CreateTierRequest'
+          $ref: '#/definitions/service.CreateGroupRequest'
       produces:
       - application/json
       responses:
@@ -5527,7 +7097,7 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/service.TierResponse'
+                  $ref: '#/definitions/service.GroupResponse'
               type: object
         "400":
           description: Bad Request
@@ -5535,16 +7105,16 @@ paths:
             $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: Create a member tier
+      summary: Create a member group
       tags:
-      - MemberTiers
-  /member-tiers/{id}:
+      - MemberGroups
+  /member-groups/{id}:
     delete:
       consumes:
       - application/json
-      description: Delete a member tier by ID
+      description: Delete a member group by ID
       parameters:
-      - description: Tier ID
+      - description: Group ID
         in: path
         name: id
         required: true
@@ -5560,27 +7130,31 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: Delete a member tier
+      summary: Delete a member group
       tags:
-      - MemberTiers
+      - MemberGroups
     put:
       consumes:
       - application/json
-      description: Update an existing member tier
+      description: Update an existing member group
       parameters:
-      - description: Tier ID
+      - description: Group ID
         in: path
         name: id
         required: true
         type: string
-      - description: Updated tier details
+      - description: Updated group details
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/service.UpdateTierRequest'
+          $ref: '#/definitions/service.UpdateGroupRequest'
       produces:
       - application/json
       responses:
@@ -5591,7 +7165,7 @@ paths:
             - $ref: '#/definitions/response.Response'
             - properties:
                 data:
-                  $ref: '#/definitions/service.TierResponse'
+                  $ref: '#/definitions/service.GroupResponse'
               type: object
         "400":
           description: Bad Request
@@ -5599,9 +7173,9 @@ paths:
             $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
-      summary: Update a member tier
+      summary: Update a member group
       tags:
-      - MemberTiers
+      - MemberGroups
   /members:
     get:
       consumes:
@@ -5627,6 +7201,10 @@ paths:
       - description: Search keyword
         in: query
         name: search
+        type: string
+      - description: 'Loại hội viên: member (thường) hoặc combo; bỏ trống là tất cả'
+        in: query
+        name: role
         type: string
       produces:
       - application/json
@@ -5708,6 +7286,10 @@ paths:
             $ref: '#/definitions/response.Response'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
           schema:
             $ref: '#/definitions/response.Response'
       security:
@@ -5838,6 +7420,48 @@ paths:
       summary: Get member combo purchases
       tags:
       - Members
+  /members/{id}/orders:
+    get:
+      description: Orders placed by one member, newest first. The desktop client uses
+        it to show the signed-in member their own orders.
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      items:
+                        items:
+                          $ref: '#/definitions/service.OrderResponse'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List a member's orders
+      tags:
+      - Orders
   /members/{id}/refund:
     post:
       consumes:
@@ -5874,6 +7498,39 @@ paths:
       security:
       - BearerAuth: []
       summary: Refund member balance
+      tags:
+      - Members
+  /members/{id}/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: Reset a member's password
+      parameters:
+      - description: Member ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Reset member password
       tags:
       - Members
   /members/{id}/sessions:
@@ -6120,6 +7777,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Delete an order
@@ -6171,7 +7832,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/service.CreateOrderRequest'
+          $ref: '#/definitions/service.UpdateOrderRequest'
       produces:
       - application/json
       responses:
@@ -6191,6 +7852,49 @@ paths:
       security:
       - BearerAuth: []
       summary: Update an order
+      tags:
+      - Orders
+  /orders/{id}/items/{itemId}/status:
+    post:
+      consumes:
+      - application/json
+      description: 'Luồng bếp: pending → preparing → ready → served'
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Order item ID
+        in: path
+        name: itemId
+        required: true
+        type: string
+      - description: Trạng thái mới
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateItemStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.OrderItemResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Đổi trạng thái một món trong đơn
       tags:
       - Orders
   /orders/{id}/pay:
@@ -6309,6 +8013,71 @@ paths:
       summary: Update order status
       tags:
       - Orders
+  /orders/batch-delete:
+    delete:
+      consumes:
+      - application/json
+      description: Delete multiple orders by IDs
+      parameters:
+      - description: Batch delete request
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Batch delete orders
+      tags:
+      - Orders
+  /orders/topup-request:
+    post:
+      consumes:
+      - application/json
+      description: Create a topup order that admin will approve
+      parameters:
+      - description: Topup data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateTopupOrderRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.OrderResponse'
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Create topup order
+      tags:
+      - Orders
   /printers:
     get:
       consumes:
@@ -6389,6 +8158,10 @@ paths:
             $ref: '#/definitions/response.Response'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
           schema:
             $ref: '#/definitions/response.Response'
       security:
@@ -6501,6 +8274,14 @@ paths:
         in: query
         name: category_id
         type: string
+      - description: Filter by supplier ID
+        in: query
+        name: supplier_id
+        type: string
+      - description: Filter by status (staff only; members always get active products)
+        in: query
+        name: is_active
+        type: boolean
       produces:
       - application/json
       responses:
@@ -6578,6 +8359,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Delete a product
@@ -6649,6 +8434,129 @@ paths:
       security:
       - BearerAuth: []
       summary: Update a product
+      tags:
+      - Products
+  /products/{productId}/ingredients:
+    get:
+      consumes:
+      - application/json
+      description: Get ingredients linked to a product
+      parameters:
+      - description: Product ID
+        in: path
+        name: productId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.ProductIngredientResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: List product ingredients
+      tags:
+      - Products
+    post:
+      consumes:
+      - application/json
+      description: Link an ingredient to a product
+      parameters:
+      - description: Product ID
+        in: path
+        name: productId
+        required: true
+        type: string
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateProductIngredientRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ProductIngredientResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Add ingredient to product
+      tags:
+      - Products
+  /products/ingredients/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a product-ingredient link
+      parameters:
+      - description: ProductIngredient ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Remove ingredient from product
+      tags:
+      - Products
+    put:
+      consumes:
+      - application/json
+      description: Update quantity of a product-ingredient link
+      parameters:
+      - description: ProductIngredient ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Request body
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateProductIngredientRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.ProductIngredientResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Update product ingredient
       tags:
       - Products
   /promotions:
@@ -6764,6 +8672,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
       security:
       - BearerAuth: []
       summary: Delete promotion
@@ -6841,7 +8753,89 @@ paths:
       summary: Update promotion
       tags:
       - Promotions
+  /sessions:
+    get:
+      consumes:
+      - application/json
+      description: Paginated play sessions, including ended ones
+      parameters:
+      - description: active | ended (empty = all)
+        in: query
+        name: status
+        type: string
+      - description: Machine code (partial match)
+        in: query
+        name: machine
+        type: string
+      - description: Member username, full name or phone (partial match)
+        in: query
+        name: member
+        type: string
+      - description: Page number
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      items:
+                        items:
+                          $ref: '#/definitions/service.SessionDetail'
+                        type: array
+                    type: object
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: List sessions
+      tags:
+      - Sessions
   /sessions/{id}:
+    delete:
+      description: Permanently delete an ENDED session. Active sessions are rejected.
+      parameters:
+      - description: Session ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "400":
+          description: phiên đang chạy
+          schema:
+            $ref: '#/definitions/response.Response'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete a session
+      tags:
+      - Sessions
     get:
       consumes:
       - application/json
@@ -7011,6 +9005,28 @@ paths:
       summary: Calculate session cost
       tags:
       - Sessions
+  /sessions/me/end:
+    post:
+      description: 'Hội viên tự trả máy: kết thúc phiên đang chạy của chính mình.
+        Không có phiên thì trả về null, không lỗi — máy trạm gọi hàm này mỗi lần đăng
+        xuất.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.EndSessionResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: End my own session
+      tags:
+      - Sessions
   /sessions/start:
     post:
       consumes:
@@ -7044,6 +9060,475 @@ paths:
       summary: Start a session
       tags:
       - Sessions
+  /systemManage/addRole:
+    post:
+      consumes:
+      - application/json
+      description: Create a system role
+      parameters:
+      - description: Role details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.RoleManageResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Add role
+      tags:
+      - SystemManage
+  /systemManage/addUser:
+    post:
+      consumes:
+      - application/json
+      description: Create a new system user
+      parameters:
+      - description: User details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.CreateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserManageResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Add user
+      tags:
+      - SystemManage
+  /systemManage/batchDeleteRole:
+    delete:
+      consumes:
+      - application/json
+      description: Delete multiple system roles
+      parameters:
+      - description: Role IDs
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Batch delete roles
+      tags:
+      - SystemManage
+  /systemManage/batchDeleteUser:
+    delete:
+      consumes:
+      - application/json
+      description: Delete multiple system users
+      parameters:
+      - description: User IDs
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Batch delete users
+      tags:
+      - SystemManage
+  /systemManage/deleteRole:
+    delete:
+      description: Delete a system role
+      parameters:
+      - description: Role ID
+        in: query
+        name: id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete role
+      tags:
+      - SystemManage
+  /systemManage/deleteUser:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a system user by ID
+      parameters:
+      - description: User ID
+        in: query
+        name: id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+        "409":
+          description: còn dữ liệu phụ thuộc
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Delete user
+      tags:
+      - SystemManage
+  /systemManage/getAllPages:
+    get:
+      consumes:
+      - application/json
+      description: Get all available page route names
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    type: string
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get all pages
+      tags:
+      - SystemManage
+  /systemManage/getAllPermissions:
+    get:
+      description: List every permission code the system knows about
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.PermissionResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get all permissions
+      tags:
+      - SystemManage
+  /systemManage/getAllRoles:
+    get:
+      consumes:
+      - application/json
+      description: Get all enabled roles for dropdown
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.AllRoleResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get all roles
+      tags:
+      - SystemManage
+  /systemManage/getMenuList/v2:
+    get:
+      consumes:
+      - application/json
+      description: Get paginated menu list
+      parameters:
+      - description: Current page
+        in: query
+        name: current
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PaginatedRecords'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get menu list
+      tags:
+      - SystemManage
+  /systemManage/getMenuTree:
+    get:
+      consumes:
+      - application/json
+      description: Get menu tree structure for role permission assignment
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.MenuTreeResponse'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get menu tree
+      tags:
+      - SystemManage
+  /systemManage/getRoleList:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of system roles
+      parameters:
+      - description: Current page
+        in: query
+        name: current
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PaginatedRecords'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get role list
+      tags:
+      - SystemManage
+  /systemManage/getRolePermissions:
+    get:
+      description: List the permission IDs currently granted to a role
+      parameters:
+      - description: Role ID
+        in: query
+        name: roleId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    type: string
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get a role's permissions
+      tags:
+      - SystemManage
+  /systemManage/getUserList:
+    get:
+      consumes:
+      - application/json
+      description: Get a paginated list of system users
+      parameters:
+      - description: Current page
+        in: query
+        name: current
+        type: integer
+      - description: Page size
+        in: query
+        name: size
+        type: integer
+      - description: Search keyword
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.PaginatedRecords'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Get user list
+      tags:
+      - SystemManage
+  /systemManage/updateRole:
+    post:
+      consumes:
+      - application/json
+      description: Update a system role
+      parameters:
+      - description: Role details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateRoleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.RoleManageResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Update role
+      tags:
+      - SystemManage
+  /systemManage/updateRolePermissions:
+    post:
+      consumes:
+      - application/json
+      description: Set the full permission list for a role
+      parameters:
+      - description: Role ID and permission IDs
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Replace a role's permissions
+      tags:
+      - SystemManage
+  /systemManage/updateUser:
+    post:
+      consumes:
+      - application/json
+      description: Update an existing system user
+      parameters:
+      - description: Updated user details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/service.UserManageResponse'
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Update user
+      tags:
+      - SystemManage
 securityDefinitions:
   BearerAuth:
     in: header
