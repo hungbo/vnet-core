@@ -68,7 +68,7 @@ func TestRemoteStringField_MissingIsEmptyNotPanic(t *testing.T) {
 // nhau là cả chuỗi đứt lặng lẽ — đúng lỗi mà đợt này đang sửa.
 func TestRegisteredRemoteHandlersMatchBackend(t *testing.T) {
 	backendActions := []string{
-		"lock", "unlock", "shutdown", "restart", "message", "block-app", "unblock-app",
+		"shutdown", "restart", "message",
 		"screenshot", "process-list", "process-kill",
 	}
 

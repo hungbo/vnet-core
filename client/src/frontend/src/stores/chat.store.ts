@@ -105,7 +105,16 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function appendMessage(raw: any) {
-    if (raw.room_id !== roomId.value) return
+    // Tin của một phòng khác phòng đang giữ: máy chủ chỉ gửi tin cho người
+    // trong phòng, nên đây là phòng MỚI của chính khách này — quầy vừa xoá hết
+    // phòng cũ rồi mở phòng khác. Bản cũ bỏ qua im lặng, nên sau một lần quầy
+    // "Xoá tất cả" thì khách không bao giờ thấy tin nào nữa. Chuyển sang phòng
+    // đó và tải lại cả cuộc trò chuyện (đã gồm tin này).
+    if (raw.room_id && raw.room_id !== roomId.value) {
+      roomId.value = raw.room_id
+      loadMessages()
+      return
+    }
     if (!messages.value.some(m => m._id === raw.id)) {
       messages.value = sortMessages([...messages.value, mapMessage(raw, userId.value)])
     }

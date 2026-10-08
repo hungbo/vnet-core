@@ -14,9 +14,11 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/shirou/gopsutil/v3/host"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -76,9 +78,15 @@ type App struct {
 	role        string
 	machineCode string
 	locker      *ScreenLocker
-	// Đang ở chế độ bảo trì: mở bằng PIN kỹ thuật, không có phiên và không tính
+	// Đang ở chế độ bảo trì: mở bằng tài khoản quản trị máy trạm, không có phiên và không tính
 	// tiền. Lớp chống phá đứng yên trong lúc này.
 	baoTri atomic.Bool
+	// verified: máy chủ đã xác nhận token đang giữ. Chỉ khi đó giao diện mới
+	// được phép mở khoá — frontend xin mở mà chưa có xác nhận thì bị từ chối.
+	verified atomic.Bool
+	// Lý do phủ màn hình ngoài chuyện chưa đăng nhập: mất kết nối máy chủ quá
+	// ngưỡng.
+	offlineLocked atomic.Bool
 	wsClient *WSClient
 	wsCtx    context.Context
 	wsCancel context.CancelFunc
@@ -88,6 +96,16 @@ type App struct {
 	// sổ phụ chạy trong tiến trình riêng. Frontend đọc giá trị này để render
 	// thẳng màn hình tương ứng thay vì dựng cả thanh.
 	windowMode string
+	// Cửa sổ phụ dùng CHUNG một tiến trình cho mọi màn hình (gọi món, hỗ trợ,
+	// nạp tiền, điểm danh, đánh giá): panelMode là màn hình đang hiện. Tiến
+	// trình được dựng sẵn ẩn ngay khi khách đăng nhập, bấm nút chỉ đổi màn hình
+	// rồi hiện lên — không phải chạy lại .exe và dựng WebView2 mỗi lần.
+	panelMu   sync.Mutex
+	panelMode string
+	// thoat: cửa sổ phụ đang tắt thật (hết phiên). Bấm X thì chỉ ẩn.
+	thoat atomic.Bool
+	// prewarmRetry: số lần liên tiếp cửa sổ dựng sẵn chết lúc khởi động.
+	prewarmRetry atomic.Int32
 }
 
 func NewApp() *App {
@@ -114,11 +132,19 @@ func (a *App) Startup(ctx context.Context) {
 	a.cancel = cancel
 
 	go runTelemetry(aCtx, a.cfg)
-	go runWatchdog(aCtx, a.cfg, a.locker, &[]string{}, new(bool), a.LockScreen)
+	go runWatchdog(aCtx, a.cfg, a.locker, &[]string{})
 	go newWebBlocker(a.cfg).run(aCtx)
 	// Lớp canh dịch vụ nền chạy Ở ĐÂY chứ không ở tiến trình dịch vụ: dịch vụ
 	// đã canh giao diện, đây là chiều còn lại.
 	go runGuard(aCtx, a.cfg, a.baoTri.Load)
+	// Chính sách gần nhất dịch vụ nền đã lưu, rồi kênh báo cáo với dịch vụ.
+	loadPolicyFile()
+	go runUILinkClient(aCtx, a)
+
+	// Nhớ mốc độ phân giải và chuột NGAY bây giờ, trước khi khách nào kịp đụng tới
+	// (và trước khi màn hình khoá đo kích thước), chứ không đợi lần đầu có người mở
+	// Cài đặt — lúc đó game có thể đang giữ một độ phân giải tạm.
+	displays.startup()
 
 	// Chưa ai đăng nhập thì máy phải bị khoá NGAY, trước cả khi frontend kịp
 	// dựng xong. Đây là mặc định an toàn: mọi đường dẫn tới màn hình desktop
@@ -147,6 +173,10 @@ func (a *App) applyLoginLock(khoa bool) {
 		return
 	}
 	if khoa {
+		// Trả độ phân giải và chuột về mức ban đầu TRƯỚC khi phủ màn hình: người ngồi
+		// sau không thừa hưởng cài đặt của khách trước, và màn hình khoá phải đo theo
+		// chế độ cuối cùng chứ không phải chế độ khách đã chọn.
+		a.resetDisplayForNextUser()
 		wailsruntime.WindowShow(a.ctx)
 		wailsruntime.WindowUnminimise(a.ctx)
 		wailsruntime.WindowFullscreen(a.ctx)
@@ -186,63 +216,51 @@ func (a *App) loggedIn() bool {
 // SetLoggedIn được frontend gọi mỗi khi trạng thái đăng nhập đổi: đăng nhập
 // xong, đăng xuất, hoặc khôi phục phiên cũ lúc khởi động.
 func (a *App) SetLoggedIn(loggedIn bool) {
+	// Frontend chỉ ĐỀ NGHỊ; mở khoá hay không do Go quyết theo xác nhận của máy
+	// chủ. Không có chốt này thì bất cứ thứ gì chạy được trong giao diện cũng
+	// gọi được hàm này để mở máy.
+	if loggedIn && !a.verified.Load() {
+		log.Printf("[login] từ chối mở khoá: máy chủ chưa xác nhận phiên đăng nhập")
+		a.applyLoginLock(true)
+		return
+	}
 	if loggedIn {
 		a.baoTri.Store(false)
 	}
 	a.applyLoginLock(!loggedIn)
 }
 
-// HasMaintenancePin cho màn hình khoá biết có nên hiện ô PIN hay không. Máy
-// chưa đặt PIN mà vẫn hiện ô là mời người ta gõ vào một cái không bao giờ đúng.
-func (a *App) HasMaintenancePin() bool {
-	return a.cfg.MaintenancePinHash != ""
-}
-
-// UnlockMaintenance mở khoá máy bằng PIN kỹ thuật, KHÔNG hỏi máy chủ.
+// unlockLocalAdmin mở khoá máy bằng tài khoản quản trị máy trạm, KHÔNG hỏi
+// máy chủ.
 //
-// Đây là đường vào duy nhất khi mất mạng. Mọi cách đăng nhập khác — hội viên,
-// quét QR, tài khoản quản trị — đều gọi API, nên router hỏng là cả phòng máy
-// đứng trước màn hình khoá phủ kín mà không có gì gõ vào được.
+// Đây là đường vào chắc chắn có khi mất mạng: mọi cách đăng nhập khác đều gọi
+// API, nên router hỏng là cả phòng máy đứng trước màn hình khoá phủ kín.
 //
 // Mở kiểu này KHÔNG mở phiên và KHÔNG tính tiền: nó dành cho nhân viên kỹ thuật,
 // không phải cho khách. Lớp chống phá cũng đứng yên, vì việc đầu tiên người sửa
 // máy làm thường là tắt dịch vụ.
-func (a *App) UnlockMaintenance(pin string) error {
-	if err := verifyPin(a.cfg.MaintenancePinHash, pin); err != nil {
-		// Chậm lại một nhịp: máy đứng ngay trước mặt người muốn dò, và dò một
-		// mã sáu chữ số qua giao diện là chuyện của vài phút nếu không có nó.
-		time.Sleep(time.Second)
-		log.Printf("[bảo trì] PIN sai")
-		return err
-	}
-
-	log.Printf("[bảo trì] mở khoá bằng PIN kỹ thuật")
+func (a *App) unlockLocalAdmin(username string) {
+	log.Printf("[bảo trì] mở khoá bằng tài khoản quản trị máy trạm %q", username)
 	a.baoTri.Store(true)
 	a.locker.Unlock()
 	a.applyLoginLock(false)
 	wailsruntime.WindowMinimise(a.ctx)
-	return nil
 }
 
 // unlockWithCachedStaff mở máy bằng tài khoản nhân viên đã lưu lúc còn mạng.
 //
-// KHÔNG mở phiên và KHÔNG tính tiền — giống hệt PIN kỹ thuật. Đây là đường để
+// KHÔNG mở phiên và KHÔNG tính tiền — giống tài khoản quản trị máy trạm. Đây là đường để
 // vào sửa máy hoặc gỡ máy trạm, không phải một cách đăng nhập thay thế.
 func (a *App) unlockWithCachedStaff(username, password string) error {
 	c, err := verifyCachedStaff(username, password, time.Now())
 	if err != nil {
 		time.Sleep(time.Second)
 		log.Printf("[offline] từ chối %q: %v", username, err)
-		return fmt.Errorf("không kết nối được máy chủ, và %v", err)
+		return fmt.Errorf("Không kết nối được máy chủ. Khi mất mạng chỉ tài khoản nhân viên từng đăng nhập trên máy này mới mở được máy")
 	}
 
-	if c.Builtin {
-		log.Printf("[offline] mở khoá bằng TÀI KHOẢN MẶC ĐỊNH của bản cài — " +
-			"máy này chưa từng có nhân viên nào đăng nhập qua máy chủ")
-	} else {
-		log.Printf("[offline] mở khoá bằng tài khoản %q (%s) đã lưu ngày %s",
-			c.Username, c.Role, c.SavedAt.Format("02/01/2006"))
-	}
+	log.Printf("[offline] mở khoá bằng tài khoản %q (%s) đã lưu ngày %s",
+		c.Username, c.Role, c.SavedAt.Format("02/01/2006"))
 	a.baoTri.Store(true)
 	a.locker.Unlock()
 	a.applyLoginLock(false)
@@ -255,17 +273,6 @@ func (a *App) HasCachedStaff() bool {
 	return len(loadCredCache()) > 0
 }
 
-// HasBuiltinAdmin: máy này còn mở được bằng tài khoản mặc định của bản cài hay
-// không. Giao diện đọc hàm này để cảnh báo mỗi lần có nhân viên đăng nhập —
-// một cửa sau mà không ai biết nó còn mở thì tệ hơn là không có cửa nào.
-func (a *App) HasBuiltinAdmin() bool {
-	return builtinAdminActive()
-}
-
-func (a *App) SetServerURL(url string) {
-	a.cfg.ServerURL = url
-}
-
 func (a *App) GetServerURL() string {
 	if a.cfg.ServerURL == "" {
 		return "http://localhost:20800"
@@ -274,6 +281,13 @@ func (a *App) GetServerURL() string {
 }
 
 func (a *App) doRequest(method, path string, body interface{}) (json.RawMessage, error) {
+	return a.doRequestWith(a.token, uiTimeout, method, path, body)
+}
+
+// doRequestWith là doRequest với token và hạn chót do người gọi chọn.
+// RestoreSession hỏi bằng một token CHƯA được tin nên không thể gán nó vào
+// a.token trước; Logout cần hạn chót ngắn hơn lời gọi thường.
+func (a *App) doRequestWith(token string, timeout time.Duration, method, path string, body interface{}) (json.RawMessage, error) {
 	var reqBody io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -286,17 +300,21 @@ func (a *App) doRequest(method, path string, body interface{}) (json.RawMessage,
 	fullURL := a.GetServerURL() + path
 	log.Printf("[HTTP] %s %s body=%s", method, fullURL, a.safeBody(body))
 
-	req, err := http.NewRequest(method, fullURL, reqBody)
+	// Hạn chót gắn vào context để bao cả phần đọc thân trả lời: máy chủ gửi
+	// header rồi treo giữa chừng cũng không giữ được lời gọi.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, reqBody)
 	if err != nil {
 		log.Printf("[HTTP] new request error: %v", err)
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if a.token != "" {
-		req.Header.Set("Authorization", "Bearer "+a.token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("[HTTP] do error: %v", err)
 		// Bọc bằng sentinel: "không với tới máy chủ" và "sai mật khẩu" phải
@@ -306,7 +324,11 @@ func (a *App) doRequest(method, path string, body interface{}) (json.RawMessage,
 	}
 	defer resp.Body.Close()
 
-	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[HTTP] read error: %v", err)
+		return nil, fmt.Errorf("%w: %v", errServerUnreachable, err)
+	}
 	log.Printf("[HTTP] %s %s → %d body=%s", method, fullURL, resp.StatusCode, string(bodyBytes))
 
 	var apiResp APIResponse
@@ -328,11 +350,37 @@ func (a *App) safeBody(body interface{}) string {
 		return ""
 	}
 	b, _ := json.Marshal(body)
+	// ui.log nằm trong thư mục của tài khoản Windows đang ngồi máy — tài khoản
+	// của KHÁCH. Ghi nguyên thân yêu cầu là khách sau đọc được mật khẩu khách
+	// trước, kể cả mật khẩu nhân viên.
+	var m map[string]interface{}
+	if json.Unmarshal(b, &m) == nil {
+		for k := range m {
+			if isSecretField(k) {
+				m[k] = "***"
+			}
+		}
+		b, _ = json.Marshal(m)
+	}
 	s := string(b)
 	if len(s) > 200 {
 		s = s[:200] + "..."
 	}
 	return s
+}
+
+// isSecretField: trường không bao giờ được ghi ra nhật ký.
+func isSecretField(key string) bool {
+	k := strings.ToLower(key)
+	if k == "machine_code" {
+		return false
+	}
+	for _, w := range []string{"password", "pin", "token", "secret", "code"} {
+		if strings.Contains(k, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) connectWS() {
@@ -341,7 +389,13 @@ func (a *App) connectWS() {
 	}
 	a.wsCtx, a.wsCancel = context.WithCancel(context.Background())
 	a.wsClient = NewWSClient(a.ctx, a.GetServerURL(), a.token, a.machineCode)
-	a.registerRemoteHandlers(a.wsClient)
+	// Lệnh điều khiển từ quầy (khoá, nhắn tin, chụp màn hình, tiến trình...)
+	// chỉ thanh chính xử lý. Cửa sổ phụ dựng sẵn sống suốt phiên và cũng nối
+	// WebSocket (cần cho chat, số dư); để nó xử lý nữa là mỗi lệnh chạy HAI
+	// lần — khách thấy hai hộp thông báo, quầy nhận hai ảnh chụp.
+	if a.windowMode == "" {
+		a.registerRemoteHandlers(a.wsClient)
+	}
 	go func() {
 		if err := a.wsClient.Connect(a.wsCtx); err != nil {
 			log.Printf("ws client: %v", err)
@@ -359,6 +413,14 @@ func (a *App) connectWS() {
 // Nhân viên đăng nhập thì KHÔNG mở phiên và không tính tiền: họ vào để trông
 // máy, không phải để chơi.
 func (a *App) Login(username, password string) (string, error) {
+	// Tài khoản quản trị máy trạm kiểm ngay tại máy, trước khi hỏi máy chủ:
+	// nó phải mở được máy cả lúc mất mạng. Sai mật khẩu thì vẫn đi tiếp lên
+	// máy chủ — có thể đó là tài khoản nhân viên trùng tên.
+	if _, dung := verifyLocalAdmin(username, password); dung && a.windowMode == "" {
+		a.unlockLocalAdmin(strings.TrimSpace(username))
+		return `{"offline":true,"local_admin":true}`, nil
+	}
+
 	req := LoginRequest{
 		Username:    username,
 		Password:    password,
@@ -413,13 +475,49 @@ func (a *App) Login(username, password string) (string, error) {
 		log.Printf("lock screen error: %v", err)
 	}
 
+	a.verified.Store(true)
 	a.connectWS()
 
 	return string(data), nil
 }
 
 func (a *App) Logout() error {
-	a.locker.Unlock()
+	// Cửa sổ phụ không có đăng xuất của riêng nó: phiên hết thì nó đóng lại.
+	// Không chặn ở đây thì cửa sổ thực đơn cũng gọi trả máy thay cho khách.
+	if a.windowMode != "" {
+		if a.ctx != nil {
+			a.thoat.Store(true)
+			wailsruntime.Quit(a.ctx)
+		}
+		return nil
+	}
+
+	// Đăng xuất của HỘI VIÊN là trả máy. Bản cũ chỉ xoá token cục bộ nên phiên
+	// trên máy chủ chạy tiếp: khách về rồi vẫn bị trừ tiền từng phút, và máy
+	// kẹt ở "đang dùng" nên người sau không mở được. Máy chủ treo thì hết hạn
+	// chót cũng đi tiếp — dọn trạng thái cục bộ bên dưới KHÔNG được chờ mãi.
+	// Không với tới máy chủ thì phiên VẪN cần được trả: máy gửi nhịp tim đều nên
+	// máy chủ không coi là mất máy. Giữ bản sao token để thử lại ở nền (traMayONen)
+	// sau khi trạng thái cục bộ đã dọn xong.
+	chuaTra := ""
+	if a.token != "" && a.role != "admin" {
+		if _, err := a.doRequestWith(a.token, logoutTimeout, "POST", "/api/sessions/me/end", nil); err != nil {
+			log.Printf("[logout] không trả được máy trên máy chủ: %v", err)
+			if errors.Is(err, errServerUnreachable) {
+				chuaTra = a.token
+			}
+		}
+	}
+	a.closeChildWindows()
+	a.resetDisplayForNextUser()
+
+	// Hook chặn phím GIỮ NGUYÊN: đăng xuất là quay về màn hình khoá, và màn
+	// hình khoá cần chính cái hook đó. Bản cũ gỡ hook ở đây, nên từ lần đăng
+	// xuất đầu tiên trở đi màn hình khoá không còn chặn được Alt+Tab nữa.
+	if a.baoTri.Load() {
+		a.locker.Unlock()
+	}
+	a.verified.Store(false)
 	a.token = ""
 	a.userID = ""
 	a.username = ""
@@ -428,22 +526,205 @@ func (a *App) Logout() error {
 	if a.wsCancel != nil {
 		a.wsCancel()
 	}
+	if chuaTra != "" {
+		go a.traMayONen(chuaTra, lichTraMay{endRetryBackoff, time.Now().Add(endRetryFor), logoutTimeout})
+	}
 	return nil
 }
 
-func (a *App) RestoreSession(token, userID, username, fullName, role string) error {
+// lichTraMay là lịch thử lại việc trả máy, chốt lúc Logout để vòng nền không đọc biến toàn cục.
+type lichTraMay struct {
+	buoc    []time.Duration // chờ trước mỗi lần thử; phần tử cuối lặp mãi
+	hetHan  time.Time       // quá mốc này thì bỏ cuộc
+	hanChot time.Duration   // hạn chót mỗi lời gọi
+}
+
+// traMayONen thử lại việc trả máy mà Logout không với tới máy chủ được. Chạy sau khi
+// trạng thái cục bộ đã dọn nên dùng BẢN SAO token và không đụng tới a.token. Dừng khi
+// máy chủ đã trả lời (xong, hết phiên, token hết hạn...), khi khách vừa đăng nhập lại,
+// hoặc quá lich.hetHan.
+func (a *App) traMayONen(token string, lich lichTraMay) {
+	for i := 0; time.Now().Before(lich.hetHan); i++ {
+		time.Sleep(lich.buoc[min(i, len(lich.buoc)-1)])
+		// Hội viên đã đăng nhập lại (cùng người thì máy chủ nối lại ĐÚNG phiên cũ): kết thúc nó bây giờ là
+		// đuổi họ khỏi máy giữa chừng. Nhân viên vào xem máy thì không ảnh hưởng gì.
+		if a.loggedIn() && a.role != "admin" {
+			return
+		}
+		if a.traMayMotLan(token, lich.hanChot) {
+			return
+		}
+	}
+}
+
+// traMayMotLan thử trả máy một lần; true là dừng hẳn. /sessions/me/end kết thúc phiên đang chạy của
+// hội viên Ở BẤT KỲ MÁY NÀO, mà sau vài phút phiên cũ có thể đã được máy chủ tự đóng và hội viên
+// đang chơi ở máy khác — nên hỏi trước và chỉ kết thúc phiên nằm đúng trên máy này.
+func (a *App) traMayMotLan(token string, hanChot time.Duration) bool {
+	data, err := a.doRequestWith(token, hanChot, "GET", "/api/sessions/me", nil)
+	if err != nil {
+		return !errors.Is(err, errServerUnreachable)
+	}
+	var phien struct {
+		MachineCode string `json:"machine_code"`
+	}
+	if json.Unmarshal(data, &phien) != nil || phien.MachineCode != a.machineCode {
+		return true // hết phiên (null) hoặc phiên đã sang máy khác
+	}
+	_, err = a.doRequestWith(token, hanChot, "POST", "/api/sessions/me/end", nil)
+	return !errors.Is(err, errServerUnreachable)
+}
+
+// RestoreSession khôi phục đăng nhập sau khi giao diện tự khởi động lại.
+//
+// Chỉ nhận token; MỌI thứ khác (ai, vai trò gì) hỏi lại máy chủ. Bản cũ nhận cả
+// vai trò từ nơi frontend tự lưu và không hỏi ai: sửa giá trị lưu đó thành
+// nhân viên là có một máy mở khoá, không phiên, không tính tiền. Không hỏi được
+// máy chủ thì không khôi phục — máy ở lại màn hình khoá, an toàn hơn là mở.
+//
+// Token CHỈ được gán vào a.token SAU khi máy chủ xác nhận. Giao diện chạy hàm
+// này ở nền (màn hình khoá hiện ngay, không chờ), nên trong lúc máy chủ chưa
+// trả lời người ở máy có thể đăng nhập tay: thất bại hay hết hạn chót ở đây mà
+// động tới a.token là xoá mất phiên vừa đăng nhập của họ — và giữ token của
+// khách trước trong lúc chưa ai xác nhận nó thì làm máy trông như đã mở.
+func (a *App) RestoreSession(token string) (string, error) {
+	data, err := a.doRequestWith(token, uiTimeout, "GET", "/api/auth/me", nil)
+	if err != nil {
+		return "", err
+	}
+	var me struct {
+		UserInfo
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(data, &me); err != nil || me.ID == "" || me.Kind == "" {
+		return "", errors.New("máy chủ không xác nhận được phiên đăng nhập")
+	}
+	// Máy chủ trả lời chậm, người ở máy đã tự vào (đăng nhập, hoặc mở khoá bảo
+	// trì) trong lúc chờ: phiên của họ thắng, phiên cũ bị bỏ.
+	if a.token != "" || a.baoTri.Load() {
+		return "", errors.New("máy đã được đăng nhập bằng cách khác")
+	}
 	a.token = token
-	a.userID = userID
-	a.username = username
-	a.fullName = fullName
-	a.role = role
+	a.userID = me.ID
+	a.username = me.Username
+	a.fullName = me.FullName
+	a.role = me.Role
+	if me.Kind == "staff" {
+		a.role = "admin"
+	}
+	a.verified.Store(true)
 	a.connectWS()
-	return nil
+
+	out, _ := json.Marshal(map[string]string{
+		"id": a.userID, "username": a.username, "full_name": a.fullName, "role": a.role,
+	})
+	return string(out), nil
+}
+
+// offlineReason hiện trên lớp phủ khi mất kết nối máy chủ.
+const offlineReason = "Mất kết nối máy chủ — đang thử lại"
+
+// linkStatus là báo cáo gửi dịch vụ nền mỗi hai giây.
+func (a *App) linkStatus() uiStatus {
+	maint := a.baoTri.Load()
+	dangNhap := a.loggedIn() && a.verified.Load()
+	return uiStatus{
+		Locked: !maint && (!dangNhap || a.offlineLocked.Load()),
+		Member: dangNhap && a.role != "admin",
+		Admin:  dangNhap && a.role == "admin",
+		Maint:  maint,
+	}
+}
+
+// applyServiceReply làm theo chỉ thị của dịch vụ nền.
+func (a *App) applyServiceReply(r svcReply) {
+	setPolicy(r.Policy)
+	a.setOfflineLock(r.OfflineLock)
+}
+
+// setOfflineLock phủ màn hình khi mất kết nối máy chủ, và gỡ ra khi có lại.
+//
+// Máy chủ ngừng tính tiền sau hai phút không nghe thấy máy; không khoá ở đây
+// thì quãng sau đó là dùng máy không ai tính. Chỉ áp cho hội viên: máy chưa ai
+// đăng nhập đã ở màn hình khoá sẵn, còn nhân viên và chế độ bảo trì là người
+// đang sửa máy — nhiều khi chính vì mạng hỏng.
+func (a *App) setOfflineLock(on bool) {
+	if a.windowMode != "" || a.ctx == nil {
+		return
+	}
+	if on {
+		if a.offlineLocked.Load() || a.baoTri.Load() || !a.loggedIn() || a.role == "admin" {
+			return
+		}
+		a.offlineLocked.Store(true)
+		log.Printf("[offline] mất kết nối máy chủ quá ngưỡng — khoá màn hình")
+		a.closeChildWindows()
+		wailsruntime.WindowShow(a.ctx)
+		wailsruntime.WindowUnminimise(a.ctx)
+		wailsruntime.WindowFullscreen(a.ctx)
+		wailsruntime.WindowSetAlwaysOnTop(a.ctx, true)
+		wailsruntime.EventsEmit(a.ctx, "vnet:machine:locked", offlineReason)
+		if err := a.locker.Lock(); err != nil {
+			log.Printf("[offline] đã phủ màn hình nhưng không chặn được phím: %v", err)
+		}
+		return
+	}
+
+	if !a.offlineLocked.Load() {
+		return
+	}
+	a.offlineLocked.Store(false)
+	log.Printf("[offline] đã nối lại máy chủ")
+	wailsruntime.EventsEmit(a.ctx, "vnet:machine:unlocked")
+	a.applyLoginLock(!a.loggedIn())
+	a.dungLaiCuaSoPhu()
+	// Frontend hỏi lại máy chủ ngay: phiên còn thì chơi tiếp, phiên đã bị đóng
+	// trong lúc mất mạng thì về màn hình đăng nhập.
+	wailsruntime.EventsEmit(a.ctx, "vnet:offline:cleared")
 }
 
 // GetWindowMode cho frontend biết nó đang chạy trong cửa sổ nào.
 func (a *App) GetWindowMode() string {
+	a.panelMu.Lock()
+	defer a.panelMu.Unlock()
+	if a.panelMode != "" {
+		return a.panelMode
+	}
 	return a.windowMode
+}
+
+var panelTitles = map[string]string{
+	"order":      "VNET · Gọi món",
+	"support":    "VNET · Hỗ trợ",
+	"topup":      "VNET · Nạp tiền",
+	"attendance": "VNET · Điểm danh",
+	"feedback":   "VNET · Đánh giá",
+	"games":      "VNET · Game",
+}
+
+// switchPanel đổi cửa sổ phụ đang chạy sang màn hình khác rồi đưa nó lên.
+func (a *App) switchPanel(mode string) {
+	title, ok := panelTitles[mode]
+	if !ok || a.ctx == nil {
+		return
+	}
+	a.panelMu.Lock()
+	a.panelMode = mode
+	a.panelMu.Unlock()
+	wailsruntime.WindowSetTitle(a.ctx, title)
+	wailsruntime.EventsEmit(a.ctx, "vnet:panel:mode", mode)
+	// Đo lại màn hình mỗi lần hiện: cửa sổ này dựng sẵn ẩn từ lúc khách đăng nhập và
+	// chỉ được căn lúc đó, nên khách đổi độ phân giải rồi mở Gọi món sẽ thấy nó nằm
+	// nguyên chỗ cũ — nửa dưới (nút thanh toán) tràn ra ngoài màn hình nhỏ hơn.
+	canhGiuaManHinh(a.ctx, 640, 480)
+	a.ShowWindow()
+}
+
+// HidePanel ẩn cửa sổ phụ thay vì tắt, để lần mở sau hiện ngay.
+func (a *App) HidePanel() {
+	if a.windowMode != "" && a.ctx != nil {
+		wailsruntime.WindowHide(a.ctx)
+	}
 }
 
 // ShowWindow kéo cửa sổ lên trước mặt người dùng.
@@ -451,6 +732,11 @@ func (a *App) GetWindowMode() string {
 // Dùng khi có tin nhắn tới lúc khách đang chơi game toàn màn hình, và khi một
 // tiến trình khác cố mở cửa sổ đã chạy (SingleInstanceLock gọi vào đây).
 // AlwaysOnTop được bật rồi tắt: bật vĩnh viễn thì cửa sổ hỗ trợ che game mãi.
+//
+// Với thanh điều khiển chính, đây là việc lối tắt VNET trên desktop làm: WindowShow
+// khôi phục cửa sổ đang thu nhỏ rồi đưa lên trước. Đang khoá thì không có gì để
+// "khôi phục" — màn hình khoá phủ kín và không bao giờ thu nhỏ được; WindowUnminimise
+// bỏ qua khi đang toàn màn hình, nên lệnh này không đổi trạng thái khoá.
 func (a *App) ShowWindow() {
 	if a.ctx == nil {
 		return
@@ -466,6 +752,39 @@ func (a *App) ShowWindow() {
 	}()
 }
 
+// coTheThuNho: lúc này thanh điều khiển có được thu xuống thanh tác vụ không.
+//
+// Dùng đúng định nghĩa "đang khoá" mà dịch vụ nền nhận qua linkStatus, để hai bên
+// không lệch nhau: màn hình đăng nhập, khoá vì mất kết nối máy chủ, phiên chưa được
+// máy chủ xác nhận — đều KHÔNG được thu nhỏ, vì thu nhỏ màn hình khoá là lộ desktop.
+// Chế độ bảo trì thì được: nhân viên kỹ thuật cần desktop, và hai đường mở khoá bảo
+// trì ở trên vốn đã tự thu nhỏ cửa sổ.
+func (a *App) coTheThuNho() bool {
+	return a.windowMode == "" && !a.linkStatus().Locked
+}
+
+// MinimiseDock thu thanh điều khiển xuống thanh tác vụ — việc duy nhất nút thu nhỏ
+// trên thanh tiêu đề tự vẽ (DockTitleBar.vue) làm. Nút tắt không tồn tại.
+//
+// Frontend chỉ ĐỀ NGHỊ (như SetLoggedIn): màn hình khoá không được thu nhỏ kể cả khi
+// ai đó gọi thẳng hàm này từ giao diện, nên chốt chặn nằm ở đây chứ không ở nút.
+// Thu xuống rồi thì nút trên taskbar vẫn còn; bấm nó, hoặc bấm lối tắt VNET trên
+// desktop (ShowWindow), là thanh hiện lại đúng chỗ cũ.
+func (a *App) MinimiseDock() {
+	if a.ctx == nil || !a.coTheThuNho() {
+		return
+	}
+	wailsruntime.WindowMinimise(a.ctx)
+}
+
+// beforeDockClose là OnBeforeClose của thanh điều khiển chính (runDock): lệnh đóng
+// nào cũng thành thu nhỏ — hoặc bị bỏ qua nếu đang khoá — và KHÔNG BAO GIỜ cho thoát.
+// Trả true là bảo Wails dừng Quit(). Lý do và ranh giới với tắt máy ở main.go.
+func (a *App) beforeDockClose(context.Context) (prevent bool) {
+	a.MinimiseDock()
+	return true
+}
+
 // OpenWindow mở một cửa sổ phụ trong tiến trình riêng.
 //
 // Wails v2 không tạo được cửa sổ thứ hai trong cùng tiến trình, nên "cửa sổ
@@ -475,7 +794,13 @@ func (a *App) ShowWindow() {
 // Token đưa qua STDIN chứ không qua tham số dòng lệnh: tham số hiện nguyên văn
 // trong Task Manager, ai ngồi máy cũng đọc được.
 func (a *App) OpenWindow(mode string) error {
-	if mode != "order" && mode != "support" && mode != "topup" {
+	// Cửa sổ phụ không tự dựng thêm cửa sổ phụ.
+	if a.windowMode != "" {
+		return nil
+	}
+	switch mode {
+	case "order", "support", "topup", "attendance", "feedback", "games", "prewarm":
+	default:
 		return fmt.Errorf("cửa sổ %q không hợp lệ", mode)
 	}
 
@@ -503,8 +828,68 @@ func (a *App) OpenWindow(mode string) error {
 	})
 	stdin.Write(append(handoff, '\n'))
 	stdin.Close()
-	go cmd.Wait()
+
+	proc := cmd.Process
+	childMu.Lock()
+	childProcs[proc.Pid] = proc
+	childMu.Unlock()
+	batDau := time.Now()
+	go func() {
+		err := cmd.Wait()
+		childMu.Lock()
+		// Còn trong danh sách nghĩa là nó TỰ chết; closeChildWindows giết thì
+		// đã xoá trước rồi.
+		_, tuChet := childProcs[proc.Pid]
+		delete(childProcs, proc.Pid)
+		childMu.Unlock()
+
+		// WebView2 thỉnh thoảng không dựng được khung hiển thị lúc vừa có mạng
+		// lại (CreateCoreWebView2Controller lỗi) và thư viện thoát luôn. Cửa sổ
+		// dựng sẵn chết sớm như vậy thì dựng lại, tối đa ba lần liên tiếp.
+		// err == nil là lần gõ cửa vào cửa sổ đang chạy — thoát bình thường.
+		if mode == "prewarm" && tuChet && err != nil && time.Since(batDau) < 15*time.Second {
+			if n := a.prewarmRetry.Add(1); n <= 3 && a.loggedIn() {
+				log.Printf("[window] cửa sổ phụ chết khi khởi động (%v) — dựng lại lần %d", err, n)
+				time.Sleep(3 * time.Second)
+				_ = a.OpenWindow("prewarm")
+			}
+			return
+		}
+		if mode == "prewarm" {
+			a.prewarmRetry.Store(0)
+		}
+	}()
 	return nil
+}
+
+// Cửa sổ phụ do thanh điều khiển mở. Giữ lại để đóng chúng khi phiên kết thúc:
+// để sót thì cửa sổ hỗ trợ còn nằm trên màn hình khoá, và cửa sổ thực đơn vẫn
+// gọi món bằng token của người vừa trả máy.
+var (
+	childMu    sync.Mutex
+	childProcs = map[int]*os.Process{}
+)
+
+func (a *App) closeChildWindows() {
+	childMu.Lock()
+	defer childMu.Unlock()
+	for pid, p := range childProcs {
+		if err := p.Kill(); err != nil {
+			log.Printf("[window] không đóng được cửa sổ phụ %d: %v", pid, err)
+		}
+		delete(childProcs, pid)
+	}
+}
+
+// GetBootTime trả về thời điểm Windows khởi động (giây Unix). Giao diện lưu nó
+// lúc đăng nhập để nhận ra máy đã khởi động lại: khi đó KHÔNG được khôi phục
+// đăng nhập cũ, vì phiên của nó đã bị máy chủ chốt tại lúc reboot.
+func (a *App) GetBootTime() int64 {
+	t, err := host.BootTime()
+	if err != nil {
+		return 0
+	}
+	return int64(t)
 }
 
 func (a *App) IsLoggedIn() bool {
@@ -664,6 +1049,23 @@ func (a *App) PlaceOrder(itemsJSON string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+// GetMyOrders trả mảng JSON các đơn gần nhất của hội viên đang đăng nhập, mới
+// nhất trước — để khách xem lại món đã gọi và đơn đã được quầy duyệt chưa.
+func (a *App) GetMyOrders() (string, error) {
+	if a.userID == "" {
+		return "[]", nil
+	}
+	data, err := a.doRequest("GET", "/api/members/"+url.PathEscape(a.userID)+"/orders?page_size=30", nil)
+	if err != nil {
+		return "", err
+	}
+	var paginated PaginatedData
+	if err := json.Unmarshal(data, &paginated); err != nil || paginated.Items == nil {
+		return "[]", nil
+	}
+	return string(paginated.Items), nil
 }
 
 // GetTopupPresets trả về mảng mệnh giá nạp, dạng JSON `[5000, 10000, ...]`.
@@ -894,7 +1296,7 @@ func (a *App) MarkAllNotificationsRead() (string, error) {
 // Cùng captureScreen với lệnh remote:screenshot; khác ở chỗ này là khách tự
 // bấm gửi, còn lệnh remote là nhân viên chụp từ xa.
 func (a *App) TakeScreenshot() (string, error) {
-	return captureScreen()
+	return captureScreen(chupChoChat)
 }
 
 func (a *App) SendScreenshotMessage(roomID, imageData string) (string, error) {
@@ -947,27 +1349,14 @@ func (a *App) MarkRoomMessagesRead(roomID string) (string, error) {
 // (internal/service/machine.go). Cố ý không có lệnh chạy câu lệnh tuỳ ý.
 
 func (a *App) registerRemoteHandlers(c *WSClient) {
-	c.On("remote:lock", func(msg WSMessage) {
-		reason := remoteStringField(msg, "reason")
-		if err := a.LockScreen(reason); err != nil {
-			log.Printf("[remote] khoá máy thất bại: %v", err)
-		}
-	})
-
-	c.On("remote:unlock", func(msg WSMessage) {
-		if err := a.UnlockScreen(); err != nil {
-			log.Printf("[remote] mở khoá thất bại: %v", err)
-		}
-	})
-
 	c.On("remote:shutdown", func(msg WSMessage) {
-		if _, err := a.ShutdownMachine(); err != nil {
+		if err := shutdownMachine(); err != nil {
 			log.Printf("[remote] tắt máy thất bại: %v", err)
 		}
 	})
 
 	c.On("remote:restart", func(msg WSMessage) {
-		if _, err := a.RestartMachine(); err != nil {
+		if err := restartMachine(); err != nil {
 			log.Printf("[remote] khởi động lại thất bại: %v", err)
 		}
 	})
@@ -984,33 +1373,11 @@ func (a *App) registerRemoteHandlers(c *WSClient) {
 		a.locker.ShowMessage(title, body)
 	})
 
-	c.On("remote:block-app", func(msg WSMessage) {
-		name := remoteStringField(msg, "process")
-		if name == "" {
-			log.Printf("[remote] chặn ứng dụng: thiếu tên tiến trình")
-			return
-		}
-		if err := a.BlockApp(name); err != nil {
-			log.Printf("[remote] chặn %s thất bại: %v", name, err)
-		}
-	})
-
-	c.On("remote:unblock-app", func(msg WSMessage) {
-		name := remoteStringField(msg, "process")
-		if name == "" {
-			log.Printf("[remote] bỏ chặn ứng dụng: thiếu tên tiến trình")
-			return
-		}
-		if err := a.UnblockApp(name); err != nil {
-			log.Printf("[remote] bỏ chặn %s thất bại: %v", name, err)
-		}
-	})
-
 	// Ba lệnh giám sát chạy Ở GIAO DIỆN, không ở dịch vụ nền: chụp màn hình cần
 	// desktop của khách, mà dịch vụ chạy ở session 0 không thấy desktop nào.
 	c.On("remote:screenshot", func(msg WSMessage) {
 		reqID := remoteRequestID(msg)
-		img, err := captureScreen()
+		img, err := captureScreen(chupTuXa)
 		if err != nil {
 			log.Printf("[remote] chụp màn hình thất bại: %v", err)
 			return
@@ -1076,49 +1443,20 @@ func remoteStringField(msg WSMessage, field string) string {
 	return ""
 }
 
-// LockScreen phủ kín màn hình và chặn các phím thoát ra.
-//
-// Hai nửa tách nhau có chủ đích: cửa sổ là việc của Wails, chặn phím là việc
-// của ScreenLocker. Nếu hook bàn phím không cài được (thiếu quyền chẳng hạn)
-// thì vẫn phủ màn hình — rào cản yếu hơn còn hơn không có gì — nhưng lỗi được
-// trả về để chỗ gọi biết.
-func (a *App) LockScreen(reason string) error {
-	wailsruntime.WindowShow(a.ctx)
-	wailsruntime.WindowUnminimise(a.ctx)
-	wailsruntime.WindowFullscreen(a.ctx)
-	wailsruntime.WindowSetAlwaysOnTop(a.ctx, true)
-	wailsruntime.EventsEmit(a.ctx, "vnet:machine:locked", reason)
-
-	if err := a.locker.Lock(); err != nil {
-		return fmt.Errorf("đã phủ màn hình nhưng không chặn được phím: %w", err)
+// dungLaiCuaSoPhu dựng lại cửa sổ phụ sau khi máy được mở khoá. Lúc khoá vì mất
+// kết nối, cửa sổ phụ bị tắt; khách vẫn còn đăng nhập mà không dựng
+// lại thì lần mở Đồ ăn kế tiếp lại chậm như trước khi có cửa sổ dựng sẵn.
+func (a *App) dungLaiCuaSoPhu() {
+	if !a.loggedIn() {
+		return
 	}
-	return nil
-}
-
-func (a *App) UnlockScreen() error {
-	a.locker.Unlock()
-	wailsruntime.WindowSetAlwaysOnTop(a.ctx, false)
-	wailsruntime.WindowUnfullscreen(a.ctx)
-	wailsruntime.EventsEmit(a.ctx, "vnet:machine:unlocked")
-	return nil
+	if err := a.OpenWindow("prewarm"); err != nil {
+		log.Printf("[window] không dựng lại được cửa sổ phụ: %v", err)
+	}
 }
 
 func (a *App) IsLocked() bool {
 	return a.locker.Locked()
-}
-
-func (a *App) ShutdownMachine() (string, error) {
-	if err := shutdownMachine(); err != nil {
-		return "", err
-	}
-	return "ok", nil
-}
-
-func (a *App) RestartMachine() (string, error) {
-	if err := restartMachine(); err != nil {
-		return "", err
-	}
-	return "ok", nil
 }
 
 func (a *App) ShowMessage(title, message string) (string, error) {
@@ -1126,17 +1464,4 @@ func (a *App) ShowMessage(title, message string) (string, error) {
 	return "ok", nil
 }
 
-func (a *App) ExecuteCommand(command string) (string, error) {
-	cmd := exec.Command("cmd", "/C", command)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	if err != nil {
-		return stderr.String(), fmt.Errorf("exec error: %w: %s", err, stderr.String())
-	}
-	return strings.TrimSpace(stdout.String()), nil
-}
 
-func (a *App) BlockApp(processName string) error   { return blockAppByName(processName) }
-func (a *App) UnblockApp(processName string) error { return unblockAppByName(processName) }

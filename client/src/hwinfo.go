@@ -8,6 +8,7 @@ import (
 
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/host"
 	"github.com/shirou/gopsutil/v3/mem"
 )
 
@@ -22,6 +23,10 @@ type MachineSpecs struct {
 	GPUName   string
 	RAMGB     int
 	StorageGB int
+	OSInfo    string
+	// Thiết bị ngoại vi đang cắm: màn hình, bàn phím, chuột, âm thanh. Mỗi
+	// dòng đã có nhãn loại, ví dụ "Màn hình: DELL S2421HN".
+	Peripherals []string
 }
 
 // readMachineSpecs đo một lần lúc khởi động. Trường nào không đọc được thì để
@@ -48,7 +53,23 @@ func readMachineSpecs() MachineSpecs {
 		log.Printf("cấu hình máy: không đọc được ổ đĩa: %v", err)
 	}
 
+	// Hệ điều hành: cột os_info trên trang Máy trước đây luôn trống vì không
+	// bên nào gửi hay ghi nó.
+	if hi, err := host.Info(); err == nil {
+		// PlatformVersion trên Windows có dạng "10.0.26100.9457 Build 26100.9457":
+		// giữ phần số đầu là đủ.
+		ver := ""
+		if f := strings.Fields(hi.PlatformVersion); len(f) > 0 {
+			ver = f[0]
+		}
+		s.OSInfo = strings.TrimSpace(hi.Platform + " " + ver)
+		if hi.KernelArch != "" {
+			s.OSInfo += " (" + hi.KernelArch + ")"
+		}
+	}
+
 	s.GPUName = readGPUName()
+	s.Peripherals = readPeripherals()
 	return s
 }
 

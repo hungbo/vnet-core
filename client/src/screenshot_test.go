@@ -10,77 +10,62 @@ import (
 	"testing"
 )
 
-// Thu nhỏ phải lấy TRUNG BÌNH từng khối, không lấy mẫu điểm: chữ trên màn hình
-// bị lấy mẫu điểm sẽ đứt nét, mà đọc được chữ chính là lý do khách gửi ảnh.
-func TestDownscaleAveragesBlocks(t *testing.T) {
-	// 4×4 chia đôi: nửa trái đen, nửa phải trắng. Thu nhỏ hệ số 2 phải cho ra
-	// 2×2 vẫn đen/trắng, không lẫn.
-	src := image.NewRGBA(image.Rect(0, 0, 4, 4))
-	for y := 0; y < 4; y++ {
-		for x := 0; x < 4; x++ {
+// Màn 1920×1080 khi quầy chụp từ xa phải GIỮ NGUYÊN độ phân giải. Bản cũ chia
+// đôi còn 960×540 — chữ trên màn hình không đọc nổi.
+func TestThuNho_ChupTuXaGiuNguyen1080p(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 1920, 1080))
+	out := thuNho(src, chupTuXa.maxEdge)
+	if b := out.Bounds(); b.Dx() != 1920 || b.Dy() != 1080 {
+		t.Fatalf("ảnh 1080p bị đổi thành %v", b)
+	}
+}
+
+// Thu nhỏ về ĐÚNG ngưỡng, không chia theo hệ số nguyên: 1703 rộng với ngưỡng
+// 1600 phải ra 1600, không phải 851 như bản cũ.
+func TestThuNho_DungKichThuocDich(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 1703, 1043))
+	b := thuNho(src, 1600).Bounds()
+	if b.Dx() != 1600 {
+		t.Fatalf("rộng %d, mong 1600", b.Dx())
+	}
+	if want := 1043 * 1600 / 1703; b.Dy() != want {
+		t.Fatalf("cao %d, mong %d (giữ tỉ lệ)", b.Dy(), want)
+	}
+	// Ảnh dọc: cạnh dài là chiều cao.
+	b = thuNho(image.NewRGBA(image.Rect(0, 0, 1080, 1920)), 1600).Bounds()
+	if b.Dy() != 1600 || b.Dx() != 1080*1600/1920 {
+		t.Fatalf("ảnh dọc ra %v", b)
+	}
+}
+
+// Thu nhỏ vẫn giữ màu từng vùng: nửa trái đen, nửa phải trắng thì sau khi thu
+// nhỏ hai mép vẫn đen và trắng, không thành một mảng xám.
+func TestThuNho_GiuTuongPhan(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 400, 100))
+	for y := 0; y < 100; y++ {
+		for x := 0; x < 400; x++ {
 			c := color.RGBA{0, 0, 0, 255}
-			if x >= 2 {
+			if x >= 200 {
 				c = color.RGBA{255, 255, 255, 255}
 			}
 			src.Set(x, y, c)
 		}
 	}
-
-	out := downscale(src, 2)
-	b := out.Bounds()
-	if b.Dx() != 2 || b.Dy() != 2 {
-		t.Fatalf("kích thước sau thu nhỏ %dx%d, mong 2x2", b.Dx(), b.Dy())
-	}
-	r, _, _, _ := out.At(0, 0).RGBA()
-	if r>>8 != 0 {
-		t.Errorf("ô trái = %d, mong 0 (đen)", r>>8)
-	}
-	r, _, _, _ = out.At(1, 0).RGBA()
-	if r>>8 != 255 {
-		t.Errorf("ô phải = %d, mong 255 (trắng)", r>>8)
+	out := thuNho(src, 200)
+	l := color.RGBAModel.Convert(out.At(10, 25)).(color.RGBA)
+	r := color.RGBAModel.Convert(out.At(190, 25)).(color.RGBA)
+	if l.R > 20 || r.R < 235 {
+		t.Fatalf("mất tương phản: trái %v, phải %v", l, r)
 	}
 }
 
-// Trung bình thật sự: khối nửa đen nửa trắng phải ra xám, không phải một trong hai.
-func TestDownscaleBlendsMixedBlock(t *testing.T) {
-	src := image.NewRGBA(image.Rect(0, 0, 2, 2))
-	src.Set(0, 0, color.RGBA{0, 0, 0, 255})
-	src.Set(1, 0, color.RGBA{255, 255, 255, 255})
-	src.Set(0, 1, color.RGBA{0, 0, 0, 255})
-	src.Set(1, 1, color.RGBA{255, 255, 255, 255})
-
-	out := downscale(src, 1)
-	r, _, _, _ := out.At(0, 0).RGBA()
-	got := int(r >> 8)
-	if got < 120 || got > 135 {
-		t.Errorf("khối trộn = %d, mong khoảng 127 (xám)", got)
+func TestThuNho_AnhNhoGiuNguyen(t *testing.T) {
+	src := image.NewRGBA(image.Rect(0, 0, 800, 600))
+	if thuNho(src, 1600) != image.Image(src) {
+		t.Fatal("ảnh nhỏ hơn ngưỡng vẫn bị vẽ lại")
 	}
 }
 
-// Ảnh đã nhỏ hơn ngưỡng thì giữ nguyên, không phóng to.
-func TestDownscaleLeavesSmallImages(t *testing.T) {
-	src := image.NewRGBA(image.Rect(0, 0, 100, 80))
-	out := downscale(src, 1280)
-	if out.Bounds().Dx() != 100 || out.Bounds().Dy() != 80 {
-		t.Errorf("ảnh nhỏ bị đổi kích thước: %v", out.Bounds())
-	}
-}
-
-// Ảnh rất lớn phải xuống dưới ngưỡng, không được vượt.
-func TestDownscaleRespectsMaxEdge(t *testing.T) {
-	src := image.NewRGBA(image.Rect(0, 0, 3840, 2160))
-	out := downscale(src, 1280)
-	b := out.Bounds()
-	if b.Dx() > 1280 || b.Dy() > 1280 {
-		t.Errorf("sau thu nhỏ vẫn %dx%d, vượt ngưỡng 1280", b.Dx(), b.Dy())
-	}
-	if b.Dx() < 640 {
-		t.Errorf("thu nhỏ quá tay: %dx%d", b.Dx(), b.Dy())
-	}
-}
-
-// Chuỗi trả về phải là data URI mà thẻ <img> hiển thị được ngay — giao diện
-// chat nhét thẳng nó vào src, không xử lý gì thêm.
 func TestEncodeScreenshotProducesUsableDataURI(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 200, 120))
 	for y := 0; y < 120; y++ {
@@ -89,7 +74,7 @@ func TestEncodeScreenshotProducesUsableDataURI(t *testing.T) {
 		}
 	}
 
-	uri, err := encodeScreenshot(src)
+	uri, err := encodeScreenshot(src, chupTuXa)
 	if err != nil {
 		t.Fatalf("mã hoá lỗi: %v", err)
 	}
@@ -124,7 +109,7 @@ func TestEncodeScreenshotStaysSmallEnoughToSend(t *testing.T) {
 			src.Set(x, y, color.RGBA{uint8(x % 256), uint8(y % 256), 100, 255})
 		}
 	}
-	uri, err := encodeScreenshot(src)
+	uri, err := encodeScreenshot(src, chupChoChat)
 	if err != nil {
 		t.Fatal(err)
 	}

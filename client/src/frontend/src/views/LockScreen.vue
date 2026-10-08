@@ -1,10 +1,24 @@
 <template>
 	<div class="lock-screen">
-		<div class="lock-card">
-			<div class="logo">
-				<span class="logo-text">VNET</span>
-				<span class="logo-sub">GAMING</span>
-			</div>
+		<section class="seat">
+			<img :src="vnetLogo" alt="VNET" class="seat-logo" />
+			<!-- Ba vệt tốc độ của logo, phóng to, chạy từ mép màn hình vào tên máy. -->
+			<div class="speed" aria-hidden="true"><i /><i /><i /></div>
+			<!--
+				Tên máy là thứ to nhất trên màn hình: khách báo quầy "máy nào" thì
+				đọc ngay ở đây, nhân viên đối được với trang Máy.
+			-->
+			<p v-if="tenMay" class="seat-label">Bạn đang ngồi máy</p>
+			<h1 v-if="tenMay" class="seat-name" :title="tenMay" :style="{ '--len': Math.max(tenMay.length, 5) }">{{ tenMay }}</h1>
+			<p class="seat-clock">
+				<span class="clock-time">{{ gio }}</span>
+				<span class="clock-date">{{ ngay }}</span>
+			</p>
+		</section>
+
+		<section class="login-panel">
+			<h2 class="login-title">Đăng nhập để chơi</h2>
+			<div v-if="reason" class="lock-reason">{{ reason }}</div>
 
 			<el-tabs v-model="activeTab" class="login-tabs" stretch>
 				<el-tab-pane label="Tài khoản" name="pin">
@@ -21,7 +35,7 @@
 							<el-input
 								v-model="password"
 								type="password"
-								placeholder="Mật khẩu / PIN"
+								placeholder="Mật khẩu"
 								size="large"
 								show-password
 								@keyup.enter="handleLogin"
@@ -35,13 +49,13 @@
 								@click="handleLogin"
 								style="width: 100%;"
 							>
-								Đăng nhập
+								Vào máy
 							</el-button>
 						</el-form-item>
 					</el-form>
 				</el-tab-pane>
 
-				<el-tab-pane label="QR Code" name="qr">
+				<el-tab-pane label="Quét QR" name="qr">
 					<div class="qr-scanner" v-if="cameraActive">
 						<video ref="videoRef" class="qr-video" autoplay playsinline />
 						<canvas ref="canvasRef" class="qr-canvas" />
@@ -56,43 +70,16 @@
 					</div>
 				</el-tab-pane>
 			</el-tabs>
-
-			<div class="admin-link">
-				<el-button v-if="coPin" text size="small" @click="hienPin = !hienPin">
-					Mở khoá kỹ thuật
-				</el-button>
-			</div>
-
-			<!--
-				Đường vào DUY NHẤT khi mất mạng. Mọi cách đăng nhập phía trên đều
-				gọi API, nên router hỏng là cả phòng máy đứng trước màn hình khoá
-				phủ kín mà không có gì gõ vào được.
-			-->
-			<div v-if="hienPin" class="pin-box">
-				<el-input
-					v-model="pin"
-					type="password"
-					size="large"
-					placeholder="PIN kỹ thuật"
-					show-password
-					@keyup.enter="moKhoaKyThuat"
-				/>
-				<el-button type="warning" size="large" :loading="dangMo" @click="moKhoaKyThuat">
-					Mở khoá
-				</el-button>
-				<p class="pin-hint">
-					Mở máy để sửa chữa. Không mở phiên chơi và không tính tiền.
-				</p>
-			</div>
-		</div>
+		</section>
 	</div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Camera } from '@element-plus/icons-vue'
 import jsQR from 'jsqr'
+import vnetLogo from '../assets/vnet-logo.svg'
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -101,33 +88,23 @@ const emit = defineEmits<{
 	login: [username: string, password: string]
 }>()
 
-const coPin = ref(false)
-const hienPin = ref(false)
-const pin = ref('')
-const dangMo = ref(false)
+// Tên máy (mã máy) — chính là tên máy Windows, cũng là mã trên trang Máy.
+const tenMay = ref('')
 
-// Máy chưa đặt PIN thì không hiện nút: mời người ta gõ vào một cái không bao giờ
-// đúng là cách chắc chắn nhất để họ tưởng máy hỏng.
+// Đồng hồ trên màn hình khoá: máy trống thì đây là thứ duy nhất đổi trên màn hình.
+const bayGio = ref(new Date())
+let dongHo: number | null = null
+const gio = computed(() => bayGio.value.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }))
+const ngay = computed(() => bayGio.value.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric' }))
+onMounted(() => { dongHo = window.setInterval(() => { bayGio.value = new Date() }, 15000) })
+onUnmounted(() => { if (dongHo) clearInterval(dongHo) })
 onMounted(async () => {
-	try { coPin.value = await api().HasMaintenancePin() } catch { coPin.value = false }
+	try { tenMay.value = await api().GetMachineCode() } catch { tenMay.value = '' }
 })
-
-async function moKhoaKyThuat() {
-	if (!pin.value) return
-	dangMo.value = true
-	try {
-		await api().UnlockMaintenance(pin.value)
-		pin.value = ''
-		hienPin.value = false
-	} catch (e) {
-		ElMessage.error(String(e).replace(/^Error:\s*/, ''))
-	} finally {
-		dangMo.value = false
-	}
-}
 
 defineProps<{
 	loading?: boolean
+	reason?: string
 }>()
 
 const activeTab = ref('pin')
@@ -213,58 +190,169 @@ onUnmounted(() => {
 
 <style scoped>
 .lock-screen {
-	display: flex;
+	position: relative;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 400px;
 	align-items: center;
-	justify-content: center;
+	gap: 64px;
 	height: 100vh;
-	/* Nền dựng từ token thay vì ba mã màu chép tay: đây là màn hình phủ kín và
-	   đứng nguyên suốt thời gian máy trống, nên nó phải cùng một tông với phần
-	   còn lại chứ không phải một hòn đảo riêng. */
-	background: radial-gradient(circle at 50% 30%, var(--vnet-surface-2), var(--vnet-bg) 70%);
+	padding: 0 8vw;
+	overflow: hidden;
+	/* Luồng sáng xanh-tím chéo từ góc trái, cùng hướng nghiêng với logo. */
+	background:
+		radial-gradient(120% 90% at 0% 100%, rgba(123, 92, 255, 0.18), transparent 55%),
+		radial-gradient(90% 70% at 15% 10%, rgba(76, 125, 255, 0.16), transparent 60%),
+		var(--vnet-bg);
 }
 
-.lock-card {
-	width: 380px;
-	padding: 40px 32px 24px;
-	/* Thẻ TRẮNG trên nền tối là mảnh sót lại từ trước khi máy trạm chuyển sang
-	   tông tối. Không ai thấy nó vì màn hình khoá xưa nay nằm gọn trong thanh
-	   360px; giờ nó phủ kín màn hình nên sai màu là sai to. */
-	background: var(--vnet-surface);
-	border: 1px solid var(--vnet-border);
-	border-radius: 16px;
-	box-shadow: var(--vnet-shadow);
+/* Ba vệt tốc độ: dải màu của logo, nghiêng đúng góc chữ VNET, dừng ngay trước
+   chữ cái đầu của tên máy — như chính logo, nơi ba gạch dẫn vào chữ V. */
+.speed {
+	position: absolute;
+	right: calc(100% + 20px);
+	bottom: 92px;
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 16px;
+	transform: skewX(-18deg);
+	pointer-events: none;
 }
 
-.logo {
-	text-align: center;
-	margin-bottom: 32px;
-}
-
-.logo-text {
-	font-size: 36px;
-	font-weight: 800;
-	background: linear-gradient(135deg, #667eea, #764ba2);
-	-webkit-background-clip: text;
-	background-clip: text;
-	color: transparent;
-	letter-spacing: 2px;
-}
-
-.logo-sub {
+.speed i {
 	display: block;
-	font-size: 11px;
+	height: 8px;
+	border-radius: 2px;
+	background: var(--vnet-brand);
+}
+
+.speed i:nth-child(1) { width: 6vw; opacity: 0.35; }
+.speed i:nth-child(2) { width: 10vw; opacity: 0.6; }
+.speed i:nth-child(3) { width: 5vw; opacity: 0.25; }
+
+.seat {
+	position: relative;
+	min-width: 0;
+}
+
+.seat-logo {
+	display: block;
+	width: 160px;
+	height: auto;
+	margin-bottom: 18vh;
+}
+
+.seat-label {
+	margin: 0 0 4px;
+	font-size: 18px;
 	color: var(--vnet-text-muted);
-	letter-spacing: 4px;
+}
+
+/* Điểm nhấn duy nhất của màn hình: tên máy, to, nghiêng như logo. */
+.seat-name {
+	margin: 0;
+	font-family: var(--vnet-font-display);
+	font-style: italic;
+	font-weight: 700;
+	/* Cỡ chữ co theo độ dài tên để tên máy Windows thường gặp (15 ký tự) vẫn
+	   hiện đủ: bề ngang cột trái chia cho số ký tự, mỗi ký tự rộng ~0,64em.
+	   Tên rất dài thì chạm cỡ tối thiểu rồi mới cắt bằng dấu ba chấm. */
+	font-size: clamp(32px, calc((84vw - 464px) / (var(--len) * 0.64)), 132px);
+	line-height: 1.05;
+	color: var(--vnet-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	/* Chữ nghiêng bị cắt mép phải khi ẩn phần tràn; chừa chỗ cho nét cuối. */
+	padding-right: 0.12em;
+}
+
+.seat-clock {
+	display: flex;
+	align-items: baseline;
+	gap: 14px;
+	margin: 20px 0 0;
+}
+
+.clock-time {
+	font-family: var(--vnet-font-display);
+	font-weight: 600;
+	font-size: 36px;
+	font-variant-numeric: tabular-nums;
+	color: var(--vnet-text);
+}
+
+.clock-date {
+	font-size: 16px;
+	color: var(--vnet-text-muted);
+}
+
+.clock-date::first-letter {
 	text-transform: uppercase;
-	margin-top: 4px;
+}
+
+.login-panel {
+	position: relative;
+	padding: 32px 28px 20px;
+	background: rgba(17, 24, 51, 0.82);
+	border: 1px solid var(--vnet-border);
+	border-radius: 14px;
+	box-shadow: var(--vnet-shadow);
+	backdrop-filter: blur(12px);
+}
+
+/* Viền trên mang màu logo: thứ nối khung đăng nhập với vệt tốc độ. */
+.login-panel::before {
+	content: '';
+	position: absolute;
+	left: 24px;
+	right: 24px;
+	top: -2px;
+	height: 3px;
+	border-radius: 3px;
+	background: var(--vnet-brand);
+}
+
+.login-title {
+	margin: 0 0 16px;
+	font-size: 20px;
+	font-weight: 600;
+	color: var(--vnet-text);
+}
+
+.lock-reason {
+	margin: 0 0 16px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: rgba(255, 181, 71, 0.12);
+	border: 1px solid rgba(255, 181, 71, 0.4);
+	color: var(--vnet-warning);
+	font-size: 14px;
 }
 
 .login-tabs {
-	margin-bottom: 16px;
+	margin-bottom: 4px;
 }
 
 .login-form .el-form-item {
-	margin-bottom: 16px;
+	margin-bottom: 14px;
+}
+
+.login-form :deep(.el-input__wrapper) {
+	background: var(--vnet-bg);
+	box-shadow: 0 0 0 1px var(--vnet-border) inset;
+}
+
+.login-form :deep(.el-input__wrapper.is-focus) {
+	box-shadow: 0 0 0 1px var(--vnet-primary) inset;
+}
+
+.login-form :deep(.el-button--primary) {
+	height: 48px;
+	font-size: 16px;
+	font-weight: 600;
+	border: none;
+	background: var(--vnet-brand);
 }
 
 .qr-scanner {
@@ -290,7 +378,7 @@ onUnmounted(() => {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	padding: 32px 0;
+	padding: 24px 0;
 }
 
 .qr-hint {
@@ -300,23 +388,16 @@ onUnmounted(() => {
 	text-align: center;
 }
 
-.pin-box {
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-	margin-top: 12px;
-}
-
-.pin-hint {
-	font-size: 12px;
-	color: var(--vnet-text-muted);
-	text-align: center;
-}
-
-.admin-link {
-	text-align: center;
-	margin-top: 8px;
-	border-top: 1px solid #eee;
-	padding-top: 12px;
+/* Màn hình hẹp hoặc dọc: xếp chồng, tên máy lên trên. */
+@media (max-width: 900px) {
+	.lock-screen {
+		grid-template-columns: 1fr;
+		align-content: center;
+		gap: 32px;
+		padding: 0 24px;
+	}
+	.seat-logo { margin-bottom: 24px; }
+	.seat-name { font-size: clamp(32px, calc((100vw - 48px) / (var(--len) * 0.64)), 96px); }
+	.login-panel { max-width: 420px; }
 }
 </style>

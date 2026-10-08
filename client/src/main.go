@@ -8,10 +8,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	winoptions "github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -39,10 +41,17 @@ func main() {
 		serviceMode = flag.Bool("service", false, "chạy như tiến trình nền")
 		install     = flag.Bool("install-service", false, "đăng ký dịch vụ Windows")
 		uninstall   = flag.Bool("uninstall-service", false, "gỡ dịch vụ Windows")
-		setPin      = flag.String("set-pin", "", "đặt PIN kỹ thuật cho máy này")
+		adminUser   = flag.String("set-admin-user", "", "đặt tài khoản quản trị máy trạm (đi kèm --set-admin-pass)")
+		adminPass   = flag.String("set-admin-pass", "", "mật khẩu tài khoản quản trị máy trạm")
 		ensureSvc   = flag.Bool("ensure-service", false, "bật lại dịch vụ nếu nó đang dừng (tác vụ theo lịch gọi)")
 	)
 	flag.Parse()
+
+	// Lệnh cài/gỡ/đặt tài khoản chạy tay trên console: để nhật ký ra màn hình như cũ.
+	setAdmin := *adminUser != "" || *adminPass != ""
+	if *windowMode != "" || *serviceMode || (!setAdmin && !*install && !*uninstall && !*ensureSvc) {
+		setupLogFile(*serviceMode, *windowMode)
+	}
 
 	switch {
 	case *ensureSvc:
@@ -50,11 +59,11 @@ func main() {
 			log.Fatalf("không bảo đảm được dịch vụ đang chạy: %v", err)
 		}
 		return
-	case *setPin != "":
-		if err := luuPinKyThuat(*setPin); err != nil {
-			log.Fatalf("đặt PIN thất bại: %v", err)
+	case setAdmin:
+		if err := luuTaiKhoanQuanTri(*adminUser, *adminPass); err != nil {
+			log.Fatalf("đặt tài khoản quản trị máy trạm thất bại: %v", err)
 		}
-		log.Printf("đã đặt PIN kỹ thuật cho máy này")
+		log.Printf("đã đặt tài khoản quản trị máy trạm %q", strings.TrimSpace(*adminUser))
 		return
 	case *install:
 		if err := installService(); err != nil {
@@ -82,29 +91,68 @@ func main() {
 // runDock chạy thanh điều khiển chính: cột hẹp dán mép phải, luôn nổi trên các
 // cửa sổ khác để khách vẫn thấy giờ và số dư khi đang chơi game toàn màn hình.
 func runDock() {
+	// Việc đầu tiên, trước cả NewApp: dựng màn che lúc mới bật máy để khách không
+	// thấy desktop trong lúc WebView2 khởi động lạnh. Hạ xuống ở OnDomReady.
+	startCurtain()
 	app := NewApp()
 
 	err := wails.Run(&options.App{
 		Title:  "VNET",
 		Width:  dockWidth,
 		Height: 900,
-		// Có viền để lấy đúng ba nút của Windows ở góc trên: thu nhỏ và tắt là
-		// thứ ai cũng biết bấm, không phải học một nút tự vẽ.
+		// KHÔNG viền: thanh điều khiển không có nút tắt, chỉ có nút thu nhỏ.
+		//
+		// Viền hệ điều hành thì không làm được điều đó. Ba nút của Windows chung một
+		// kiểu WS_SYSMENU: bỏ nút tắt là mất luôn thu nhỏ, còn DeleteMenu(SC_CLOSE)
+		// chỉ làm nó MỜ đi chứ vẫn vẽ ra — khách vẫn thấy một nút X bấm không ăn,
+		// tệ hơn không có. Nên bỏ hẳn viền: thanh tiêu đề do giao diện tự vẽ
+		// (components/DockTitleBar.vue) với đúng hai thứ, vùng kéo và nút thu nhỏ.
+		//
+		// Cửa sổ không viền thì vùng vẽ web = TOÀN BỘ hình chữ nhật cửa sổ (Wails trả
+		// 0 cho WM_NCCALCSIZE). Hình chữ nhật NGOÀI mà dockGeometry tính không đổi một
+		// pixel; chỉ có phần trong là to ra đúng bằng chỗ thanh tiêu đề và viền cũ
+		// từng chiếm, và DockTitleBar lấy lại chừng đó chiều cao.
 		//
 		// Vẫn không cho đổi kích thước: đây là thanh công cụ, không phải cửa sổ
 		// tài liệu. Kéo giãn được thì khách kéo lệch khỏi mép và thanh mất luôn
-		// ý nghĩa. DisableResize cũng làm mờ luôn nút phóng to (winc gọi
-		// EnableMaxButton(!DisableResize)), nên chỉ còn lại thu nhỏ và tắt.
-		Frameless:     false,
+		// ý nghĩa.
+		Frameless:     true,
 		DisableResize: true,
 		AlwaysOnTop:   true,
-		// Bấm dấu X là giấu đi chứ không thoát: thoát hẳn là mất đồng hồ tính
-		// tiền và mất đường nhận lệnh khoá máy. Giấu rồi thì chạy lại lối tắt
-		// là hiện ra — SingleInstanceLock ngay dưới gọi ShowWindow.
-		HideWindowOnClose: true,
-		AssetServer:       &assetserver.Options{Assets: assets},
+		Windows: &winoptions.Options{
+			// Không bóng đổ, không bo góc: thanh dán sát mép màn hình và mép taskbar,
+			// bo góc chỉ để lộ hai khe nhỏ ở đó.
+			DisableFramelessWindowDecorations: true,
+			// Có khối Windows thì Wails ghi đè cài đặt thu phóng của WebView2 bằng giá
+			// trị trong khối này (mặc định false). Giữ nguyên mặc định cũ của WebView2.
+			IsZoomControlEnabled: true,
+		},
+		// Mặc định của Wails là NỀN TRẮNG cho cả cửa sổ lẫn WebView2, nên giữa lúc
+		// cửa sổ hiện và lúc trang vẽ khung đầu tiên khách thấy một nháy trắng —
+		// ngay trên màn che khởi động đang cố giữ màu tối. Cùng màu --vnet-bg
+		// (styles/tokens.css) và curtain_windows.go.
+		BackgroundColour: &options.RGBA{R: 0x0a, G: 0x0f, B: 0x1e, A: 255},
+		// Mọi lệnh ĐÓNG (Alt+F4, "Đóng cửa sổ" trên hình thu nhỏ của taskbar, menu hệ
+		// thống, WM_CLOSE từ bất kỳ đâu) đều thành THU NHỎ, không bao giờ ẩn hay thoát:
+		// thoát hẳn là mất đồng hồ tính tiền và mất đường nhận lệnh khoá máy.
+		//
+		// Phải là OnBeforeClose chứ KHÔNG phải HideWindowOnClose. Wails (Windows) bắt
+		// WM_CLOSE rồi bắn sự kiện OnClose, và nhánh HideWindowOnClose gọi WindowHide
+		// thẳng, bỏ qua OnBeforeClose — tức là bản cũ giấu mất cửa sổ, và không có gì
+		// ngoài lối tắt đưa nó về. Để false thì OnClose đi qua Quit() → OnBeforeClose,
+		// trả true là Quit() dừng lại.
+		//
+		// Tắt máy, khởi động lại, đăng xuất KHÔNG đi qua đây: Windows chỉ gửi
+		// WM_QUERYENDSESSION / WM_ENDSESSION, không gửi WM_CLOSE. Wails và ta đều không
+		// xử lý hai thông điệp đó nên DefWindowProc trả "đồng ý", và dịch vụ nền vẫn
+		// tắt/khởi động lại máy được. Đừng thêm xử lý cho chúng ở đây.
+		OnBeforeClose: app.beforeDockClose,
+		AssetServer:   &assetserver.Options{Assets: assets},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "vnet-client-dock",
+			// Lối tắt VNET trên desktop chạy một bản thứ hai: nó gõ cửa bản đang chạy
+			// rồi thoát. ShowWindow đưa thanh về từ trạng thái thu nhỏ; màn hình khoá
+			// đang phủ kín thì giữ nguyên (xem ShowWindow).
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) {
 				app.ShowWindow()
 			},
@@ -127,7 +175,12 @@ func runDock() {
 		// OnDomReady chạy trong navigationCompleted, tức là SAU khi WindowCenter
 		// đã chạy xong từ lâu và ngay trước lúc cửa sổ được hiện lên.
 		OnDomReady: func(ctx context.Context) {
+			// TRƯỚC ApplyWindowState: màn che thôi tự nâng mình, để cửa sổ khoá mà
+			// nó đưa lên đỉnh nhóm cửa sổ nổi không bị màn che đè lại.
+			curtainStopRaise()
 			app.ApplyWindowState()
+			// Cửa sổ vừa được hiện: màn che hết việc (hạ sau một nhịp ngắn).
+			curtainDomReady()
 		},
 		Bind: []interface{}{app},
 	})
@@ -253,9 +306,21 @@ func canhGiuaManHinh(ctx context.Context, minW, minH int) {
 		return
 	}
 
-	w, h, x, y := centeredGeometry(screen.Size.Width, screen.Size.Height, minW, minH)
+	w, h, x, y := childGeometry(screen.Size.Width, screen.Size.Height, minW, minH)
 	runtime.WindowSetSize(ctx, w, h)
 	runtime.WindowSetPosition(ctx, x, y)
+}
+
+// childGeometry căn cửa sổ phụ giữa phần màn hình BÊN TRÁI thanh dọc.
+//
+// Căn giữa cả màn hình thì cửa sổ rộng 70% lấn sang phải và nằm dưới thanh dọc
+// (thanh dọc luôn nổi trên): kiểm trên máy thật, nút đóng của cửa sổ Nạp tiền
+// bị thanh dọc che mất. Màn hình quá hẹp để chừa chỗ thì mới căn cả màn hình.
+func childGeometry(screenW, screenH, minW, minH int) (w, h, x, y int) {
+	if avail := screenW - dockWidth; avail >= minW {
+		return centeredGeometry(avail, screenH, minW, minH)
+	}
+	return centeredGeometry(screenW, screenH, minW, minH)
 }
 
 // centeredGeometry tính kích thước theo tỉ lệ rồi căn giữa.
@@ -290,16 +355,19 @@ func centeredGeometry(screenW, screenH, minW, minH int) (w, h, x, y int) {
 // tiến trình khác "gõ cửa" để đánh thức cửa sổ đang chạy. Đó chính là cơ chế
 // hiện cửa sổ hỗ trợ lên trên khi có tin nhắn tới — không phải viết IPC riêng.
 func runChildWindow(mode string) {
-	title := "VNET · Gọi món"
-	switch mode {
-	case "support":
-		title = "VNET · Hỗ trợ"
-	case "topup":
-		title = "VNET · Nạp tiền"
-	}
-
 	app := NewApp()
-	app.windowMode = mode
+	// Mọi màn hình phụ chạy chung MỘT tiến trình (xem App.panelMode). Lần đầu
+	// được gọi là "prewarm": dựng ẩn ngay khi khách đăng nhập, chờ sẵn.
+	app.windowMode = "panel"
+	title := panelTitles[mode]
+	hidden := false
+	if mode == "prewarm" {
+		app.panelMode = "blank"
+		title = "VNET"
+		hidden = true
+	} else {
+		app.panelMode = mode
+	}
 
 	err := wails.Run(&options.App{
 		Title: title,
@@ -309,11 +377,16 @@ func runChildWindow(mode string) {
 		Height:      680,
 		MinWidth:    640,
 		MinHeight:   480,
+		StartHidden: hidden,
 		AssetServer: &assetserver.Options{Assets: assets},
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "vnet-client-window-" + mode,
-			OnSecondInstanceLaunch: func(options.SecondInstanceData) {
-				app.ShowWindow()
+			UniqueId: "vnet-client-panel",
+			// Bấm nút trên thanh: tiến trình mới chỉ gõ cửa rồi thoát, cửa sổ
+			// đang chạy đổi sang đúng màn hình và hiện lên.
+			OnSecondInstanceLaunch: func(d options.SecondInstanceData) {
+				if m := windowArg(d.Args); m != "" && m != "prewarm" {
+					app.switchPanel(m)
+				}
 			},
 		},
 		OnStartup: func(ctx context.Context) {
@@ -325,6 +398,15 @@ func runChildWindow(mode string) {
 		OnDomReady: func(ctx context.Context) {
 			canhGiuaManHinh(ctx, 640, 480)
 		},
+		// Bấm X chỉ ẩn: tắt hẳn là lần mở sau phải dựng lại từ đầu. Hết phiên
+		// thì thanh chính giết tiến trình, hoặc Logout đặt cờ thoát.
+		OnBeforeClose: func(ctx context.Context) bool {
+			if app.thoat.Load() {
+				return false
+			}
+			app.HidePanel()
+			return true
+		},
 		Bind: []interface{}{app},
 	})
 	if err != nil {
@@ -332,16 +414,33 @@ func runChildWindow(mode string) {
 	}
 }
 
-// luuPinKyThuat băm PIN rồi ghi vào config.json cạnh .exe.
+// windowArg lấy giá trị của --window trong dòng lệnh của lần gõ cửa.
+func windowArg(args []string) string {
+	for i, a := range args {
+		if a == "--window" && i+1 < len(args) {
+			return args[i+1]
+		}
+		if v, ok := strings.CutPrefix(a, "--window="); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// luuTaiKhoanQuanTri băm mật khẩu rồi ghi tài khoản vào config.json cạnh .exe.
 //
 // Ghi bằng một lệnh riêng chứ không để bộ cài tự ghi: bộ cài Inno Setup không
-// băm được, mà ghi PIN trần vào tệp thì khách đọc được ngay — tệp nằm trong
+// băm được, mà ghi mật khẩu trần vào tệp thì khách đọc được ngay — tệp nằm trong
 // Program Files, chặn ghi chứ không chặn đọc.
 //
 // Đọc tệp cũ rồi ghi lại để giữ nguyên những trường khác; ghi đè cả tệp là mất
-// địa chỉ máy chủ và mã máy.
-func luuPinKyThuat(pin string) error {
-	hash, err := hashPin(pin)
+// địa chỉ máy chủ.
+func luuTaiKhoanQuanTri(user, pass string) error {
+	user = strings.TrimSpace(user)
+	if err := checkLocalAdminInput(user, pass); err != nil {
+		return err
+	}
+	hash, err := hashPin(pass)
 	if err != nil {
 		return err
 	}
@@ -353,7 +452,8 @@ func luuPinKyThuat(pin string) error {
 	path := filepath.Join(filepath.Dir(exe), "config.json")
 
 	fc := loadFileConfig()
-	fc.MaintenancePin = hash
+	fc.LocalAdminUsername = user
+	fc.LocalAdminHash = hash
 
 	data, err := json.MarshalIndent(fc, "", "  ")
 	if err != nil {

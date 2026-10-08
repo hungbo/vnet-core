@@ -5,8 +5,8 @@ import { EventsOn } from '../../wailsjs/runtime/runtime'
 // Lớp phủ khoá máy.
 //
 // Đây KHÔNG phải LockScreen.vue — cái đó là màn hình đăng nhập. Lớp phủ này
-// nằm trên mọi thứ, kể cả màn hình đăng nhập, vì lệnh khoá từ quầy phải có
-// hiệu lực bất kể khách đang ở bước nào.
+// hiện khi máy mất kết nối máy chủ quá ngưỡng (app.go setOfflineLock), và nằm
+// trên mọi thứ, kể cả màn hình đăng nhập.
 //
 // Chặn phím do phía Go lo (locker.go, hook cấp thấp). Lớp phủ chỉ là phần nhìn
 // thấy được: nó không tự nó ngăn được ai làm gì.

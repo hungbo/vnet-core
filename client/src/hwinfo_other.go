@@ -8,3 +8,5 @@ package main
 func windowsSystemDrive() string { return "/" }
 
 func readGPUName() string { return "" }
+
+func readPeripherals() []string { return nil }

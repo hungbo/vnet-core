@@ -40,7 +40,7 @@ func defaultGuardPolicy() guardPolicy {
 		// Giao diện khởi động cùng Windows, thường TRƯỚC khi dịch vụ kịp chạy.
 		// Không có quãng im lặng này thì mỗi lần bật máy là một lần tắt máy.
 		Grace:  90 * time.Second,
-		Strike: 12, // 12 × 5 giây = một phút liên tục không cứu được dịch vụ
+		Strike: 6, // 6 × 5 giây = nửa phút liên tục không cứu được dịch vụ
 	}
 }
 
@@ -113,7 +113,7 @@ func runGuard(ctx context.Context, cfg *Config, dangBaoTri func() bool) {
 		}
 
 		o := observeGuard(time.Since(batDau))
-		// Nhân viên kỹ thuật đã mở máy bằng PIN thì việc đầu tiên họ làm thường
+		// Nhân viên kỹ thuật đã mở máy ở chế độ bảo trì thì việc đầu tiên họ làm thường
 		// là tắt dịch vụ. Đọc đó thành phá hoại là tắt máy ngay giữa lúc sửa.
 		if dangBaoTri() {
 			o.MaintenanceMode = true
@@ -124,10 +124,16 @@ func runGuard(ctx context.Context, cfg *Config, dangBaoTri func() bool) {
 			log.Printf("[guard] dịch vụ nền không chạy và không bật lại được (%d/%d lượt)",
 				st.strikes, p.Strike)
 		case guardShutdown:
-			log.Printf("[guard] dịch vụ nền chết hẳn sau %d lượt — tắt máy để không ai chơi chùa",
-				st.strikes)
-			if err := shutdownMachine(); err != nil {
-				log.Printf("[guard] không tắt được máy: %v", err)
+			// Hành động do máy chủ cấu hình. Quán diskless chọn khởi động lại:
+			// máy về bản gốc và khách ngồi lại dùng tiếp được; tắt hẳn thì máy
+			// nằm chết tới khi có người ra bật.
+			hanhDong, lam := "khởi động lại", restartMachine
+			if currentPolicy().TamperAction == "shutdown" {
+				hanhDong, lam = "tắt", shutdownMachine
+			}
+			log.Printf("[guard] dịch vụ nền chết hẳn sau %d lượt — %s máy", st.strikes, hanhDong)
+			if err := lam(); err != nil {
+				log.Printf("[guard] không %s được máy: %v", hanhDong, err)
 				// Tắt không được thì đừng gọi lại mỗi 5 giây: đặt lại bộ đếm để
 				// còn một phút nữa mới thử tiếp, và nhật ký không bị ngập.
 				st.strikes = 0

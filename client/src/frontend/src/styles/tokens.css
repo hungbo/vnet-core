@@ -11,28 +11,41 @@
  */
 
 :root {
-	/* Nền: ba tầng độ sâu, dùng để tách lớp thay vì vẽ viền khắp nơi. */
-	--vnet-bg: #0d1017;
-	--vnet-surface: #151a23;
-	--vnet-surface-2: #1c222e;
-	--vnet-border: #262e3d;
+	/* Nền: xanh đêm thay cho đen trơn — cùng họ với xanh/tím của logo, nên
+	   logo và màn hình là một khối chứ không phải logo dán lên nền xám. Ba
+	   tầng độ sâu để tách lớp thay vì vẽ viền khắp nơi. */
+	--vnet-bg: #0a0f1e;
+	--vnet-surface: #111833;
+	--vnet-surface-2: #182143;
+	--vnet-border: #253056;
 
-	/* Chữ: bốn mức tương phản. muted dùng cho nhãn, faint cho chú thích. */
-	--vnet-text: #e6e9ef;
-	--vnet-text-muted: #9aa4b8;
-	--vnet-text-faint: #6b7689;
+	/* Chữ: bốn mức tương phản, ngả xanh theo nền. */
+	--vnet-text: #e9edf8;
+	--vnet-text-muted: #94a0c2;
+	--vnet-text-faint: #5f6a8c;
 
-	/* Màu nhấn. Một màu chính, còn lại là màu ngữ nghĩa. */
+	/* Hai màu của logo. Tím chỉ dùng trong dải chuyển màu, không đứng một mình. */
 	--vnet-primary: #4c7dff;
+	--vnet-violet: #7b5cff;
+	--vnet-brand: linear-gradient(100deg, var(--vnet-primary), var(--vnet-violet));
 	--vnet-primary-soft: rgba(76, 125, 255, 0.14);
-	--vnet-success: #3fb950;
-	--vnet-warning: #d9a441;
-	--vnet-danger: #f0603d;
+	--vnet-success: #3dd68c;
+	/* Hổ phách dành riêng cho "sắp hết giờ" — thứ khách cần thấy nhất. */
+	--vnet-warning: #ffb547;
+	--vnet-danger: #ff5d5d;
+
+	/* Chakra Petch: nét vát góc, nghiêng được — cùng dáng logo, dùng cho số và
+	   tên máy. Be Vietnam Pro: chữ thường, vẽ riêng cho dấu tiếng Việt. */
+	--vnet-font: 'Be Vietnam Pro', 'Segoe UI', sans-serif;
+	--vnet-font-display: 'Chakra Petch', 'Be Vietnam Pro', sans-serif;
 
 	--vnet-radius: 12px;
 	--vnet-radius-sm: 8px;
 	--vnet-gap: 12px;
-	--vnet-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+	/* Thanh tiêu đề tự vẽ của thanh dọc (DockTitleBar.vue), thế chỗ thanh tiêu đề
+	   gốc của Windows (cao cỡ 30px) mà cửa sổ không viền không còn có. */
+	--vnet-dock-bar-h: 32px;
+	--vnet-shadow: 0 10px 30px rgba(3, 6, 16, 0.55);
 
 	color-scheme: dark;
 }
@@ -63,9 +76,12 @@
 	--el-border-color-light: var(--vnet-border);
 	--el-border-color-lighter: var(--vnet-border);
 	--el-border-color-extra-light: var(--vnet-border);
-	--el-fill-color-blank: var(--vnet-surface);
 	--el-fill-color-light: var(--vnet-surface-2);
-	--el-mask-color: rgba(6, 9, 14, 0.72);
+	--el-mask-color: rgba(4, 7, 18, 0.74);
+	--el-font-family: var(--vnet-font);
+	/* Ô nhập lõm xuống nền đêm thay vì đen trơn của bảng tối Element Plus. */
+	--el-input-bg-color: var(--vnet-bg);
+	--el-fill-color-blank: var(--vnet-bg);
 }
 
 html,
@@ -73,6 +89,13 @@ body,
 #app {
 	background: var(--vnet-bg);
 	color: var(--vnet-text);
+	font-family: var(--vnet-font);
+	-webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+	outline: 2px solid var(--vnet-primary);
+	outline-offset: 2px;
 }
 
 /* Thanh cuộn mảnh, hoà vào nền — thanh cuộn trắng mặc định rất chói trên nền tối. */

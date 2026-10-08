@@ -10,3 +10,6 @@ import "time"
 func observeGuard(uiUptime time.Duration) guardObservation {
 	return guardObservation{UIUptime: uiUptime}
 }
+
+// Không có thư mục cài nào để đặt tệp cờ bảo trì ngoài Windows.
+func maintenanceMode() bool { return false }

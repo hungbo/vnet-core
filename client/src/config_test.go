@@ -57,3 +57,26 @@ func TestLoadConfig_NoFileStillWorks(t *testing.T) {
 		t.Fatal("ServerURL rỗng")
 	}
 }
+
+// Bản phát hành bỏ qua biến môi trường: giao diện chạy với môi trường của tài
+// khoản đang ngồi máy, và ai cũng tự đặt được biến môi trường của mình.
+func TestLoadConfig_BanPhatHanhBoQuaBienMoiTruong(t *testing.T) {
+	cu := version
+	version = "1.2.3"
+	defer func() { version = cu }()
+
+	t.Setenv("VNET_SERVER_URL", "http://may-chu-la:9999")
+	t.Setenv("VNET_MACHINE_CODE", "MAY-KHAC")
+	t.Setenv("VNET_GUARD", "0")
+
+	cfg := LoadConfig()
+	if cfg.ServerURL == "http://may-chu-la:9999" {
+		t.Error("bản phát hành vẫn lấy địa chỉ máy chủ từ biến môi trường")
+	}
+	if cfg.MachineCode == "MAY-KHAC" {
+		t.Error("bản phát hành vẫn lấy mã máy từ biến môi trường")
+	}
+	if !cfg.GuardEnabled {
+		t.Error("bản phát hành để biến môi trường tắt được lớp canh")
+	}
+}

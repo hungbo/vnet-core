@@ -1,9 +1,9 @@
 <template>
-	<div class="overlay" @click.self="$emit('close')">
+	<div class="overlay" :class="{ standalone }" @click.self="!standalone && $emit('close')">
 		<div class="panel">
 			<header class="panel-head">
 				<h3>Điểm danh hằng ngày</h3>
-				<el-button text circle @click="$emit('close')">
+				<el-button v-if="!standalone" text circle @click="$emit('close')">
 					<el-icon><Close /></el-icon>
 				</el-button>
 			</header>
@@ -64,6 +64,7 @@ declare const window: any
 const api = () => window.go?.main?.App
 
 defineEmits<{ close: [] }>()
+defineProps<{ standalone?: boolean }>()
 
 const session = useSessionStore()
 const loading = ref(false)
@@ -185,5 +186,18 @@ onMounted(load)
 .checkin-btn {
 	margin-top: 4px;
 	width: 100%;
+}
+
+/* Dạng cửa sổ riêng (tiến trình --window): không lớp phủ, căn giữa một cột hẹp
+   giống cửa sổ Nạp tiền. */
+.overlay.standalone {
+	position: static;
+	min-height: 100vh;
+	background: var(--vnet-bg);
+	color: var(--vnet-text);
+}
+
+.overlay.standalone .panel {
+	background: transparent;
 }
 </style>

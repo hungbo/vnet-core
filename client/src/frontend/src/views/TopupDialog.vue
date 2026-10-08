@@ -20,6 +20,7 @@
 			</div>
 		</div>
 
+		<div class="section-label">Gửi yêu cầu nạp tới quầy</div>
 		<div class="preset-grid">
 			<button
 				v-for="amount in presets"
@@ -38,6 +39,8 @@
 				:min="1000"
 				:step="10000"
 				:precision="0"
+				:formatter="nhomNghin"
+				:parser="boDauCham"
 				style="width: 100%;"
 				controls-position="right"
 			/>
@@ -96,6 +99,11 @@ const daGui = ref(false)
 const memberInfo = ref<any>(null)
 
 const finalAmount = computed(() => selectedAmount.value || customAmount.value)
+
+// Ô số tiền hiện "1.000.000" thay vì "1000000"; v-model vẫn là số nguyên.
+// Tiền VND không có phần lẻ nên dấu chấm luôn là phân cách hàng nghìn.
+const nhomNghin = (v: string) => String(v ?? '').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+const boDauCham = (v: string) => String(v ?? '').replace(/[^\d]/g, '')
 
 function formatCurrency(n: number) {
 	return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(n || 0)
@@ -168,7 +176,11 @@ onMounted(async () => {
 }
 
 .balance-info {
-	background: #f8f9fa;
+	/* Nền sáng #f8f9fa sót lại từ trước khi máy trạm chuyển sang tông tối: chữ
+	   "Số dư hiện tại" màu nhạt gần như biến mất trên nền trắng. */
+	background: var(--vnet-surface-2);
+	border: 1px solid var(--vnet-border);
+	color: var(--vnet-text-muted);
 	border-radius: 8px;
 	padding: 12px 16px;
 	margin-bottom: 16px;
@@ -179,6 +191,12 @@ onMounted(async () => {
 	justify-content: space-between;
 	align-items: center;
 	font-size: 14px;
+}
+
+.section-label {
+	font-size: 13px;
+	color: var(--vnet-text-muted);
+	margin-bottom: 8px;
 }
 
 .preset-grid {
@@ -228,7 +246,7 @@ onMounted(async () => {
 	align-items: center;
 	padding: 12px 0;
 	font-size: 18px;
-	border-top: 1px solid #f0f0f0;
+	border-top: 1px solid var(--vnet-border);
 }
 
 .hint {

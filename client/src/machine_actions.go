@@ -19,35 +19,8 @@ func restartMachine() error {
 	return exec.Command("shutdown", "/r", "/t", "5").Run()
 }
 
-// blockAppByName chặn một ứng dụng bằng luật tường lửa theo TÊN TIẾN TRÌNH.
-// Cố ý không nhận câu lệnh tuỳ ý — xem ghi chú về ExecuteCommand ở phía máy chủ.
-func blockAppByName(processName string) error {
-	name, err := safeProcessName(processName)
-	if err != nil {
-		return err
-	}
-	return exec.Command("netsh", "advfirewall", "firewall", "add", "rule",
-		fmt.Sprintf("name=VNET_Block_%s", name),
-		"dir=out",
-		fmt.Sprintf("program=%%ProgramFiles%%\\%s.exe", name),
-		"action=block",
-		"enable=yes",
-	).Run()
-}
-
-func unblockAppByName(processName string) error {
-	name, err := safeProcessName(processName)
-	if err != nil {
-		return err
-	}
-	return exec.Command("netsh", "advfirewall", "firewall", "delete", "rule",
-		fmt.Sprintf("name=VNET_Block_%s", name),
-	).Run()
-}
-
 // safeProcessName chặn những ký tự có thể lái tên thành đường dẫn hoặc tham số
-// khác cho netsh. Tên tiến trình tới từ máy chủ qua WebSocket, nên không được
-// tin nó là lành.
+// khác. Tên tiến trình tới từ máy chủ, nên không được tin nó là lành.
 func safeProcessName(raw string) (string, error) {
 	name := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(raw), ".exe"))
 	if name == "" {

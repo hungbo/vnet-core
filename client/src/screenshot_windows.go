@@ -60,7 +60,7 @@ type bitmapInfo struct {
 }
 
 // captureScreen trả về ảnh màn hình chính dưới dạng data URI JPEG.
-func captureScreen() (string, error) {
+func captureScreen(m mucChup) (string, error) {
 	w, _, _ := procGetSystemMetrics.Call(smCXScreen)
 	h, _, _ := procGetSystemMetrics.Call(smCYScreen)
 	width, height := int(w), int(h)
@@ -123,5 +123,5 @@ func captureScreen() (string, error) {
 		img.Pix[i*4+3] = 0xFF
 	}
 
-	return encodeScreenshot(img)
+	return encodeScreenshot(img, m)
 }

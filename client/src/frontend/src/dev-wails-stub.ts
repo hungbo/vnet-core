@@ -34,7 +34,38 @@ const DEV_MENU = [
 	{ id: 'p10', category_id: 'c-vat', name: 'Món thiếu ảnh', price: 9000, image_url: `${DEV_SERVER}/uploads/seed/khong-ton-tai.svg` },
 ]
 
+// Đủ các trạng thái menu game phải vẽ được. Tiến độ của game đang tải nhích theo
+// đồng hồ để thấy lượt làm mới mỗi 10 giây có tác dụng.
+const DEV_GAMES = [
+	{ name: 'lol', display_name: 'Liên Minh Huyền Thoại', category: 'MOBA', status: 'ready' },
+	{ name: 'valorant', display_name: 'Valorant', category: 'FPS', status: 'ready' },
+	{ name: 'pubg', display_name: 'PUBG: Battlegrounds', category: 'FPS', status: 'downloading' },
+	{ name: 'fo4', display_name: 'FC Online', category: 'Thể thao', status: 'queued' },
+	{ name: 'csgo2', display_name: 'Counter-Strike 2', category: 'FPS', status: 'error' },
+	{ name: 'tft-ten-rat-dai-de-thu-xem-hai-dong-co-bi-cat-hay-khong', display_name: 'Đấu Trường Chân Lý với một cái tên rất dài để thử xem hai dòng có bị cắt hay không', category: '', status: 'ready' },
+]
+
 let nguoiDangDangNhap = { id: 'dev', username: 'khach', full_name: 'Khách Thử', role: 'member' }
+
+// Màn hình & chuột giả cho trang Cài đặt. Đủ độ phân giải có nhiều mức Hz (lọc Hz theo
+// độ phân giải) và một độ phân giải chỉ có một mức. Sắp như Go trả: rộng, cao, Hz giảm dần.
+const DEV_DISPLAY_MODES = [
+	{ width: 2560, height: 1440, hz: 144 },
+	{ width: 2560, height: 1440, hz: 60 },
+	{ width: 1920, height: 1080, hz: 240 },
+	{ width: 1920, height: 1080, hz: 144 },
+	{ width: 1920, height: 1080, hz: 60 },
+	{ width: 1280, height: 720, hz: 60 },
+]
+const DEV_DISPLAY_BASELINE = { width: 1920, height: 1080, hz: 60 }
+const devDisplay = {
+	current: { ...DEV_DISPLAY_BASELINE },
+	// Chế độ trước khi áp dụng; khác null nghĩa là đang chờ Giữ/Hoàn tác. Lớp giả KHÔNG
+	// tự hoàn tác sau 20 giây như Go — để thử được trường hợp đếm ngược của giao diện.
+	previous: null as { width: number; height: number; hz: number } | null,
+	mouseSpeed: 10,
+	mousePrecision: true,
+}
 
 export function installDevWailsStub() {
 	if (window.runtime || window.go) return
@@ -107,17 +138,17 @@ export function installDevWailsStub() {
 				// thành tuyệt đối hộ (việc đó do GetMenu bên Go làm).
 				GetMenu: (categoryId: string) =>
 					ok(JSON.stringify(DEV_MENU.filter(p => !categoryId || p.category_id === categoryId))),
-				RestoreSession: () => ok(''),
+				RestoreSession: () => ok(JSON.stringify({ id: 'dev-member', username: 'khach', full_name: 'Khách thử', role: 'member' })),
 				SetLoggedIn: () => ok(undefined),
-				HasMaintenancePin: () => ok(true),
 				HasCachedStaff: () => ok(true),
-				HasBuiltinAdmin: () => ok(true),
 				// Một ô cho cả hai loại, đúng như máy chủ làm: tên tài khoản
 				// quyết định đường đi.
 				//   quanly  → nhân viên   · khach → hội viên   · offline → bản lưu
+				//   kythuat → tài khoản quản trị máy trạm (chế độ bảo trì)
 				Login: (u: string, p: string) => {
 					if (p !== '123456') return Promise.reject(new Error('sai tài khoản hoặc mật khẩu'))
 					if (u === 'offline') return ok(JSON.stringify({ offline: true }))
+					if (u === 'kythuat') return ok(JSON.stringify({ offline: true, local_admin: true }))
 					const staff = u === 'quanly'
 					nguoiDangDangNhap = {
 						id: 'dev', username: u,
@@ -134,20 +165,78 @@ export function installDevWailsStub() {
 						},
 					}))
 				},
-				// PIN thử: 246810. Lớp giả không băm gì cả — nó chỉ để xem giao
-				// diện, phần kiểm PIN thật nằm ở pin_test.go.
-				UnlockMaintenance: (pin: string) =>
-					pin === '246810' ? ok(undefined) : Promise.reject(new Error('PIN không đúng')),
 				// Nút "Đăng nhập" phải bấm được, nếu không thì lớp giả này chỉ
 				// xem được đúng màn hình khoá — mọi thứ phía sau vẫn khuất.
 
-				SetServerURL: () => ok(''),
+				ListGames: () =>
+					ok(JSON.stringify({
+						root: 'D:\\Games',
+						items: DEV_GAMES.map(g => ({
+							...g, launcher: 'Game.exe', launch_args: '', version: 1,
+							progress: g.status === 'downloading' ? 20 + (Math.floor(Date.now() / 10000) % 80) : 0,
+						})),
+					})),
+				// Valorant cố tình thất bại: nút Chơi của game "ready" là đường duy nhất
+				// tới được thông báo lỗi.
+				LaunchGame: (name: string) =>
+					name === 'valorant'
+						? Promise.reject('không tìm thấy tệp chạy Valorant trên ổ game, vui lòng báo nhân viên')
+						: ok(undefined),
+
 				OpenWindow: (mode: string) => {
 					window.open(`${location.pathname}?window=${mode}`, '_blank')
 					return ok(undefined)
 				},
 				ShowWindow: () => ok(undefined),
+				// Nút thu nhỏ của DockTitleBar. Ngoài Wails không có cửa sổ nào để thu nhỏ:
+				// chỉ ghi log để thấy nút đã được nối dây.
+				MinimiseDock: () => { console.info('[dev-stub] MinimiseDock'); return ok(undefined) },
 				Logout: () => ok(''),
+				GetBootTime: () => ok(1700000000),
+
+				// ?display=unsupported → supported=false (phần bị ẩn) · ?display=error → lỗi
+				GetDisplayInfo: () => {
+					const mode = new URLSearchParams(location.search).get('display')
+					if (mode === 'error') return Promise.reject('không đọc được thông tin màn hình')
+					if (mode === 'unsupported') return ok(JSON.stringify({ supported: false }))
+					return ok(JSON.stringify({
+						supported: true,
+						modes: DEV_DISPLAY_MODES,
+						current: devDisplay.current,
+						baseline: DEV_DISPLAY_BASELINE,
+						mouse_speed: devDisplay.mouseSpeed,
+						mouse_precision: devDisplay.mousePrecision,
+					}))
+				},
+				ApplyDisplayMode: (width: number, height: number, hz: number) => {
+					if (!DEV_DISPLAY_MODES.some(m => m.width === width && m.height === height && m.hz === hz))
+						return Promise.reject(`màn hình không hỗ trợ chế độ ${width}×${height} ${hz} Hz`)
+					devDisplay.previous ||= devDisplay.current
+					devDisplay.current = { width, height, hz }
+					return ok(undefined)
+				},
+				ConfirmDisplayMode: () => {
+					if (!devDisplay.previous) return Promise.reject('không có thay đổi màn hình nào đang chờ xác nhận')
+					devDisplay.previous = null
+					return ok(undefined)
+				},
+				RevertDisplayMode: () => {
+					if (devDisplay.previous) devDisplay.current = devDisplay.previous
+					devDisplay.previous = null
+					return ok(undefined)
+				},
+				SetMouseSpeed: (speed: number) => {
+					devDisplay.mouseSpeed = Math.min(20, Math.max(1, speed))
+					return ok(undefined)
+				},
+				SetMousePrecision: (on: boolean) => { devDisplay.mousePrecision = on; return ok(undefined) },
+				ResetDisplayAndMouse: () => {
+					devDisplay.current = { ...DEV_DISPLAY_BASELINE }
+					devDisplay.previous = null
+					devDisplay.mouseSpeed = 10
+					devDisplay.mousePrecision = true
+					return ok(undefined)
+				},
 			},
 		},
 	}

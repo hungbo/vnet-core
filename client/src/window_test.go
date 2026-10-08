@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // Bốn độ phân giải hay gặp trong quán, cộng hai trường hợp cực đoan.
 var manHinhThuongGap = []struct {
@@ -123,5 +126,82 @@ func TestDockGeometry_ManHinhHepHonThanhDoc(t *testing.T) {
 	w, _, x, _ := dockGeometry(0, 0, 300, 1000)
 	if w != 300 || x != 0 {
 		t.Errorf("w=%d x=%d — màn hẹp hơn thanh thì phải kẹp về 300 và x=0", w, x)
+	}
+}
+
+// Cửa sổ phụ không được nằm dưới thanh dọc: thanh dọc luôn nổi trên, và phần
+// bị che có nút đóng của cửa sổ.
+func TestChildGeometry_KhongDeThanhDoc(t *testing.T) {
+	const minW, minH = 640, 480
+	for _, m := range manHinhThuongGap {
+		t.Run(m.ten, func(t *testing.T) {
+			w, h, x, y := childGeometry(m.w, m.h, minW, minH)
+			if m.w-dockWidth >= minW && x+w > m.w-dockWidth {
+				t.Errorf("cửa sổ %dx%d tại x=%d lấn %dpx vào thanh dọc", w, h, x, x+w-(m.w-dockWidth))
+			}
+			if x < 0 || y < 0 || x+w > m.w || y+h > m.h {
+				t.Errorf("lòi ra ngoài màn hình: %dx%d tại (%d,%d)", w, h, x, y)
+			}
+		})
+	}
+}
+
+// Các trạng thái máy mà thanh điều khiển có thể đang ở, và việc nó có được thu nhỏ
+// xuống taskbar hay không. Dùng chung cho hai test dưới.
+func cacTrangThaiThuNho() []struct {
+	ten  string
+	app  func() *App
+	duoc bool
+} {
+	dangNhap := func() *App {
+		a := &App{token: "t"}
+		a.verified.Store(true)
+		return a
+	}
+	return []struct {
+		ten  string
+		app  func() *App
+		duoc bool
+	}{
+		{"màn hình đăng nhập (chưa ai vào)", func() *App { return &App{} }, false},
+		{"có token nhưng máy chủ chưa xác nhận", func() *App { return &App{token: "t"} }, false},
+		{"đã đăng nhập", dangNhap, true},
+		{"nhân viên đã đăng nhập", func() *App { a := dangNhap(); a.role = "admin"; return a }, true},
+		{"đã đăng nhập nhưng mất kết nối máy chủ", func() *App {
+			a := dangNhap()
+			a.offlineLocked.Store(true)
+			return a
+		}, false},
+		{"chế độ bảo trì (không token)", func() *App {
+			a := &App{}
+			a.baoTri.Store(true)
+			return a
+		}, true},
+		{"cửa sổ phụ không phải thanh điều khiển", func() *App { a := dangNhap(); a.windowMode = "panel"; return a }, false},
+	}
+}
+
+// Màn hình khoá không bao giờ thu nhỏ được: thu nhỏ nó là lộ desktop cho người
+// chưa đăng nhập. Chốt chặn nằm ở Go chứ không ở nút, vì giao diện chỉ đề nghị.
+func TestCoTheThuNho(t *testing.T) {
+	for _, c := range cacTrangThaiThuNho() {
+		t.Run(c.ten, func(t *testing.T) {
+			if got := c.app().coTheThuNho(); got != c.duoc {
+				t.Errorf("coTheThuNho = %v, mong %v", got, c.duoc)
+			}
+		})
+	}
+}
+
+// Lệnh đóng cửa sổ (Alt+F4, nút Đóng trên taskbar, WM_CLOSE) phải LUÔN bị chặn: trả
+// false là Wails thoát tiến trình, tức mất đồng hồ tính tiền và đường nhận lệnh khoá
+// máy. Chạy cả với ctx rỗng (chưa dựng cửa sổ) lẫn mọi trạng thái khoá.
+func TestBeforeDockClose_KhongBaoGioChoThoat(t *testing.T) {
+	for _, c := range cacTrangThaiThuNho() {
+		t.Run(c.ten, func(t *testing.T) {
+			if !c.app().beforeDockClose(context.Background()) {
+				t.Error("beforeDockClose trả false — Wails sẽ thoát tiến trình giao diện")
+			}
+		})
 	}
 }

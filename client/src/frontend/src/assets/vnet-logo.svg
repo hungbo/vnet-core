@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 160" role="img" aria-label="VNET">
+  <defs>
+    <linearGradient id="vnet-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4C7DFF"/>
+      <stop offset="1" stop-color="#7B5CFF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(70 0) skewX(-14)" fill="url(#vnet-g)">
+    <path d="M0 20 H32 L60 104 L88 20 H120 L76 140 H44 Z"/>
+    <path d="M136 140 V32 L148 20 H166 L220 96 V20 H248 V128 L236 140 H218 L164 64 V140 Z"/>
+    <path d="M264 32 L276 20 H356 V44 H292 V68 H344 V92 H292 V116 H356 V140 H264 Z"/>
+    <path d="M370 20 H470 V44 H434 V140 H406 V44 H370 Z"/>
+  </g>
+  <g transform="skewX(-14)" fill="#4C7DFF" opacity="0.55">
+    <rect x="44" y="58" width="30" height="8"/>
+    <rect x="30" y="78" width="44" height="8"/>
+    <rect x="50" y="98" width="24" height="8"/>
+  </g>
+</svg>

@@ -67,8 +67,15 @@ func NewWSClient(ctx context.Context, baseURL, token string, machineCode string)
 		runtime.EventsEmit(ctx, "vnet:session:updated", string(msg.Payload))
 	})
 
+	// Phiên kết thúc vì BẤT KỲ lý do gì (quầy trả máy, giới nghiêm, khách tự
+	// trả) thì máy trạm phải về màn hình khoá. Bản cũ đưa sự kiện này vào nhánh
+	// "cập nhật phiên" nên quầy trả máy xong đồng hồ vẫn chạy và desktop vẫn mở.
 	c.On("session:ended", func(msg WSMessage) {
-		runtime.EventsEmit(ctx, "vnet:session:updated", string(msg.Payload))
+		runtime.EventsEmit(ctx, "vnet:session:ended", string(msg.Payload))
+	})
+
+	c.On("curfew:enforced", func(msg WSMessage) {
+		runtime.EventsEmit(ctx, "vnet:session:ended", string(msg.Payload))
 	})
 
 	// Máy chủ tự đóng phiên: hết tiền, hết khung giờ, hoặc giới nghiêm. Không có

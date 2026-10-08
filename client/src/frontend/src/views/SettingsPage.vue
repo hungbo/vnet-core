@@ -22,7 +22,7 @@
 				cuộn. Khối thường thì cả trang cuộn chung một lần.
 			-->
 			<section class="settings-card">
-				<h4>Đổi mật khẩu / PIN</h4>
+				<h4>Đổi mật khẩu</h4>
 				<el-form :model="pinForm" label-position="top">
 					<el-form-item label="Mật khẩu cũ">
 						<el-input v-model="pinForm.oldPin" type="password" show-password />
@@ -52,11 +52,25 @@
 				<h4>Cấu hình thiết bị</h4>
 				<el-form label-position="top">
 					<el-form-item label="Địa chỉ server">
-						<el-input v-model="serverUrl" placeholder="http://localhost:20800" />
+						<el-input :model-value="serverUrl" readonly />
 					</el-form-item>
-					<el-button type="primary" style="width: 100%" @click="saveDevice">Lưu cấu hình</el-button>
+					<el-form-item label="Mã máy">
+						<el-input :model-value="maMay" readonly />
+					</el-form-item>
 				</el-form>
+				<!--
+					Chỉ xem, không sửa ở đây. Địa chỉ máy chủ có đúng một nguồn là
+					config.json, nơi dịch vụ nền cũng đọc. Bản cũ cho sửa ở đây và
+					lưu vào trình duyệt: giao diện và dịch vụ nền nói chuyện với hai
+					máy chủ khác nhau, và ô này còn hiện cứng localhost chứ không
+					phải địa chỉ đang dùng.
+				-->
+				<p class="update-notes">
+					Muốn đổi thì sửa tệp config.json cạnh vnet-client.exe (cần quyền quản trị) rồi khởi động lại máy.
+				</p>
 			</section>
+
+			<DisplaySettings />
 
 			<section class="settings-card">
 				<h4>Cập nhật ứng dụng</h4>
@@ -69,20 +83,12 @@
 					title="Đang dùng bản mới nhất" style="margin-bottom: 12px" />
 
 				<p v-if="update?.changelog" class="update-notes">{{ update.changelog }}</p>
-				<p v-if="downloadedPath" class="update-notes">
-					Đã tải về: {{ downloadedPath }} — đóng ứng dụng rồi chạy tệp này để cài.
+				<p v-if="update?.has_update" class="update-notes">
+					Máy tự cài bản mới trong vòng 10 phút, vào lúc không có khách ngồi.
 				</p>
 
 				<div class="update-actions">
 					<el-button :loading="checking" @click="checkUpdate">Kiểm tra cập nhật</el-button>
-					<el-button
-						v-if="update?.has_update"
-						type="primary"
-						:loading="downloading"
-						@click="downloadUpdate"
-					>
-						Tải bản cập nhật
-					</el-button>
 				</div>
 			</section>
 
@@ -100,6 +106,7 @@ import { computed, ref, onMounted } from 'vue'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { useSessionStore } from '../stores/session.store'
+import DisplaySettings from '../components/DisplaySettings.vue'
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -111,19 +118,16 @@ const emit = defineEmits<{
 
 const changingPin = ref(false)
 
-// GetVersion/CheckUpdate/DownloadUpdate đã có trong update.go nhưng phía Vue
+// GetVersion/CheckUpdate đã có trong update.go nhưng phía Vue
 // chưa gọi hàm nào, và ô "Phiên bản" ở trên là chuỗi cứng 1.0.0 — số hiển thị
 // không liên quan gì tới bản đang chạy.
 const version = ref('')
 const checking = ref(false)
 const checked = ref(false)
-const downloading = ref(false)
 const update = ref<any>(null)
-const downloadedPath = ref('')
 
 async function checkUpdate() {
 	checking.value = true
-	downloadedPath.value = ''
 	try {
 		update.value = JSON.parse(await api().CheckUpdate())
 		checked.value = true
@@ -134,19 +138,8 @@ async function checkUpdate() {
 	}
 }
 
-async function downloadUpdate() {
-	downloading.value = true
-	try {
-		// Cố ý KHÔNG tự chạy tệp cài: làm vậy sẽ tắt ứng dụng giữa phiên của khách.
-		downloadedPath.value = await api().DownloadUpdate()
-		ElMessage.success('Đã tải xong và kiểm tra băm')
-	} catch (e) {
-		ElMessage.error(String(e))
-	} finally {
-		downloading.value = false
-	}
-}
-const serverUrl = ref('http://localhost:20800')
+const serverUrl = ref('')
+const maMay = ref('')
 
 // Chỉ quản trị mới thấy phần Cấu hình thiết bị. Nhân viên đăng nhập trên máy
 // trạm mang vai trò 'admin' (App.Login quy về), hội viên thì không.
@@ -157,27 +150,6 @@ const pinForm = ref({
 	newPin: '',
 	confirmPin: '',
 })
-
-/**
- * Lưu cấu hình thiết bị.
- *
- * Bản cũ lưu ngay mỗi lần rời ô (@change) và không kiểm gì: gõ nhầm địa chỉ máy
- * chủ là máy trạm mất kết nối ngay lập tức, không có bước xác nhận nào để dừng
- * lại. Gom về một nút và kiểm dữ liệu trước khi ghi.
- */
-function saveDevice() {
-	const url = serverUrl.value.trim().replace(/\/+$/, '')
-
-	if (!/^https?:\/\/[^\s/]+/.test(url)) {
-		ElMessage.warning('Địa chỉ server phải bắt đầu bằng http:// hoặc https://')
-		return
-	}
-
-	serverUrl.value = url
-	localStorage.setItem('vnet_server_url', url)
-	api().SetServerURL(url)
-	ElMessage.success('Đã lưu địa chỉ máy chủ')
-}
 
 async function changePin() {
 	if (!pinForm.value.oldPin || !pinForm.value.newPin) {
@@ -201,8 +173,8 @@ async function changePin() {
 }
 
 onMounted(() => {
-	const savedUrl = localStorage.getItem('vnet_server_url')
-	if (savedUrl) serverUrl.value = savedUrl
+	api().GetServerURL().then((u: string) => { serverUrl.value = u }).catch(() => {})
+	api().GetMachineCode().then((c: string) => { maMay.value = c }).catch(() => {})
 	api().GetVersion().then((v: string) => { version.value = v }).catch(() => {})
 })
 </script>
@@ -221,7 +193,9 @@ onMounted(() => {
 }
 
 .settings-page {
-	height: 100vh;
+	/* Lấp phần còn lại dưới DockTitleBar, không phải cả màn hình (100vh sẽ tràn). */
+	flex: 1;
+	min-height: 0;
 	display: flex;
 	flex-direction: column;
 	background: var(--vnet-bg);

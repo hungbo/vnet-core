@@ -13,7 +13,7 @@
 			:messages="messagesJson" :room-id="store.roomId" :messages-loaded="messagesLoaded" :show-add-room="false"
 			:show-search="false" :show-files="false" :show-audio="false" :show-emojis="false"
 			:show-reaction-emojis="false" :show-new-messages-divider="false" :show-rooms="false"
-			:auto-scroll="autoScrollJson" :styles="stylesJson" rooms-loaded height="100%"
+			:auto-scroll="autoScrollJson" :styles="stylesJson" :text-messages="textMessagesJson" theme="dark" rooms-loaded height="100%"
 			@fetch-messages="onFetchMessages" @send-message="onSendMessage" />
 		<div v-show="showClearedUI" class="cleared-overlay">
 			<p>Tất cả phòng đã được xoá</p>
@@ -36,7 +36,7 @@
 				:messages="messagesJson" :room-id="store.roomId" :messages-loaded="messagesLoaded" :show-add-room="false"
 				:show-search="false" :show-files="false" :show-audio="false" :show-emojis="false"
 				:show-reaction-emojis="false" :show-new-messages-divider="false" :show-rooms="false"
-				:auto-scroll="autoScrollJson" :styles="stylesJson" rooms-loaded height="100%"
+				:auto-scroll="autoScrollJson" :styles="stylesJson" :text-messages="textMessagesJson" theme="dark" rooms-loaded height="100%"
 				@fetch-messages="onFetchMessages" @send-message="onSendMessage" />
 			<div v-show="showClearedUI" class="cleared-overlay">
 				<p>Tất cả phòng đã được xoá</p>
@@ -59,7 +59,7 @@
 <script setup lang="ts">
 import { register } from 'vue-advanced-chat'
 register()
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElButton, ElIcon } from 'element-plus'
 import { ArrowLeft, ChatDotRound } from '@element-plus/icons-vue'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
@@ -96,10 +96,36 @@ const autoScrollJson = computed(() => JSON.stringify({
 	send: { new: true, newAfterScrollUp: false },
 	receive: { new: true, newAfterScrollUp: true }
 }))
+// Tông tối như phần còn lại của máy trạm. Bản cũ để nền trắng mặc định của thư
+// viện với chữ #333: một khối trắng loá giữa màn hình tối.
 const stylesJson = computed(() => JSON.stringify({
-	general: { color: '#333', borderStyle: '1px solid var(--vnet-border)' },
-	footer: { background: 'var(--vnet-surface)' }
+	general: {
+		color: 'var(--vnet-text)',
+		backgroundInput: 'var(--vnet-bg)',
+		colorPlaceholder: 'var(--vnet-text-faint)',
+		borderStyle: '1px solid var(--vnet-border)',
+	},
+	container: { background: 'var(--vnet-bg)' },
+	content: { background: 'var(--vnet-bg)' },
+	footer: { background: 'var(--vnet-surface)' },
 }))
+
+// Chữ của thư viện chat mặc định là tiếng Anh ("No messages", "Type message",
+// "Conversation started on").
+const textMessagesJson = JSON.stringify({
+	ROOMS_EMPTY: 'Chưa có cuộc trò chuyện',
+	ROOM_EMPTY: 'Chưa chọn cuộc trò chuyện',
+	NEW_MESSAGES: 'Tin nhắn mới',
+	MESSAGE_DELETED: 'Tin nhắn đã bị xoá',
+	MESSAGES_EMPTY: 'Chưa có tin nhắn. Nhắn cho quầy nếu bạn cần giúp.',
+	CONVERSATION_STARTED: 'Bắt đầu trò chuyện:',
+	TYPE_MESSAGE: 'Nhập tin nhắn',
+	SEARCH: 'Tìm',
+	IS_ONLINE: 'đang trực tuyến',
+	LAST_SEEN: 'truy cập lần cuối ',
+	IS_TYPING: 'đang nhập...',
+	CANCEL_SELECT_MESSAGE: 'Huỷ',
+})
 
 function openWidget() {
 	isOpen.value = true
@@ -168,6 +194,20 @@ async function onSendMessage($event: any) {
 }
 
 let cleanup: (() => void) | null = null
+
+// Phòng đổi từ bên ngoài (tin tới phòng mới, quầy mở phòng mới): khung chat
+// phải theo, và lớp "Tất cả phòng đã được xoá" phải tắt — nếu không khách nhìn
+// lớp đó mãi trong khi quầy đang nhắn vào phòng mới.
+watch(() => store.roomId, id => {
+	if (!id) return
+	rooms.value = [{
+		roomId: id,
+		roomName: 'Hỗ trợ',
+		unreadCount: 0,
+		users: [{ _id: currentUserId.value, username: 'Tôi' }]
+	}]
+	showClearedUI.value = false
+})
 
 async function onCreateNewRoom() {
 	showClearedUI.value = false

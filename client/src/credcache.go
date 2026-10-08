@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"os"
@@ -18,7 +17,7 @@ import (
 //
 // Ba điều kiện phải giữ, và mỗi cái đều là một cách làm hỏng nếu bỏ qua:
 //
-//  1. KHÔNG lưu mật khẩu trần. Băm bằng PBKDF2 như PIN kỹ thuật.
+//  1. KHÔNG lưu mật khẩu trần. Băm bằng PBKDF2 như tài khoản quản trị máy trạm.
 //  2. CHỈ lưu tài khoản nhân viên. Lưu cả hội viên nghĩa là khách rút dây mạng
 //     rồi tự mở máy — chơi không mất tiền, đúng thứ lớp khoá sinh ra để chặn.
 //  3. CÓ hạn dùng. Đuổi việc một nhân viên và đổi mật khẩu trên máy chủ mà bản
@@ -29,36 +28,11 @@ const (
 	credCacheTTL = 30 * 24 * time.Hour // quá hạn thì không mở offline được nữa
 )
 
-// Tài khoản mặc định nằm sẵn trong bản build: máy vừa cài xong, chưa từng nối
-// được máy chủ lần nào thì vẫn có đường vào để gỡ hoặc sửa.
-//
-// Nó TỰ TẮT ngay khi máy này có lần đăng nhập nhân viên đầu tiên qua máy chủ —
-// từ lúc đó đã có tài khoản thật để dùng, và giữ thêm một cửa nữa chỉ là thêm
-// một cửa để người khác đi vào.
-//
-// Nói thẳng cái giá: cho tới lần đăng nhập đó, MỌI máy dựng từ cùng bản build
-// đều mở được bằng đúng một cặp ai cũng đoán ra. Đây là lựa chọn có chủ đích để
-// đổi lấy việc không bao giờ bị khoá ngoài; giao diện sẽ cảnh báo mỗi lần có
-// nhân viên đăng nhập, chừng nào nó còn hiệu lực.
-const (
-	builtinAdminUser = "admin"
-	builtinAdminPass = "admin"
-)
-
-// builtinAdminActive: còn hiệu lực chừng nào máy chưa có tài khoản nhân viên
-// thật nào được lưu.
-func builtinAdminActive() bool {
-	return len(loadCredCache()) == 0
-}
-
 type cachedCred struct {
 	Username string    `json:"username"`
 	Hash     string    `json:"hash"`
 	Role     string    `json:"role"`
 	SavedAt  time.Time `json:"saved_at"`
-
-	// Không ghi ra tệp: chỉ để chỗ gọi biết vừa mở bằng tài khoản mặc định.
-	Builtin bool `json:"-"`
 }
 
 var errServerUnreachable = errors.New("không kết nối được máy chủ")
@@ -147,12 +121,7 @@ func verifyCachedStaff(username, password string, now time.Time) (*cachedCred, e
 	username = strings.TrimSpace(username)
 	list := loadCredCache()
 
-	// Máy chưa từng có ai đăng nhập: chỉ còn tài khoản mặc định trong bản build.
 	if len(list) == 0 {
-		if strings.EqualFold(username, builtinAdminUser) &&
-			subtle.ConstantTimeCompare([]byte(password), []byte(builtinAdminPass)) == 1 {
-			return &cachedCred{Username: builtinAdminUser, Role: "staff", Builtin: true}, nil
-		}
 		return nil, errNoCachedCred
 	}
 

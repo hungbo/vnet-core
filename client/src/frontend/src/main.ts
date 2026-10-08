@@ -5,6 +5,14 @@ import 'element-plus/dist/index.css'
 // Bảng biến màu tối của Element Plus phải nạp SAU index.css, và tokens.css nạp
 // sau cùng để ghi đè cả hai.
 import 'element-plus/theme-chalk/dark/css-vars.css'
+// Phông nhúng sẵn trong bản build: quán không chắc có Internet, và phông mặc
+// định của Windows không có dáng của logo. Chỉ nạp những độ đậm thật sự dùng.
+import '@fontsource/be-vietnam-pro/400.css'
+import '@fontsource/be-vietnam-pro/500.css'
+import '@fontsource/be-vietnam-pro/600.css'
+import '@fontsource/chakra-petch/600.css'
+import '@fontsource/chakra-petch/700.css'
+import '@fontsource/chakra-petch/700-italic.css'
 import './styles/tokens.css'
 import App from './App.vue'
 

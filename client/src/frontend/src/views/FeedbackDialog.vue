@@ -1,9 +1,9 @@
 <template>
-	<div class="overlay" @click.self="$emit('close')">
+	<div class="overlay" :class="{ standalone }" @click.self="!standalone && $emit('close')">
 		<div class="panel">
 			<header class="panel-head">
 				<h3>Đánh giá dịch vụ</h3>
-				<el-button text circle @click="$emit('close')">
+				<el-button v-if="!standalone" text circle @click="$emit('close')">
 					<el-icon><Close /></el-icon>
 				</el-button>
 			</header>
@@ -52,6 +52,7 @@ declare const window: any
 const api = () => window.go?.main?.App
 
 const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{ standalone?: boolean }>()
 
 const RATE_TEXTS = ['Rất tệ', 'Tệ', 'Bình thường', 'Tốt', 'Rất tốt']
 
@@ -69,7 +70,14 @@ async function submit() {
 			title: 'Cảm ơn bạn',
 			message: 'Đã gửi đánh giá tới quầy',
 		})
-		emit('close')
+		// Cửa sổ riêng: gửi xong thì tự ẩn, để khách thấy dòng cảm ơn trước đã.
+		if (props.standalone) {
+			setTimeout(() => {
+				rating.value = 5
+				content.value = ''
+				window.go?.main?.App?.HidePanel()
+			}, 1500)
+		} else emit('close')
 	} catch (e) {
 		// Máy chủ chỉ nhận một đánh giá mỗi đơn/phiên — hiện nguyên văn lý do.
 		ElMessage.error(String(e))
@@ -131,5 +139,18 @@ async function submit() {
 
 .submit-btn {
 	width: 100%;
+}
+
+/* Dạng cửa sổ riêng (tiến trình --window): không lớp phủ, căn giữa một cột hẹp
+   giống cửa sổ Nạp tiền. */
+.overlay.standalone {
+	position: static;
+	min-height: 100vh;
+	background: var(--vnet-bg);
+	color: var(--vnet-text);
+}
+
+.overlay.standalone .panel {
+	background: transparent;
 }
 </style>

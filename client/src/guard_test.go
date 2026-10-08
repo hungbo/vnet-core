@@ -120,8 +120,12 @@ func TestGuard_QuangImLangDuDai(t *testing.T) {
 	if p.Grace < time.Minute {
 		t.Errorf("Grace = %v — quá ngắn so với lúc Windows khởi động", p.Grace)
 	}
-	if tong := time.Duration(p.Strike) * p.Every; tong < time.Minute {
-		t.Errorf("cần %v mới tắt máy — quá vội với một trục trặc thoáng qua", tong)
+	// Nửa phút, không phải một phút như trước: mỗi lượt lớp canh đã TỰ thử bật
+	// lại dịch vụ, nên sáu lượt hỏng liên tiếp là dịch vụ bị vô hiệu hẳn chứ
+	// không phải trục trặc thoáng qua. Và hành động giờ là khởi động lại (máy
+	// diskless về bản gốc), nhẹ hơn tắt máy.
+	if tong := time.Duration(p.Strike) * p.Every; tong < 30*time.Second {
+		t.Errorf("cần %v mới hành động — quá vội với một trục trặc thoáng qua", tong)
 	}
 }
 

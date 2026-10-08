@@ -260,7 +260,12 @@ var uiProc *os.Process
 
 func uiIsRunning() bool {
 	if uiProc == nil {
-		return false
+		// Dịch vụ vừa khởi động lại (bị tắt, tự cập nhật) thì không biết giao
+		// diện nào đang chạy. Không kiểm chỗ này thì cứ năm giây nó bật thêm một
+		// bản: bản mới vấp khoá chạy-một-bản của Wails và thoát ngay, nhưng
+		// trước khi thoát nó đánh thức bản đang chạy — cửa sổ bị kéo lên mỗi năm
+		// giây, kể cả khi nhân viên đang thu nhỏ để bảo trì.
+		return dockDangChay()
 	}
 	// Trên Windows, FindProcess luôn thành công nên phải hỏi mã thoát.
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(uiProc.Pid))
@@ -283,6 +288,24 @@ func uiIsRunning() bool {
 	return true
 }
 
+// dockDangChay dò khoá chạy-một-bản mà Wails tạo cho thanh điều khiển.
+//
+// Wails đặt tên mutex là "wails-app-<UniqueId>sim" trong không gian tên CỦA
+// PHIÊN người dùng; dịch vụ ở phiên 0 mở được nó qua đường "Session\<n>\".
+func dockDangChay() bool {
+	sessionID := windows.WTSGetActiveConsoleSessionId()
+	if sessionID == 0xFFFFFFFF {
+		return false
+	}
+	name := fmt.Sprintf(`Session\%d\wails-app-vnet-client-docksim`, sessionID)
+	h, err := windows.OpenMutex(windows.SYNCHRONIZE, false, windows.StringToUTF16Ptr(name))
+	if err != nil {
+		return false
+	}
+	windows.CloseHandle(h)
+	return true
+}
+
 // launchUIInUserSession bật giao diện trong phiên đăng nhập đang hoạt động.
 //
 // Dịch vụ chạy ở session 0, nơi KHÔNG cửa sổ nào hiện được. Muốn có giao diện thì
@@ -290,16 +313,25 @@ func uiIsRunning() bool {
 // — đó là toàn bộ lý do đoạn Win32 dưới đây tồn tại.
 //
 // Chưa ai đăng nhập vào Windows là trạng thái bình thường (máy vừa khởi động,
-// đang ở màn hình khoá), không phải lỗi.
+// đang ở màn hình khoá), không phải lỗi: hàm trả errChuaCoPhien để vòng giám sát
+// thử lại ở nhịp dày thay vì chờ cả khoảng giữa hai lần bật.
 func launchUIInUserSession() error {
 	sessionID := windows.WTSGetActiveConsoleSessionId()
 	if sessionID == 0xFFFFFFFF {
-		return fmt.Errorf("chưa có phiên người dùng nào")
+		return errChuaCoPhien
 	}
 
 	var userToken windows.Token
 	if err := windows.WTSQueryUserToken(sessionID, &userToken); err != nil {
-		return fmt.Errorf("chưa ai đăng nhập vào Windows: %w", err)
+		// Thiếu quyền mượn token (dịch vụ không chạy dưới SYSTEM) là hỏng cấu
+		// hình chứ không phải chuyện chờ: để nó đi đường lỗi thường, có khoảng
+		// cách giữa các lần thử và ghi nhật ký mỗi lần.
+		if errors.Is(err, windows.ERROR_PRIVILEGE_NOT_HELD) || errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+			return fmt.Errorf("không mượn được token người dùng: %w", err)
+		}
+		// Còn lại: phiên chưa có người dùng (ERROR_NO_TOKEN lúc đăng nhập tự động
+		// đang dở). Giữ mã lỗi gốc trong câu để nhật ký lần đầu còn cái mà đọc.
+		return fmt.Errorf("%w (WTSQueryUserToken: %v)", errChuaCoPhien, err)
 	}
 	defer userToken.Close()
 

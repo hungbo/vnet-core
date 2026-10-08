@@ -11,7 +11,17 @@
 			<span class="header-spacer" />
 		</header>
 
-		<div class="menu-categories">
+		<!-- Khách cần xem lại món đã gọi và quầy đã duyệt chưa, ngay trong cửa sổ gọi món. -->
+		<div class="menu-tabs">
+			<el-radio-group v-model="tab">
+				<el-radio-button value="menu">Thực đơn</el-radio-button>
+				<el-radio-button value="orders">Đơn đã gọi</el-radio-button>
+			</el-radio-group>
+		</div>
+
+		<MyOrders v-if="tab === 'orders'" />
+
+		<div v-show="tab === 'menu'" class="menu-categories">
 			<el-radio-group v-model="activeCategory" @change="loadProducts">
 				<el-radio-button value="">Tất cả</el-radio-button>
 				<el-radio-button v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</el-radio-button>
@@ -19,7 +29,7 @@
 		</div>
 
 		<!-- Lưới món và giỏ hàng nằm cạnh nhau: chọn món và nhìn giỏ là một việc. -->
-		<div class="menu-content">
+		<div v-show="tab === 'menu'" class="menu-content">
 			<main class="menu-grid">
 				<ProductCard
 					v-for="p in products" :key="p.id"
@@ -41,6 +51,7 @@ import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { useOrderStore } from '../stores/order.store'
 import ProductCard from '../components/ProductCard.vue'
 import CartPanel from '../components/CartPanel.vue'
+import MyOrders from '../components/MyOrders.vue'
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -52,6 +63,7 @@ const order = useOrderStore()
 const categories = ref<any[]>([])
 const products = ref<any[]>([])
 const activeCategory = ref('')
+const tab = ref<'menu' | 'orders'>('menu')
 
 async function loadProducts() {
 	try {
@@ -101,6 +113,11 @@ onMounted(async () => {
 .menu-header h3 {
 	font-size: 16px;
 	font-weight: 600;
+}
+
+.menu-tabs {
+	padding: 12px 16px 0;
+	background: var(--vnet-surface);
 }
 
 .menu-categories {

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -31,10 +32,26 @@ func runAgent(ctx context.Context) {
 	cfg := LoadConfig()
 	log.Printf("[agent] máy %s → %s", cfg.MachineCode, cfg.ServerURL)
 
+	// Bộ giám sát phải có TRƯỚC khi nhịp tim và WebSocket chạy: cả hai báo vào nó.
+	loadPolicyFile()
+
+	// Danh sách chặn lấy từ chính sách đã lưu, nên áp ngay từ lúc bật máy kể cả
+	// khi chưa nối được máy chủ. Nhịp tim mang bản mới về thì agent.go thay.
+	appBlock = newAppBlocker()
+	appBlock.setAll(currentPolicy().BlockedApps)
+	go appBlock.run(ctx)
+	agentSupervisor = newUISupervisor(time.Now())
+
 	go runTelemetry(ctx, cfg)
 	go newWebBlocker(cfg).run(ctx)
 	go runAgentWS(ctx, cfg)
-	go superviseUI(ctx)
+	go runUILinkServer(ctx, agentSupervisor)
+	go superviseUI(ctx, agentSupervisor)
+	// Lối tắt VNET trên desktop và xoá lối tắt rác theo chính sách (shortcuts.go).
+	go runShortcutKeeper(ctx)
+	if osIsWindows {
+		go runAutoUpdate(ctx, cfg)
+	}
 
 	<-ctx.Done()
 }
@@ -56,13 +73,19 @@ func runAgentWS(ctx context.Context, cfg *Config) {
 	}
 
 	ws := NewAgentWSClient(ctx, cfg)
+	// Phiên kết thúc vì bất kỳ lý do gì: ghi lại để vòng giám sát kiểm giao
+	// diện có thật sự về màn hình khoá không.
+	phienKetThuc := func(WSMessage) {
+		if agentSupervisor != nil {
+			agentSupervisor.noteSessionEnded(time.Now())
+		}
+	}
+	ws.On("session:ended", phienKetThuc)
+	ws.On("session:auto-ended", phienKetThuc)
+	ws.On("curfew:enforced", phienKetThuc)
+
 	ws.On("remote:shutdown", func(WSMessage) { shutdownMachine() })
 	ws.On("remote:restart", func(WSMessage) { restartMachine() })
-	// "process", không phải "app": trang quản trị gửi khoá "process" (xem
-	// machines/index.vue), và giao diện cũng đọc "process". Bản cũ đọc "app" ở
-	// đây nên nhánh chặn ứng dụng phía dịch vụ nền luôn nhận chuỗi rỗng.
-	ws.On("remote:block-app", func(msg WSMessage) { blockAppByName(remoteField(msg, "process")) })
-	ws.On("remote:unblock-app", func(msg WSMessage) { unblockAppByName(remoteField(msg, "process")) })
 	ws.Run()
 }
 
@@ -81,31 +104,129 @@ func remoteField(msg WSMessage, key string) string {
 	return ""
 }
 
+// Nhịp của vòng giám sát giao diện.
+const (
+	// Giao diện đang chạy: hỏi bộ giám sát (decide) mỗi 2 giây.
+	checkEvery = 2 * time.Second
+	// Giao diện chưa chạy: dò dày để bật nó NGAY khi phiên đăng nhập tự động của
+	// Windows có token. Mỗi nhịp chỉ là vài lời gọi Win32 rẻ.
+	fastEvery = 200 * time.Millisecond
+	// Khoảng cách tối thiểu giữa hai lần bật khi lần trước đã chạy được hoặc hỏng
+	// vì lý do thật — để giao diện chết ngay sau khi bật không thành vòng lặp.
+	launchEvery = 5 * time.Second
+	// Chờ phiên đăng nhập có thể kéo dài cả chục giây: chỉ ghi nhật ký lần đầu,
+	// rồi tối đa mỗi chừng này.
+	waitLogEvery = 30 * time.Second
+)
+
+// errChuaCoPhien: chưa có phiên đăng nhập nào để mượn token. Máy vừa khởi động
+// là trạng thái bình thường, không phải lỗi — nên khác mọi lỗi bật giao diện còn
+// lại, nó được thử lại ở nhịp dày.
+var errChuaCoPhien = errors.New("chưa ai đăng nhập vào Windows")
+
+// nhipGiamSat quyết định một lượt của vòng giám sát: có bật giao diện ngay lượt
+// này không, và bao lâu nữa thì kiểm lại.
+//
+//	dangChay:  giao diện đang chạy.
+//	sauLanBat: thời gian kể từ lần bật gần nhất.
+//	loiCuoi:   kết quả lần bật gần nhất (nil = đã bật được).
+//
+// Tách thành hàm thuần vì đây là chỗ cân hai điều ngược nhau: bật giao diện sớm
+// nhất có thể, mà không để một giao diện chết liên tục kéo cả dịch vụ quay tít.
+func nhipGiamSat(dangChay bool, sauLanBat time.Duration, loiCuoi error) (batNgay bool, cho time.Duration) {
+	if dangChay {
+		return false, checkEvery
+	}
+	if errors.Is(loiCuoi, errChuaCoPhien) {
+		return true, fastEvery
+	}
+	return sauLanBat >= launchEvery, fastEvery
+}
+
 // superviseUI giữ cho giao diện luôn chạy trong phiên của người dùng.
 //
 // Đây là lý do tiến trình nền phải là dịch vụ chứ không phải một mục tự khởi
 // động thường: khách tắt giao diện trong Task Manager thì phải có ai đó bật lại,
 // và cái "ai đó" không được nằm cùng thuyền với nó.
-func superviseUI(ctx context.Context) {
-	const checkEvery = 5 * time.Second
+//
+// Ngoài việc bật lại giao diện đã chết, vòng này hỏi bộ giám sát mỗi hai giây:
+// giao diện còn phản hồi không, phiên kết thúc rồi nó có về màn hình khoá
+// không, và mất kết nối máy chủ đã quá ngưỡng chưa.
+//
+// Lượt đầu chạy ngay không chờ, và khi giao diện chưa chạy thì vòng dò dày (xem
+// nhipGiamSat): máy trạm không ổ cứng khởi động xong là desktop hiện ra, mỗi
+// giây bật giao diện chậm là thêm một giây khách thấy desktop trước màn hình khoá.
+func superviseUI(ctx context.Context, sup *uiSupervisor) {
+	var (
+		lastLaunch  time.Time
+		lastErr     error
+		lastWaitLog time.Time
+		wait        time.Duration // lượt đầu: 0 = kiểm ngay
+	)
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(checkEvery):
+		case <-time.After(wait):
 		}
 
-		if uiIsRunning() {
+		now := time.Now()
+		running := uiIsRunning()
+		// Phần giám sát chỉ có nghĩa trên Windows: nơi khác uiIsRunning luôn
+		// báo "đang chạy" mà không có giao diện nào báo cáo về.
+		if osIsWindows {
+			sup.noteUIRunning(now, running)
+		}
+
+		launch, next := nhipGiamSat(running, now.Sub(lastLaunch), lastErr)
+		wait = next
+		if !running {
+			if !launch {
+				continue
+			}
+			lastLaunch = now
+			lastErr = launchUIInUserSession()
+			switch {
+			case lastErr == nil:
+			case errors.Is(lastErr, errChuaCoPhien):
+				// Chưa ai đăng nhập vào Windows là trạng thái bình thường, không
+				// phải lỗi — đừng làm ngập nhật ký ở nhịp 200 ms.
+				if now.Sub(lastWaitLog) >= waitLogEvery {
+					lastWaitLog = now
+					log.Printf("[agent] chưa bật được giao diện: %v", lastErr)
+				}
+			default:
+				log.Printf("[agent] chưa bật được giao diện: %v", lastErr)
+			}
 			continue
 		}
-		if err := launchUIInUserSession(); err != nil {
-			// Chưa ai đăng nhập vào Windows là trạng thái bình thường, không phải
-			// lỗi — đừng làm ngập nhật ký.
-			log.Printf("[agent] chưa bật được giao diện: %v", err)
+		if !osIsWindows {
+			continue
+		}
+
+		switch sup.decide(now, currentPolicy(), maintenanceMode()) {
+		case actRestartUI:
+			log.Printf("[giám sát] giao diện không phản hồi hoặc không về màn hình khoá — bật lại")
+			tatGiaoDienCu()
+		case actReboot:
+			log.Printf("[giám sát] khởi động lại máy: giao diện hỏng lặp lại, hoặc mất kết nối máy chủ quá ngưỡng")
+			if err := restartMachine(); err != nil {
+				log.Printf("[giám sát] không khởi động lại được: %v", err)
+			}
+		case actShutdown:
+			log.Printf("[giám sát] không ai đăng nhập quá %d phút — tắt máy", currentPolicy().IdleShutdownMinutes)
+			if err := shutdownMachine(); err != nil {
+				log.Printf("[giám sát] không tắt được máy: %v", err)
+			}
 		}
 	}
 }
+
+// agentSupervisor chỉ có trong tiến trình DỊCH VỤ NỀN; ở giao diện nó là nil.
+// Nhịp tim dùng chung cho cả hai tiến trình nên phải hỏi biến này mới biết mình
+// đang chạy ở đâu.
+var agentSupervisor *uiSupervisor
 
 // runService là điểm vào của chế độ --service.
 //

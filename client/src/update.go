@@ -37,6 +37,8 @@ type UpdateInfo struct {
 	Changelog  string `json:"changelog"`
 	IsRequired bool   `json:"is_required"`
 	Current    string `json:"current"`
+	// Máy chủ báo máy đang có khách hay không: dịch vụ nền chỉ tự cài lúc trống.
+	MachineInUse bool `json:"machine_in_use"`
 }
 
 // platformTag khớp với trường platform mà quầy khai lúc công bố bản cập nhật.
@@ -83,21 +85,6 @@ func checkUpdate(cfg *Config) (*UpdateInfo, error) {
 	return &envelope.Data, nil
 }
 
-// DownloadUpdate tải bản cập nhật về và kiểm băm. Trả về đường dẫn tệp.
-//
-// KHÔNG tự chạy tệp: cài đặt làm ứng dụng tự tắt giữa phiên chơi của khách, nên
-// đó phải là hành động có người quyết định.
-func (a *App) DownloadUpdate() (string, error) {
-	info, err := checkUpdate(a.cfg)
-	if err != nil {
-		return "", err
-	}
-	if !info.HasUpdate {
-		return "", fmt.Errorf("đang ở phiên bản mới nhất (%s)", version)
-	}
-	return downloadAndVerify(info)
-}
-
 func downloadAndVerify(info *UpdateInfo) (string, error) {
 	if !isHexSHA256(info.Checksum) {
 		// Máy chủ bắt buộc phải khai băm; thiếu băm thì dừng, không tải.
@@ -113,7 +100,10 @@ func downloadAndVerify(info *UpdateInfo) (string, error) {
 		return "", fmt.Errorf("tải bản cập nhật thất bại: máy chủ trả %d", resp.StatusCode)
 	}
 
-	dir := filepath.Join(os.TempDir(), "vnet-update")
+	dir, err := updateDir()
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -151,6 +141,21 @@ func downloadAndVerify(info *UpdateInfo) (string, error) {
 		return "", err
 	}
 	return dest, nil
+}
+
+// updateDir là nơi tải bản cập nhật: thư mục con của thư mục cài.
+//
+// KHÔNG dùng thư mục tạm của hệ thống. Dịch vụ chạy bằng SYSTEM kiểm băm rồi
+// mở lại tệp theo đường dẫn để chép đè lên .exe; nếu tài khoản khách ghi được
+// vào thư mục đó (C:\Windows\Temp cho Users tạo thư mục), khách tráo tệp giữa
+// hai bước và Windows chạy tệp của khách bằng quyền SYSTEM. Thư mục cài nằm
+// trong Program Files, chỉ SYSTEM và Administrators ghi được.
+func updateDir() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(exe), "update"), nil
 }
 
 func isHexSHA256(s string) bool {

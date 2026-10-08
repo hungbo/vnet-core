@@ -6,6 +6,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/wailsapp/wails/v2 v2.10.2
+	golang.org/x/image v0.24.0
 	golang.org/x/sys v0.46.0
 )
 

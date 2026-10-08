@@ -27,7 +27,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import { ElNotification } from 'element-plus'
+import { mocVuaQua, phatThongBao } from '../utils/timeAnnounce'
 
 const props = defineProps<{
 	role: string
@@ -86,6 +88,42 @@ function getRemainingSeconds(): number {
 	return 0
 }
 
+// Báo giờ còn lại cho khách (không báo cho nhân viên). Nhớ số giây của lần đo
+// trước theo từng phiên: đổi phiên thì bắt đầu lại; nạp thêm tiền làm thời gian
+// dài ra thì các mốc tự được báo lại khi đi xuống lần nữa.
+let phienDangDo = ''
+let giayTruoc: number | null = null
+watch(() => props.now, () => {
+	const id = props.session?.id || props.session?.session_id || ''
+	if (props.role === 'admin' || !props.session?.started_at || !coDemNguoc()) {
+		phienDangDo = ''
+		giayTruoc = null
+		return
+	}
+	if (id !== phienDangDo) {
+		phienDangDo = id
+		giayTruoc = null
+	}
+	const giay = getRemainingSeconds()
+	const moc = mocVuaQua(giayTruoc, giay)
+	giayTruoc = giay
+	if (!moc) return
+	phatThongBao(moc)
+	ElNotification({
+		title: `Còn ${moc} phút sử dụng`,
+		message: moc <= 5 ? 'Vui lòng nạp thêm tiền nếu muốn chơi tiếp.' : '',
+		type: moc <= 5 ? 'warning' : 'info',
+		duration: 8000,
+	})
+})
+
+// Chỉ những phiên CÓ mốc kết thúc mới báo; máy chưa có giá thì đồng hồ đếm lên.
+function coDemNguoc(): boolean {
+	const s = props.session
+	return Boolean((s.combo_type === 'fixed_slot' && s.slot_end) ||
+		(s.combo_type === 'prepaid' && s.remaining_minutes) || s.affordable_until)
+}
+
 const formattedTime = computed(() => {
 	if (!props.session?.started_at) return '--:--:--'
 
@@ -112,56 +150,73 @@ const formattedTime = computed(() => {
 </script>
 
 <style scoped>
+/* Đồng hồ không đóng khung như mọi khối khác: nó là thứ khách nhìn nhiều nhất,
+   nên đứng riêng trên nền với một vạch màu logo ở mép trái. Sắp hết giờ thì
+   vạch và số chuyển sang hổ phách. */
 .timer-card {
-	/* Rộng bằng thanh, không cố định 320px: thanh chỉ 360px nên con số cứng đó
-	   vừa tràn vừa lệch với lưới nút bên dưới. */
+	position: relative;
 	width: 100%;
-	padding: 24px;
-	background: var(--vnet-surface);
-	border-radius: 16px;
-	text-align: center;
-	box-shadow: var(--vnet-shadow);
+	padding: 18px 16px 18px 22px;
+	border-radius: var(--vnet-radius);
+	background: linear-gradient(90deg, rgba(76, 125, 255, 0.12), transparent 80%);
+}
+
+.timer-card::before {
+	content: '';
+	position: absolute;
+	left: 0;
+	top: 14px;
+	bottom: 14px;
+	width: 4px;
+	border-radius: 4px;
+	background: var(--vnet-brand);
+}
+
+.timer-card:has(.warn) {
+	background: linear-gradient(90deg, rgba(255, 181, 71, 0.14), transparent 80%);
+}
+
+.timer-card:has(.warn)::before {
+	background: var(--vnet-warning);
 }
 
 .timer-card.idle {
-	opacity: .6;
+	opacity: 0.6;
 }
 
 .timer-card.admin-card {
-	background: linear-gradient(135deg, #667eea, #764ba2);
-	color: var(--vnet-surface);
+	background: linear-gradient(90deg, rgba(123, 92, 255, 0.18), transparent 80%);
 }
 
 .timer-name {
-	font-size: 15px;
-	font-weight: 600;
-	color: var(--vnet-text);
-	margin-bottom: 4px;
-	/* Tên dài phải cắt bằng ba chấm, không được đẩy đồng hồ xuống dòng. */
+	font-size: 14px;
+	font-weight: 500;
+	color: var(--vnet-text-muted);
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
 .timer-value {
-	font-size: 48px;
+	font-family: var(--vnet-font-display);
 	font-weight: 700;
+	font-size: 52px;
+	line-height: 1.1;
 	font-variant-numeric: tabular-nums;
-	letter-spacing: 2px;
+	color: var(--vnet-text);
 }
 
 .timer-value.warn {
 	color: var(--vnet-warning);
 }
 
+.admin-card .timer-value {
+	font-size: 30px;
+}
+
 .timer-label {
 	font-size: 13px;
 	color: var(--vnet-text-muted);
-	margin-top: 4px;
-}
-
-.admin-card .timer-label {
-	color: rgba(255,255,255,.7);
 }
 
 .combo-badge {

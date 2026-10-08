@@ -11,14 +11,10 @@ type Config struct {
 	ServerURL   string
 	MachineCode       string
 	HeartbeatInterval time.Duration
-	ScreenLockEnabled bool
 	HighTempThreshold float64
 	// Lớp chống phá giờ chơi. Bật mặc định; đặt VNET_GUARD=0 để tắt khi cần
 	// gỡ rối trên một máy cụ thể.
 	GuardEnabled bool
-	// Chuỗi băm PIN kỹ thuật — đường vào duy nhất khi mất mạng. Rỗng nghĩa là
-	// máy này không mở khoá được nếu máy chủ không với tới.
-	MaintenancePinHash string
 	WatchdogInterval   time.Duration
 	BlocklistInterval  time.Duration
 }
@@ -31,9 +27,10 @@ type Config struct {
 type fileConfig struct {
 	ServerURL   string `json:"server_url"`
 	MachineCode string `json:"machine_code"`
-	// Băm của PIN kỹ thuật, KHÔNG phải PIN. Tệp này nằm trong Program Files nên
-	// khách đọc được; ghi PIN trần vào đây là dán chìa khoá lên cửa.
-	MaintenancePin string `json:"maintenance_pin"`
+	// Tài khoản quản trị máy trạm do bộ cài đặt. Chỉ lưu BĂM mật khẩu: tệp này
+	// nằm trong Program Files nên khách đọc được.
+	LocalAdminUsername string `json:"local_admin_username,omitempty"`
+	LocalAdminHash     string `json:"local_admin_hash,omitempty"`
 }
 
 // loadFileConfig đọc config.json cạnh tệp thực thi. Không có tệp không phải lỗi:
@@ -56,13 +53,11 @@ func LoadConfig() *Config {
 	fc := loadFileConfig()
 
 	cfg := &Config{
-		ServerURL:          getEnv("VNET_SERVER_URL", firstNonEmpty(fc.ServerURL, "http://localhost:20800")),
-		MachineCode:        getEnv("VNET_MACHINE_CODE", fc.MachineCode),
-		MaintenancePinHash: fc.MaintenancePin,
+		ServerURL:          envOverride("VNET_SERVER_URL", firstNonEmpty(fc.ServerURL, "http://localhost:20800")),
+		MachineCode:        envOverride("VNET_MACHINE_CODE", fc.MachineCode),
 		HeartbeatInterval:  15 * time.Second,
-		ScreenLockEnabled:  true,
 		HighTempThreshold:  85.0,
-		GuardEnabled:       getEnv("VNET_GUARD", "1") != "0",
+		GuardEnabled:       envOverride("VNET_GUARD", "1") != "0",
 		WatchdogInterval:   30 * time.Second,
 		BlocklistInterval:  60 * time.Second,
 	}
@@ -84,6 +79,19 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// envOverride cho biến môi trường ghi đè cấu hình CHỈ ở bản phát triển.
+//
+// Bản phát hành bỏ qua hẳn: giao diện chạy với môi trường của tài khoản đang
+// ngồi máy, mà biến môi trường của mình thì tài khoản nào cũng tự đặt được —
+// tức là đổi được máy chủ của giao diện hoặc tắt lớp canh mà không cần quyền gì.
+// Bản phát hành chỉ có một nguồn cấu hình: config.json trong thư mục cài.
+func envOverride(key, fallback string) string {
+	if version != "dev" {
+		return fallback
+	}
+	return getEnv(key, fallback)
 }
 
 func getEnv(key, fallback string) string {

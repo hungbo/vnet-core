@@ -2,7 +2,7 @@
 	<div class="dashboard">
 		<header class="dash-header">
 			<div class="header-left">
-				<span class="machine-tag" :class="session.machineStatus">{{ session.machineCode }}</span>
+				<span class="machine-tag" :title="session.machineCode">{{ session.machineCode }}</span>
 				<el-tag v-if="session.role === 'admin'" type="warning" size="small" effect="dark">Quản trị</el-tag>
 				<el-tag v-else-if="session.role === 'combo'" type="info" size="small" effect="dark">Combo</el-tag>
 			</div>
@@ -25,7 +25,13 @@
 			<NotificationList ref="notifRef" :visible="showNotif" @update:unreadCount="unreadCount = $event" />
 
 			<div class="actions-grid">
-				<button v-for="a in visibleActions" :key="a.key" class="action-btn" @click="a.run()">
+				<button
+					v-for="a in visibleActions"
+					:key="a.key"
+					class="action-btn"
+					:class="{ primary: a.key === 'topup' }"
+					@click="a.run()"
+				>
 					<el-icon :size="26" :style="{ color: a.color }"><component :is="a.icon" /></el-icon>
 					<span>{{ a.label }}</span>
 				</button>
@@ -43,7 +49,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Setting, Bell, Timer, Coin, Chicken, ChatDotSquare, Calendar, Star } from '@element-plus/icons-vue'
+import { Setting, Bell, Timer, Coin, Chicken, ChatDotSquare, Calendar, Star, Trophy } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session.store'
 import { useUiStore } from '../stores/ui.store'
 import TimerWidget from '../components/TimerWidget.vue'
@@ -89,6 +95,7 @@ const ACTIONS = [
 	{ key: 'topup', icon: Coin, label: 'Nạp tiền', color: '#d9a441', roles: ['member'], run: () => emit('navigate', 'topup') },
 	{ key: 'playtime', icon: Timer, label: 'Giờ chơi', color: '#4c7dff', roles: ['admin'], run: handlePlaytime },
 	{ key: 'order', icon: Chicken, label: 'Đồ ăn', color: '#f0603d', notRoles: ['admin'], run: () => emit('navigate', 'order') },
+	{ key: 'games', icon: Trophy, label: 'Game', color: '#7b5cff', notRoles: ['admin'], run: () => emit('navigate', 'games') },
 	{ key: 'chat', icon: ChatDotSquare, label: 'Hỗ trợ', color: '#3fb950', run: () => emit('navigate', 'chat') },
 	{ key: 'attendance', icon: Calendar, label: 'Điểm danh', color: '#4c7dff', roles: ['member'], feature: 'attendance_enabled', run: () => emit('navigate', 'attendance') },
 	{ key: 'feedback', icon: Star, label: 'Đánh giá', color: '#d9a441', notRoles: ['admin'], feature: 'feedback_enabled', run: () => emit('navigate', 'feedback') },
@@ -121,35 +128,40 @@ onUnmounted(() => {
 .dashboard {
 	display: flex;
 	flex-direction: column;
-	height: 100vh;
-	background: var(--vnet-bg);
+	/* Lấp phần còn lại dưới DockTitleBar, không phải cả màn hình (100vh sẽ tràn). */
+	flex: 1;
+	min-height: 0;
+	background:
+		radial-gradient(140% 40% at 100% 0%, rgba(76, 125, 255, 0.12), transparent 70%),
+		var(--vnet-bg);
 }
 
 .dash-header {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
-	padding: 10px var(--vnet-gap);
-	background: var(--vnet-surface);
+	padding: 10px 8px 10px var(--vnet-gap);
 	border-bottom: 1px solid var(--vnet-border);
 }
 
 .header-left {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 8px;
+	min-width: 0;
 }
 
+/* Tên máy mang dáng chữ logo: nghiêng, vát góc. Không còn ô nền xanh lá
+   sáng — mảnh sót của bản giao diện sáng. */
 .machine-tag {
-	padding: 4px 12px;
-	border-radius: 4px;
-	font-weight: 600;
-	font-size: 14px;
-}
-
-.machine-tag.available {
-	background: #e8f5e9;
-	color: #2e7d32;
+	font-family: var(--vnet-font-display);
+	font-style: italic;
+	font-weight: 700;
+	font-size: 18px;
+	color: var(--vnet-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .dash-main {
@@ -158,60 +170,61 @@ onUnmounted(() => {
 	padding: var(--vnet-gap);
 	display: flex;
 	flex-direction: column;
-	/* stretch chứ không center: thanh chỉ rộng 360px, căn giữa rồi để thẻ cố định
-	   320px là thừa hai mép và các khối rộng khác nhau. */
 	align-items: stretch;
 	gap: var(--vnet-gap);
 }
 
 .actions-grid {
 	display: grid;
-	/* Hai cột cho thanh dọc 360px. auto-fit sẽ để một ô lẻ giãn hết hàng khi số
-	   ô là số lẻ, nên cố định cột và cho ô vuông là cách duy nhất giữ chúng đều
-	   nhau ở mọi vai trò. */
 	grid-template-columns: repeat(2, 1fr);
-	gap: var(--vnet-gap);
+	gap: 8px;
 	width: 100%;
-	/* Mục lưới mặc định là stretch, nghĩa là chiều cao lấy từ hàng — và khi chiều
-	   cao đã xác định thì aspect-ratio của ô bị bỏ qua. Phải để start thì ô mới
-	   thật sự vuông. */
-	align-items: start;
 }
 
+/* Nút dạng hàng ngang: biểu tượng trái, chữ phải. Thanh chỉ rộng 360px nên
+   ô vuông to làm danh sách dài quá màn hình; hàng thấp đọc lướt nhanh hơn. */
 .action-btn {
 	display: flex;
-	flex-direction: column;
 	align-items: center;
-	justify-content: center;
-	gap: 8px;
-	/* Ô VUÔNG. Bản cũ để chiều cao chạy theo nội dung: mọi nút tình cờ bằng nhau
-	   vì đều một icon một dòng chữ, nhưng không có ràng buộc nào — thêm một nhãn
-	   dài hơn là hàng đó cao hơn hàng kia. */
-	aspect-ratio: 1;
-	padding: 8px;
+	gap: 10px;
+	height: 56px;
+	padding: 0 14px;
 	border: 1px solid var(--vnet-border);
-	border-radius: var(--vnet-radius);
-	cursor: pointer;
-	font-size: 13px;
-	font-weight: 500;
-	color: var(--vnet-text);
-	transition: background .15s, border-color .15s, transform .15s;
+	border-radius: var(--vnet-radius-sm);
 	background: var(--vnet-surface);
+	color: var(--vnet-text);
+	font-family: var(--vnet-font);
+	font-size: 14px;
+	font-weight: 500;
+	text-align: left;
+	cursor: pointer;
+	transition: background 0.15s, border-color 0.15s;
 }
 
 .action-btn:hover {
-	transform: translateY(-2px);
 	border-color: var(--vnet-primary);
 	background: var(--vnet-surface-2);
 }
 
-.action-btn:active {
-	transform: none;
+/* Nạp tiền là việc khách cần nhất khi sắp hết giờ: chiếm trọn một hàng và
+   mang màu logo. */
+.action-btn.primary {
+	grid-column: 1 / -1;
+	justify-content: center;
+	border: none;
+	background: var(--vnet-brand);
+	font-weight: 600;
+	font-size: 15px;
+}
+
+.action-btn.primary :deep(.el-icon) {
+	color: #fff !important;
 }
 
 .dash-footer {
 	text-align: center;
 	padding: 8px 0;
+	border-top: 1px solid var(--vnet-border);
 }
 
 .notif-badge .el-badge__content {

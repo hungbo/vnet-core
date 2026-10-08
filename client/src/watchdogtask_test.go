@@ -48,6 +48,11 @@ func TestTaskXML_LapMoiPhutVoHan(t *testing.T) {
 	if !strings.Contains(x, "<BootTrigger>") {
 		t.Error("không kích lúc khởi động máy")
 	}
+	// Chỉ có BootTrigger thì tác vụ im lặng từ lúc cài tới lần khởi động lại
+	// đầu tiên — tìm ra khi kiểm trên máy Windows thật.
+	if !strings.Contains(x, "<TimeTrigger>") || !strings.Contains(x, "<StartBoundary>") {
+		t.Error("không có kích hoạt theo giờ — tác vụ chưa chạy cho tới lần reboot đầu")
+	}
 }
 
 // Bộ lọc sự kiện phải nêu ĐÍCH DANH dịch vụ này. Sự kiện 7036 phát ra cho mọi

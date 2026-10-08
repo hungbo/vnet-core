@@ -30,11 +30,25 @@ const (
 	scmServiceStateEventID = 7036
 )
 
-// taskXMLEvery dựng tác vụ chạy lúc khởi động rồi lặp mỗi phút, vô hạn.
+// taskXMLEvery dựng tác vụ lặp mỗi phút, vô hạn, bằng HAI kích hoạt.
+//
+// Chỉ có BootTrigger thì tác vụ không chạy lần nào cho tới lần khởi động lại
+// đầu tiên sau khi cài: kiểm trên máy thật, dừng dịch vụ và giết giao diện
+// cùng lúc ngay sau khi cài thì 90 giây sau vẫn không gì bật lại. TimeTrigger
+// với mốc bắt đầu nằm trong quá khứ thì lặp ngay từ lúc đăng ký; BootTrigger
+// giữ lại để chạy ngay khi máy vừa bật.
 func taskXMLEvery(exePath string) string {
 	return taskXML(
 		"Bật lại dịch vụ VNET nếu nó bị dừng. Chạy mỗi phút.",
-		`    <BootTrigger>
+		`    <TimeTrigger>
+      <Enabled>true</Enabled>
+      <StartBoundary>2020-01-01T00:00:00</StartBoundary>
+      <Repetition>
+        <Interval>PT1M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </TimeTrigger>
+    <BootTrigger>
       <Enabled>true</Enabled>
       <Repetition>
         <Interval>PT1M</Interval>
@@ -46,6 +60,10 @@ func taskXMLEvery(exePath string) string {
 }
 
 // taskXMLOnStop dựng tác vụ kích ngay khi SCM báo dịch vụ này dừng.
+//
+// Chỉ rút ngắn thời gian phản ứng trên Windows 10. Kiểm trên Windows 11 (26100):
+// `sc stop` không ghi sự kiện 7036 nào vào nhật ký System, nên tác vụ này không
+// bao giờ kích. Lớp mỗi phút ở trên là lớp thật sự đáng tin.
 //
 // Lọc theo TÊN HIỂN THỊ trong EventData: sự kiện 7036 phát ra cho MỌI dịch vụ
 // trên máy, không lọc thì tác vụ chạy hàng trăm lần một ngày.

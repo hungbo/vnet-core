@@ -144,65 +144,12 @@ func TestCredCache_ChuaCoAiDangNhap(t *testing.T) {
 	}
 }
 
-// Tài khoản mặc định của bản cài: máy vừa dựng, chưa từng nối được máy chủ, vẫn
-// phải có đường vào để gỡ hoặc sửa.
-func TestBuiltinAdmin_MayMoiThiMoDuoc(t *testing.T) {
+// Cặp admin/admin cứng trong bản build đã bỏ: máy chưa có ai đăng nhập thì
+// đường vào là tài khoản quản trị máy trạm đặt lúc cài, không phải mật khẩu ai
+// cũng đoán ra.
+func TestCredCache_KhongConTaiKhoanMacDinh(t *testing.T) {
 	dungThuMucTam(t)
-
-	if !builtinAdminActive() {
-		t.Fatal("máy chưa có tài khoản nào mà tài khoản mặc định đã tắt")
-	}
-
-	c, err := verifyCachedStaff(builtinAdminUser, builtinAdminPass, time.Now())
-	if err != nil {
-		t.Fatalf("tài khoản mặc định không mở được: %v", err)
-	}
-	if !c.Builtin {
-		t.Error("không đánh dấu là tài khoản mặc định — nhật ký và cảnh báo dựa vào cờ này")
-	}
-
-	if _, err := verifyCachedStaff(builtinAdminUser, "sai", time.Now()); err == nil {
-		t.Error("sai mật khẩu vẫn mở được")
-	}
-	if _, err := verifyCachedStaff("nguoi-khac", builtinAdminPass, time.Now()); err == nil {
-		t.Error("tên khác vẫn mở được bằng mật khẩu mặc định")
-	}
-}
-
-// Điều kiện quan trọng nhất: có một lần đăng nhập nhân viên thật là cửa mặc
-// định ĐÓNG LẠI. Không đóng thì mọi máy dựng từ cùng bản build đều mở được
-// bằng đúng một cặp ai cũng đoán ra, mãi mãi.
-func TestBuiltinAdmin_TuTatSauLanDangNhapThat(t *testing.T) {
-	dungThuMucTam(t)
-
-	if err := rememberStaff("quanly", "matkhau-that-1234", "staff"); err != nil {
-		t.Fatal(err)
-	}
-
-	if builtinAdminActive() {
-		t.Fatal("đã có tài khoản thật mà tài khoản mặc định vẫn còn hiệu lực")
-	}
-	if _, err := verifyCachedStaff(builtinAdminUser, builtinAdminPass, time.Now()); err == nil {
-		t.Fatal("tài khoản mặc định vẫn mở được sau khi đã có tài khoản thật")
-	}
-	// Và tài khoản thật thì vẫn dùng được.
-	if _, err := verifyCachedStaff("quanly", "matkhau-that-1234", time.Now()); err != nil {
-		t.Fatalf("tài khoản thật không dùng được: %v", err)
-	}
-}
-
-// Đăng nhập bằng chính tên "admin" khi có mạng thì mật khẩu thật thay chỗ mật
-// khẩu mặc định — đúng nghĩa "cập nhật lại sau".
-func TestBuiltinAdmin_MatKhauThatThayChoMacDinh(t *testing.T) {
-	dungThuMucTam(t)
-
-	if err := rememberStaff("admin", "matkhau-that-5678", "staff"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := verifyCachedStaff("admin", builtinAdminPass, time.Now()); err == nil {
-		t.Fatal("mật khẩu mặc định vẫn mở được sau khi đã đồng bộ mật khẩu thật")
-	}
-	if _, err := verifyCachedStaff("admin", "matkhau-that-5678", time.Now()); err != nil {
-		t.Fatalf("mật khẩu thật không dùng được: %v", err)
+	if _, err := verifyCachedStaff("admin", "admin", time.Now()); err == nil {
+		t.Fatal("admin/admin vẫn mở được máy")
 	}
 }

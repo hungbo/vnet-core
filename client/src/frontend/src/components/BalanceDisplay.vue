@@ -1,12 +1,12 @@
 <template>
 	<div class="balance-section" v-if="memberInfo && role !== 'admin'">
 		<div class="balance-card">
-			<div class="balance-row">
+			<div class="balance-cell">
 				<span class="balance-label">Số dư</span>
 				<span class="balance-value primary">{{ formatCurrency(memberInfo.balance) }}</span>
 			</div>
-			<div class="balance-row bonus">
-				<span class="balance-label">KM</span>
+			<div class="balance-cell">
+				<span class="balance-label">Khuyến mãi</span>
 				<span class="balance-value">{{ formatCurrency(memberInfo.bonus_balance) }}</span>
 			</div>
 		</div>
@@ -26,44 +26,46 @@ function formatCurrency(n: number) {
 
 <style scoped>
 .balance-section {
-	/* Rộng bằng thanh, không cố định 320px: thanh chỉ 360px nên con số cứng đó
-	   vừa tràn vừa lệch với lưới nút bên dưới. */
 	width: 100%;
 }
 
+/* Hai số cạnh nhau thay vì hai hàng: đọc một lượt là biết còn bao nhiêu. */
 .balance-card {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	border: 1px solid var(--vnet-border);
+	border-radius: var(--vnet-radius);
 	background: var(--vnet-surface);
-	border-radius: 12px;
-	padding: 16px 20px;
-	box-shadow: var(--vnet-shadow);
 }
 
-.balance-row {
+.balance-cell {
 	display: flex;
-	justify-content: space-between;
-	align-items: center;
-	padding: 6px 0;
+	flex-direction: column;
+	gap: 2px;
+	padding: 12px 14px;
+	min-width: 0;
 }
 
-.balance-row.bonus {
-	border-top: 1px solid #f0f0f0;
-	margin-top: 4px;
-	padding-top: 10px;
+.balance-cell + .balance-cell {
+	border-left: 1px solid var(--vnet-border);
 }
 
 .balance-label {
-	font-size: 13px;
+	font-size: 12px;
 	color: var(--vnet-text-muted);
 }
 
 .balance-value {
+	font-family: var(--vnet-font-display);
 	font-weight: 600;
-	font-size: 16px;
+	font-size: 18px;
 	color: var(--vnet-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .balance-value.primary {
 	color: var(--vnet-success);
-	font-size: 20px;
 }
 </style>
