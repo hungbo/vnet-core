@@ -44,6 +44,7 @@ var Catalog = []Permission{
 	{"machines.update", "Sửa máy", "machines"},
 	{"machines.delete", "Xoá máy", "machines"},
 	{"machines.remote", "Điều khiển máy từ xa", "machines"},
+	{"machines.remote_desktop", "Xem và điều khiển màn hình máy (remote desktop)", "machines"},
 
 	{"machine_groups.view", "Xem nhóm máy", "machine_groups"},
 	{"machine_groups.create", "Thêm nhóm máy", "machine_groups"},
@@ -64,6 +65,7 @@ var Catalog = []Permission{
 	{"sessions.start", "Mở máy", "sessions"},
 	{"sessions.end", "Trả máy", "sessions"},
 	{"sessions.switch", "Chuyển máy", "sessions"},
+	{"sessions.delete", "Xoá phiên chơi", "sessions"},
 
 	{"combos.view", "Xem gói dịch vụ", "combos"},
 	{"combos.create", "Thêm gói dịch vụ", "combos"},
@@ -114,13 +116,11 @@ var Catalog = []Permission{
 	{"orders.pay", "Thanh toán đơn", "orders"},
 	{"orders.print", "In phiếu", "orders"},
 
-	{"topup_cards.view", "Xem thẻ nạp", "cards"},
-	{"topup_cards.generate", "Phát hành thẻ nạp", "cards"},
-	{"topup_cards.cancel", "Huỷ thẻ nạp", "cards"},
-	{"topup_cards.sell", "Bán thẻ nạp", "cards"},
-	{"gift_cards.view", "Xem thẻ quà tặng", "cards"},
-	{"gift_cards.generate", "Phát hành thẻ quà tặng", "cards"},
-	{"gift_cards.cancel", "Huỷ thẻ quà tặng", "cards"},
+
+	{"games.view", "Xem game và trạng thái cập nhật", "games"},
+	{"games.create", "Thêm game để phân phối", "games"},
+	{"games.update", "Sửa, publish, tải ngay game", "games"},
+	{"games.delete", "Bỏ game khỏi danh mục", "games"},
 
 	{"app_updates.view", "Xem bản cập nhật máy khách", "app_updates"},
 	{"app_updates.create", "Công bố bản cập nhật", "app_updates"},
@@ -236,9 +236,8 @@ func StaffCodes() []string {
 		"products.view",
 		"orders.view", "orders.create", "orders.update", "orders.status", "orders.split",
 		"orders.pay", "orders.print",
-		"topup_cards.view", "topup_cards.sell",
-		"gift_cards.view",
 		"website_rules.view",
+		"games.view",
 		"feedback.view", "attendance.view",
 		"inventory_counts.view", "inventory_counts.open", "inventory_counts.count",
 		"stock.view", "stock.create", "units.view",

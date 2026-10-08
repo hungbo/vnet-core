@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -65,4 +66,39 @@ func TestLoad_WildcardOriginDefaultInDebug(t *testing.T) {
 	t.Setenv("GIN_MODE", "debug")
 
 	assert.Equal(t, []string{"*"}, Load().Server.AllowedOrigins)
+}
+
+func TestGameConfigValidate(t *testing.T) {
+	ok := GameConfig{Role: GameRoleCafe, Root: "/srv/games", CatalogKey: "0123456789abcdef", UpstreamURL: "http://master:20800"}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("cấu hình quán hợp lệ bị từ chối: %v", err)
+	}
+	if err := (GameConfig{}).Validate(); err != nil {
+		t.Fatalf("tắt tính năng thì không cần gì: %v", err)
+	}
+	bad := []GameConfig{
+		{Role: "slave", Root: "/srv/games", CatalogKey: "0123456789abcdef"},
+		{Role: GameRoleCafe, Root: "games", CatalogKey: "0123456789abcdef", UpstreamURL: "http://m"},
+		{Role: GameRoleCafe, Root: "/srv/games", CatalogKey: "short", UpstreamURL: "http://m"},
+		{Role: GameRoleCafe, Root: "/srv/games", CatalogKey: "0123456789abcdef"},
+		{Role: GameRoleMaster, Root: "/srv/games", CatalogKey: "0123456789abcdef"},
+	}
+	for i, c := range bad {
+		if c.Validate() == nil {
+			t.Errorf("trường hợp %d phải bị từ chối: %+v", i, c)
+		}
+	}
+}
+
+func TestLoad_GameStallTimeout(t *testing.T) {
+	assert.Equal(t, 10*time.Minute, Load().Game.StallTimeout, "mặc định")
+
+	t.Setenv("GAME_STALL_TIMEOUT", "3m")
+	assert.Equal(t, 3*time.Minute, Load().Game.StallTimeout)
+
+	// Không có chế độ tắt: 0, số âm hay giá trị sai đều về mặc định.
+	for _, bad := range []string{"0", "-5m", "abc"} {
+		t.Setenv("GAME_STALL_TIMEOUT", bad)
+		assert.Equal(t, 10*time.Minute, Load().Game.StallTimeout, bad)
+	}
 }

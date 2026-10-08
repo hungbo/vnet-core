@@ -33,6 +33,10 @@ var ValidUnits = map[string]string{
 	"vien":  "Viên",
 	"cay":   "Cây",
 	"que":   "Que",
+	"chen":  "Chén",
+	"cuon":  "Cuộn",
+	"cuc":   "Cục",
+	"qua":   "Quả",
 }
 
 type InventoryService struct {
@@ -299,6 +303,11 @@ func (s *InventoryService) ListStockTransactions(params *pagination.Params) (*pa
 func (s *InventoryService) CreateStockTransaction(req *CreateStockTransactionRequest, createdBy string) (*StockTransactionResponse, error) {
 	if req.ProductID == nil {
 		return nil, errors.New("cần product_id")
+	}
+	// Nhập/xuất phải là số dương: nhập -4 từng làm tồn GIẢM 4 mà sổ vẫn ghi
+	// "nhập kho". Điều chỉnh là số tồn mục tiêu nên 0 hợp lệ, âm thì không.
+	if req.Quantity < 0 || (req.Quantity == 0 && req.TransactionType != "adjustment") {
+		return nil, errors.New("số lượng phải lớn hơn 0")
 	}
 
 	var product model.Product

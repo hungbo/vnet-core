@@ -34,7 +34,7 @@ func TestProductService_List_All(t *testing.T) {
 		WithArgs("p2").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-	result, err := svc.List(nil, "", "", 1, 20)
+	result, err := svc.List(nil, nil, "", "", "", 1, 20)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), result.Total)
 	assert.Len(t, result.Items, 2)
@@ -60,10 +60,28 @@ func TestProductService_List_LocTheoDanhMuc(t *testing.T) {
 		WithArgs("p1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-	result, err := svc.List(nil, "c1", "", 1, 20)
+	result, err := svc.List(nil, nil, "c1", "", "", 1, 20)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), result.Total)
 	assert.Len(t, result.Items, 1)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProductService_List_LocTheoNhaCungCap(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewProductService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "products" WHERE supplier_id = \$1 AND "products"\."deleted_at" IS NULL`).
+		WithArgs("s1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE supplier_id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY sort_order asc, name asc LIMIT \$2`).
+		WithArgs("s1", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	result, err := svc.List(nil, nil, "", "s1", "", 1, 20)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), result.Total)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -231,6 +249,38 @@ func TestProductService_Update_CurrentStock(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Sửa sản phẩm từ bán lẻ thành nguyên liệu từng báo thành công mà không đổi gì:
+// cột is_retail mang tag `<-:create` nên GORM lặng lẽ bỏ nó khỏi lệnh UPDATE.
+func TestProductService_Update_DoiBanLeThanhNguyenLieu(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewProductService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
+		WithArgs("p1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "is_retail"}).
+			AddRow("p1", "Coca", true))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "products" SET "is_retail"=\$1 WHERE`).
+		WithArgs(false, "p1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL AND "products"\."id" = \$2 ORDER BY "products"\."id" LIMIT \$3`).
+		WithArgs("p1", "p1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "is_retail"}).
+			AddRow("p1", "Coca", false))
+
+	mock.ExpectQuery(`SELECT \* FROM "product_ingredients" WHERE product_id = \$1`).
+		WithArgs("p1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	result, err := svc.Update("p1", &UpdateProductRequest{IsRetail: boolPtr(false)})
+	require.NoError(t, err)
+	assert.False(t, result.IsRetail)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestProductService_Delete_Success(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewProductService(db, NewAuditService(db))
@@ -338,5 +388,25 @@ func TestProductService_Create_ChanDanhMucKhongTonTai(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "không tìm thấy danh mục", err.Error())
 	// Không có lệnh INSERT nào được gửi đi.
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Máy trạm gọi List với isActive=true: món ngưng bán phải rơi khỏi thực đơn.
+func TestProductService_List_LocTheoTrangThai(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewProductService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "products" WHERE is_active = \$1 AND "products"\."deleted_at" IS NULL`).
+		WithArgs(true).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE is_active = \$1 AND "products"\."deleted_at" IS NULL ORDER BY sort_order asc, name asc LIMIT \$2`).
+		WithArgs(true, 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	dangBan := true
+	result, err := svc.List(nil, &dangBan, "", "", "", 1, 20)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), result.Total)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

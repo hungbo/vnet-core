@@ -234,6 +234,12 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Meta:      RouteMeta{Title: "vnet_app-updates", I18nKey: "route.vnet_app-updates", RequiredPermission: "app_updates.view"},
 		},
 		{
+			Name:      "vnet_games",
+			Path:      "/vnet/games",
+			Component: "view.vnet_games",
+			Meta:      RouteMeta{Title: "vnet_games", I18nKey: "route.vnet_games", RequiredPermission: "games.view"},
+		},
+		{
 			Name:      "vnet_website-blocking",
 			Path:      "/vnet/website-blocking",
 			Component: "view.vnet_website-blocking",
@@ -250,12 +256,6 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Path:      "/vnet/inventory-counts",
 			Component: "view.vnet_inventory-counts",
 			Meta:      RouteMeta{Title: "vnet_inventory-counts", I18nKey: "route.vnet_inventory-counts", RequiredPermission: "inventory_counts.view"},
-		},
-		{
-			Name:      "vnet_cards",
-			Path:      "/vnet/cards",
-			Component: "view.vnet_cards",
-			Meta:      RouteMeta{Title: "vnet_cards", I18nKey: "route.vnet_cards", RequiredPermission: "topup_cards.view"},
 		},
 		{
 			Name:      "vnet_printers",

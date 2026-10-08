@@ -1,7 +1,9 @@
 package service
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -607,7 +609,7 @@ func TestMachineService_BatchCreateMachines_TuChoiTruocKhiChamDB(t *testing.T) {
 		{"thiếu tiền tố", BatchCreateMachinesRequest{Prefix: "  ", From: 1, To: 2}, "thiếu tiền tố"},
 		{"khoảng ngược", BatchCreateMachinesRequest{Prefix: "PC-", From: 9, To: 2}, "lớn hơn hoặc bằng"},
 		{"vượt trần", BatchCreateMachinesRequest{Prefix: "PC-", From: 1, To: maxBatchMachines + 1}, "tối đa"},
-		{"mã quá dài", BatchCreateMachinesRequest{Prefix: "MAY-TRAM-PHONG-VIP-", From: 1, To: 2, Digits: 4}, "vượt trần"},
+		{"mã quá dài", BatchCreateMachinesRequest{Prefix: strings.Repeat("M", 255), From: 1, To: 2, Digits: 4}, "vượt trần"},
 	}
 	for _, c := range cases {
 		t.Run(c.ten, func(t *testing.T) {
@@ -737,4 +739,148 @@ func TestMachineService_List_LocTheoMaMayVaTenNhom(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), res.Total)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Máy trạm báo tài khoản Windows có quyền quản trị và một card mạng lạ: cả hai
+// phải được ghi lại, và card mạng lạ MỚI phải sinh một dòng nhật ký.
+func TestMachineService_Heartbeat_GhiCanhBaoMayTram(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMachineService(db, nil, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "machine_code", "extra_network"}).
+			AddRow("m1", "available", "PC-01", ""))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`^UPDATE "machines" SET "cpu_temp"=\$1,"extra_network"=\$2,"gpu_temp"=\$3,`+
+		`"last_heartbeat"=\$4,"updated_at"=\$5,"user_is_admin"=\$6 WHERE`).
+		WithArgs(0.0, "Wi-Fi (10.0.0.5)", 0.0, anyTime{}, anyTime{}, true, "m1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	// Nhật ký nhịp tim, dòng lịch sử phần cứng, rồi nhật ký cảnh báo mạng lạ.
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a1", time.Now()))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "machine_hardware_snapshots"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a2", time.Now()))
+	mock.ExpectCommit()
+
+	laAdmin, mangLa := true, "Wi-Fi (10.0.0.5)"
+	err := svc.Heartbeat("m1", HeartbeatRequest{UserIsAdmin: &laAdmin, ExtraNetwork: &mangLa})
+	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Cùng một card mạng lạ ở nhịp tim kế tiếp thì KHÔNG báo lại: nhịp tim tới mỗi
+// 15 giây, báo mỗi nhịp là ngập nhật ký.
+func TestMachineService_Heartbeat_MangLaCuKhongBaoLai(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMachineService(db, nil, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "extra_network"}).
+			AddRow("m1", "available", "Wi-Fi (10.0.0.5)"))
+	mock.ExpectBegin()
+	mock.ExpectExec(`^UPDATE "machines" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a1", time.Now()))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "machine_hardware_snapshots"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
+	mock.ExpectCommit()
+	// Không còn INSERT audit_logs nào nữa: sqlmock báo lỗi nếu có lệnh thừa.
+
+	mangLa := "Wi-Fi (10.0.0.5)"
+	assert.NoError(t, svc.Heartbeat("m1", HeartbeatRequest{ExtraNetwork: &mangLa}))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Nhịp tim từ một mã máy chưa khai: tự thêm máy, không nhóm, ghi nhật ký.
+func TestMachineService_RegisterByCode_TuThemMayMoi(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMachineService(db, nil, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE machine_code = \$1`).
+		WithArgs("MAY07", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("m-new"))
+	mock.ExpectCommit()
+	for range 2 { // nhật ký "create" rồi "machine_auto_register"
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a", time.Now()))
+		mock.ExpectCommit()
+	}
+
+	m, created, err := svc.RegisterByCode("MAY07")
+	assert.NoError(t, err)
+	assert.True(t, created)
+	assert.Equal(t, "MAY07", m.MachineCode)
+	assert.Nil(t, m.GroupID, "máy tự thêm không được tự chui vào nhóm nào — nhóm quyết định giá")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Hai tiến trình của cùng một máy gửi nhịp tim đầu tiên cùng lúc: bên thua
+// cuộc đua thêm máy phải nhận lại máy bên kia vừa tạo, không phải lỗi.
+func TestMachineService_RegisterByCode_ThuaCuocDuaThiLayMayCoSan(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMachineService(db, nil, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE machine_code = \$1`).
+		WithArgs("MAY08", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "machines"`).
+		WillReturnError(errors.New(`duplicate key value violates unique constraint "partial_unique_machines_code"`))
+	mock.ExpectRollback()
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE machine_code = \$1`).
+		WithArgs("MAY08", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}).AddRow("m-race", "MAY08"))
+
+	m, created, err := svc.RegisterByCode("MAY08")
+	assert.NoError(t, err)
+	assert.False(t, created, "máy do bên kia tạo, không phải mình")
+	assert.Equal(t, "m-race", m.ID)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Mã máy là tên máy Windows nên có thể dài; trần 256 ký tự. Quá trần thì chặn
+// trước khi chạm database.
+func TestMachineService_RegisterByCode_TranDoDai(t *testing.T) {
+	db, _ := newMockDB(t)
+	svc := NewMachineService(db, nil, NewAuditService(db))
+	_, _, err := svc.RegisterByCode(strings.Repeat("A", 257))
+	assert.Error(t, err)
+}
+
+// Ảnh chụp đi qua đường không xác thực rồi thành src/href ở trang quản trị:
+// chỉ nhận data URI JPEG/PNG base64.
+func TestAnhChupHopLe(t *testing.T) {
+	for _, ok := range []string{"data:image/jpeg;base64,/9j/4AAQSkZJRg==", "data:image/png;base64,iVBORw0KGgo="} {
+		assert.True(t, anhChupHopLe.MatchString(ok), ok)
+	}
+	for _, bad := range []string{
+		"javascript:alert(document.cookie)",
+		"data:text/html;base64,PHNjcmlwdD4=",
+		"data:image/svg+xml;base64,PHN2Zz4=",
+		"data:image/jpeg;base64,abc\"onerror=alert(1)",
+		"https://evil.example/x.jpg",
+		"",
+	} {
+		assert.False(t, anhChupHopLe.MatchString(bad), bad)
+	}
 }

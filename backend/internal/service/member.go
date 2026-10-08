@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/vnet/core/internal/hub"
@@ -49,20 +50,25 @@ type CreateMemberRequest struct {
 	DateOfBirth          utils.JSONDate `json:"date_of_birth"`
 	GroupID              string         `json:"group_id"`
 	Notes                string         `json:"notes"`
+	IsActive             *bool          `json:"is_active"`
 }
 
+// Các trường chữ là con trỏ: không gửi = giữ nguyên, gửi "" = xoá trống.
+// Trước đây là chuỗi thường kèm phép kiểm `!= ""`, nên xoá số điện thoại,
+// email, ghi chú… trong form đều báo thành công mà không đổi gì.
 type UpdateMemberRequest struct {
-	FullName             string         `json:"full_name"`
-	Phone                string         `json:"phone"`
-	Email                string         `json:"email"`
+	Username             *string        `json:"username"`
+	FullName             *string        `json:"full_name"`
+	Phone                *string        `json:"phone"`
+	Email                *string        `json:"email"`
 	Password             string         `json:"password"`
-	IDCardNumber         string         `json:"id_card_number"`
-	IDCardImageURL       string         `json:"id_card_image_url"`
-	ParentConsentFileURL string         `json:"parent_consent_file_url"`
-	AvatarURL            string         `json:"avatar_url"`
+	IDCardNumber         *string        `json:"id_card_number"`
+	IDCardImageURL       *string        `json:"id_card_image_url"`
+	ParentConsentFileURL *string        `json:"parent_consent_file_url"`
+	AvatarURL            *string        `json:"avatar_url"`
 	DateOfBirth          utils.JSONDate `json:"date_of_birth"`
-	GroupID              string         `json:"group_id"`
-	Notes                string         `json:"notes"`
+	GroupID              *string        `json:"group_id"`
+	Notes                *string        `json:"notes"`
 	IsActive             *bool          `json:"is_active"`
 }
 
@@ -70,9 +76,10 @@ type TopupRequest struct {
 	Amount int64 `json:"amount"`
 	// Chốt ca đếm tiền mặt bằng cách lọc đúng chuỗi "cash". Để trường này tự do
 	// thì một giá trị gõ sai làm khoản tiền mặt đó biến mất khỏi số tiền phải có
-	// trong két — két thừa mà không ai truy ra vì sao. Danh sách này khớp đúng
-	// ô chọn trên giao diện, cộng "bonus_balance" là đường nội bộ để tặng số dư.
-	PaymentMethod string `json:"payment_method" binding:"required,oneof=cash transfer ewallet bonus_balance"`
+	// trong két — két thừa mà không ai truy ra vì sao. Topup kiểm nó với danh
+	// sách ở Cài đặt > Thanh toán, cộng "bonus_balance" là đường nội bộ để tặng
+	// số dư.
+	PaymentMethod string `json:"payment_method" binding:"required"`
 	Description   string `json:"description"`
 	// IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
 	// MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
@@ -100,11 +107,13 @@ type CreateGroupRequest struct {
 	IsDefault       bool    `json:"is_default"`
 }
 
+// MinSpent/DiscountPercent là con trỏ để đặt về 0 được: với số thường, 0 trùng
+// với "không gửi" và bị bỏ qua, nên nhóm không bao giờ bỏ được mức giảm giá.
 type UpdateGroupRequest struct {
-	Name            string  `json:"name"`
-	MinSpent        int64   `json:"min_spent" binding:"omitempty,min=0"`
-	DiscountPercent float64 `json:"discount_percent" binding:"omitempty,min=0,max=100"`
-	IsDefault       bool    `json:"is_default"`
+	Name            string   `json:"name"`
+	MinSpent        *int64   `json:"min_spent" binding:"omitempty,min=0"`
+	DiscountPercent *float64 `json:"discount_percent" binding:"omitempty,min=0,max=100"`
+	IsDefault       bool     `json:"is_default"`
 }
 
 type MemberResponse struct {
@@ -126,6 +135,8 @@ type MemberResponse struct {
 	Notes                string         `json:"notes"`
 	ParentConsentFileURL string         `json:"parent_consent_file_url"`
 	IsActive             bool           `json:"is_active"`
+	// Role "combo" là tài khoản sinh khi bán gói — trang quản trị chỉ cho đổi mật khẩu.
+	Role                 string         `json:"role"`
 	LastVisitAt          *time.Time     `json:"last_visit_at"`
 	CreatedAt            time.Time      `json:"created_at"`
 	UpdatedAt            time.Time      `json:"updated_at"`
@@ -214,6 +225,7 @@ func toMemberResponse(m *model.Member, groupResp *GroupResponse) *MemberResponse
 		Notes:                m.Notes,
 		ParentConsentFileURL: m.ParentConsentFileURL,
 		IsActive:             m.IsActive,
+		Role:                 m.Role,
 		LastVisitAt:          m.LastVisitAt,
 		CreatedAt:            m.CreatedAt,
 		UpdatedAt:            m.UpdatedAt,
@@ -273,8 +285,28 @@ func toSessionResponse(s *model.MachineSession) *SessionResponse {
 	}
 }
 
-func (s *MemberService) List(params pagination.Params) ([]*MemberResponse, int64, int, int, error) {
+// Hai loại tài khoản hội viên, theo cột role: hội viên thường do quầy tạo, và
+// tài khoản combo sinh ra khi bán gói cho khách chưa có tài khoản.
+const (
+	MemberRoleMember = "member"
+	MemberRoleCombo  = "combo"
+)
+
+// errComboMemberLocked: tài khoản combo do hệ thống sinh khi bán gói, quầy chỉ
+// được đặt lại mật khẩu. Sửa thông tin, nạp/hoàn tiền hay xoá đều chặn.
+var errComboMemberLocked = errors.New("tài khoản combo chỉ được đổi mật khẩu")
+
+// List lọc theo role khi role khác rỗng. Lọc "member" gồm cả dòng role rỗng/NULL
+// để không sót tài khoản cũ.
+func (s *MemberService) List(params pagination.Params, role string) ([]*MemberResponse, int64, int, int, error) {
 	query := s.db.Model(&model.Member{})
+
+	switch role {
+	case MemberRoleCombo:
+		query = query.Where("role = ?", MemberRoleCombo)
+	case MemberRoleMember:
+		query = query.Where("role IS DISTINCT FROM ?", MemberRoleCombo)
+	}
 
 	if params.Search != "" {
 		search := "%" + params.Search + "%"
@@ -361,7 +393,18 @@ func (s *MemberService) Create(req *CreateMemberRequest) (*MemberResponse, error
 		member.GroupID = &defaultGroup.ID
 	}
 
-	if err := s.db.Create(&member).Error; err != nil {
+	// is_active có `default:true`: GORM thay false bằng default khi INSERT, nên
+	// tạo hội viên ở trạng thái khoá phải ghi lại false trong cùng giao dịch.
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&member).Error; err != nil {
+			return err
+		}
+		if req.IsActive != nil && !*req.IsActive {
+			return tx.Model(&member).Update("is_active", false).Error
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -383,20 +426,38 @@ func (s *MemberService) Update(id string, req *UpdateMemberRequest) (*MemberResp
 		}
 		return nil, err
 	}
+	if member.Role == MemberRoleCombo {
+		return nil, errComboMemberLocked
+	}
 
 	updates := map[string]interface{}{}
 
-	if req.FullName != "" {
-		updates["full_name"] = req.FullName
+	if req.Username != nil && *req.Username != member.Username {
+		u := strings.TrimSpace(*req.Username)
+		if u == "" {
+			return nil, errors.New("username is required")
+		}
+		// Unscoped: chỉ mục unique của cột username tính cả hội viên đã xoá mềm.
+		var n int64
+		if err := s.db.Unscoped().Model(&model.Member{}).Where("username = ? AND id <> ?", u, id).Count(&n).Error; err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			return nil, errors.New("username already exists")
+		}
+		updates["username"] = u
 	}
-	if req.Phone != "" {
-		if !utils.IsValidPhone(req.Phone) {
+	if req.FullName != nil {
+		updates["full_name"] = *req.FullName
+	}
+	if req.Phone != nil {
+		if *req.Phone != "" && !utils.IsValidPhone(*req.Phone) {
 			return nil, errors.New("số điện thoại không hợp lệ")
 		}
-		updates["phone"] = req.Phone
+		updates["phone"] = *req.Phone
 	}
-	if req.Email != "" {
-		updates["email"] = req.Email
+	if req.Email != nil {
+		updates["email"] = *req.Email
 	}
 	if req.Password != "" {
 		hash, err := utils.HashPassword(req.Password)
@@ -405,26 +466,35 @@ func (s *MemberService) Update(id string, req *UpdateMemberRequest) (*MemberResp
 		}
 		updates["password_hash"] = hash
 	}
-	if req.IDCardNumber != "" {
-		updates["id_card_number"] = req.IDCardNumber
+	if req.IDCardNumber != nil {
+		updates["id_card_number"] = *req.IDCardNumber
 	}
-	if req.IDCardImageURL != "" {
-		updates["id_card_image_url"] = req.IDCardImageURL
+	if req.IDCardImageURL != nil {
+		updates["id_card_image_url"] = *req.IDCardImageURL
 	}
-	if req.ParentConsentFileURL != "" {
-		updates["parent_consent_file_url"] = req.ParentConsentFileURL
+	if req.ParentConsentFileURL != nil {
+		updates["parent_consent_file_url"] = *req.ParentConsentFileURL
 	}
-	if req.AvatarURL != "" {
-		updates["avatar_url"] = req.AvatarURL
+	if req.AvatarURL != nil {
+		updates["avatar_url"] = *req.AvatarURL
 	}
 	if req.DateOfBirth.Time != nil {
 		updates["date_of_birth"] = req.DateOfBirth.Time
 	}
-	if req.GroupID != "" {
-		updates["group_id"] = req.GroupID
+	if req.GroupID != nil {
+		// Hội viên luôn thuộc một hạng: bỏ chọn thì về hạng mặc định, giống lúc tạo.
+		if *req.GroupID == "" {
+			var macDinh model.MemberGroup
+			if err := s.db.Where("is_default = ?", true).First(&macDinh).Error; err != nil {
+				return nil, errors.New("chưa có hạng hội viên mặc định; hãy tạo ít nhất một hạng trước")
+			}
+			updates["group_id"] = macDinh.ID
+		} else {
+			updates["group_id"] = *req.GroupID
+		}
 	}
-	if req.Notes != "" {
-		updates["notes"] = req.Notes
+	if req.Notes != nil {
+		updates["notes"] = *req.Notes
 	}
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
@@ -455,8 +525,7 @@ func (s *MemberService) Update(id string, req *UpdateMemberRequest) (*MemberResp
 // không xoá.
 //
 // lucky_spin_logs, member_notifications, member_attendances KHÔNG chặn: nhật ký
-// và hộp thư, không phải chứng từ. topup_cards.used_by/sold_to cũng không —
-// tấm thẻ đã dùng vẫn tự giữ mệnh giá và thời điểm.
+// và hộp thư, không phải chứng từ.
 func (s *MemberService) Delete(id string) error {
 	var member model.Member
 	if err := s.db.Where("id = ?", id).First(&member).Error; err != nil {
@@ -464,6 +533,9 @@ func (s *MemberService) Delete(id string) error {
 			return errors.New("không tìm thấy hội viên")
 		}
 		return err
+	}
+	if member.Role == MemberRoleCombo {
+		return errComboMemberLocked
 	}
 	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
 		{Bang: &model.MemberTransaction{}, Cot: "member_id", Nhan: "giao dịch số dư"},
@@ -520,6 +592,11 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 	if req.Amount <= 0 {
 		return nil, errors.New("số tiền phải lớn hơn 0")
 	}
+	if req.PaymentMethod != "bonus_balance" {
+		if err := kiemTraPhuongThucThanhToan(s.db, req.PaymentMethod); err != nil {
+			return nil, err
+		}
+	}
 
 	tx := s.db.Begin()
 	defer func() {
@@ -540,6 +617,10 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 			return nil, errors.New("không tìm thấy hội viên")
 		}
 		return nil, err
+	}
+	if member.Role == MemberRoleCombo {
+		tx.Rollback()
+		return nil, errComboMemberLocked
 	}
 
 	balanceBefore := member.Balance
@@ -630,6 +711,10 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*M
 			return nil, errors.New("không tìm thấy hội viên")
 		}
 		return nil, err
+	}
+	if member.Role == MemberRoleCombo {
+		tx.Rollback()
+		return nil, errComboMemberLocked
 	}
 
 	balanceBefore := member.Balance
@@ -889,11 +974,11 @@ func (s *MemberService) UpdateGroup(id string, req *UpdateGroupRequest) (*GroupR
 	if req.Name != "" {
 		updates["name"] = req.Name
 	}
-	if req.MinSpent != 0 {
-		updates["min_spent"] = req.MinSpent
+	if req.MinSpent != nil {
+		updates["min_spent"] = *req.MinSpent
 	}
-	if req.DiscountPercent != 0 {
-		updates["discount_percent"] = req.DiscountPercent
+	if req.DiscountPercent != nil {
+		updates["discount_percent"] = *req.DiscountPercent
 	}
 	if req.IsDefault != group.IsDefault {
 		updates["is_default"] = req.IsDefault

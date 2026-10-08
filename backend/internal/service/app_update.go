@@ -156,6 +156,20 @@ type LatestUpdateResult struct {
 	Changelog  string `json:"changelog,omitempty"`
 	IsRequired bool   `json:"is_required"`
 	Current    string `json:"current"`
+	// MachineInUse cho dịch vụ nền của máy trạm biết có được cài ngay không.
+	// Cài bản mới là tắt rồi bật lại giao diện, nên chỉ làm lúc không có khách.
+	MachineInUse bool `json:"machine_in_use"`
+}
+
+// MachineInUse: máy mang mã này đang có phiên chơi hay không. Không tìm thấy
+// máy thì coi như ĐANG dùng — thà hoãn cập nhật còn hơn tắt giao diện của khách.
+func (s *AppUpdateService) MachineInUse(code string) bool {
+	var status string
+	if err := s.db.Model(&model.Machine{}).Where("machine_code = ?", code).
+		Limit(1).Pluck("status", &status).Error; err != nil || status == "" {
+		return true
+	}
+	return status == "in_use"
 }
 
 // Latest cho biết máy trạm ở phiên bản current có bản mới hơn không.

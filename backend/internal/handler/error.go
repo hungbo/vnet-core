@@ -31,8 +31,6 @@ var constraintMessages = map[string]string{
 	"uni_permissions_code":           "Mã quyền đã tồn tại",
 	"uni_stores_code":                "Mã cửa hàng đã tồn tại",
 	"idx_orders_order_code":          "Mã đơn hàng đã tồn tại",
-	"uni_topup_cards_code":           "Mã thẻ nạp đã tồn tại",
-	"uni_gift_cards_code":            "Mã thẻ quà tặng đã tồn tại",
 }
 
 var validationFieldLabels = map[string]string{

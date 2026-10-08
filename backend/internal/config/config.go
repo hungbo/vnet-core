@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -13,7 +15,49 @@ type Config struct {
 	Database DatabaseConfig
 	Redis    RedisConfig
 	JWT      JWTConfig
+	Game     GameConfig
 }
+
+// Vai trò của máy chủ trong việc phân phối game.
+const (
+	GameRoleOff    = ""       // không chạy gì liên quan tới cập nhật game
+	GameRoleMaster = "master" // giữ bản gốc, publish và phát cho các quán
+	GameRoleCafe   = "cafe"   // tải game từ master về ổ game của quán
+)
+
+// GameConfig cấu hình cập nhật game. Mặc định tắt: một máy chủ quán bình thường
+// không tự nhiên mở cổng BitTorrent hay ghi vào ổ đĩa nào.
+type GameConfig struct {
+	Role string
+	// Root: thư mục chứa các game, mỗi game một thư mục con trùng tên game.
+	// Ở quán đây là Game Disk của Cloud Update, ví dụ D:\Games.
+	Root string
+	// DataDir: trạng thái riêng của engine BitTorrent, không chứa dữ liệu game.
+	// Trống thì dùng GAME_ROOT/.vnet-gameupdate — dịch vụ Windows chạy với thư
+	// mục làm việc là System32, nên một đường dẫn tương đối ở đây là sai chỗ.
+	DataDir string
+	// UpstreamURL: địa chỉ vnet-server của master, chỉ dùng ở quán.
+	UpstreamURL string
+	// PublicURL: địa chỉ các quán dùng để gọi master; webseed nằm ở PublicURL/seed/.
+	PublicURL string
+	// CatalogKey: khoá dùng chung giữa master và các quán để đọc catalog.
+	CatalogKey   string
+	ListenPort   int
+	PollInterval time.Duration
+	// StableFor: thư mục game phải đứng yên bấy lâu mới publish, tránh phát ra
+	// một game đang được launcher vá dở.
+	StableFor time.Duration
+	// StallTimeout: một lượt tải mà bấy lâu không có thêm piece nào được xác thực đúng hash thì bị
+	// hủy, game bị đánh dấu lỗi và việc tải chuyển sang game khác (rồi thử lại sau, giãn dần).
+	// Tính theo piece ĐÃ XÁC THỰC chứ không theo byte nhận về: master đổi tệp sau khi publish thì
+	// dữ liệu vẫn chảy nhưng không piece nào khớp. Piece dài tối đa 4 MB nên đường truyền chậm hơn
+	// ~7 kB/s sẽ bị coi là treo oan — khi đó tăng giá trị này.
+	StallTimeout time.Duration
+}
+
+// DefaultGameStallTimeout là GAME_STALL_TIMEOUT khi không đặt, đặt sai hoặc <= 0 (không có chế độ
+// "tắt": đồng hồ này là thứ ngăn một lượt tải treo giữ chặn cả quán).
+const DefaultGameStallTimeout = 10 * time.Minute
 
 type ServerConfig struct {
 	Host           string
@@ -77,6 +121,11 @@ func Load() *Config {
 		defaultOrigins = nil
 	}
 
+	stall := getEnvDuration("GAME_STALL_TIMEOUT", DefaultGameStallTimeout)
+	if stall <= 0 {
+		stall = DefaultGameStallTimeout
+	}
+
 	return &Config{
 		Server: ServerConfig{
 			Host:          getEnv("SERVER_HOST", "0.0.0.0"),
@@ -118,7 +167,44 @@ func Load() *Config {
 			RefreshTokenTTL: getEnvDuration("JWT_REFRESH_TTL", 7*24*time.Hour),
 			Issuer:          getEnv("JWT_ISSUER", "vnet"),
 		},
+		Game: GameConfig{
+			Role:         getEnv("GAME_ROLE", GameRoleOff),
+			Root:         getEnv("GAME_ROOT", ""),
+			DataDir:      getEnv("GAME_DATA_DIR", ""),
+			UpstreamURL:  strings.TrimRight(getEnv("GAME_UPSTREAM_URL", ""), "/"),
+			PublicURL:    strings.TrimRight(getEnv("GAME_PUBLIC_URL", ""), "/"),
+			CatalogKey:   getEnv("GAME_CATALOG_KEY", ""),
+			ListenPort:   getEnvInt("GAME_LISTEN_PORT", 19999),
+			PollInterval: getEnvDuration("GAME_POLL_INTERVAL", 5*time.Minute),
+			StableFor:    getEnvDuration("GAME_STABLE_FOR", 10*time.Minute),
+			StallTimeout: stall,
+		},
 	}
+}
+
+// Validate kiểm cấu hình game ở mọi chế độ: sai ở đây là xoá nhầm thư mục
+// hoặc phát game ra ngoài không khoá.
+func (g GameConfig) Validate() error {
+	switch g.Role {
+	case GameRoleOff:
+		return nil
+	case GameRoleMaster, GameRoleCafe:
+	default:
+		return fmt.Errorf("GAME_ROLE must be empty, %q or %q, got %q", GameRoleMaster, GameRoleCafe, g.Role)
+	}
+	if g.Root == "" || !filepath.IsAbs(g.Root) {
+		return errors.New("GAME_ROOT must be an absolute path when GAME_ROLE is set")
+	}
+	if len(g.CatalogKey) < 16 {
+		return errors.New("GAME_CATALOG_KEY must be at least 16 characters when GAME_ROLE is set")
+	}
+	if g.Role == GameRoleCafe && g.UpstreamURL == "" {
+		return errors.New("GAME_UPSTREAM_URL is required when GAME_ROLE=cafe")
+	}
+	if g.Role == GameRoleMaster && g.PublicURL == "" {
+		return errors.New("GAME_PUBLIC_URL is required when GAME_ROLE=master")
+	}
+	return nil
 }
 
 func (c *Config) DSN() string {
@@ -214,6 +300,9 @@ func trimSpace(s string) string {
 // Validate refuses to start a production server on development defaults.
 // Every check here is a setting that is safe locally and dangerous in release.
 func (c *Config) Validate() error {
+	if err := c.Game.Validate(); err != nil {
+		return err
+	}
 	if c.Server.Mode != ModeRelease {
 		return nil
 	}

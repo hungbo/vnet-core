@@ -5,12 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
+	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type PromotionService struct {
@@ -93,15 +97,61 @@ type CreatePromotionReward struct {
 }
 
 type UpdatePromotionRequest struct {
-	Name        string                     `json:"name"`
-	Description string                     `json:"description"`
-	Type        string                     `json:"type"`
-	Priority    *int                       `json:"priority"`
-	IsActive    *bool                      `json:"is_active"`
-	ValidFrom   *string                    `json:"valid_from"`
-	ValidTo     *string                    `json:"valid_to"`
-	Conditions  []CreatePromotionCondition `json:"conditions"`
-	Rewards     []CreatePromotionReward    `json:"rewards"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Type        string `json:"type"`
+	Priority    *int   `json:"priority"`
+	IsActive    *bool  `json:"is_active"`
+	// RawMessage thay vì *string để phân biệt "không gửi" (giữ nguyên) với
+	// null hoặc "" (xoá mốc ngày). Với *string cả hai đều ra nil, nên một khuyến
+	// mãi đã đặt ngày hết hạn không bao giờ bỏ hạn được nữa.
+	ValidFrom  json.RawMessage            `json:"valid_from" swaggertype:"string"`
+	ValidTo    json.RawMessage            `json:"valid_to" swaggertype:"string"`
+	Conditions []CreatePromotionCondition `json:"conditions"`
+	Rewards    []CreatePromotionReward    `json:"rewards"`
+}
+
+// PromotionTypes là các loại khuyến mãi trang quản trị cho chọn. Bộ máy không
+// đọc cột type (mức giảm do phần thưởng quyết định) — đây là nhãn phân loại —
+// nhưng ô nhập tự do cũ cho lưu mọi chuỗi gõ sai, nên lọc theo loại không khớp.
+var PromotionTypes = []string{"percentage", "fixed", "combo"}
+
+// validatePromotionHeader kiểm phần "vỏ" của khuyến mãi. Chạy trước khi chạm DB
+// để lỗi trả về là câu tiếng Việt rõ ràng, không phải lỗi PostgreSQL thô.
+func validatePromotionHeader(typ string, priority int, validFrom, validTo *time.Time) error {
+	if typ != "" && !containsString(PromotionTypes, typ) {
+		return fmt.Errorf("loại khuyến mãi %q không hợp lệ (chấp nhận: %s)", typ, strings.Join(PromotionTypes, ", "))
+	}
+	if priority < 0 {
+		return errors.New("độ ưu tiên không được âm")
+	}
+	if validFrom != nil && validTo != nil && validFrom.After(*validTo) {
+		return errors.New("ngày bắt đầu hiệu lực phải trước hoặc bằng ngày hết hiệu lực")
+	}
+	return nil
+}
+
+// parseNgayHieuLuc đọc một mốc ngày trong payload cập nhật.
+// present=false: không gửi trường này. present=true, t=nil: xoá mốc ngày.
+func parseNgayHieuLuc(raw json.RawMessage, tenTruong string) (t *time.Time, present bool, err error) {
+	if raw == nil {
+		return nil, false, nil
+	}
+	if string(raw) == "null" {
+		return nil, true, nil
+	}
+	var str string
+	if err := json.Unmarshal(raw, &str); err != nil {
+		return nil, true, fmt.Errorf("%s không đúng định dạng", tenTruong)
+	}
+	if strings.TrimSpace(str) == "" {
+		return nil, true, nil
+	}
+	v, err := time.Parse(time.RFC3339, str)
+	if err != nil {
+		return nil, true, fmt.Errorf("%s không đúng định dạng", tenTruong)
+	}
+	return &v, true, nil
 }
 
 type LuckySpinRewardResponse struct {
@@ -131,8 +181,11 @@ type LuckySpinRewardRequest struct {
 	// Amount thay cho jsonb thô: cả hai loại được hỗ trợ đều tiêu đúng một số.
 	Amount      int64   `json:"amount"`
 	Probability float64 `json:"probability"`
-	MaxPerDay   int     `json:"max_per_day"`
-	IsActive    *bool   `json:"is_active"`
+	// MaxPerDay khai trên từng ô nhưng được dùng như giới hạn lượt quay MỖI
+	// HỘI VIÊN MỖI NGÀY của cả bàn quay: Spin lấy số lớn nhất trong các ô đang
+	// bật, tối thiểu 1. Xem spinLimit.
+	MaxPerDay int   `json:"max_per_day"`
+	IsActive  *bool `json:"is_active"`
 }
 
 type SpinRequest struct {
@@ -212,20 +265,31 @@ func (s *PromotionService) Create(req *CreatePromotionRequest) (*PromotionRespon
 		return nil, err
 	}
 
+	if len(req.Rewards) == 0 {
+		return nil, errors.New("khuyến mãi phải có ít nhất một phần thưởng")
+	}
+	if req.Type == "" {
+		return nil, errors.New("vui lòng chọn loại khuyến mãi")
+	}
+
 	var validFrom, validTo *time.Time
-	if req.ValidFrom != nil {
+	// "" coi như không đặt mốc, giống null — ô ngày bị xoá trên giao diện gửi "".
+	if req.ValidFrom != nil && strings.TrimSpace(*req.ValidFrom) != "" {
 		t, err := time.Parse(time.RFC3339, *req.ValidFrom)
 		if err != nil {
 			return nil, errors.New("ngày bắt đầu hiệu lực không đúng định dạng")
 		}
 		validFrom = &t
 	}
-	if req.ValidTo != nil {
+	if req.ValidTo != nil && strings.TrimSpace(*req.ValidTo) != "" {
 		t, err := time.Parse(time.RFC3339, *req.ValidTo)
 		if err != nil {
 			return nil, errors.New("ngày hết hiệu lực không đúng định dạng")
 		}
 		validTo = &t
+	}
+	if err := validatePromotionHeader(req.Type, req.Priority, validFrom, validTo); err != nil {
+		return nil, err
 	}
 
 	promo := model.Promotion{
@@ -243,6 +307,17 @@ func (s *PromotionService) Create(req *CreatePromotionRequest) (*PromotionRespon
 	if err := tx.Create(&promo).Error; err != nil {
 		tx.Rollback()
 		return nil, err
+	}
+	// Cột is_active có `default:true`, và GORM (1.25) thay giá trị zero của cột
+	// có default bằng chính default đó khi INSERT — Select cũng không cứu được.
+	// Vì vậy "tạo ở trạng thái tắt" luôn ra bật. Ghi lại false ngay trong cùng
+	// giao dịch, để không có khoảnh khắc nào khuyến mãi tắt lại đang chạy.
+	if !req.IsActive {
+		if err := tx.Model(&promo).Update("is_active", false).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+		promo.IsActive = false
 	}
 
 	for _, c := range req.Conditions {
@@ -291,8 +366,46 @@ func (s *PromotionService) Update(id string, req *UpdatePromotionRequest) (*Prom
 		return nil, err
 	}
 
+	if req.Rewards != nil && len(req.Rewards) == 0 {
+		return nil, errors.New("khuyến mãi phải có ít nhất một phần thưởng")
+	}
+
 	var promo model.Promotion
 	if err := s.db.Where("id = ?", id).First(&promo).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("không tìm thấy khuyến mãi")
+		}
+		return nil, err
+	}
+
+	validFrom, fromSet, err := parseNgayHieuLuc(req.ValidFrom, "ngày bắt đầu hiệu lực")
+	if err != nil {
+		return nil, err
+	}
+	validTo, toSet, err := parseNgayHieuLuc(req.ValidTo, "ngày hết hiệu lực")
+	if err != nil {
+		return nil, err
+	}
+	// So khoảng ngày SAU khi gộp với giá trị đang lưu: chỉ sửa một đầu vẫn có
+	// thể làm đầu kia nằm sai phía.
+	effFrom, effTo := promo.ValidFrom, promo.ValidTo
+	if fromSet {
+		effFrom = validFrom
+	}
+	if toSet {
+		effTo = validTo
+	}
+	// Loại chỉ kiểm khi đổi: khuyến mãi cũ mang nhãn ngoài danh sách vẫn sửa
+	// được các trường khác mà không bị chặn.
+	typeToCheck := ""
+	if req.Type != "" && req.Type != promo.Type {
+		typeToCheck = req.Type
+	}
+	priority := 0
+	if req.Priority != nil {
+		priority = *req.Priority
+	}
+	if err := validatePromotionHeader(typeToCheck, priority, effFrom, effTo); err != nil {
 		return nil, err
 	}
 
@@ -312,19 +425,12 @@ func (s *PromotionService) Update(id string, req *UpdatePromotionRequest) (*Prom
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
 	}
-	if req.ValidFrom != nil {
-		t, err := time.Parse(time.RFC3339, *req.ValidFrom)
-		if err != nil {
-			return nil, errors.New("ngày bắt đầu hiệu lực không đúng định dạng")
-		}
-		updates["valid_from"] = t
+	// Map giữ được nil, nên null thật sự ghi NULL xuống cột.
+	if fromSet {
+		updates["valid_from"] = validFrom
 	}
-	if req.ValidTo != nil {
-		t, err := time.Parse(time.RFC3339, *req.ValidTo)
-		if err != nil {
-			return nil, errors.New("ngày hết hiệu lực không đúng định dạng")
-		}
-		updates["valid_to"] = t
+	if toSet {
+		updates["valid_to"] = validTo
 	}
 
 	tx := s.db.Begin()
@@ -471,24 +577,23 @@ func luckySpinAmount(rewardValue string) int64 {
 //
 // excludeID để trống khi tạo mới, và mang ID của chính dòng đang sửa khi cập
 // nhật — nếu không, sửa một dòng sẽ tự tính trùng chính nó và luôn báo vượt.
-func (s *PromotionService) validateLuckySpinReward(req *LuckySpinRewardRequest, excludeID string) error {
+// active là trạng thái SAU khi lưu: bật một ô đang tắt phải kiểm lại tổng.
+func (s *PromotionService) validateLuckySpinReward(req *LuckySpinRewardRequest, excludeID string, active bool) error {
 	if !luckySpinRewardTypes[req.RewardType] {
 		return fmt.Errorf("loại phần thưởng %q chưa cấp được; chỉ hỗ trợ bonus_points và balance", req.RewardType)
 	}
 	if req.Amount <= 0 {
 		return errors.New("giá trị phần thưởng phải lớn hơn 0")
 	}
-	if req.Probability <= 0 || req.Probability > 1 {
-		return errors.New("xác suất phải nằm trong khoảng 0 đến 1")
+	// Cột probability là decimal(5,4): dưới 0.0001 (0,01%) bị làm tròn về 0 khi
+	// lưu, tức một ô "đang bật" nhưng không bao giờ trúng.
+	if req.Probability < 0.0001 || req.Probability > 1 {
+		return errors.New("xác suất phải từ 0,01% đến 100%")
 	}
 	if req.MaxPerDay < 0 {
 		return errors.New("số lượt tối đa mỗi ngày không được âm")
 	}
 
-	active := true
-	if req.IsActive != nil {
-		active = *req.IsActive
-	}
 	if !active {
 		return nil
 	}
@@ -517,14 +622,14 @@ func (s *PromotionService) validateLuckySpinReward(req *LuckySpinRewardRequest, 
 }
 
 func (s *PromotionService) CreateLuckySpinReward(req *LuckySpinRewardRequest) (*LuckySpinRewardResponse, error) {
-	if err := s.validateLuckySpinReward(req, ""); err != nil {
-		return nil, err
-	}
-
 	active := true
 	if req.IsActive != nil {
 		active = *req.IsActive
 	}
+	if err := s.validateLuckySpinReward(req, "", active); err != nil {
+		return nil, err
+	}
+
 	reward := model.LuckySpinReward{
 		Name:        req.Name,
 		RewardType:  req.RewardType,
@@ -533,7 +638,21 @@ func (s *PromotionService) CreateLuckySpinReward(req *LuckySpinRewardRequest) (*
 		MaxPerDay:   req.MaxPerDay,
 		IsActive:    active,
 	}
-	if err := s.db.Create(&reward).Error; err != nil {
+	// Cùng bẫy với Promotion.IsActive: GORM thay false bằng `default:true` khi
+	// INSERT, nên ô "tạo ở trạng thái tắt" ra bật — và lọt qua kiểm tổng xác
+	// suất vừa bỏ qua cho ô tắt. Ghi lại false trong cùng giao dịch.
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&reward).Error; err != nil {
+			return err
+		}
+		if !active {
+			if err := tx.Model(&reward).Update("is_active", false).Error; err != nil {
+				return err
+			}
+			reward.IsActive = false
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 
@@ -558,13 +677,12 @@ func (s *PromotionService) UpdateLuckySpinReward(id string, req *LuckySpinReward
 	if err := s.db.Where("id = ?", id).First(&reward).Error; err != nil {
 		return nil, errors.New("không tìm thấy ô thưởng")
 	}
-	if err := s.validateLuckySpinReward(req, id); err != nil {
-		return nil, err
-	}
-
 	active := reward.IsActive
 	if req.IsActive != nil {
 		active = *req.IsActive
+	}
+	if err := s.validateLuckySpinReward(req, id, active); err != nil {
+		return nil, err
 	}
 	updates := map[string]interface{}{
 		"name":         req.Name,
@@ -610,80 +728,113 @@ func (s *PromotionService) DeleteLuckySpinReward(id string) error {
 	return nil
 }
 
-func (s *PromotionService) Spin(req *SpinRequest) (*SpinResponse, error) {
-	var rewards []model.LuckySpinReward
-	if err := s.db.Where("is_active = ?", true).Find(&rewards).Error; err != nil {
-		return nil, err
-	}
+// ErrSpinMemberNotFound: hội viên không tồn tại hoặc đã xoá. Handler trả 404.
+var ErrSpinMemberNotFound = errors.New("không tìm thấy hội viên")
 
-	if len(rewards) == 0 {
-		now := time.Now()
-		log := model.LuckySpinLog{
-			MemberID: req.MemberID,
-			IsWin:    false,
-			SpunAt:   now,
-		}
-		s.db.Create(&log)
-		s.audit.Log(&LogAuditRequest{
-			Action:     "spin",
-			EntityType: "lucky_spin_log",
-			EntityID:   log.ID,
-			Metadata: map[string]interface{}{
-				"member_id": req.MemberID,
-				"is_win":    false,
-			},
-		})
-		return &SpinResponse{
-			IsWin:      false,
-			DailySpins: 0,
-			MaxPerDay:  0,
-		}, nil
-	}
+// uuidHoiVien chặn member_id không phải UUID trước khi chạm DB — nếu không,
+// lỗi thô "invalid input syntax for type uuid" của PostgreSQL lọt ra người dùng.
+var uuidHoiVien = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-	todayStart := time.Now().Truncate(24 * time.Hour)
-	var dailyCount int64
-	s.db.Model(&model.LuckySpinLog{}).Where("member_id = ? AND spun_at >= ?", req.MemberID, todayStart).Count(&dailyCount)
-
-	maxPerDay := 1
+// spinLimit là số lượt quay mỗi hội viên mỗi ngày của cả bàn quay.
+//
+// max_per_day được khai trên TỪNG Ô nhưng không có nghĩa "ô này trúng tối đa
+// N lần/ngày": giới hạn tính chung cho hội viên, bằng số lớn nhất trong các ô
+// đang bật, tối thiểu 1 (để 0 ở mọi ô nghĩa là 1 lượt/ngày, không phải vô hạn).
+func spinLimit(rewards []model.LuckySpinReward) int {
+	limit := 1
 	for _, r := range rewards {
-		if r.MaxPerDay > maxPerDay {
-			maxPerDay = r.MaxPerDay
+		if r.MaxPerDay > limit {
+			limit = r.MaxPerDay
 		}
 	}
+	return limit
+}
 
-	if int(dailyCount) >= maxPerDay && maxPerDay > 0 {
-		return nil, errors.New("đã hết lượt quay trong ngày")
+// Spin quay cho một hội viên thật: ghi lịch sử và cộng thưởng.
+//
+// Cả lượt quay chạy trong MỘT giao dịch, khoá dòng hội viên (FOR UPDATE) ngay
+// đầu. Bản cũ đếm lượt, ghi log và cộng tiền bằng các câu rời rạc: hai lượt
+// bấm cùng lúc đều đếm thấy 0 lượt nên vượt max_per_day, rồi cùng ghi
+// balance = <số dư đọc lúc trước> + thưởng — một lượt thưởng mất, và còn ghi
+// đè cả tiền phiên chơi vừa trừ song song. Giữ khoá thì lượt thứ hai phải chờ,
+// đếm lại thấy lượt thứ nhất, và số dư trước/sau trong sổ là số dư thật.
+func (s *PromotionService) Spin(req *SpinRequest) (*SpinResponse, error) {
+	if !uuidHoiVien.MatchString(req.MemberID) {
+		return nil, errors.New("mã hội viên không hợp lệ")
 	}
 
-	selected := weightedSelect(rewards)
+	var (
+		selected   *model.LuckySpinReward
+		dailyCount int64
+		maxPerDay  int
+		log        model.LuckySpinLog
+		member     model.Member
+		rewardLog  *LogAuditRequest
+	)
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", req.MemberID).First(&member).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSpinMemberNotFound
+			}
+			return err
+		}
+		if !member.IsActive {
+			return errors.New("tài khoản hội viên đang bị khoá, không quay được")
+		}
 
-	now := time.Now()
-	log := model.LuckySpinLog{
-		MemberID: req.MemberID,
-		SpunAt:   now,
-	}
+		var rewards []model.LuckySpinReward
+		if err := tx.Where("is_active = ?", true).Find(&rewards).Error; err != nil {
+			return err
+		}
 
-	if selected != nil {
-		log.IsWin = true
-		log.RewardID = &selected.ID
-	}
+		if len(rewards) > 0 {
+			maxPerDay = spinLimit(rewards)
+			// "Hôm nay" theo giờ quán: Truncate(24h) cắt theo UTC, nên ngày
+			// quay ở Việt Nam bắt đầu lúc 7 giờ sáng.
+			todayStart := utils.StartOfDay(time.Now())
+			if err := tx.Model(&model.LuckySpinLog{}).
+				Where("member_id = ? AND spun_at >= ?", req.MemberID, todayStart).
+				Count(&dailyCount).Error; err != nil {
+				return err
+			}
+			if int(dailyCount) >= maxPerDay {
+				return errors.New("đã hết lượt quay trong ngày")
+			}
+			selected = weightedSelect(rewards)
+		}
 
-	if err := s.db.Create(&log).Error; err != nil {
+		log = model.LuckySpinLog{MemberID: req.MemberID, SpunAt: time.Now()}
+		if selected != nil {
+			log.IsWin = true
+			log.RewardID = &selected.ID
+		}
+		if err := tx.Create(&log).Error; err != nil {
+			return err
+		}
+		if selected != nil {
+			var err error
+			rewardLog, err = applyReward(tx, &member, selected)
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
 	var rewardResp *LuckySpinRewardResponse
 	if selected != nil {
-		s.applyReward(req.MemberID, selected)
-		rewardResp = &LuckySpinRewardResponse{
-			ID:          selected.ID,
-			Name:        selected.Name,
-			RewardType:  selected.RewardType,
-			RewardValue: json.RawMessage(selected.RewardValue),
-			Probability: selected.Probability,
-			MaxPerDay:   selected.MaxPerDay,
-			IsActive:    selected.IsActive,
-		}
+		resp := luckySpinToResponse(*selected)
+		rewardResp = &resp
+		// Báo số dư sau khi commit: báo trong giao dịch thì máy khách có thể
+		// nhận số mới rồi giao dịch lại rollback.
+		phatSoDuMoi(s.hub, member.ID, member.Balance, member.BonusBalance)
+	}
+	// Nhật ký ghi sau commit, qua kết nối riêng: ghi trong giao dịch thì một
+	// lượt quay bị rollback vẫn để lại dòng "đã cộng thưởng".
+	if rewardLog != nil {
+		s.audit.Log(rewardLog)
 	}
 
 	spinMetadata := map[string]interface{}{
@@ -700,82 +851,100 @@ func (s *PromotionService) Spin(req *SpinRequest) (*SpinResponse, error) {
 		EntityID:   log.ID,
 		Metadata:   spinMetadata,
 	})
-	return &SpinResponse{
-		IsWin:      selected != nil,
-		Reward:     rewardResp,
-		DailySpins: int(dailyCount) + 1,
-		MaxPerDay:  maxPerDay,
-	}, nil
+	resp := &SpinResponse{
+		IsWin:     selected != nil,
+		Reward:    rewardResp,
+		MaxPerDay: maxPerDay,
+	}
+	if maxPerDay > 0 {
+		resp.DailySpins = int(dailyCount) + 1
+	}
+	return resp, nil
 }
 
-func (s *PromotionService) applyReward(memberID string, reward *model.LuckySpinReward) {
-	var member model.Member
-	if err := s.db.First(&member, "id = ?", memberID).Error; err != nil {
-		return
+// SimulateSpin quay thử để kiểm cấu hình: chọn ô theo đúng xác suất của Spin
+// nhưng KHÔNG ghi lịch sử, KHÔNG cộng tiền cho ai. Nút "Quay thử" trên trang
+// quản trị từng gọi Spin thật cho hội viên mới nhất — mỗi lần nhân viên bấm
+// thử là một khách lạ được cộng tiền thật.
+func (s *PromotionService) SimulateSpin() (*SpinResponse, error) {
+	var rewards []model.LuckySpinReward
+	if err := s.db.Where("is_active = ?", true).Find(&rewards).Error; err != nil {
+		return nil, err
 	}
+	resp := &SpinResponse{}
+	if len(rewards) == 0 {
+		return resp, nil
+	}
+	resp.MaxPerDay = spinLimit(rewards)
+	if selected := weightedSelect(rewards); selected != nil {
+		r := luckySpinToResponse(*selected)
+		resp.IsWin = true
+		resp.Reward = &r
+	}
+	return resp, nil
+}
 
+// applyReward cộng thưởng cho hội viên ĐÃ ĐƯỢC KHOÁ trong tx.
+//
+// member là dòng đọc dưới FOR UPDATE nên số dư trước/sau ghi vào sổ là số
+// thật; cột vẫn được cập nhật bằng biểu thức (balance + x) chứ không ghi một
+// con số tuyệt đối, để không bao giờ đè lên thay đổi nào khác. member được
+// cập nhật tại chỗ để bên gọi báo số dư mới sau khi commit. Trả về dòng nhật
+// ký để bên gọi ghi SAU khi commit.
+func applyReward(tx *gorm.DB, member *model.Member, reward *model.LuckySpinReward) (*LogAuditRequest, error) {
 	var valueMap map[string]interface{}
 	if err := json.Unmarshal([]byte(reward.RewardValue), &valueMap); err != nil {
-		return
+		return nil, nil
 	}
 
 	switch reward.RewardType {
-	case "bonus_points":
-		if amount, ok := valueMap["amount"].(float64); ok {
-			trans := model.MemberTransaction{
-				MemberID:        memberID,
-				TransactionType: "lucky_spin_bonus",
-				Amount:          int64(amount),
-				BalanceBefore:   member.BonusBalance,
-				BalanceAfter:    member.BonusBalance + int64(amount),
-				ReferenceID:     &reward.ID,
-				Description:     fmt.Sprintf("Lucky spin reward: %s", reward.Name),
-				CreatedAt:       time.Now(),
-			}
-			s.db.Create(&trans)
-			s.db.Model(&member).Update("bonus_balance", member.BonusBalance+int64(amount))
-			phatSoDuMoi(s.hub, memberID, member.Balance, member.BonusBalance+int64(amount))
-			s.audit.Log(&LogAuditRequest{
-				Action:     "apply_reward",
-				EntityType: "member",
-				EntityID:   memberID,
-				Metadata: map[string]interface{}{
-					"reward_type":      "bonus_points",
-					"amount":           int64(amount),
-					"balance_before":   member.BonusBalance,
-					"balance_after":    member.BonusBalance + int64(amount),
-					"transaction_type": "lucky_spin_bonus",
-				},
-			})
+	case "bonus_points", "balance":
+		amountF, ok := valueMap["amount"].(float64)
+		if !ok {
+			return nil, nil
 		}
-	case "balance":
-		if amount, ok := valueMap["amount"].(float64); ok {
-			trans := model.MemberTransaction{
-				MemberID:        memberID,
-				TransactionType: "lucky_spin_balance",
-				Amount:          int64(amount),
-				BalanceBefore:   member.Balance,
-				BalanceAfter:    member.Balance + int64(amount),
-				ReferenceID:     &reward.ID,
-				Description:     fmt.Sprintf("Lucky spin reward: %s", reward.Name),
-				CreatedAt:       time.Now(),
-			}
-			s.db.Create(&trans)
-			s.db.Model(&member).Update("balance", member.Balance+int64(amount))
-			phatSoDuMoi(s.hub, memberID, member.Balance+int64(amount), member.BonusBalance)
-			s.audit.Log(&LogAuditRequest{
-				Action:     "apply_reward",
-				EntityType: "member",
-				EntityID:   memberID,
-				Metadata: map[string]interface{}{
-					"reward_type":      "balance",
-					"amount":           int64(amount),
-					"balance_before":   member.Balance,
-					"balance_after":    member.Balance + int64(amount),
-					"transaction_type": "lucky_spin_balance",
-				},
-			})
+		amount := int64(amountF)
+		col, txType := "bonus_balance", "lucky_spin_bonus"
+		before := member.BonusBalance
+		if reward.RewardType == "balance" {
+			col, txType = "balance", "lucky_spin_balance"
+			before = member.Balance
 		}
+		after := before + amount
+		trans := model.MemberTransaction{
+			MemberID:        member.ID,
+			TransactionType: txType,
+			Amount:          amount,
+			BalanceBefore:   before,
+			BalanceAfter:    after,
+			ReferenceID:     &reward.ID,
+			Description:     fmt.Sprintf("Lucky spin reward: %s", reward.Name),
+			CreatedAt:       time.Now(),
+		}
+		if err := tx.Create(&trans).Error; err != nil {
+			return nil, err
+		}
+		if err := tx.Model(&model.Member{}).Where("id = ?", member.ID).
+			Update(col, gorm.Expr(col+" + ?", amount)).Error; err != nil {
+			return nil, err
+		}
+		if col == "balance" {
+			member.Balance = after
+		} else {
+			member.BonusBalance = after
+		}
+		return &LogAuditRequest{
+			Action:     "apply_reward",
+			EntityType: "member",
+			EntityID:   member.ID,
+			Metadata: map[string]interface{}{
+				"reward_type":      reward.RewardType,
+				"amount":           amount,
+				"balance_before":   before,
+				"balance_after":    after,
+				"transaction_type": txType,
+			},
+		}, nil
 	case "free_minutes":
 		// Hệ thống chưa có ví phút miễn phí để tiêu. Bản cũ cộng số phút vào
 		// total_played_hours — vừa sai đơn vị (phút vào cột giờ), vừa sai bản
@@ -784,18 +953,19 @@ func (s *PromotionService) applyReward(memberID string, reward *model.LuckySpinR
 		//
 		// Ghi nhận rõ là chưa hỗ trợ, hơn là ghi sai một cách âm thầm.
 		if minutes, ok := valueMap["minutes"].(float64); ok {
-			s.audit.Log(&LogAuditRequest{
+			return &LogAuditRequest{
 				Action:     "apply_reward_unsupported",
 				EntityType: "member",
-				EntityID:   memberID,
+				EntityID:   member.ID,
 				Metadata: map[string]interface{}{
 					"reward_type": "free_minutes",
 					"minutes":     int(minutes),
 					"reason":      "chưa có ví phút miễn phí; phần thưởng không được cấp",
 				},
-			})
+			}, nil
 		}
 	}
+	return nil, nil
 }
 
 func (s *PromotionService) promotionToResponse(promo *model.Promotion) PromotionResponse {

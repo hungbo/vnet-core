@@ -52,6 +52,17 @@ func (h *SettingsHandler) GetByGroup(c *gin.Context) {
 	response.Success(c, settings)
 }
 
+// @Summary List payment methods
+// @Description Danh sách phương thức thanh toán ở Cài đặt > Thanh toán (kể cả mục đang tắt)
+// @Tags Settings
+// @Produce json
+// @Success 200 {object} response.Response{data=[]service.PaymentMethodOption}
+// @Router /api/payment-methods [get]
+// @Security BearerAuth
+func (h *SettingsHandler) PaymentMethods(c *gin.Context) {
+	response.Success(c, h.svc.PaymentMethods())
+}
+
 // @Summary Update settings
 // @Description Update settings by group
 // @Tags Settings

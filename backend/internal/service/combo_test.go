@@ -62,7 +62,7 @@ func TestComboService_Create(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "Gaming 3h", result.Name)
-	assert.Equal(t, "GAMIN", result.MemberPrefix)
+	assert.Equal(t, "Gaming3h", result.MemberPrefix)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -158,6 +158,9 @@ func TestComboService_Purchase_CreatesMember(t *testing.T) {
 		WithArgs("c1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "member_prefix", "member_count"}).
 			AddRow("c1", "Gaming 3h", "GAMIN", 0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "members" WHERE username = \$1`).
+		WithArgs("Gaming3h1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery(`INSERT INTO "members"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("m1", testNow, testNow))
 	mock.ExpectExec(`UPDATE "combos" SET`).
@@ -186,7 +189,15 @@ func TestComboService_Purchase_CreatesMember(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "p1", result.ID)
 	assert.Equal(t, int64(50000), result.Price)
+	assert.Regexp(t, `^\d{6}$`, result.GeneratedPassword)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGenerateMemberPrefix(t *testing.T) {
+	assert.Equal(t, "GoiDem5h", generateMemberPrefix("Gói Đêm 5h"))
+	assert.Equal(t, "Gaming3h", generateMemberPrefix("Gaming 3h"))
+	assert.Equal(t, "Goi", generateMemberPrefix("  "))
+	assert.Equal(t, "ComboSieuTietKiemThu", generateMemberPrefix("Combo Siêu Tiết Kiệm Thứ Bảy"))
 }
 
 func TestComboService_List_WithSearch(t *testing.T) {
@@ -262,7 +273,7 @@ func TestComboService_Create_Prepaid(t *testing.T) {
 	assert.Equal(t, "Prepaid 2h", result.Name)
 	assert.Equal(t, "prepaid", result.Type)
 	assert.Equal(t, 120, result.TotalMinutes)
-	assert.Equal(t, "PREPA", result.MemberPrefix)
+	assert.Equal(t, "Prepaid2h", result.MemberPrefix)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -325,7 +336,7 @@ func TestComboService_Update_Partial(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "type", "created_at"}).
 			AddRow("c1", "Gaming 3h", int64(60000), "fixed_slot", testNow))
 
-	result, err := svc.Update("c1", &UpdateComboRequest{Price: 60000})
+	result, err := svc.Update("c1", &UpdateComboRequest{Price: int64Ptr(60000)})
 	require.NoError(t, err)
 	assert.Equal(t, int64(60000), result.Price)
 	assert.Equal(t, "Gaming 3h", result.Name)

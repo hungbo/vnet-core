@@ -109,16 +109,20 @@ type CreateUserRequest struct {
 	UserPhone  string   `json:"userPhone"`
 	UserEmail  string   `json:"userEmail"`
 	UserRoles  []string `json:"userRoles"`
+	// "2" = tạo ở trạng thái vô hiệu. Form gửi trường này từ đầu nhưng request
+	// không nhận, nên người dùng mới luôn ở trạng thái hoạt động.
+	Status string `json:"status"`
 }
 
+// Các trường chữ là con trỏ: không gửi = giữ nguyên, gửi "" = xoá trống.
 type UpdateUserRequest struct {
 	ID         string   `json:"id"`
 	UserName   string   `json:"userName"`
 	Password   string   `json:"password,omitempty"`
-	NickName   string   `json:"nickName"`
-	UserGender string   `json:"userGender"`
-	UserPhone  string   `json:"userPhone"`
-	UserEmail  string   `json:"userEmail"`
+	NickName   *string  `json:"nickName"`
+	UserGender *string  `json:"userGender"`
+	UserPhone  *string  `json:"userPhone"`
+	UserEmail  *string  `json:"userEmail"`
 	UserRoles  []string `json:"userRoles"`
 	Status     string   `json:"status"`
 }
@@ -133,8 +137,9 @@ type UpdateRoleRequest struct {
 	ID       string `json:"id"`
 	RoleName string `json:"roleName"`
 	RoleCode string `json:"roleCode"`
-	RoleDesc string `json:"roleDesc"`
-	Status   string `json:"status"`
+	// Con trỏ để xoá trống được mô tả; chuỗi thường thì "" bị coi là "không gửi".
+	RoleDesc *string `json:"roleDesc"`
+	Status   string  `json:"status"`
 }
 
 type MenuManageResponse struct {
@@ -179,6 +184,7 @@ func toUserManageResponse(user *model.User) *UserManageResponse {
 	resp := &UserManageResponse{
 		ID:         user.ID,
 		UserName:   user.Username,
+		UserGender: user.Gender,
 		NickName:   user.FullName,
 		UserPhone:  user.Phone,
 		UserEmail:  user.Email,
@@ -230,6 +236,9 @@ func (s *SystemManageService) ListUsers(params *UserListParams) (*PaginatedRecor
 		if params.UserEmail != "" {
 			query = query.Where("email ILIKE ?", "%"+params.UserEmail+"%")
 		}
+	}
+	if params.UserGender != "" {
+		query = query.Where("gender = ?", params.UserGender)
 	}
 	if params.Status == "1" {
 		query = query.Where("is_active = ?", true)
@@ -301,6 +310,7 @@ func (s *SystemManageService) CreateUser(req *CreateUserRequest) (*UserManageRes
 		FullName:     req.NickName,
 		Email:        req.UserEmail,
 		Phone:        req.UserPhone,
+		Gender:       req.UserGender,
 		IsActive:     true,
 	}
 
@@ -308,6 +318,14 @@ func (s *SystemManageService) CreateUser(req *CreateUserRequest) (*UserManageRes
 	if err := tx.Create(&user).Error; err != nil {
 		tx.Rollback()
 		return nil, err
+	}
+	// is_active có `default:true` nên không thể INSERT false; ghi lại trong
+	// cùng giao dịch khi form chọn "Vô hiệu".
+	if req.Status == "2" {
+		if err := tx.Model(&user).Update("is_active", false).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 	}
 
 	if len(req.UserRoles) > 0 {
@@ -349,14 +367,17 @@ func (s *SystemManageService) UpdateUser(req *UpdateUserRequest) (*UserManageRes
 	if req.UserName != "" {
 		updates["username"] = req.UserName
 	}
-	if req.NickName != "" {
-		updates["full_name"] = req.NickName
+	if req.NickName != nil {
+		updates["full_name"] = *req.NickName
 	}
-	if req.UserPhone != "" {
-		updates["phone"] = req.UserPhone
+	if req.UserGender != nil {
+		updates["gender"] = *req.UserGender
 	}
-	if req.UserEmail != "" {
-		updates["email"] = req.UserEmail
+	if req.UserPhone != nil {
+		updates["phone"] = *req.UserPhone
+	}
+	if req.UserEmail != nil {
+		updates["email"] = *req.UserEmail
 	}
 	if req.Password != "" {
 		hash, err := utils.HashPassword(req.Password)
@@ -565,8 +586,8 @@ func (s *SystemManageService) UpdateRole(req *UpdateRoleRequest) (*RoleManageRes
 	if req.RoleName != "" {
 		updates["name"] = req.RoleName
 	}
-	if req.RoleDesc != "" {
-		updates["description"] = req.RoleDesc
+	if req.RoleDesc != nil {
+		updates["description"] = *req.RoleDesc
 	}
 
 	if len(updates) > 0 {
@@ -687,11 +708,11 @@ func (s *SystemManageService) GetMenuList(params *SystemListParams) (*PaginatedR
 				{Name: "vnet_member-groups", Path: "/vnet/member-groups", Icon: "carbon:user-multiple", Order: 25, I18nKey: "route.vnet_member-groups"},
 				{Name: "vnet_notifications", Path: "/vnet/notifications", Icon: "ic:round-notifications", Order: 26, I18nKey: "route.vnet_notifications"},
 				{Name: "vnet_printers", Path: "/vnet/printers", Icon: "ic:round-print", Order: 27, I18nKey: "route.vnet_printers"},
-				{Name: "vnet_cards", Path: "/vnet/cards", Icon: "ic:round-card-giftcard", Order: 28, I18nKey: "route.vnet_cards"},
 				{Name: "vnet_inventory-counts", Path: "/vnet/inventory-counts", Icon: "ic:round-fact-check", Order: 29, I18nKey: "route.vnet_inventory-counts"},
 				{Name: "vnet_attendance", Path: "/vnet/attendance", Icon: "ic:round-event-available", Order: 30, I18nKey: "route.vnet_attendance"},
 				{Name: "vnet_website-blocking", Path: "/vnet/website-blocking", Icon: "ic:round-block", Order: 31, I18nKey: "route.vnet_website-blocking"},
 				{Name: "vnet_app-updates", Path: "/vnet/app-updates", Icon: "ic:round-system-update", Order: 32, I18nKey: "route.vnet_app-updates"},
+				{Name: "vnet_games", Path: "/vnet/games", Icon: "ic:round-sports-esports", Order: 36, I18nKey: "route.vnet_games"},
 				{Name: "vnet_curfew", Path: "/vnet/curfew", Icon: "ic:round-nightlight", Order: 33, I18nKey: "route.vnet_curfew"},
 				{Name: "vnet_feedback", Path: "/vnet/feedback", Icon: "ic:round-star-rate", Order: 35, I18nKey: "route.vnet_feedback"},
 				{Name: "vnet_machine-assets", Path: "/vnet/machine-assets", Icon: "ic:round-inventory-2", Order: 34, I18nKey: "route.vnet_machine-assets"},
@@ -797,6 +818,7 @@ func (s *SystemManageService) GetAllPages() ([]string, error) {
 		"vnet_attendance",
 		"vnet_website-blocking",
 		"vnet_app-updates",
+		"vnet_games",
 		"vnet_curfew",
 		"vnet_feedback",
 		"vnet_machine-assets",

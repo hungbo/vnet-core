@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/vnet/core/internal/model"
@@ -326,6 +327,161 @@ func (s *ReceiptService) renderStationTicket(order *model.Order, items []model.O
 	d.separator()
 	d.cut()
 	return d
+}
+
+// --- phiếu mua combo -------------------------------------------------------
+
+// PrintComboPurchase in phiếu cho khách vừa mua combo: tài khoản, mật khẩu và
+// chi tiết gói. Mật khẩu chỉ lưu dạng băm nên máy chủ không tự đọc lại được —
+// quầy gửi lại đúng mật khẩu vừa nhận từ lúc mua. Rỗng thì phiếu bỏ dòng mật khẩu.
+func (s *ReceiptService) PrintComboPurchase(purchaseID, password, printerID, actorID string) (*PrintResult, error) {
+	var purchase model.ComboPurchase
+	if err := s.db.First(&purchase, "id = ?", purchaseID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("không tìm thấy lượt mua")
+		}
+		return nil, err
+	}
+	// Unscoped: gói đã xoá mềm vẫn phải in lại được phiếu cho người đã mua.
+	var combo model.Combo
+	if err := s.db.Unscoped().First(&combo, "id = ?", purchase.ComboID).Error; err != nil {
+		return nil, errors.New("không tìm thấy gói cước")
+	}
+	var member model.Member
+	if err := s.db.Unscoped().Select("username").First(&member, "id = ?", purchase.MemberID).Error; err != nil {
+		return nil, errors.New("không tìm thấy hội viên")
+	}
+
+	printer, err := s.pickReceiptPrinter(printerID)
+	if err != nil {
+		return nil, err
+	}
+
+	doc := renderComboTicket(s.shopInfo(), &combo, &purchase, member.Username, password, printer)
+	res := &PrintResult{Jobs: []PrintJobResult{s.send(printer, doc)}}
+
+	// Không ghi mật khẩu vào nhật ký.
+	var actor *string
+	if actorID != "" {
+		actor = &actorID
+	}
+	job := res.Jobs[0]
+	s.audit.Log(&LogAuditRequest{
+		Action:     "print_combo_receipt",
+		EntityType: "combo_purchase",
+		EntityID:   purchaseID,
+		UserID:     actor,
+		Metadata: map[string]interface{}{
+			"printer": job.PrinterName,
+			"bytes":   job.Bytes,
+			"error":   job.Error,
+			"failed":  res.Failed(),
+		},
+	})
+	return res, nil
+}
+
+var weekdayShort = [...]string{"CN", "T2", "T3", "T4", "T5", "T6", "T7"}
+
+func renderComboTicket(shop shopInfo, combo *model.Combo, purchase *model.ComboPurchase, username, password string, p *model.PrinterConfig) *escposDoc {
+	d := newESCPOSDoc(p.CharsPerLine, p.Encoding)
+	d.init(p.CodePage)
+
+	d.align(1)
+	d.bold(true)
+	d.double(true)
+	d.line(shop.Name)
+	d.double(false)
+	d.bold(false)
+	if shop.Address != "" {
+		d.wrap(shop.Address, 0)
+	}
+	if shop.Phone != "" {
+		d.line("DT: " + shop.Phone)
+	}
+	if shop.TaxCode != "" {
+		d.line("MST: " + shop.TaxCode)
+	}
+	d.feed(1)
+	d.bold(true)
+	d.line("HOA DON MUA COMBO")
+	d.bold(false)
+	d.align(0)
+	d.separator()
+
+	d.twoCol("Ngay:", purchase.CreatedAt.Format("02/01/2006 15:04"))
+	d.separator()
+
+	// Tài khoản và mật khẩu in to ở giữa: khách cầm phiếu ra máy gõ theo.
+	d.align(1)
+	d.line("TAI KHOAN")
+	d.bold(true)
+	d.double(true)
+	d.line(username)
+	d.double(false)
+	d.bold(false)
+	if password != "" {
+		d.line("MAT KHAU")
+		d.bold(true)
+		d.double(true)
+		d.line(password)
+		d.double(false)
+		d.bold(false)
+	}
+	d.align(0)
+	d.separator()
+
+	d.bold(true)
+	d.wrap(combo.Name, 0)
+	d.bold(false)
+	if combo.Description != "" {
+		d.wrap(combo.Description, 2)
+	}
+	if combo.Type == "fixed_slot" {
+		d.twoCol("Khung gio", clockHHMM(clockValue(combo.SlotStart))+" - "+clockHHMM(clockValue(combo.SlotEnd)))
+	} else {
+		d.twoCol("So gio choi", formatMinutes(combo.TotalMinutes))
+	}
+	if len(combo.ApplyDays) > 0 && len(combo.ApplyDays) < 7 {
+		days := make([]string, 0, len(combo.ApplyDays))
+		for _, v := range combo.ApplyDays {
+			if v >= 0 && v < len(weekdayShort) {
+				days = append(days, weekdayShort[v])
+			}
+		}
+		d.twoCol("Ngay ap dung", strings.Join(days, ","))
+	}
+	if purchase.ExpiresAt != nil {
+		d.twoCol("Han dung", purchase.ExpiresAt.Format("02/01/2006"))
+	}
+	d.separator()
+
+	d.bold(true)
+	d.double(true)
+	d.twoCol("TONG", formatMoney(purchase.Price))
+	d.double(false)
+	d.bold(false)
+	if purchase.PaymentMethod != "" {
+		d.twoCol("Thanh toan", paymentLabel(purchase.PaymentMethod))
+	}
+
+	d.feed(1)
+	d.align(1)
+	d.wrap(shop.Footer, 0)
+	d.align(0)
+	d.cut()
+	return d
+}
+
+// formatMinutes: 90 -> "1h30", 120 -> "2h", 45 -> "45 phut".
+func formatMinutes(m int) string {
+	switch {
+	case m < 60:
+		return fmt.Sprintf("%d phut", m)
+	case m%60 == 0:
+		return fmt.Sprintf("%dh", m/60)
+	}
+	return fmt.Sprintf("%dh%02d", m/60, m%60)
 }
 
 // --- gửi xuống máy in ------------------------------------------------------

@@ -2,11 +2,13 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/vnet/core/internal/model"
+	"github.com/vnet/core/pkg/utils"
 
 	"gorm.io/gorm"
 )
@@ -155,6 +157,51 @@ func BestPromotionForOrder(tx *gorm.DB, pctx PromotionContext) *AppliedPromotion
 	return best
 }
 
+// EvaluatePromotion xét lại ĐÚNG MỘT khuyến mãi cho một đơn, hoặc nil nếu đơn
+// không còn đủ điều kiện.
+//
+// Dùng khi tách đơn: khuyến mãi đã được chốt lúc tạo đơn, nên ở đây KHÔNG lọc
+// is_active / valid_from / valid_to — quán tắt khuyến mãi sau khi khách đã đặt
+// món không được làm mất phần giảm khách đã được hứa. Nhưng điều kiện theo giỏ
+// hàng (tiền tối thiểu, số lượng, danh mục) thì phải xét lại cho từng nửa: tách
+// một đơn 200k "giảm 20k cho đơn từ 150k" thành hai đơn 100k mà vẫn giữ giảm
+// trên cả hai là cho không tiền.
+func EvaluatePromotion(tx *gorm.DB, promotionID string, pctx PromotionContext) *AppliedPromotion {
+	if tx == nil || promotionID == "" {
+		return nil
+	}
+	var p model.Promotion
+	if err := tx.Where("id = ?", promotionID).First(&p).Error; err != nil {
+		return nil
+	}
+	var conds []model.PromotionCondition
+	var rewards []model.PromotionReward
+	tx.Where("promotion_id = ?", promotionID).Find(&conds)
+	tx.Where("promotion_id = ?", promotionID).Find(&rewards)
+
+	lookupGroup := func() string {
+		if pctx.MemberID == "" {
+			return ""
+		}
+		var m model.Member
+		if err := tx.Select("group_id").First(&m, "id = ?", pctx.MemberID).Error; err == nil && m.GroupID != nil {
+			return *m.GroupID
+		}
+		return ""
+	}
+	if !conditionsPass(conds, pctx, lookupGroup) {
+		return nil
+	}
+	discount := discountFromRewards(rewards, pctx.Amount)
+	if discount <= 0 {
+		return nil
+	}
+	if discount > pctx.Amount {
+		discount = pctx.Amount
+	}
+	return &AppliedPromotion{PromotionID: p.ID, Name: p.Name, Discount: discount}
+}
+
 // conditionsPass: mọi điều kiện phải đúng (AND). Nhiều giá trị trong cùng một
 // điều kiện là OR — "thứ 7 hoặc chủ nhật" là một điều kiện, không phải hai.
 func conditionsPass(conds []model.PromotionCondition, pctx PromotionContext, memberGroup func() string) bool {
@@ -192,7 +239,10 @@ func conditionPasses(key string, raw interface{}, pctx PromotionContext, memberG
 		if len(days) == 0 {
 			return false
 		}
-		today := float64(pctx.At.Weekday())
+		// Thứ và giờ phải tính theo giờ quán (Việt Nam), không theo múi giờ của
+		// máy chủ: máy chủ chạy UTC thì "thứ 7 từ 18:00" lệch 7 tiếng, khuyến
+		// mãi tối thứ 7 bắt đầu từ 1 giờ sáng Chủ nhật.
+		today := float64(pctx.At.In(utils.VietnamLocation()).Weekday())
 		for _, d := range days {
 			if d == today {
 				return true
@@ -212,7 +262,8 @@ func conditionPasses(key string, raw interface{}, pctx PromotionContext, memberG
 		}
 		// withinCurfew là so sánh khung giờ trong ngày có xử lý vắt qua nửa
 		// đêm — đúng thứ cần ở đây, dù tên nó gắn với giới nghiêm.
-		return withinCurfew(pctx.At.Format("15:04"), normalizeClock(from), normalizeClock(to))
+		// Giờ quán, cùng lý do với day_of_week ở trên.
+		return withinCurfew(pctx.At.In(utils.VietnamLocation()).Format("15:04"), normalizeClock(from), normalizeClock(to))
 
 	case CondProductCategory:
 		want := asStringSet(raw)
@@ -346,7 +397,8 @@ func normalizeClock(s string) string {
 	return s
 }
 
-// validateRuleRequest gom khoá từ payload rồi giao cho ValidatePromotionRules.
+// validateRuleRequest gom khoá từ payload rồi giao cho ValidatePromotionRules,
+// sau đó kiểm giá trị của từng dòng.
 func validateRuleRequest(conds []CreatePromotionCondition, rewards []CreatePromotionReward) error {
 	condKeys := make([]string, len(conds))
 	for i, c := range conds {
@@ -356,5 +408,96 @@ func validateRuleRequest(conds []CreatePromotionCondition, rewards []CreatePromo
 	for i, r := range rewards {
 		rewardTypes[i] = r.RewardType
 	}
-	return ValidatePromotionRules(condKeys, rewardTypes)
+	if err := ValidatePromotionRules(condKeys, rewardTypes); err != nil {
+		return err
+	}
+	for _, c := range conds {
+		if err := validateConditionValue(c.ConditionKey, c.ConditionValue); err != nil {
+			return err
+		}
+	}
+	for _, r := range rewards {
+		if err := validateRewardValue(r.RewardType, r.RewardValue); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateConditionValue chặn giá trị mà bộ máy sẽ đọc ra "không áp" — lưu
+// được nhưng không bao giờ chạy là lỗi khó thấy nhất với người tạo khuyến mãi.
+func validateConditionValue(key string, value json.RawMessage) error {
+	var raw interface{}
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return fmt.Errorf("giá trị điều kiện %q không phải JSON hợp lệ", key)
+	}
+	switch key {
+	case CondMinAmount, CondMinQuantity:
+		if n, ok := asNumber(raw); !ok || n <= 0 {
+			return fmt.Errorf("điều kiện %q phải là một số lớn hơn 0", key)
+		}
+	case CondDayOfWeek:
+		days := asNumberSet(raw)
+		if len(days) == 0 {
+			return errors.New("điều kiện day_of_week phải là số 0–6 hoặc danh sách, VD [0,6] (0 = Chủ nhật)")
+		}
+		for _, d := range days {
+			if d < 0 || d > 6 || d != float64(int(d)) {
+				return errors.New("điều kiện day_of_week chỉ nhận số nguyên 0–6 (0 = Chủ nhật)")
+			}
+		}
+	case CondTimeRange:
+		m, _ := raw.(map[string]interface{})
+		from, _ := m["from"].(string)
+		to, _ := m["to"].(string)
+		if !gioHopLe(from) || !gioHopLe(to) {
+			return errors.New(`điều kiện time_range phải có dạng {"from":"18:00","to":"22:00"}`)
+		}
+	case CondMemberGroup, CondProductCategory:
+		if len(asStringSet(raw)) == 0 {
+			return fmt.Errorf("điều kiện %q phải là một mã hoặc danh sách mã", key)
+		}
+	}
+	return nil
+}
+
+// validateRewardValue: thưởng giảm giá phải là object có đúng khoá bộ máy đọc.
+// Gõ "10" vào ô giảm % lưu được nhưng discountFromRewards đọc ra 0 — khuyến
+// mãi chết lặng lẽ.
+func validateRewardValue(rewardType string, value json.RawMessage) error {
+	var v map[string]interface{}
+	if err := json.Unmarshal(value, &v); err != nil {
+		switch rewardType {
+		case RewardDiscountPercent:
+			return errors.New(`thưởng giảm % phải có dạng {"percent":10,"max_discount":50000}`)
+		default:
+			return errors.New(`thưởng giảm tiền phải có dạng {"amount":20000}`)
+		}
+	}
+	switch rewardType {
+	case RewardDiscountPercent:
+		pct, ok := asNumber(v["percent"])
+		if !ok || pct <= 0 || pct > 100 {
+			return errors.New("phần trăm giảm phải lớn hơn 0 và không quá 100")
+		}
+		if raw, has := v["max_discount"]; has && raw != nil {
+			if maxD, ok := asNumber(raw); !ok || maxD <= 0 {
+				return errors.New("mức giảm tối đa (max_discount) phải là số lớn hơn 0")
+			}
+		}
+	case RewardDiscountAmount:
+		if a, ok := asNumber(v["amount"]); !ok || a <= 0 {
+			return errors.New("số tiền giảm phải là số lớn hơn 0")
+		}
+	}
+	return nil
+}
+
+// gioHopLe nhận "HH:MM" hoặc "HH:MM:SS" — đúng hai dạng normalizeClock xử lý.
+func gioHopLe(s string) bool {
+	if _, err := time.Parse("15:04", s); err == nil {
+		return true
+	}
+	_, err := time.Parse("15:04:05", s)
+	return err == nil
 }

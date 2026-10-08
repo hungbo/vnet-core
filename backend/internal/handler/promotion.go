@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/response"
@@ -244,6 +246,7 @@ func (h *PromotionHandler) DeleteLuckySpinReward(c *gin.Context) {
 // @Param request body service.SpinRequest true "Spin details"
 // @Success 200 {object} response.Response{data=service.SpinResponse}
 // @Failure 400 {object} response.Response
+// @Failure 404 {object} response.Response "hội viên không tồn tại"
 // @Router /lucky-spin/spin [post]
 // @Security BearerAuth
 func (h *PromotionHandler) Spin(c *gin.Context) {
@@ -255,9 +258,32 @@ func (h *PromotionHandler) Spin(c *gin.Context) {
 
 	result, err := h.svc.Spin(&req)
 	if err != nil {
+		// Hội viên không tồn tại là 404, không phải "quay trúng" như bản cũ.
+		if errors.Is(err, service.ErrSpinMemberNotFound) {
+			response.NotFound(c, err.Error())
+			return
+		}
 		response.BadRequest(c, err.Error())
 		return
 	}
 
+	response.Success(c, result)
+}
+
+// SimulateSpin quay thử không ghi gì
+// @Summary Simulate a lucky spin (dry run)
+// @Description Pick a reward by the configured odds without logging the spin or crediting any member. Used by the admin "test spin" button.
+// @Tags LuckySpin
+// @Produce json
+// @Success 200 {object} response.Response{data=service.SpinResponse}
+// @Failure 500 {object} response.Response
+// @Router /lucky-spin/simulate [post]
+// @Security BearerAuth
+func (h *PromotionHandler) SimulateSpin(c *gin.Context) {
+	result, err := h.svc.SimulateSpin()
+	if err != nil {
+		response.InternalError(c, "Không quay thử được")
+		return
+	}
 	response.Success(c, result)
 }

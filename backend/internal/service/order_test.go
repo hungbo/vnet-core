@@ -7,6 +7,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
 )
 
@@ -16,8 +17,8 @@ func TestOrderService_Create_NoStock(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("prod-1", 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail"}).
-			AddRow("prod-1", "Coke", int64(10000), false, true))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail", "is_active"}).
+			AddRow("prod-1", "Coke", int64(10000), false, true, true))
 
 	mock.ExpectBegin()
 	// Mã đơn nay được sinh trong giao dịch, dưới khoá tư vấn.
@@ -42,14 +43,32 @@ func TestOrderService_Create_NoStock(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Món ngưng bán vẫn có thể nằm trong giỏ của máy trạm mở thực đơn từ trước;
+// backend phải chặn chứ không chỉ trông vào việc ẩn khỏi thực đơn.
+func TestOrderService_Create_NgungBan(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
+		WithArgs("prod-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail", "is_active"}).
+			AddRow("prod-1", "Coke", int64(10000), false, true, false))
+
+	_, err := svc.Create(CreateOrderRequest{
+		Items: []OrderItemRequest{{ProductID: "prod-1", Quantity: 1}},
+	}, "user-1")
+	require.EqualError(t, err, "sản phẩm Coke đang ngưng bán")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestOrderService_Create_WithBOMAndOptions(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
 
 	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("prod-1", 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail"}).
-			AddRow("prod-1", "Coffee", int64(30000), true, true))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail", "is_active"}).
+			AddRow("prod-1", "Coffee", int64(30000), true, true, true))
 
 	mock.ExpectBegin()
 	// Mã đơn nay được sinh trong giao dịch, dưới khoá tư vấn.
@@ -83,8 +102,8 @@ func TestOrderService_Create_WithOptions(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("prod-1", 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail"}).
-			AddRow("prod-1", "Sandwich", int64(25000), true, true))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail", "is_active"}).
+			AddRow("prod-1", "Sandwich", int64(25000), true, true, true))
 
 	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE id = \$1 AND product_id = \$2 ORDER BY "product_options"."id" LIMIT \$3`).
 		WithArgs(optionID, "prod-1", 1).
@@ -149,8 +168,8 @@ func TestOrderService_Create_WithOptionsAndBOM(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
 		WithArgs("prod-1", 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail"}).
-			AddRow("prod-1", "Coffee", int64(25000), true, true))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail", "is_active"}).
+			AddRow("prod-1", "Coffee", int64(25000), true, true, true))
 
 	mock.ExpectQuery(`SELECT \* FROM "product_options" WHERE id = \$1 AND product_id = \$2 ORDER BY "product_options"."id" LIMIT \$3`).
 		WithArgs(optionID, "prod-1", 1).
@@ -657,4 +676,179 @@ func TestOrderService_UpdateStatus_CancelRejectsAlreadyCancelled(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "đã được xử lý")
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Máy trạm chỉ được thấy đơn của chính hội viên đang đăng nhập: truy vấn phải
+// lọc member_id, cả lúc đếm lẫn lúc lấy trang.
+func TestOrderService_ListByMember_LocTheoHoiVien(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "orders" WHERE member_id = \$1 AND "orders"\."deleted_at" IS NULL`).
+		WithArgs("mem-1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE member_id = \$1 AND "orders"\."deleted_at" IS NULL ORDER BY created_at desc LIMIT \$2`).
+		WithArgs("mem-1", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	items, total, _, _, err := svc.ListByMember("mem-1", pagination.Params{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total)
+	assert.Empty(t, items)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// M1: tách đơn có khuyến mãi phải tính lại giảm giá cho CẢ HAI đơn, và giữ
+// total_amount - discount_amount == final_amount trên mỗi đơn. Bản cũ ghi
+// final_amount = tổng mới cho đơn gốc (mất giảm giá nhưng discount_amount cũ
+// vẫn nằm đó) và không giảm gì ở đơn tách.
+func TestOrderService_Split_RecomputesPromotionOnBothOrders(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	// Đơn gốc 2 x 100k = 200k, khuyến mãi 10% (đủ điều kiện từ 50k) ⇒ giảm 20k.
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "total_amount", "discount_amount", "final_amount", "promotion_id", "created_at"}).
+			AddRow("o1", "ORD-00001", "pending", int64(200000), int64(20000), int64(180000), "p1", testNow))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "order_items" WHERE id = \$1 AND order_id = \$2`).
+		WithArgs("i1", "o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_id", "product_id", "product_name", "quantity", "unit_price", "subtotal"}).
+			AddRow("i1", "o1", "prod-1", "Coke", 2, int64(100000), int64(200000)))
+	mock.ExpectExec(`UPDATE "order_items" SET`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE order_code LIKE \$1`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code"}).AddRow("o1", "ORD-00001"))
+	mock.ExpectQuery(`INSERT INTO "orders"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("o2"))
+	mock.ExpectQuery(`INSERT INTO "order_items"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("i2"))
+
+	expectPromo := func() {
+		mock.ExpectQuery(`SELECT "category_id" FROM "products" WHERE \(id IN \(\$1\) AND category_id IS NOT NULL\)`).
+			WithArgs("prod-1").
+			WillReturnRows(sqlmock.NewRows([]string{"category_id"}).AddRow("cat-1"))
+		mock.ExpectQuery(`SELECT \* FROM "promotions" WHERE id = \$1`).
+			WithArgs("p1", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "is_active"}).AddRow("p1", "Giảm 10%", true))
+		mock.ExpectQuery(`SELECT \* FROM "promotion_conditions" WHERE promotion_id = \$1`).
+			WithArgs("p1").
+			WillReturnRows(sqlmock.NewRows([]string{"id", "promotion_id", "condition_key", "condition_value"}).
+				AddRow("c1", "p1", "min_amount", "50000"))
+		mock.ExpectQuery(`SELECT \* FROM "promotion_rewards" WHERE promotion_id = \$1`).
+			WithArgs("p1").
+			WillReturnRows(sqlmock.NewRows([]string{"id", "promotion_id", "reward_type", "reward_value"}).
+				AddRow("r1", "p1", "discount_percent", `{"percent":10}`))
+	}
+
+	// Đơn gốc còn lại 1 x 100k ⇒ vẫn đủ 50k ⇒ giảm 10k, còn 90k.
+	mock.ExpectQuery(`SELECT \* FROM "order_items" WHERE order_id = \$1`).
+		WithArgs("o1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_id", "product_id", "quantity", "unit_price", "subtotal"}).
+			AddRow("i1", "o1", "prod-1", 1, int64(100000), int64(100000)))
+	expectPromo()
+	// Đơn tách 1 x 100k ⇒ cũng đủ điều kiện. Hai nửa chia nhau mức giảm gốc
+	// 20k theo tỷ lệ tiền hàng: mỗi nửa 10k, tổng không vượt đơn gốc.
+	expectPromo()
+	mock.ExpectExec(`UPDATE "orders" SET "discount_amount"=\$1,"final_amount"=\$2,"promotion_id"=\$3,"total_amount"=\$4 WHERE id = \$5`).
+		WithArgs(int64(10000), int64(90000), "p1", int64(100000), "o1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	mock.ExpectExec(`UPDATE "orders" SET "discount_amount"=\$1,"final_amount"=\$2,"promotion_id"=\$3 WHERE "orders"\."deleted_at" IS NULL AND "id" = \$4`).
+		WithArgs(int64(10000), int64(90000), "p1", "o2").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	res, err := svc.Split("o1", SplitOrderRequest{Items: []SplitItem{{OrderItemID: "i1", NewQuantity: 1}}})
+	require.NoError(t, err)
+	assert.Equal(t, int64(100000), res.TotalAmount)
+	assert.Equal(t, int64(10000), res.DiscountAmount)
+	assert.Equal(t, int64(90000), res.FinalAmount)
+	assert.Equal(t, res.TotalAmount-res.DiscountAmount, res.FinalAmount)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Khuyến mãi theo nhóm hội viên: đổi đơn sang người ngoài nhóm thì mất giảm,
+// không được giữ nguyên ưu đãi của người cũ.
+func TestOrderService_Update_DoiHoiVienXetLaiKhuyenMai(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "member_id", "total_amount", "discount_amount", "final_amount", "promotion_id", "created_at"}).
+			AddRow("o1", "ORD-00001", "pending", "m1", int64(100000), int64(10000), int64(90000), "p1", testNow))
+	mock.ExpectQuery(`SELECT \* FROM "order_items" WHERE order_id = \$1`).
+		WithArgs("o1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_id", "product_id", "quantity", "unit_price", "subtotal"}).
+			AddRow("i1", "o1", "prod-1", 1, int64(100000), int64(100000)))
+	mock.ExpectQuery(`SELECT "category_id" FROM "products"`).
+		WillReturnRows(sqlmock.NewRows([]string{"category_id"}))
+	mock.ExpectQuery(`SELECT \* FROM "promotions" WHERE id = \$1`).
+		WithArgs("p1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "is_active"}).AddRow("p1", "Nhóm Vàng -10%", true))
+	mock.ExpectQuery(`SELECT \* FROM "promotion_conditions" WHERE promotion_id = \$1`).
+		WithArgs("p1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "promotion_id", "condition_key", "condition_value"}).
+			AddRow("c1", "p1", "member_group", `["g-vang"]`))
+	mock.ExpectQuery(`SELECT \* FROM "promotion_rewards" WHERE promotion_id = \$1`).
+		WithArgs("p1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "promotion_id", "reward_type", "reward_value"}).
+			AddRow("r1", "p1", "discount_percent", `{"percent":10}`))
+	mock.ExpectQuery(`SELECT "group_id" FROM "members"`).
+		WillReturnRows(sqlmock.NewRows([]string{"group_id"}).AddRow("g-thuong"))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "orders" SET "discount_amount"=\$1,"final_amount"=\$2,"member_id"=\$3,"promotion_id"=\$4,"total_amount"=\$5`).
+		WithArgs(int64(0), int64(100000), "m2", nil, int64(100000), "o1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "member_id", "total_amount", "discount_amount", "final_amount"}).
+			AddRow("o1", "ORD-00001", "pending", "m2", int64(100000), int64(0), int64(100000)))
+
+	res, err := svc.Update("o1", UpdateOrderRequest{MemberID: strPtr("m2")}, "")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), res.DiscountAmount)
+	assert.Equal(t, int64(100000), res.FinalAmount)
+	assert.Nil(t, res.PromotionID)
+}
+
+// Đơn đã hoàn thành đã chốt tiền: không đổi hội viên để khỏi lệch mức giảm.
+func TestOrderService_Update_DonDaChotKhongDoiHoiVien(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1`).
+		WithArgs("o1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "member_id", "promotion_id"}).
+			AddRow("o1", "completed", "m1", "p1"))
+	_, err := svc.Update("o1", UpdateOrderRequest{MemberID: strPtr("m2")}, "")
+	require.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Tách đơn không được nhân mức giảm: khuyến mãi giảm cố định 20k cho đơn từ
+// 50k, tách 200k thành hai nửa 100k — mỗi nửa tự đạt 20k nhưng tổng hai đơn chỉ
+// được giảm đúng 20k như đơn gốc.
+func TestChiaGiamGiaKhiTach(t *testing.T) {
+	con, moi := chiaGiamGiaKhiTach(20000, 100000, 20000, 100000, 20000)
+	assert.Equal(t, int64(20000), con+moi)
+	assert.Equal(t, int64(10000), con)
+
+	// Chia lẻ vẫn khớp từng đồng.
+	con, moi = chiaGiamGiaKhiTach(10001, 100000, 10000, 50000, 5000)
+	assert.LessOrEqual(t, con+moi, int64(10001))
+	assert.LessOrEqual(t, con, int64(10000))
+	assert.LessOrEqual(t, moi, int64(5000))
+
+	// Chỉ một nửa còn đủ điều kiện.
+	con, moi = chiaGiamGiaKhiTach(20000, 30000, 0, 170000, 20000)
+	assert.Equal(t, int64(0), con)
+	assert.Equal(t, int64(20000), moi)
+
+	// Đơn gốc không giảm thì hai nửa cũng không.
+	con, moi = chiaGiamGiaKhiTach(0, 100000, 5000, 100000, 5000)
+	assert.Equal(t, int64(0), con+moi)
 }

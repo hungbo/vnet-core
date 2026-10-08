@@ -4,11 +4,14 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 
 	"github.com/vnet/core/internal/authz"
 	"github.com/vnet/core/internal/config"
 	"github.com/vnet/core/internal/database"
 	"github.com/vnet/core/internal/model"
+	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -61,13 +64,32 @@ func runMigrations(db *gorm.DB) error {
 		&model.AppUpdate{}, &model.WebsiteBlockingRule{}, &model.WebsiteRuleMapping{},
 		&model.WebsiteBlockingSchedule{}, &model.WebsiteBlockingViolation{},
 		&model.CurfewPolicy{}, &model.LuckySpinReward{}, &model.LuckySpinLog{},
-		&model.TopupCard{}, &model.GiftCard{}, &model.GiftCardTransaction{},
 		&model.MemberTransaction{}, &model.MemberAttendance{},
 	)
 }
 
+// seedPassword là mật khẩu ban đầu của một tài khoản mẫu: SEED_PASSWORD_<TÊN>
+// (ví dụ SEED_PASSWORD_ADMIN) nếu có, rồi đến SEED_PASSWORD, cuối cùng mới là mật
+// khẩu mặc định ai cũng biết. Bộ cài Windows đặt riêng một mật khẩu ngẫu nhiên
+// cho từng tài khoản — chung một mật khẩu thì giao tài khoản staff cho thu ngân
+// cũng là giao luôn chìa khoá admin. Qua biến môi trường chứ không qua tham số
+// dòng lệnh vì tham số hiện ra cho mọi tiến trình khác trên máy.
+//
+// Chỉ có tác dụng với tài khoản được TẠO MỚI: tài khoản đã có giữ nguyên mật khẩu.
+func seedPassword(username string) string {
+	if p := os.Getenv("SEED_PASSWORD_" + strings.ToUpper(username)); p != "" {
+		return p
+	}
+	if p := os.Getenv("SEED_PASSWORD"); p != "" {
+		return p
+	}
+	return service.DefaultSeedPassword
+}
+
 func seed(db *gorm.DB) error {
-	hash, _ := utils.HashPassword("admin123")
+	adminHash, _ := utils.HashPassword(seedPassword("admin"))
+	managerHash, _ := utils.HashPassword(seedPassword("manager"))
+	staffHash, _ := utils.HashPassword(seedPassword("staff"))
 
 	adminRole := model.Role{}
 	if err := db.Where("name = ?", "owner").FirstOrCreate(&adminRole, &model.Role{
@@ -104,7 +126,7 @@ func seed(db *gorm.DB) error {
 
 	admin := model.User{
 		Username:     "admin",
-		PasswordHash: hash,
+		PasswordHash: adminHash,
 		FullName:     "Admin",
 		IsActive:     true,
 	}
@@ -114,7 +136,7 @@ func seed(db *gorm.DB) error {
 
 	manager := model.User{
 		Username:     "manager",
-		PasswordHash: hash,
+		PasswordHash: managerHash,
 		FullName:     "Manager",
 		IsActive:     true,
 	}
@@ -124,7 +146,7 @@ func seed(db *gorm.DB) error {
 
 	staff := model.User{
 		Username:     "staff",
-		PasswordHash: hash,
+		PasswordHash: staffHash,
 		FullName:     "Staff",
 		IsActive:     true,
 	}
@@ -181,8 +203,14 @@ func seed(db *gorm.DB) error {
 	}
 
 	fmt.Println("Seed data completed!")
-	fmt.Println("  Admin: admin / admin123")
-	fmt.Println("  Manager: manager / admin123")
-	fmt.Println("  Staff: staff / admin123")
+	// Mật khẩu tự đặt thì KHÔNG in ra: dòng này nằm trong install.log và nhật ký
+	// của container, ai đọc được log là đọc được mật khẩu.
+	for _, u := range []string{"admin", "manager", "staff"} {
+		if p := seedPassword(u); p == service.DefaultSeedPassword {
+			fmt.Printf("  %s / %s  (mật khẩu mặc định — đổi ngay sau khi đăng nhập)\n", u, p)
+		} else {
+			fmt.Printf("  %s  (mật khẩu đặt từ SEED_PASSWORD)\n", u)
+		}
+	}
 	return nil
 }

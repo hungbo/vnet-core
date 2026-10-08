@@ -86,13 +86,36 @@ func TestMemberService_List_SearchBoDauTiengViet(t *testing.T) {
 
 	result, total, _, _, err := svc.List(pagination.Params{
 		Page: 1, PageSize: 20, Sort: "id", Order: "desc", Search: "Nguyen Van",
-	})
+	}, "")
 
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), total)
 	require.Len(t, result, 1)
 	assert.Equal(t, "Nguyễn Văn Anh", result[0].FullName)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Lọc "hội viên thường" phải gồm cả tài khoản cũ có role rỗng/NULL, chỉ loại combo.
+func TestMemberService_List_LocTheoLoai(t *testing.T) {
+	cases := []struct{ role, where string }{
+		{MemberRoleMember, `WHERE role IS DISTINCT FROM \$1`},
+		{MemberRoleCombo, `WHERE role = \$1`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.role, func(t *testing.T) {
+			db, mock := newMockDB(t)
+			svc := NewMemberService(db, NewAuditService(db))
+			mock.ExpectQuery(`SELECT count\(\*\) FROM "members" ` + tc.where).
+				WithArgs(MemberRoleCombo).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+			mock.ExpectQuery(`SELECT \* FROM "members" ` + tc.where).
+				WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+			_, _, _, _, err := svc.List(pagination.Params{Page: 1, PageSize: 20, Sort: "id", Order: "desc"}, tc.role)
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 // Ô tìm kiếm trên trang Nhóm hội viên phải thật sự lọc.
@@ -129,5 +152,37 @@ func TestMemberService_GetGroups_KhongTuKhoaThiLayHet(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Tài khoản combo chỉ được đổi mật khẩu: nạp tiền dừng ngay sau khi đọc hội
+// viên, không ghi giao dịch nào.
+func TestMemberService_Topup_RejectsComboMember(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMemberService(db, NewAuditService(db))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "role"}).AddRow("mem-1", int64(0), "combo"))
+	mock.ExpectRollback()
+
+	_, err := svc.Topup("mem-1", &TopupRequest{Amount: 100000, PaymentMethod: "cash"}, "user-1")
+
+	require.ErrorIs(t, err, errComboMemberLocked)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestMemberService_Update_RejectsComboMember(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMemberService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "role"}).AddRow("mem-1", "combo"))
+
+	_, err := svc.Update("mem-1", &UpdateMemberRequest{})
+
+	require.ErrorIs(t, err, errComboMemberLocked)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

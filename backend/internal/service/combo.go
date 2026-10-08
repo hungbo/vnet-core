@@ -2,9 +2,9 @@ package service
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
@@ -72,21 +72,25 @@ type CreateComboRequest struct {
 	TotalMinutes int    `json:"total_minutes"`
 	ValidityDays int    `json:"validity_days"`
 	// required và min=0 mâu thuẫn nhau; gói miễn phí là hợp lệ.
-	Price    int64 `json:"price" binding:"min=0"`
-	IsActive bool  `json:"is_active"`
+	Price int64 `json:"price" binding:"min=0"`
+	// Con trỏ: không gửi = bật như trước nay; gửi false = tạo ở trạng thái tắt.
+	IsActive *bool `json:"is_active"`
 }
 
+// Description/ValidityDays/Price là con trỏ: với kiểu thường, "" và 0 trùng với
+// "không gửi" nên không xoá được mô tả, không đặt được giá 0 (gói miễn phí) hay
+// hiệu lực 0 ngày dù lúc tạo thì cho phép.
 type UpdateComboRequest struct {
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	Type         string `json:"type" binding:"omitempty,oneof=fixed_slot prepaid"`
-	SlotStart    string `json:"slot_start"`
-	SlotEnd      string `json:"slot_end"`
-	ApplyDays    []int  `json:"apply_days"`
-	TotalMinutes int    `json:"total_minutes"`
-	ValidityDays int    `json:"validity_days"`
-	Price        int64  `json:"price" binding:"min=0"`
-	IsActive     *bool  `json:"is_active"`
+	Name         string  `json:"name"`
+	Description  *string `json:"description"`
+	Type         string  `json:"type" binding:"omitempty,oneof=fixed_slot prepaid"`
+	SlotStart    string  `json:"slot_start"`
+	SlotEnd      string  `json:"slot_end"`
+	ApplyDays    []int   `json:"apply_days"`
+	TotalMinutes int     `json:"total_minutes"`
+	ValidityDays *int    `json:"validity_days" binding:"omitempty,min=0"`
+	Price        *int64  `json:"price" binding:"omitempty,min=0"`
+	IsActive     *bool   `json:"is_active"`
 }
 
 type PurchaseComboRequest struct {
@@ -198,7 +202,21 @@ func (s *ComboService) Create(req *CreateComboRequest) (*ComboResponse, error) {
 		IsActive:     true,
 	}
 
-	if err := s.db.Create(&combo).Error; err != nil {
+	// is_active có `default:true`, GORM thay false bằng default khi INSERT —
+	// ghi lại false trong cùng giao dịch (cùng cách với promotion.go).
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&combo).Error; err != nil {
+			return err
+		}
+		if req.IsActive != nil && !*req.IsActive {
+			if err := tx.Model(&combo).Update("is_active", false).Error; err != nil {
+				return err
+			}
+			combo.IsActive = false
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -235,8 +253,8 @@ func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboRespons
 		updates["name"] = req.Name
 		updates["member_prefix"] = generateMemberPrefix(req.Name)
 	}
-	if req.Description != "" {
-		updates["description"] = req.Description
+	if req.Description != nil {
+		updates["description"] = *req.Description
 	}
 	if req.Type != "" {
 		updates["type"] = req.Type
@@ -253,11 +271,11 @@ func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboRespons
 	if req.TotalMinutes > 0 {
 		updates["total_minutes"] = req.TotalMinutes
 	}
-	if req.ValidityDays > 0 {
-		updates["validity_days"] = req.ValidityDays
+	if req.ValidityDays != nil {
+		updates["validity_days"] = *req.ValidityDays
 	}
-	if req.Price > 0 {
-		updates["price"] = req.Price
+	if req.Price != nil {
+		updates["price"] = *req.Price
 	}
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
@@ -320,14 +338,19 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 	if err := s.db.Where("id = ? AND is_active = ?", comboID, true).First(&combo).Error; err != nil {
 		return nil, errors.New("không tìm thấy gói cước hoặc gói đã ngừng bán")
 	}
+	if req.PaymentMethod != PaymentMethodBalance {
+		if err := kiemTraPhuongThucThanhToan(s.db, req.PaymentMethod); err != nil {
+			return nil, err
+		}
+	}
 
 	memberID := req.MemberID
 	var generatedPassword string
 
 	if memberID == "" {
-		if combo.MemberPrefix == "" {
-			return nil, errors.New("gói cước này chưa cấu hình tiền tố hội viên")
-		}
+		// Lấy theo tên gói HIỆN TẠI chứ không theo member_prefix đã lưu: gói tạo
+		// trước khi đổi quy tắc vẫn giữ tiền tố kiểu cũ ("GAMIN") trong cột đó.
+		prefix := generateMemberPrefix(combo.Name)
 
 		tx := s.db.Begin()
 
@@ -337,12 +360,29 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 			return nil, errors.New("không tìm thấy gói cước")
 		}
 
-		newCount := lockedCombo.MemberCount + 1
-		memberCode := fmt.Sprintf("%s-%04d", combo.MemberPrefix, newCount)
+		// Bỏ qua số đã có người dùng: hai gói khác tên vẫn có thể ra cùng tiền
+		// tố ("Gói 1" số 1 và "Gói" số 11 đều là "Goi11"), và hội viên đã xoá
+		// mềm vẫn giữ tên trong chỉ mục unique.
+		newCount := lockedCombo.MemberCount
+		var memberCode string
+		for {
+			newCount++
+			memberCode = fmt.Sprintf("%s%d", prefix, newCount)
+			var taken int64
+			if err := tx.Unscoped().Model(&model.Member{}).Where("username = ?", memberCode).Count(&taken).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+			if taken == 0 {
+				break
+			}
+		}
 
-		randomBytes := make([]byte, 16)
-		rand.Read(randomBytes)
-		randomPass := hex.EncodeToString(randomBytes)
+		randomPass, err := sixDigitPassword()
+		if err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 		generatedPassword = randomPass
 		passHash, _ := utils.HashPassword(randomPass)
 
@@ -351,7 +391,10 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 			PasswordHash: passHash,
 			FullName:     req.CustomerName,
 			Phone:        req.CustomerPhone,
-			IsActive:     true,
+			// Tài khoản sinh ra theo gói: trang Hội viên lọc riêng nhóm này, và
+			// máy trạm hiện nhãn "Combo" theo role.
+			Role:     MemberRoleCombo,
+			IsActive: true,
 		}
 		if err := tx.Create(&member).Error; err != nil {
 			tx.Rollback()
@@ -484,6 +527,7 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 	})
 
 	result := purchaseToResponseWithPassword(purchase, combo.Name, generatedPassword)
+	result.MemberUsername = member.Username
 	return &result, nil
 }
 
@@ -645,6 +689,9 @@ type ComboPurchaseResponse struct {
 	ExpiresAt         *time.Time `json:"expires_at"`
 	CreatedAt         time.Time  `json:"created_at"`
 	GeneratedPassword string     `json:"generated_password,omitempty"`
+	// MemberUsername chỉ có khi vừa mua: mã tài khoản khách để quầy tra lại gói
+	// trong "Combo đã mua" lúc kích hoạt.
+	MemberUsername string `json:"member_username,omitempty"`
 }
 
 func purchaseToResponse(p model.ComboPurchase, comboName string) ComboPurchaseResponse {
@@ -672,14 +719,31 @@ func purchaseToResponseWithPassword(p model.ComboPurchase, comboName, password s
 	return r
 }
 
+// generateMemberPrefix: tên gói viết liền, bỏ dấu, giữ hoa thường —
+// "Gói Đêm 5h" -> "GoiDem5h". Tài khoản khách là tiền tố + số thứ tự.
 func generateMemberPrefix(name string) string {
-	parts := strings.Fields(name)
-	if len(parts) == 0 {
-		return "VIP"
+	var b strings.Builder
+	for _, r := range foldVietnamese(name) {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
 	}
-	prefix := strings.ToUpper(parts[0])
-	if len(prefix) > 5 {
-		prefix = prefix[:5]
+	prefix := b.String()
+	if prefix == "" {
+		return "Goi"
+	}
+	// Vừa cột member_prefix varchar(20).
+	if len(prefix) > 20 {
+		prefix = prefix[:20]
 	}
 	return prefix
+}
+
+// sixDigitPassword: mật khẩu 6 chữ số để khách gõ được ngay tại máy.
+func sixDigitPassword() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()), nil
 }

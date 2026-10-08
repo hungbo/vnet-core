@@ -37,6 +37,26 @@ func (h *OrderHandler) List(c *gin.Context) {
 	response.Paginated(c, result, total, page, pageSize)
 }
 
+// @Summary List a member's orders
+// @Description Orders placed by one member, newest first. The desktop client uses it to show the signed-in member their own orders.
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Member ID"
+// @Param page query int false "Page number"
+// @Param page_size query int false "Page size"
+// @Success 200 {object} response.Response{data=response.PaginatedData{items=[]service.OrderResponse}}
+// @Router /members/{id}/orders [get]
+func (h *OrderHandler) ListByMember(c *gin.Context) {
+	params := pagination.GetParams(c)
+	result, total, page, pageSize, err := h.svc.ListByMember(c.Param("id"), *params)
+	if err != nil {
+		response.InternalError(c, "Failed to fetch orders")
+		return
+	}
+	response.Paginated(c, result, total, page, pageSize)
+}
+
 // @Summary Get order by ID
 // @Description Get a single order by its ID
 // @Tags Orders
@@ -89,13 +109,13 @@ func (h *OrderHandler) Create(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param id path string true "Order ID"
-// @Param body body service.CreateOrderRequest true "Order update data"
+// @Param body body service.UpdateOrderRequest true "Order update data"
 // @Success 200 {object} response.Response{data=service.OrderResponse}
 // @Failure 400 {object} response.Response
 // @Router /orders/{id} [put]
 func (h *OrderHandler) Update(c *gin.Context) {
 	id := c.Param("id")
-	var req service.CreateOrderRequest
+	var req service.UpdateOrderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
 		return

@@ -91,6 +91,12 @@ func New(allowedOrigins []string) *Hub {
 	}
 }
 
+// Upgrade nâng cấp một request lên WebSocket với cùng luật kiểm Origin của hub,
+// cho những kết nối không đi qua hub (cầu nối remote desktop).
+func (h *Hub) Upgrade(w http.ResponseWriter, r *http.Request) (*websocket.Conn, error) {
+	return h.upgrader.Upgrade(w, r, nil)
+}
+
 func (h *Hub) OnConnect(cb func(client *Client) []string) {
 	h.onConnect = cb
 }

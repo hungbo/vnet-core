@@ -26,13 +26,14 @@ func NewMemberHandler(svc *service.MemberService) *MemberHandler {
 // @Param sort query string false "Sort field"
 // @Param order query string false "Sort order (asc/desc)"
 // @Param search query string false "Search keyword"
+// @Param role query string false "Loại hội viên: member (thường) hoặc combo; bỏ trống là tất cả"
 // @Success 200 {object} response.Response{data=response.PaginatedData{data=[]service.MemberResponse}}
 // @Failure 500 {object} response.Response
 // @Router /members [get]
 // @Security BearerAuth
 func (h *MemberHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
-	result, total, page, pageSize, err := h.svc.List(*params)
+	result, total, page, pageSize, err := h.svc.List(*params, c.Query("role"))
 	if err != nil {
 		response.InternalError(c, "Failed to fetch members")
 		return

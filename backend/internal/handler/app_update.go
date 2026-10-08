@@ -112,5 +112,8 @@ func (h *AppUpdateHandler) Latest(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if res.HasUpdate {
+		res.MachineInUse = h.svc.MachineInUse(c.Param("code"))
+	}
 	response.Success(c, res)
 }

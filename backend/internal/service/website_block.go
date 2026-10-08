@@ -98,7 +98,23 @@ func (s *WebsiteBlockService) CreateRule(req *CreateRuleRequest, actorID string)
 		Description: req.Description,
 		IsActive:    req.IsActive == nil || *req.IsActive,
 	}
-	if err := s.db.Create(&rule).Error; err != nil {
+	// is_active có `default:true`: GORM thay false bằng default khi INSERT, nên
+	// luật tạo ở trạng thái tắt vẫn chặn ngay. Ghi lại false trong cùng giao dịch.
+	// Chốt trước INSERT: RETURNING ghi đè rule.IsActive bằng default của cột.
+	muonBat := rule.IsActive
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&rule).Error; err != nil {
+			return err
+		}
+		if !muonBat {
+			if err := tx.Model(&rule).Update("is_active", false).Error; err != nil {
+				return err
+			}
+			rule.IsActive = false
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 	s.log("create_website_rule", rule.ID, actorID, map[string]interface{}{

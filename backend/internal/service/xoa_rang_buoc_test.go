@@ -263,8 +263,6 @@ func TestOrderService_Delete_CascadesOrderItems(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "e_invoices"`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
-	mock.ExpectQuery(`SELECT count\(\*\) FROM "gift_card_transactions"`).
-		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 
 	mock.ExpectBegin()
 	mock.ExpectExec(`DELETE FROM "order_items" WHERE order_id = \$1`).
@@ -285,10 +283,10 @@ func TestBookingService_Delete_RefusesWhenCheckedIn(t *testing.T) {
 	svc := NewBookingService(db, NewAuditService(db))
 
 	mock.ExpectQuery(`SELECT \* FROM "machine_bookings" WHERE id = \$1`).
-		WithArgs("bk1", 1).
-		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow("bk1", "checked_in"))
+		WithArgs(testUUID, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow(testUUID, "checked_in"))
 
-	err := svc.Delete("bk1")
+	err := svc.Delete(testUUID, "u1")
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrRangBuoc))
@@ -301,11 +299,11 @@ func TestBookingService_Delete_RefusesWhenDepositCharged(t *testing.T) {
 	svc := NewBookingService(db, NewAuditService(db))
 
 	mock.ExpectQuery(`SELECT \* FROM "machine_bookings" WHERE id = \$1`).
-		WithArgs("bk1", 1).
+		WithArgs(testUUID, 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "deposit_amount", "deposit_transaction_id"}).
-			AddRow("bk1", "pending", int64(100000), "tx-1"))
+			AddRow(testUUID, "pending", int64(100000), "tx-1"))
 
-	err := svc.Delete("bk1")
+	err := svc.Delete(testUUID, "u1")
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrRangBuoc))

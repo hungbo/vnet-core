@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/jwt"
@@ -39,6 +40,16 @@ func (s *AuthService) WithSessions(sess *SessionService) *AuthService {
 	return s
 }
 
+// ErrBadCredentials là lỗi "sai tên hoặc mật khẩu". Là một giá trị riêng để handler
+// đếm đúng những lượt ĐOÁN SAI cho bộ chặn dò mật khẩu, chứ không đếm cả những
+// lỗi nghiệp vụ chỉ xảy ra khi mật khẩu đã đúng (hết tiền, máy chưa khai báo…).
+var ErrBadCredentials = errors.New("sai tên đăng nhập hoặc mật khẩu")
+
+// DefaultSeedPassword là mật khẩu cmd/seed đặt cho cả ba tài khoản mẫu khi không
+// ai đặt SEED_PASSWORD. Nó nằm sẵn trong tài liệu nên ai cũng thử được: đăng nhập
+// bằng đúng mật khẩu này thì giao diện phải buộc đổi (must_change_password).
+const DefaultSeedPassword = "admin123"
+
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
@@ -48,6 +59,9 @@ type LoginResponse struct {
 	AccessToken  string        `json:"access_token"`
 	RefreshToken string        `json:"refresh_token"`
 	User         *UserResponse `json:"user"`
+	// MustChangePassword: vừa đăng nhập bằng mật khẩu mặc định của cmd/seed. Chỉ
+	// giao diện bị chặn; token vẫn gọi API bình thường để script cũ chạy tiếp.
+	MustChangePassword bool `json:"must_change_password"`
 }
 
 type UserResponse struct {
@@ -59,13 +73,19 @@ type UserResponse struct {
 	AvatarURL   string   `json:"avatar_url"`
 	Role        string   `json:"role"`
 	Permissions []string `json:"permissions"`
+	// Kind: "staff" hoặc "member", lấy từ chính token. Máy trạm dùng nó khi khôi
+	// phục đăng nhập để biết dựng màn hình nào, thay vì tin giá trị tự lưu.
+	Kind string `json:"kind,omitempty"`
+	// Luôn có mặt (không omitempty): giao diện gộp user này vào state hiện có, nên
+	// thiếu trường thì cờ true của lần đăng nhập trước còn nguyên sang tài khoản sau.
+	MustChangePassword bool `json:"must_change_password"`
 }
 
 func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 	var user model.User
 	if err := s.db.Where("username = ?", req.Username).Preload("Roles").Preload("Roles.Permissions").First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("sai tên đăng nhập hoặc mật khẩu")
+			return nil, ErrBadCredentials
 		}
 		return nil, err
 	}
@@ -75,8 +95,11 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 	}
 
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
-		return nil, errors.New("sai tên đăng nhập hoặc mật khẩu")
+		return nil, ErrBadCredentials
 	}
+	// Mật khẩu vừa gõ đã khớp băm, nên so thẳng chuỗi là đủ — không tốn thêm một
+	// lần bcrypt.
+	mustChange := req.Password == DefaultSeedPassword
 
 	var permissions []string
 	var roleName string
@@ -108,15 +131,17 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		User: &UserResponse{
-			ID:          user.ID,
-			Username:    user.Username,
-			FullName:    user.FullName,
-			Email:       user.Email,
-			Phone:       user.Phone,
-			AvatarURL:   user.AvatarURL,
-			Role:        roleName,
-			Permissions: permissions,
+			ID:                 user.ID,
+			Username:           user.Username,
+			FullName:           user.FullName,
+			Email:              user.Email,
+			Phone:              user.Phone,
+			AvatarURL:          user.AvatarURL,
+			Role:               roleName,
+			Permissions:        permissions,
+			MustChangePassword: mustChange,
 		},
+		MustChangePassword: mustChange,
 	}, nil
 }
 
@@ -228,9 +253,15 @@ func (s *AuthService) machineForLogin(code string) (*model.Machine, error) {
 	var machine model.Machine
 	if err := s.db.Where("machine_code = ?", code).First(&machine).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("máy %q chưa có trong danh sách máy — nhờ nhân viên thêm máy này trước", code)
+			return nil, fmt.Errorf("máy %q chưa được thêm vào hệ thống — báo quầy thêm máy này", code)
 		}
 		return nil, err
+	}
+	// Máy tự thêm từ nhịp tim chưa có nhóm, tức chưa có giá. Cho đăng nhập là
+	// khách ngồi chơi 0₫/giờ trên một máy chủ quán chưa kịp nhìn tới. "Thêm
+	// vào hệ thống" với chủ quán nghĩa là xếp nhóm cho nó ở trang Máy.
+	if machine.GroupID == nil || *machine.GroupID == "" {
+		return nil, fmt.Errorf("máy %q chưa được thêm vào hệ thống — báo quầy xếp nhóm cho máy này", code)
 	}
 	if !machine.IsActive {
 		return nil, fmt.Errorf("máy %q đang bị khoá", code)
@@ -296,13 +327,13 @@ func (s *AuthService) MemberLogin(req *MemberLoginRequest) (*MemberLoginResponse
 	var member model.Member
 	if err := s.db.Where("username = ? AND is_active = ?", req.Username, true).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("sai tên đăng nhập hoặc mật khẩu")
+			return nil, ErrBadCredentials
 		}
 		return nil, err
 	}
 
 	if !utils.CheckPassword(req.Password, member.PasswordHash) {
-		return nil, errors.New("sai tên đăng nhập hoặc mật khẩu")
+		return nil, ErrBadCredentials
 	}
 
 	// Đây là màn hình khoá mà KHÁCH tự gõ mật khẩu vào — cửa vào máy thật sự,
@@ -369,6 +400,17 @@ func (s *AuthService) RefreshToken(req *RefreshRequest) (*LoginResponse, error) 
 	var user model.User
 	if err := s.db.Where("id = ? AND is_active = ?", claims.UserID, true).Preload("Roles").Preload("Roles.Permissions").First(&user).Error; err != nil {
 		return nil, errors.New("không tìm thấy tài khoản hoặc tài khoản đã bị khoá")
+	}
+
+	// Đổi mật khẩu là để đóng cửa với ai đã có token: refresh token cấp trước lần đổi không còn làm mới
+	// được phiên. Không có chốt này, ai đăng nhập bằng mật khẩu mặc định trước khi chủ quán kịp đổi vẫn
+	// giữ được quyền tới hết hạn refresh token (7 ngày). IssuedAt chỉ chính xác tới giây nên không phân
+	// biệt được "trước" và "sau" trong CHÍNH giây đổi — bỏ cả token đó: kẻ chạy vòng lặp đăng nhập bằng
+	// mật khẩu cũ sẽ luôn có một token trong giây ấy, còn người đăng nhập lại ngay sau khi đổi chỉ phải
+	// đăng nhập thêm một lần. Access token đã cấp thì vẫn sống tới khi hết hạn: giao diện vừa đổi xong
+	// vẫn đang dùng nó.
+	if at := user.PasswordChangedAt; at != nil && (claims.IssuedAt == nil || !claims.IssuedAt.Time.After(at.Truncate(time.Second))) {
+		return nil, errors.New("phiên đăng nhập đã hết hạn, hãy đăng nhập lại")
 	}
 
 	var permissions []string
@@ -454,6 +496,9 @@ func (s *AuthService) GetCurrentUser(userID string) (*UserResponse, error) {
 		AvatarURL:   user.AvatarURL,
 		Role:        roleName,
 		Permissions: permissions,
+		// Tải lại trang chỉ còn token, không còn mật khẩu vừa gõ — nên phải so băm.
+		// Không có dòng này thì F5 là hộp thoại buộc đổi mật khẩu biến mất.
+		MustChangePassword: utils.CheckPassword(DefaultSeedPassword, user.PasswordHash),
 	}, nil
 }
 
@@ -482,11 +527,22 @@ func (s *AuthService) changeStaffPassword(userID string, req *ChangePasswordRequ
 		return errors.New("mật khẩu hiện tại không đúng")
 	}
 
+	// Nhân viên mở được cả trang quản trị nên chặt hơn hội viên (mã PIN 6 số của
+	// khách vẫn đi qua changeMemberPassword với min=6 ở binding).
+	if utf8.RuneCountInString(req.NewPassword) < 8 {
+		return errors.New("mật khẩu mới phải có ít nhất 8 ký tự")
+	}
+	if req.NewPassword == DefaultSeedPassword {
+		return errors.New("không được dùng lại mật khẩu mặc định — hãy chọn mật khẩu khác")
+	}
+
 	hash, err := utils.HashPassword(req.NewPassword)
 	if err != nil {
 		return err
 	}
-	if err := s.db.Model(&user).Update("password_hash", hash).Error; err != nil {
+	if err := s.db.Model(&user).Updates(map[string]interface{}{
+		"password_hash": hash, "password_changed_at": time.Now(),
+	}).Error; err != nil {
 		return err
 	}
 

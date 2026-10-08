@@ -4,7 +4,9 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
+	"github.com/vnet/core/pkg/jwt"
 	"github.com/vnet/core/pkg/response"
 )
 
@@ -23,6 +25,8 @@ func NewProductHandler(svc *service.ProductService) *ProductHandler {
 // @Produce json
 // @Security BearerAuth
 // @Param category_id query string false "Filter by category ID"
+// @Param supplier_id query string false "Filter by supplier ID"
+// @Param is_active query bool false "Filter by status (staff only; members always get active products)"
 // @Success 200 {object} response.Response{data=[]service.ProductResponse}
 // @Failure 500 {object} response.Response
 // @Router /products [get]
@@ -32,11 +36,21 @@ func (h *ProductHandler) List(c *gin.Context) {
 		v := q == "true"
 		isRetail = &v
 	}
+	// Máy trạm (token hội viên) chỉ thấy món đang bán: món ngưng bán phải biến
+	// khỏi thực đơn mà không cần cập nhật phần mềm máy trạm.
+	var isActive *bool
+	if middleware.GetKind(c) != jwt.KindStaff {
+		v := true
+		isActive = &v
+	} else if q := c.Query("is_active"); q != "" {
+		v := q == "true"
+		isActive = &v
+	}
 	search := c.Query("search")
 	page, _ := strconv.Atoi(c.Query("page"))
 	pageSize, _ := strconv.Atoi(c.Query("page_size"))
 
-	result, err := h.svc.List(isRetail, c.Query("category_id"), search, page, pageSize)
+	result, err := h.svc.List(isRetail, isActive, c.Query("category_id"), c.Query("supplier_id"), search, page, pageSize)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch products")
 		return

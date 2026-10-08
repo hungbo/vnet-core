@@ -19,7 +19,7 @@ type MachineGroup struct {
 
 type Machine struct {
 	ID            string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
-	MachineCode   string     `gorm:"type:varchar(20);not null;uniqueIndex" json:"machine_code"`
+	MachineCode   string     `gorm:"type:varchar(256);not null;uniqueIndex" json:"machine_code"`
 	GroupID       *string    `gorm:"type:uuid;index" json:"group_id"`
 	Status        string     `gorm:"type:varchar(20);default:offline;index" json:"status"`
 	CPUName       string     `gorm:"type:varchar(100)" json:"cpu_name"`
@@ -36,6 +36,19 @@ type Machine struct {
 	// Trên máy đóng băng (diskless), reboot làm giá trị này nhảy về hiện tại;
 	// phiên nào bắt đầu TRƯỚC mốc này là phiên còn sót từ trước khi reboot.
 	BootedAt *time.Time `gorm:"type:timestamptz" json:"booted_at,omitempty"`
+	// Hai dấu hiệu máy trạm tự báo để trang Máy cảnh báo chủ quán.
+	// UserIsAdmin: tài khoản Windows đang đăng nhập có quyền quản trị — khi đó
+	// người ngồi máy gỡ được mọi lớp bảo vệ của máy trạm.
+	// ExtraNetwork: card mạng xuất hiện SAU khi máy khởi động (Wi-Fi, USB phát
+	// mạng), dạng "tên (IP)". Rỗng là không có.
+	UserIsAdmin  bool   `gorm:"default:false" json:"user_is_admin"`
+	ExtraNetwork string `gorm:"type:varchar(200)" json:"extra_network"`
+	// Thiết bị ngoại vi máy trạm tự đọc lúc khởi động: màn hình, bàn phím,
+	// chuột, âm thanh. Mỗi dòng dạng "Màn hình: Samsung S24F350 (serial)".
+	Peripherals StringArray `gorm:"type:jsonb" json:"peripherals"`
+	// Mật khẩu TightVNC trên máy trạm, máy trạm nhận qua phản hồi nhịp tim.
+	// json:"-": chỉ trả riêng qua GET /machines/:id/remote-desktop.
+	VNCPassword string `gorm:"type:varchar(8)" json:"-"`
 	IsActive  bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt          time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
 	UpdatedAt          time.Time      `gorm:"default:now()" json:"updated_at,omitempty"`

@@ -50,6 +50,8 @@ type ParticipantInfo struct {
 	Name        string `json:"name"`
 	Username    string `json:"username"`
 	MachineCode string `json:"machine_code"`
+	// InSession: khách còn đang ngồi máy đó (true) hay đã trả máy (false).
+	InSession bool `json:"in_session"`
 }
 
 type MessageResponse struct {
@@ -219,11 +221,18 @@ func (s *ChatService) getParticipants(roomID string) []ParticipantInfo {
 				info.Name = member.FullName
 				info.Username = member.Username
 			}
+			// Máy khách đang ngồi; khách đã trả máy thì máy của phiên gần nhất —
+			// nhân viên đọc lại cuộc trò chuyện vẫn biết khách nhắn từ máy nào.
 			var session model.MachineSession
-			if err := s.db.Where("member_id = ? AND is_active = ?", p.ParticipantID, true).First(&session).Error; err == nil {
-				var machine model.Machine
-				if err := s.db.Select("machine_code").Where("id = ?", session.MachineID).First(&machine).Error; err == nil {
-					info.MachineCode = machine.MachineCode
+			if err := s.db.Where("member_id = ?", p.ParticipantID).
+				Order("is_active DESC, started_at DESC").First(&session).Error; err == nil {
+				info.MachineCode = session.MachineCode
+				info.InSession = session.IsActive
+				if info.MachineCode == "" {
+					var machine model.Machine
+					if err := s.db.Select("machine_code").Where("id = ?", session.MachineID).First(&machine).Error; err == nil {
+						info.MachineCode = machine.MachineCode
+					}
 				}
 			}
 		}

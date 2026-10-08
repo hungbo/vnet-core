@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/vnet/core/internal/model"
+	"github.com/vnet/core/pkg/utils"
 )
 
 // Bộ đánh giá điều kiện là logic thuần, không chạm database — kiểm trực tiếp
@@ -16,8 +17,9 @@ func cond(key, value string) model.PromotionCondition {
 }
 
 func TestPromotionConditions(t *testing.T) {
-	// Thứ tư, 2026-08-19, 19:30.
-	at := time.Date(2026, 8, 19, 19, 30, 0, 0, time.Local)
+	// Thứ tư, 2026-08-19, 19:30 giờ Việt Nam. Neo vào giờ quán, không vào
+	// time.Local: bộ máy so thứ/giờ theo giờ Việt Nam bất kể máy chủ chạy múi nào.
+	at := time.Date(2026, 8, 19, 19, 30, 0, 0, utils.VietnamLocation())
 	if at.Weekday() != time.Wednesday {
 		t.Fatalf("mốc thời gian kiểm sai: %v", at.Weekday())
 	}
@@ -164,5 +166,23 @@ func TestValidatePromotionRules(t *testing.T) {
 	}
 	if err := ValidatePromotionRules(nil, []string{"discount_percentage"}); err == nil {
 		t.Error("loại thưởng gõ sai phải bị từ chối")
+	}
+}
+
+// L7: máy chủ chạy UTC thì thứ và giờ vẫn phải tính theo giờ Việt Nam.
+func TestPromotionConditions_UseVietnamTime(t *testing.T) {
+	// 20:30 UTC thứ Ba = 03:30 sáng thứ Tư ở Việt Nam.
+	at := time.Date(2026, 8, 18, 20, 30, 0, 0, time.UTC)
+	pctx := PromotionContext{Amount: 1, At: at}
+	none := func() string { return "" }
+
+	if !conditionsPass([]model.PromotionCondition{cond(CondDayOfWeek, "3")}, pctx, none) {
+		t.Error("03:30 thứ Tư giờ Việt Nam bị tính thành thứ Ba (UTC)")
+	}
+	if !conditionsPass([]model.PromotionCondition{cond(CondTimeRange, `{"from":"03:00","to":"04:00"}`)}, pctx, none) {
+		t.Error("khung giờ phải so theo giờ Việt Nam (03:30), không phải UTC (20:30)")
+	}
+	if conditionsPass([]model.PromotionCondition{cond(CondTimeRange, `{"from":"20:00","to":"21:00"}`)}, pctx, none) {
+		t.Error("khung giờ đang so theo UTC")
 	}
 }

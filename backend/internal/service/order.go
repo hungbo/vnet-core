@@ -43,6 +43,16 @@ type CreateOrderRequest struct {
 	Items       []OrderItemRequest `json:"items"`
 }
 
+// UpdateOrderRequest: con trỏ để phân biệt "không gửi" (giữ nguyên) với ""
+// (xoá trống). Trước đây Update dùng chung CreateOrderRequest với phép kiểm
+// `!= ""`, nên xoá số bàn, ghi chú, hội viên hay máy của đơn đều không ăn.
+type UpdateOrderRequest struct {
+	MemberID    *string `json:"member_id"`
+	MachineID   *string `json:"machine_id"`
+	TableNumber *string `json:"table_number"`
+	Note        *string `json:"note"`
+}
+
 type CreateTopupOrderRequest struct {
 	MemberID    string `json:"member_id"`
 	Amount      int64  `json:"amount"`
@@ -73,9 +83,6 @@ type PayRequest struct {
 	PaymentMethod string `json:"payment_method"`
 	Amount        int64  `json:"amount"`
 	ReferenceCode string `json:"reference_code"`
-	// Chỉ dùng khi payment_method = "gift_card".
-	CardSerial string `json:"card_serial"`
-	CardSecret string `json:"card_secret"`
 }
 
 type OrderResponse struct {
@@ -131,8 +138,16 @@ type PaymentResponse struct {
 }
 
 func (s *OrderService) List(params pagination.Params) ([]OrderResponse, int64, int, int, error) {
-	query := s.db.Model(&model.Order{})
+	return s.listOrders(s.db.Model(&model.Order{}), params)
+}
 
+// ListByMember trả đơn của MỘT hội viên — máy trạm dùng để khách xem lại các
+// đơn mình đã gọi và đơn đã được duyệt chưa.
+func (s *OrderService) ListByMember(memberID string, params pagination.Params) ([]OrderResponse, int64, int, int, error) {
+	return s.listOrders(s.db.Model(&model.Order{}).Where("member_id = ?", memberID), params)
+}
+
+func (s *OrderService) listOrders(query *gorm.DB, params pagination.Params) ([]OrderResponse, int64, int, int, error) {
 	if params.OrderType != "" {
 		query = query.Where("order_type = ?", params.OrderType)
 	}
@@ -330,6 +345,9 @@ func (s *OrderService) Create(req CreateOrderRequest, createdBy string) (*OrderR
 		if !product.IsRetail {
 			return nil, fmt.Errorf("sản phẩm %s không phải hàng bán lẻ", product.Name)
 		}
+		if !product.IsActive {
+			return nil, fmt.Errorf("sản phẩm %s đang ngưng bán", product.Name)
+		}
 
 		totalQuantity += int(item.Quantity)
 		if product.CategoryID != nil {
@@ -499,7 +517,7 @@ func (s *OrderService) Create(req CreateOrderRequest, createdBy string) (*OrderR
 
 // Update sửa phần "vỏ" của đơn: số bàn, ghi chú, hội viên, máy. KHÔNG sửa món —
 // đổi món phải huỷ đơn rồi tạo lại để kho và khuyến mãi tính lại từ đầu.
-func (s *OrderService) Update(id string, req CreateOrderRequest, updatedBy string) (*OrderResponse, error) {
+func (s *OrderService) Update(id string, req UpdateOrderRequest, updatedBy string) (*OrderResponse, error) {
 	var order model.Order
 	if err := s.db.Where("id = ?", id).First(&order).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -509,17 +527,52 @@ func (s *OrderService) Update(id string, req CreateOrderRequest, updatedBy strin
 	}
 
 	updates := map[string]interface{}{}
-	if req.TableNumber != "" {
-		updates["table_number"] = req.TableNumber
+	if req.TableNumber != nil {
+		updates["table_number"] = *req.TableNumber
 	}
-	if req.Note != "" {
-		updates["note"] = req.Note
+	if req.Note != nil {
+		updates["note"] = *req.Note
 	}
-	if req.MemberID != "" {
-		updates["member_id"] = req.MemberID
+	// Hai cột uuid: "" phải ghi NULL, PostgreSQL không nhận chuỗi rỗng.
+	var hoiVienMoi *string
+	if req.MemberID != nil {
+		hoiVienMoi = uuidRongThanhNil(req.MemberID)
+		if hoiVienMoi == nil {
+			updates["member_id"] = nil
+		} else {
+			updates["member_id"] = *hoiVienMoi
+		}
 	}
-	if req.MachineID != "" {
-		updates["machine_id"] = req.MachineID
+	if req.MachineID != nil {
+		if m := uuidRongThanhNil(req.MachineID); m == nil {
+			updates["machine_id"] = nil
+		} else {
+			updates["machine_id"] = *m
+		}
+	}
+
+	// Đổi hội viên của một đơn đang được giảm giá: khuyến mãi có thể chỉ dành
+	// cho nhóm của hội viên CŨ (điều kiện member_group). Giữ nguyên mức giảm là
+	// cho người ngoài nhóm hưởng ưu đãi — xét lại đúng khuyến mãi đó với hội
+	// viên mới, không đủ điều kiện thì bỏ giảm. Đơn đã hoàn thành hoặc đã huỷ
+	// thì số tiền đã chốt, không cho đổi người.
+	// Bỏ hội viên khỏi đơn cũng là đổi người: khuyến mãi theo nhóm phải xét lại.
+	doiHoiVien := req.MemberID != nil && !cungChuoi(order.MemberID, hoiVienMoi)
+	if doiHoiVien && order.PromotionID != nil && *order.PromotionID != "" {
+		if order.Status != "pending" && order.Status != "confirmed" {
+			return nil, errors.New("đơn đã chốt tiền, không đổi hội viên được")
+		}
+		var items []model.OrderItem
+		if err := s.db.Where("order_id = ?", order.ID).Find(&items).Error; err != nil {
+			return nil, err
+		}
+		voiNguoiMoi := order
+		voiNguoiMoi.MemberID = hoiVienMoi
+		total, discount, promotionID := priceSplitHalf(s.db, items, &voiNguoiMoi)
+		updates["total_amount"] = total
+		updates["discount_amount"] = discount
+		updates["final_amount"] = total - discount
+		updates["promotion_id"] = promotionID
 	}
 
 	if len(updates) > 0 {
@@ -530,6 +583,10 @@ func (s *OrderService) Update(id string, req CreateOrderRequest, updatedBy strin
 			updates["updated_by"] = updatedBy
 		}
 		if err := s.db.Model(&order).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+		// Trả về đúng số tiền vừa ghi, không phải bản đọc trước khi sửa.
+		if err := s.db.Where("id = ?", order.ID).First(&order).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -579,7 +636,6 @@ func (s *OrderService) Delete(id string) error {
 	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
 		{Bang: &model.Payment{}, Cot: "order_id", Nhan: "phiếu thanh toán"},
 		{Bang: &model.EInvoice{}, Cot: "order_id", Nhan: "hoá đơn điện tử đã phát hành"},
-		{Bang: &model.GiftCardTransaction{}, Cot: "order_id", Nhan: "giao dịch thẻ quà tặng"},
 	}, "xoá sẽ làm lệch đối soát ca và báo cáo doanh thu — hãy dùng chức năng huỷ đơn"); err != nil {
 		return err
 	}
@@ -717,7 +773,9 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 		BalanceAfter:    balanceAfter,
 		PaymentMethod:   locked.PaymentMethod,
 		Description:     "Nạp tiền qua đơn hàng " + locked.OrderCode,
-		CreatedBy:       &updatedBy,
+		// Rỗng thì NULL: PostgreSQL từ chối "" cho cột uuid, và đường Thanh
+		// toán không biết ai bấm.
+		CreatedBy: optionalUUID(updatedBy),
 	}
 	if e := tx.Create(&transaction).Error; e != nil {
 		tx.Rollback()
@@ -737,7 +795,7 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 		Where("id = ? AND status = ?", locked.ID, "pending").
 		Updates(map[string]interface{}{
 			"status":       "completed",
-			"updated_by":   updatedBy,
+			"updated_by":   optionalUUID(updatedBy),
 			"completed_at": &now,
 		})
 	if res.Error != nil {
@@ -794,9 +852,22 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 // which is recorded but moves no balance.
 const PaymentMethodBalance = "balance"
 
-// PaymentMethodGiftCard trừ tiền từ thẻ quà tặng. Việc trừ nằm trong CHÍNH
-// giao dịch chốt đơn: trừ thẻ mà đơn không chốt được là mất tiền của khách.
-const PaymentMethodGiftCard = "gift_card"
+// baoSoDuSauThanhToan báo số dư mới về máy trạm khi đơn vừa được trả bằng số
+// dư. Gọi SAU commit. Không báo thì thanh bên của khách đứng nguyên con số cũ
+// tới lượt trừ tiền giờ kế tiếp — và không có lượt nào cả khi khách đang trong
+// phần tiền tối thiểu đã trả trước hoặc đang dùng gói cước.
+func (s *OrderService) baoSoDuSauThanhToan(order *model.Order, method string) {
+	if method == "" {
+		method = order.PaymentMethod
+	}
+	if s.hub == nil || method != PaymentMethodBalance || order.MemberID == nil || *order.MemberID == "" {
+		return
+	}
+	var m model.Member
+	if err := s.db.Select("balance", "bonus_balance").Where("id = ?", *order.MemberID).First(&m).Error; err == nil {
+		phatSoDuMoi(s.hub, *order.MemberID, m.Balance, m.BonusBalance)
+	}
+}
 
 // settleOrder performs the money side of completing an order and must be the
 // only place that does so — Pay and the completed status transition both route
@@ -976,6 +1047,7 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 		if err := tx.Commit().Error; err != nil {
 			return nil, err
 		}
+		s.baoSoDuSauThanhToan(&order, order.PaymentMethod)
 
 	case "cancelled":
 		// Nhớ trạng thái CŨ trước khi ghi: tx.Model(&order).Updates(...) của
@@ -1383,12 +1455,47 @@ func (s *OrderService) Split(id string, req SplitOrderRequest) (*OrderResponse, 
 		}
 	}
 
-	var remainingTotal int64
-	tx.Model(&model.OrderItem{}).Where("order_id = ?", id).Select("COALESCE(SUM(subtotal), 0)").Scan(&remainingTotal)
-	tx.Model(&model.Order{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"total_amount": remainingTotal,
-		"final_amount": remainingTotal,
-	})
+	// Tính lại khuyến mãi cho CẢ HAI đơn. Bản cũ ghi final_amount = tổng mới
+	// cho đơn gốc và bỏ hẳn giảm giá ở đơn tách, nên tách đơn là mất khuyến mãi
+	// (mà discount_amount cũ vẫn nằm trên đơn gốc, total - discount != final).
+	var remainingItems []model.OrderItem
+	if err := tx.Where("order_id = ?", id).Find(&remainingItems).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	remainingTotal, remainingDiscount, remainingPromo := priceSplitHalf(tx, remainingItems, &originalOrder)
+	_, newDiscount, newPromo := priceSplitHalf(tx, newOrderItems, &originalOrder)
+	remainingDiscount, newDiscount = chiaGiamGiaKhiTach(originalOrder.DiscountAmount,
+		remainingTotal, remainingDiscount, splitTotal, newDiscount)
+	if remainingDiscount == 0 {
+		remainingPromo = nil
+	}
+	if newDiscount == 0 {
+		newPromo = nil
+	}
+	if err := tx.Model(&model.Order{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"total_amount":    remainingTotal,
+		"discount_amount": remainingDiscount,
+		"final_amount":    remainingTotal - remainingDiscount,
+		"promotion_id":    remainingPromo,
+	}).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	if newDiscount > 0 {
+		newOrder.DiscountAmount = newDiscount
+		newOrder.FinalAmount = splitTotal - newDiscount
+		newOrder.PromotionID = newPromo
+		if err := tx.Model(&newOrder).Updates(map[string]interface{}{
+			"discount_amount": newDiscount,
+			"final_amount":    newOrder.FinalAmount,
+			"promotion_id":    newPromo,
+		}).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
 
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
@@ -1410,7 +1517,79 @@ func (s *OrderService) Split(id string, req SplitOrderRequest) (*OrderResponse, 
 	return &result, nil
 }
 
+// priceSplitHalf tính tổng tiền và mức giảm cho một nửa của đơn vừa tách.
+//
+// Chỉ xét lại ĐÚNG khuyến mãi đơn gốc đã áp (EvaluatePromotion), với mốc thời
+// gian là lúc tạo đơn gốc: khuyến mãi đã chốt khi khách đặt, nên tách đơn
+// không được làm mất nó chỉ vì giờ vàng đã qua — nhưng điều kiện theo giỏ hàng
+// (tiền tối thiểu, số lượng, danh mục) thì phải đúng với từng nửa. Đơn gốc
+// không có khuyến mãi thì hai nửa cũng không có: nửa nhỏ hơn không thể đủ điều
+// kiện cho thứ mà cả đơn không đủ.
+// chiaGiamGiaKhiTach giữ tổng mức giảm của hai đơn sau khi tách KHÔNG vượt mức
+// giảm của đơn gốc. Xét lại khuyến mãi cho từng nửa chỉ để biết nửa nào còn đủ
+// điều kiện: khuyến mãi giảm số tiền cố định (20.000₫) mà cho mỗi nửa giảm trọn
+// thì tách đơn là nhân đôi ưu đãi.
+//
+// Cả hai nửa đủ điều kiện: chia mức giảm gốc theo tỷ lệ tiền hàng, nửa mới
+// nhận phần còn lại cho khớp từng đồng. Chỉ một nửa đủ: nửa đó giữ mức giảm của
+// riêng nó, tối đa bằng mức gốc. Không nửa nào được giảm hơn mức nó tự đạt.
+func chiaGiamGiaKhiTach(goc, tienCon, giamCon, tienMoi, giamMoi int64) (int64, int64) {
+	if goc <= 0 {
+		return 0, 0
+	}
+	switch {
+	case giamCon > 0 && giamMoi > 0 && tienCon+tienMoi > 0:
+		phanCon := goc * tienCon / (tienCon + tienMoi)
+		phanMoi := goc - phanCon
+		return min(phanCon, giamCon), min(phanMoi, giamMoi)
+	case giamCon > 0:
+		return min(giamCon, goc), 0
+	case giamMoi > 0:
+		return 0, min(giamMoi, goc)
+	}
+	return 0, 0
+}
+
+func priceSplitHalf(tx *gorm.DB, items []model.OrderItem, original *model.Order) (total, discount int64, promotionID *string) {
+	var quantity int
+	productIDs := make([]string, 0, len(items))
+	for _, it := range items {
+		total += it.Subtotal
+		quantity += it.Quantity
+		productIDs = append(productIDs, it.ProductID)
+	}
+	if original.PromotionID == nil || *original.PromotionID == "" || len(items) == 0 {
+		return total, 0, nil
+	}
+
+	var categoryIDs []string
+	tx.Model(&model.Product{}).Where("id IN ? AND category_id IS NOT NULL", productIDs).Pluck("category_id", &categoryIDs)
+	memberID := ""
+	if original.MemberID != nil {
+		memberID = *original.MemberID
+	}
+	applied := EvaluatePromotion(tx, *original.PromotionID, PromotionContext{
+		MemberID:    memberID,
+		Amount:      total,
+		Quantity:    quantity,
+		CategoryIDs: categoryIDs,
+		At:          original.CreatedAt,
+	})
+	if applied == nil {
+		return total, 0, nil
+	}
+	return total, applied.Discount, &applied.PromotionID
+}
+
 func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
+	switch req.PaymentMethod {
+	case "", PaymentMethodBalance:
+	default:
+		if err := kiemTraPhuongThucThanhToan(s.db, req.PaymentMethod); err != nil {
+			return nil, err
+		}
+	}
+
 	tx := s.db.Begin()
 	defer func() {
 		if r := recover(); r != nil {
@@ -1443,6 +1622,32 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 		return nil, fmt.Errorf("số tiền thanh toán (%d) không khớp với giá trị đơn hàng (%d)", req.Amount, order.FinalAmount)
 	}
 
+	// Đơn NẠP TIỀN: thanh toán nghĩa là quầy đã nhận tiền của khách, và việc
+	// còn lại là CỘNG vào tài khoản. settleOrder bên dưới chỉ biết thu tiền
+	// đơn hàng, nên bản cũ đóng đơn nạp mà không cộng đồng nào — quán cầm tiền
+	// mặt còn tài khoản khách đứng yên. Đi đúng đường processTopupOrder.
+	if order.OrderType == model.OrderTypeTopup {
+		tx.Rollback()
+		if req.PaymentMethod == PaymentMethodBalance {
+			return nil, errors.New("đơn nạp tiền phải trả bằng tiền mặt hoặc chuyển khoản")
+		}
+		if req.PaymentMethod != "" && req.PaymentMethod != order.PaymentMethod {
+			if err := s.db.Model(&model.Order{}).Where("id = ?", order.ID).
+				Update("payment_method", req.PaymentMethod).Error; err != nil {
+				return nil, err
+			}
+		}
+		if err := s.processTopupOrder(&order, ""); err != nil {
+			return nil, err
+		}
+		var done model.Order
+		if err := s.db.Where("id = ?", order.ID).First(&done).Error; err != nil {
+			return nil, err
+		}
+		result := toOrderResponse(&done, s.loadOrderItems(done.ID))
+		return &result, nil
+	}
+
 	// Paying straight from pending skips the confirm step, so the stock it
 	// would have deducted has to be deducted here.
 	var khoDaDoi []string
@@ -1452,17 +1657,6 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 		// nên bút toán kho ở nhánh này chưa có tên nhân viên.
 		khoDaDoi, err = s.deductStockForOrder(tx, order.ID, order.OrderCode, "")
 		if err != nil {
-			tx.Rollback()
-			return nil, err
-		}
-	}
-
-	if req.PaymentMethod == PaymentMethodGiftCard {
-		if req.CardSerial == "" || req.CardSecret == "" {
-			tx.Rollback()
-			return nil, errors.New("thiếu seri hoặc mã thẻ quà tặng")
-		}
-		if err := spendGiftCard(tx, req.CardSerial, req.CardSecret, order.FinalAmount, order.ID); err != nil {
 			tx.Rollback()
 			return nil, err
 		}
@@ -1479,6 +1673,7 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 	}
 	phatTonKhoDoi(s.hub, khoDaDoi...)
 	phatDonDoi(s.hub, &order, "completed")
+	s.baoSoDuSauThanhToan(&order, req.PaymentMethod)
 
 	items := s.loadOrderItems(order.ID)
 	result := toOrderResponse(&order, items)
@@ -1787,4 +1982,12 @@ func (s *OrderService) UpdateItemStatus(orderID, itemID, status, actorID string)
 
 	resp := toOrderItemResponse(&item)
 	return &resp, nil
+}
+
+// cungChuoi so hai con trỏ chuỗi theo giá trị; nil chỉ bằng nil.
+func cungChuoi(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }

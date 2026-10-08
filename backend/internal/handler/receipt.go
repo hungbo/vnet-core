@@ -79,6 +79,35 @@ func (h *ReceiptHandler) PreviewReceipt(c *gin.Context) {
 	response.Success(c, gin.H{"text": text})
 }
 
+type printComboRequest struct {
+	PrinterID string `json:"printer_id"`
+	Password  string `json:"password"`
+}
+
+// PrintComboReceipt
+// @Summary      In hoá đơn mua combo (tài khoản, mật khẩu, chi tiết gói)
+// @Description  id là ID lượt mua. Mật khẩu chỉ lưu dạng băm nên quầy gửi kèm mật khẩu vừa nhận khi mua; bỏ trống thì phiếu không in dòng mật khẩu.
+// @Tags         Combos
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string  true   "Purchase ID"
+// @Param        body  body  object  false  "printer_id, password"
+// @Success      200  {object}  response.Response
+// @Failure      400  {object}  response.Response
+// @Failure      502  {object}  response.Response  "không in được"
+// @Router       /api/combos/{id}/print [post]
+func (h *ReceiptHandler) PrintComboReceipt(c *gin.Context) {
+	var req printComboRequest
+	_ = c.ShouldBindJSON(&req)
+
+	res, err := h.svc.PrintComboPurchase(c.Param("id"), req.Password, req.PrinterID, middleware.GetUserID(c))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	respondPrint(c, res)
+}
+
 // respondPrint trả 502 khi có máy in nào không nhận được. Lệnh hợp lệ nhưng
 // giấy không ra thì không thể báo thành công — đúng bài học từ lệnh điều khiển
 // từ xa trước đây.

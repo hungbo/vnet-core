@@ -48,8 +48,10 @@ type CreateCurfewRequest struct {
 	DayOfWeek     int    `json:"day_of_week" binding:"min=0,max=6"`
 	CurfewStart   string `json:"curfew_start" binding:"required"`
 	CurfewEnd     string `json:"curfew_end" binding:"required"`
-	MaxMinorHours int    `json:"max_minor_hours"`
-	IsActive      bool   `json:"is_active"`
+	// Con trỏ: không gửi = mặc định của cột (2 giờ, bật); gửi 0 / false thì
+	// phải ra đúng 0 / tắt.
+	MaxMinorHours *int  `json:"max_minor_hours" binding:"omitempty,min=0"`
+	IsActive      *bool `json:"is_active"`
 }
 
 type UpdateCurfewRequest struct {
@@ -121,11 +123,43 @@ func (s *CurfewService) Create(req *CreateCurfewRequest) (*CurfewResponse, error
 		DayOfWeek:     req.DayOfWeek,
 		CurfewStart:   req.CurfewStart,
 		CurfewEnd:     req.CurfewEnd,
-		MaxMinorHours: req.MaxMinorHours,
-		IsActive:      req.IsActive,
+		MaxMinorHours: 2,
+		IsActive:      true,
+	}
+	if req.MaxMinorHours != nil {
+		policy.MaxMinorHours = *req.MaxMinorHours
+	}
+	if req.IsActive != nil {
+		policy.IsActive = *req.IsActive
 	}
 
-	if err := s.db.Create(&policy).Error; err != nil {
+	// max_minor_hours (`default:2`) và is_active (`default:true`): GORM thay giá
+	// trị zero bằng default khi INSERT, nên 0 giờ thành 2 giờ và "tắt" thành
+	// "bật". Ghi lại đúng giá trị trong cùng giao dịch.
+	// Chốt giá trị muốn ghi TRƯỚC khi INSERT: RETURNING đọc lại default của
+	// cột và ghi đè vào policy, nên sau Create thì policy đã thành 2 giờ / bật.
+	muonGio, muonBat := policy.MaxMinorHours, policy.IsActive
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&policy).Error; err != nil {
+			return err
+		}
+		sua := map[string]interface{}{}
+		if muonGio == 0 {
+			sua["max_minor_hours"] = 0
+		}
+		if !muonBat {
+			sua["is_active"] = false
+		}
+		if len(sua) == 0 {
+			return nil
+		}
+		if err := tx.Model(&policy).Updates(sua).Error; err != nil {
+			return err
+		}
+		policy.MaxMinorHours, policy.IsActive = muonGio, muonBat
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 

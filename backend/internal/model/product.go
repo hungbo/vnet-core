@@ -16,7 +16,7 @@ type Product struct {
 	SupplierID   *string        `gorm:"type:uuid" json:"supplier_id"`
 	UnitID       *string        `gorm:"type:varchar(20)" json:"unit_id"`
 	MinStock     float64        `gorm:"type:decimal(12,3);default:0" json:"min_stock"`
-	IsRetail     bool           `gorm:"<-:create" json:"is_retail"`
+	IsRetail     bool           `json:"is_retail"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
 	HasStock     bool           `gorm:"default:false" json:"has_stock"`
 	CurrentStock float64        `gorm:"type:decimal(12,3);default:0" json:"current_stock"`

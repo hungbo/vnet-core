@@ -24,9 +24,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -43,6 +40,12 @@ import (
 )
 
 func main() {
+	// Lấy trước mọi thứ khác: chạy dưới dạng dịch vụ Windows thì đây là nơi
+	// log được chuyển sang tệp, và SCM phải nhận được tín hiệu đã chạy trong
+	// vòng 30 giây kể cả khi database còn đang khởi động.
+	ctx, finished := lifetime()
+	defer finished()
+
 	cfg := config.Load()
 
 	if err := cfg.Validate(); err != nil {
@@ -71,7 +74,6 @@ func main() {
 		&model.MachineAsset{}, &model.MachineHardwareSnapshot{},
 		&model.MachineSession{},
 		&model.Combo{}, &model.ComboPurchase{},
-		&model.TopupCard{}, &model.GiftCard{}, &model.GiftCardTransaction{},
 		&model.MachineBooking{},
 		&model.Promotion{}, &model.PromotionCondition{}, &model.PromotionReward{},
 		&model.LuckySpinReward{}, &model.LuckySpinLog{},
@@ -91,6 +93,7 @@ func main() {
 		&model.WebsiteBlockingSchedule{}, &model.WebsiteBlockingViolation{},
 		&model.AppUpdate{},
 		&model.IdempotencyKey{},
+		&model.Game{}, &model.GamePublish{},
 	); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
@@ -103,18 +106,15 @@ func main() {
 	r.Use(middleware.CORS(cfg.Server.AllowedOrigins))
 	r.Use(middleware.Logger())
 
-	router.Register(r, db, jwtManager, wsHub, cfg)
+	h := router.Register(r, db, jwtManager, wsHub, cfg)
 	router.RegisterAdminUI(r, adminAssets())
 
-	// Background work needs a lifetime of its own, which is why the server is
-	// built explicitly instead of using gin's r.Run: jobs must be told to stop
-	// and be waited on before the process exits.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
+	// Background work needs a lifetime of its own (ctx, from lifetime above),
+	// which is why the server is built explicitly instead of using gin's r.Run:
+	// jobs must be told to stop and be waited on before the process exits.
 	auditSvc := service.NewAuditService(db)
 	curfewSvc := service.NewCurfewService(db, auditSvc)
-	sessionSvc := service.NewSessionService(db, wsHub, auditSvc).WithCurfew(curfewSvc)
+	sessionSvc := service.NewSessionService(db, wsHub, auditSvc).WithCurfew(curfewSvc).WithMinCharge()
 	memberSvc := service.NewMemberService(db, auditSvc)
 
 	// Phần đã chơi trước khi bản trừ-tiền-theo-phút được triển khai coi như đã
@@ -129,6 +129,13 @@ func main() {
 	sched := scheduler.New()
 	scheduler.Register(sched, db, wsHub, sessionSvc, curfewSvc, memberSvc, cfg.Server.HardwareHistoryDays)
 	sched.Start(ctx)
+
+	// Cập nhật game chạy nền cho tới khi tắt máy chủ; không làm gì nếu GAME_ROLE trống.
+	gameDone := make(chan struct{})
+	go func() {
+		defer close(gameDone)
+		h.Game.Service().Run(ctx)
+	}()
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{
@@ -154,5 +161,12 @@ func main() {
 		log.Printf("Server shutdown: %v", err)
 	}
 	sched.Wait()
+	// Đợi vòng cập nhật game dừng (đóng engine BitTorrent), nhưng không đợi mãi: một lần băm hay
+	// kiểm tra hàng chục GB đang dở không huỷ được giữa chừng, và dịch vụ không được kẹt lúc tắt.
+	select {
+	case <-gameDone:
+	case <-time.After(30 * time.Second):
+		log.Println("Cập nhật game chưa dừng sau 30 giây, bỏ qua")
+	}
 	log.Println("Stopped")
 }

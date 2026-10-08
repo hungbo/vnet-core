@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
@@ -36,6 +38,12 @@ func (h *BookingHandler) List(c *gin.Context) {
 
 	result, err := h.svc.List(&req)
 	if err != nil {
+		// Bộ lọc sai (trạng thái lạ, machine_id không phải uuid, ngày sai định
+		// dạng) là lỗi của người gọi — trả 400 kèm lý do, không phải 500.
+		if errors.Is(err, service.ErrDatChoKhongHopLe) {
+			response.BadRequest(c, err.Error())
+			return
+		}
 		response.InternalError(c, "Failed to fetch bookings")
 		return
 	}
@@ -97,7 +105,7 @@ func (h *BookingHandler) Create(c *gin.Context) {
 
 // Update updates an existing booking
 // @Summary Update booking
-// @Description Update the details of an existing booking
+// @Description Update a pending booking. deposit_amount cannot be changed after creation (400 if it differs); omitted fields keep their value. Changing the time re-runs the create checks (overlap, limits, cancel deadline).
 // @Tags Bookings
 // @Accept json
 // @Produce json
@@ -143,7 +151,8 @@ func (h *BookingHandler) Update(c *gin.Context) {
 func (h *BookingHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 
-	if err := h.svc.Delete(id); err != nil {
+	// Truyền người thao tác để nhật ký ghi được AI đã xoá — bản cũ để trống.
+	if err := h.svc.Delete(id, c.GetString(middleware.ContextKeyUserID)); err != nil {
 		handleDeleteError(c, err)
 		return
 	}
@@ -153,7 +162,7 @@ func (h *BookingHandler) Delete(c *gin.Context) {
 
 // CheckIn checks in a booking
 // @Summary Check-in booking
-// @Description Mark a booking as checked in when the customer arrives
+// @Description Mark a booking as checked in (allowed from 30 minutes before start until booked_to). The deposit is refunded to the member's balance.
 // @Tags Bookings
 // @Accept json
 // @Produce json
@@ -165,7 +174,7 @@ func (h *BookingHandler) Delete(c *gin.Context) {
 func (h *BookingHandler) CheckIn(c *gin.Context) {
 	id := c.Param("id")
 
-	result, err := h.svc.CheckIn(id)
+	result, err := h.svc.CheckIn(id, c.GetString(middleware.ContextKeyUserID))
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -188,7 +197,7 @@ func (h *BookingHandler) CheckIn(c *gin.Context) {
 func (h *BookingHandler) Cancel(c *gin.Context) {
 	id := c.Param("id")
 
-	result, err := h.svc.Cancel(id)
+	result, err := h.svc.Cancel(id, c.GetString(middleware.ContextKeyUserID))
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -199,7 +208,7 @@ func (h *BookingHandler) Cancel(c *gin.Context) {
 
 // NoShow marks a booking as no-show
 // @Summary No-show booking
-// @Description Mark a booking as no-show when the customer did not arrive
+// @Description Mark a booking as no-show (allowed from 15 minutes after start, same cutoff as the scheduler). The deposit is forfeited.
 // @Tags Bookings
 // @Accept json
 // @Produce json
@@ -211,7 +220,7 @@ func (h *BookingHandler) Cancel(c *gin.Context) {
 func (h *BookingHandler) NoShow(c *gin.Context) {
 	id := c.Param("id")
 
-	result, err := h.svc.NoShow(id)
+	result, err := h.svc.NoShow(id, c.GetString(middleware.ContextKeyUserID))
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

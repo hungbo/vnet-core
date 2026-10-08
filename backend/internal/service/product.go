@@ -71,7 +71,7 @@ type ProductOptionItem struct {
 
 type CreateProductRequest struct {
 	CategoryID   *string             `json:"category_id"`
-	Name         string              `json:"name" binding:"required"`
+	Name         string              `json:"name" binding:"required,max=200"`
 	Description  string              `json:"description"`
 	Price        int64               `json:"price" binding:"min=0"`
 	ImageURL     string              `json:"image_url"`
@@ -88,7 +88,7 @@ type CreateProductRequest struct {
 
 type UpdateProductRequest struct {
 	CategoryID  *string `json:"category_id"`
-	Name        *string `json:"name"`
+	Name        *string `json:"name" binding:"omitempty,max=200"`
 	Description *string `json:"description"`
 	// omitempty là bắt buộc với con trỏ: thiếu nó thì validator coi nil là vi
 	// phạm min=0, nên MỌI lần cập nhật một phần không kèm giá đều bị chặn bằng
@@ -107,7 +107,7 @@ type UpdateProductRequest struct {
 	Options      []ProductOptionItem `json:"options"`
 }
 
-func (s *ProductService) List(isRetail *bool, categoryID, search string, page int, pageSize int) (*pagination.Result, error) {
+func (s *ProductService) List(isRetail, isActive *bool, categoryID, supplierID, search string, page int, pageSize int) (*pagination.Result, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -119,11 +119,17 @@ func (s *ProductService) List(isRetail *bool, categoryID, search string, page in
 	if isRetail != nil {
 		query = query.Where("is_retail = ?", *isRetail)
 	}
+	if isActive != nil {
+		query = query.Where("is_active = ?", *isActive)
+	}
 	// Tham số category_id có trong tài liệu Swagger và thực đơn máy trạm vẫn gửi
 	// lên, nhưng trước đây không ai đọc: mọi thẻ danh mục đều trả về nguyên cả
 	// thực đơn, nên nhìn qua tưởng là "quán chưa xếp món vào nhóm".
 	if categoryID != "" {
 		query = query.Where("category_id = ?", categoryID)
+	}
+	if supplierID != "" {
+		query = query.Where("supplier_id = ?", supplierID)
 	}
 	if search != "" {
 		query = query.Where("unaccent(name) ILIKE unaccent(?) OR unaccent(description) ILIKE unaccent(?)", "%"+search+"%", "%"+search+"%")
@@ -210,7 +216,7 @@ func (s *ProductService) Create(req *CreateProductRequest) (*ProductResponse, er
 		Description:  req.Description,
 		Price:        req.Price,
 		ImageURL:     req.ImageURL,
-		SupplierID:   req.SupplierID,
+		SupplierID:   uuidRongThanhNil(req.SupplierID),
 		UnitID:       req.UnitID,
 		MinStock:     req.MinStock,
 		IsRetail:     isRetail,
@@ -220,7 +226,22 @@ func (s *ProductService) Create(req *CreateProductRequest) (*ProductResponse, er
 		SortOrder:    req.SortOrder,
 	}
 
-	if err := s.db.Create(&product).Error; err != nil {
+	// Cột is_active có `default:true`: GORM thay false bằng default khi INSERT,
+	// nên "tạo ở trạng thái ngưng bán" luôn ra đang bán. Ghi lại false ngay
+	// trong cùng giao dịch (cùng cách với promotion.go).
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&product).Error; err != nil {
+			return err
+		}
+		if !active {
+			if err := tx.Model(&product).Update("is_active", false).Error; err != nil {
+				return err
+			}
+			product.IsActive = false
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
@@ -299,7 +320,12 @@ func (s *ProductService) Update(id string, req *UpdateProductRequest) (*ProductR
 		updates["image_url"] = *req.ImageURL
 	}
 	if req.SupplierID != nil {
-		updates["supplier_id"] = *req.SupplierID
+		// Bỏ chọn nhà cung cấp gửi "" — ghi NULL, cột uuid không nhận "".
+		if sup := uuidRongThanhNil(req.SupplierID); sup == nil {
+			updates["supplier_id"] = nil
+		} else {
+			updates["supplier_id"] = *sup
+		}
 	}
 	if req.UnitID != nil {
 		updates["unit_id"] = *req.UnitID

@@ -129,6 +129,7 @@ func TestMemberTokenReachesClientRoutes(t *testing.T) {
 		{"GET", "/api/auth/me"},
 		{"GET", "/api/categories"},
 		{"GET", "/api/products"},
+		{"GET", "/api/game-menu"},
 		{"GET", "/api/notifications"},
 		{"GET", "/api/notifications/unread-count"},
 		{"PUT", "/api/notifications/read-all"},

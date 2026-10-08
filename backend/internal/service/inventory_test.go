@@ -220,3 +220,50 @@ func TestInventoryService_DeductItemsStock_IngredientNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "không tìm thấy")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// Nhập -4 từng làm tồn GIẢM mà sổ vẫn ghi "nhập kho"; xuất âm thì ngược lại làm
+// tồn TĂNG. Số lượng không hợp lệ phải bị chặn trước khi đụng tới CSDL.
+func TestInventoryService_CreateStockTransaction_RejectsNonPositiveQuantity(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewInventoryService(db, NewAuditService(db))
+	pid := "p-1"
+
+	for _, c := range []struct {
+		typ string
+		qty float64
+	}{
+		{"inbound", -4}, {"inbound", 0}, {"outbound", -3}, {"outbound", 0}, {"adjustment", -1},
+	} {
+		_, err := svc.CreateStockTransaction(&CreateStockTransactionRequest{
+			ProductID: &pid, TransactionType: c.typ, Quantity: c.qty,
+		}, "u-1")
+		// Khẳng định đúng câu báo lỗi: thiếu chốt chặn thì sqlmock cũng trả lỗi
+		// (câu SELECT không được khai), test sẽ đỗ nhầm nếu chỉ kiểm có lỗi.
+		require.EqualError(t, err, "số lượng phải lớn hơn 0", "%s %v", c.typ, c.qty)
+	}
+	// Không có kỳ vọng SQL nào: không câu lệnh nào được chạy.
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Điều chỉnh về 0 (kiểm thấy hết hàng) vẫn phải làm được.
+func TestInventoryService_CreateStockTransaction_AdjustmentToZeroAllowed(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewInventoryService(db, NewAuditService(db))
+	pid := "p-1"
+
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "current_stock"}).AddRow("p-1", "Nuoc", 5.0))
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "products" SET "current_stock"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`INSERT INTO "stock_transactions"`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("st-1"))
+	mock.ExpectCommit()
+
+	_, err := svc.CreateStockTransaction(&CreateStockTransactionRequest{
+		ProductID: &pid, TransactionType: "adjustment", Quantity: 0,
+	}, "u-1")
+	// Sau commit service còn đọc lại phiếu/ghi audit — không kỳ vọng ở đây,
+	// chỉ cần lệnh điều chỉnh về 0 đi qua được phần kiểm số lượng.
+	if err != nil {
+		require.NotContains(t, err.Error(), "số lượng")
+	}
+}

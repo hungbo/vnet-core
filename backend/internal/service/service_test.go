@@ -63,6 +63,10 @@ func intPtr(i int) *int {
 	return &i
 }
 
+func int64Ptr(i int64) *int64 {
+	return &i
+}
+
 var (
 	testUUID     = "550e8400-e29b-41d4-a716-446655440000"
 	testUserID   = "770e8400-e29b-41d4-a716-446655440002"

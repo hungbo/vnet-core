@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -94,6 +95,14 @@ type HeartbeatRequest struct {
 	GPUName   string `json:"gpu_name"`
 	RAMGB     int    `json:"ram_gb"`
 	StorageGB int    `json:"storage_gb"`
+	OSInfo    string `json:"os_info"`
+
+	// Con trỏ: nil nghĩa là gói tin KHÔNG khai (máy trạm bản cũ, hoặc chưa ai
+	// đăng nhập Windows nên không biết), khi đó giữ nguyên giá trị đang có.
+	UserIsAdmin  *bool   `json:"user_is_admin"`
+	ExtraNetwork *string `json:"extra_network"`
+	// Thiết bị ngoại vi, máy trạm đọc một lần lúc khởi động. Rỗng = không khai.
+	Peripherals []string `json:"peripherals"`
 }
 
 type CreateMachineGroupRequest struct {
@@ -126,6 +135,9 @@ type CreateMachineAssetRequest struct {
 }
 
 type UpdateMachineAssetRequest struct {
+	// Chuyển thiết bị sang máy khác. Form sửa cho chọn máy nhưng trước đây
+	// request không nhận trường này nên đổi máy báo thành công mà không đổi gì.
+	MachineID   *string   `json:"machine_id"`
 	AssetType   *string   `json:"asset_type"`
 	Brand       *string   `json:"brand"`
 	Model       *string   `json:"model"`
@@ -136,8 +148,18 @@ type UpdateMachineAssetRequest struct {
 }
 
 func (s *MachineService) List(params pagination.Params) (*pagination.Result, error) {
+	return s.ListFiltered(params, false)
+}
+
+// ListFiltered như List, thêm tuỳ chọn chỉ lấy máy đang có cảnh báo: tài khoản
+// Windows có quyền quản trị, hoặc có card mạng lạ. Lọc ở máy chủ vì bảng phân
+// trang ở máy chủ — lọc phía trình duyệt chỉ lọc được trang đang xem.
+func (s *MachineService) ListFiltered(params pagination.Params, onlyWarnings bool) (*pagination.Result, error) {
 	var machines []model.Machine
 	query := s.db.Model(&model.Machine{})
+	if onlyWarnings {
+		query = query.Where("user_is_admin = ? OR extra_network <> ?", true, "")
+	}
 
 	// Ô tìm kiếm trên trang Máy ghi "Tìm mã máy / nhóm" nhưng hàm này bỏ qua
 	// hẳn tham số search: gõ gì cũng ra đủ danh sách máy. Quán vài trăm máy thì
@@ -185,6 +207,53 @@ func (s *MachineService) GetByCode(code string) (*model.Machine, error) {
 	return &machine, nil
 }
 
+// RegisterByCode tìm máy theo mã; chưa có thì tự tạo.
+//
+// Quán diskless đặt tên máy ngay trên máy chủ boot (MAY01, MAY02...), và máy
+// trạm lấy tên đó làm mã máy. Bắt chủ quán khai lại từng mã ở trang Máy trước
+// khi cắm là gõ hai lần cùng một danh sách, và lệch một ký tự là máy đó vĩnh
+// viễn Ngoại tuyến. Máy tự thêm thì CHƯA có nhóm: nó hiện nhãn "Chưa gán nhóm —
+// 0₫/giờ" trên trang Máy, và không mở được phiên tính tiền cho tới khi được xếp
+// nhóm — tức là có mặt trong danh sách nhưng chưa cho ai chơi chùa được.
+func (s *MachineService) RegisterByCode(code string) (*model.Machine, bool, error) {
+	code = strings.TrimSpace(code)
+	if code == "" || len([]rune(code)) > machineCodeMaxLen {
+		return nil, false, fmt.Errorf("mã máy %q không hợp lệ (1–%d ký tự)", code, machineCodeMaxLen)
+	}
+	m, err := s.GetByCode(code)
+	if err == nil {
+		return m, false, nil
+	}
+	// Mã của máy đã xoá tạo lại được: chỉ số duy nhất trên machine_code là
+	// chỉ số một phần (WHERE deleted_at IS NULL), máy cũ giữ lịch sử của nó.
+	m, err = s.Create(&CreateMachineRequest{MachineCode: code})
+	if err != nil {
+		// Dịch vụ nền và giao diện của cùng một máy gửi nhịp tim cùng giây đầu
+		// tiên: cả hai thấy chưa có máy và cùng thêm, bên chậm hơn đụng chỉ số
+		// duy nhất. Máy đã có rồi thì dùng nó, đừng trả lỗi.
+		if existing, getErr := s.GetByCode(code); getErr == nil {
+			return existing, false, nil
+		}
+		return nil, false, err
+	}
+	_ = s.audit.Log(&LogAuditRequest{
+		Action:     "machine_auto_register",
+		EntityType: "machine",
+		EntityID:   m.ID,
+		Metadata:   map[string]interface{}{"machine_code": code},
+	})
+	if s.hub != nil {
+		s.hub.BroadcastToType(hub.Event{
+			Type: "machine:alert",
+			Data: map[string]interface{}{
+				"machine_id": m.ID, "machine_code": code, "kind": "new_machine",
+				"detail": "máy mới tự thêm từ nhịp tim, chưa gán nhóm",
+			},
+		}, hub.ClientTypeAdmin)
+	}
+	return m, true, nil
+}
+
 // nhomRongThanhNil biến con trỏ trỏ vào chuỗi rỗng thành nil.
 //
 // group_id là cột uuid cho phép rỗng. Bỏ chọn nhóm trên giao diện gửi xuống ""
@@ -225,7 +294,7 @@ func (s *MachineService) Create(req *CreateMachineRequest) (*model.Machine, erro
 // machineCodeMaxLen khớp varchar(20) của Machine.MachineCode. Kiểm ở đây để một
 // tiền tố quá dài bị chặn với thông điệp tiếng Việt, thay vì để PostgreSQL cắt
 // ngang giữa lô bằng lỗi thô.
-const machineCodeMaxLen = 20
+const machineCodeMaxLen = 256
 
 // maxBatchMachines chặn một lần bấm nhầm sinh ra hàng chục nghìn dòng. Quán lớn
 // nhất cũng dưới vài trăm máy.
@@ -326,9 +395,10 @@ func (s *MachineService) BatchCreateMachines(req *BatchCreateMachinesRequest) (*
 	// Không cần chống trùng trong chính lô: cùng một tiền tố, hai số khác nhau
 	// luôn cho hai mã khác nhau, kể cả khi đệm 0.
 	//
-	// Unscoped: máy xoá mềm vẫn giữ mã và vẫn chặn mã đó.
+	// Máy xoá mềm KHÔNG chặn mã nữa: chỉ số duy nhất là chỉ số một phần, mã đó
+	// tạo lại được. Trường Deleted của kết quả giữ lại cho giao diện cũ, luôn rỗng.
 	var daCo []model.Machine
-	if err := s.db.Unscoped().
+	if err := s.db.
 		Select("machine_code", "deleted_at").
 		Where("machine_code IN ?", codes).
 		Find(&daCo).Error; err != nil {
@@ -533,6 +603,33 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 	if req.StorageGB > 0 {
 		updates["storage_gb"] = req.StorageGB
 	}
+	if req.OSInfo != "" {
+		updates["os_info"] = truncateRunes(req.OSInfo, 100)
+	}
+	if req.UserIsAdmin != nil {
+		updates["user_is_admin"] = *req.UserIsAdmin
+	}
+	if len(req.Peripherals) > 0 {
+		list := make(model.StringArray, 0, len(req.Peripherals))
+		for _, p := range req.Peripherals {
+			if p = strings.TrimSpace(p); p != "" {
+				list = append(list, truncateRunes(p, 200))
+			}
+		}
+		if len(list) > 0 {
+			updates["peripherals"] = list
+		}
+	}
+	mangLaMoi := ""
+	if req.ExtraNetwork != nil {
+		extra := truncateRunes(strings.TrimSpace(*req.ExtraNetwork), 200)
+		updates["extra_network"] = extra
+		// Chỉ báo động lúc CHUYỂN trạng thái. Nhịp tim tới mỗi 15 giây; báo
+		// mỗi nhịp là 240 thông báo một giờ cho cùng một chiếc USB.
+		if extra != "" && extra != machine.ExtraNetwork {
+			mangLaMoi = extra
+		}
+	}
 	if machine.Status == "offline" {
 		updates["status"] = "available"
 	}
@@ -564,7 +661,32 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 		Uptime:    req.Uptime,
 	}
 	s.db.Create(&snapshot)
+
+	if mangLaMoi != "" {
+		_ = s.audit.Log(&LogAuditRequest{
+			Action:     "machine_extra_network",
+			EntityType: "machine",
+			EntityID:   id,
+			Metadata:   map[string]interface{}{"machine_code": machine.MachineCode, "network": mangLaMoi},
+		})
+		if s.hub != nil {
+			s.hub.BroadcastToType(hub.Event{
+				Type: "machine:alert",
+				Data: map[string]interface{}{
+					"machine_id":   id,
+					"machine_code": machine.MachineCode,
+					"kind":         "extra_network",
+					"detail":       mangLaMoi,
+				},
+			}, hub.ClientTypeAdmin)
+		}
+	}
 	return nil
+}
+
+// ClientPolicy là chính sách bảo vệ mà máy trạm nhận về trong phản hồi nhịp tim.
+func (s *MachineService) ClientPolicy() ClientPolicy {
+	return ClientPolicyFor(s.db)
 }
 
 func (s *MachineService) GetHardwareHistory(id string, params pagination.Params) (*pagination.Result, error) {
@@ -594,16 +716,11 @@ func (s *MachineService) GetHardwareHistory(id string, params pagination.Params)
 // chạy `cmd /C` với chuỗi bất kỳ; nối nó vào đây sẽ biến mọi tài khoản nhân
 // viên thành quyền thực thi mã trên toàn bộ máy trạm.
 var remoteActions = map[string]string{
-	"lock":     "khoá máy",
-	"unlock":   "mở khoá máy",
 	"shutdown": "tắt máy",
 	"restart":  "khởi động lại máy",
 	"message":  "gửi thông báo lên máy",
-	// App.BlockApp/UnblockApp đã có sẵn trong máy khách nhưng không lối vào ở
-	// cả hai phía: viết rồi mà chưa từng gọi được. Chặn theo TÊN tiến trình,
-	// không phải câu lệnh tuỳ ý — xem ghi chú về ExecuteCommand ở trên.
-	"block-app":   "chặn ứng dụng trên máy",
-	"unblock-app": "bỏ chặn ứng dụng trên máy",
+	// Chặn ứng dụng không còn là lệnh từng máy: danh sách nằm ở Cài đặt > Máy
+	// trạm và đi xuống MỌI máy qua chính sách trong phản hồi nhịp tim.
 	// Ba lệnh giám sát. Máy trạm làm xong thì báo NGƯỢC dữ liệu lên bằng HTTP
 	// (route by-code) chứ không qua WebSocket: readPump của hub
 	// giới hạn 4 KB chiều lên, mà ảnh chụp màn hình cỡ vài trăm KB.
@@ -650,7 +767,15 @@ type ProcessReport struct {
 // Không lưu xuống đĩa: ảnh đi thẳng qua WebSocket tới admin rồi thôi. Lưu lại
 // nghĩa là một kho ảnh màn hình khách nằm trên ổ cứng, kèm chính sách dọn rác
 // và một câu hỏi pháp lý — không đáng, vì nhân viên chỉ cần nhìn một lần.
+// anhChupHopLe: chỉ ảnh JPEG/PNG dạng data URI base64. Đường gửi ảnh không cần
+// xác thực (by-code), và trang quản trị dùng chuỗi này làm src/href — một
+// "ảnh" kiểu javascript:… mà lọt qua là chạy mã trong phiên của nhân viên.
+var anhChupHopLe = regexp.MustCompile(`^data:image/(jpeg|png);base64,[A-Za-z0-9+/]+={0,2}$`)
+
 func (s *MachineService) ReportScreenshot(machineCode string, req *ScreenshotReport) error {
+	if !anhChupHopLe.MatchString(req.Image) {
+		return errors.New("ảnh chụp không hợp lệ")
+	}
 	var machine model.Machine
 	if err := s.db.Select("id, machine_code").Where("machine_code = ?", machineCode).
 		First(&machine).Error; err != nil {
@@ -985,6 +1110,16 @@ func (s *MachineService) UpdateAsset(id string, req *UpdateMachineAssetRequest, 
 		return nil, err
 	}
 	updates := map[string]interface{}{}
+	if req.MachineID != nil && *req.MachineID != "" && *req.MachineID != asset.MachineID {
+		var n int64
+		if err := s.db.Model(&model.Machine{}).Where("id = ?", *req.MachineID).Count(&n).Error; err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			return nil, errors.New("không tìm thấy máy")
+		}
+		updates["machine_id"] = *req.MachineID
+	}
 	if req.AssetType != nil {
 		updates["asset_type"] = *req.AssetType
 	}

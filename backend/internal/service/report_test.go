@@ -23,11 +23,6 @@ func TestReportService_DailyRevenue(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}).
 			AddRow("2026-06-25T00:00:00Z", int64(100000), int64(2)))
 
-	// Nguồn thu thứ ba: tiền bán thẻ nạp, tính theo NGÀY BÁN chứ không phải
-	// ngày khách nạp thẻ.
-	mock.ExpectQuery(`SELECT DATE\(sold_at\) as date, COALESCE\(SUM\(face_value\), 0\) as amount, COUNT\(\*\) as count FROM "topup_cards" WHERE sold_at IS NOT NULL AND status <> 'cancelled' AND deleted_at IS NULL GROUP BY "date" ORDER BY date asc`).
-		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}))
-
 	result, err := svc.DailyRevenue("", "")
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
@@ -49,9 +44,6 @@ func TestReportService_MonthlyRevenue(t *testing.T) {
 	mock.ExpectQuery(`SELECT TO_CHAR\(created_at, 'YYYY-MM'\) as date, COALESCE\(SUM\(CASE WHEN transaction_type = 'combo_purchase' THEN -amount ELSE amount END\), 0\) as amount, COUNT\(\*\) as count FROM "member_transactions" WHERE \(transaction_type IN \('topup', 'refund'\) OR \(transaction_type = 'combo_purchase' AND payment_method = 'cash'\)\) GROUP BY "date" ORDER BY date asc`).
 		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}).
 			AddRow("2026-06", int64(200000), int64(5)))
-
-	mock.ExpectQuery(`SELECT TO_CHAR\(sold_at, 'YYYY-MM'\) as date, COALESCE\(SUM\(face_value\), 0\) as amount, COUNT\(\*\) as count FROM "topup_cards"`).
-		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}))
 
 	result, err := svc.MonthlyRevenue(0, 0)
 	require.NoError(t, err)
@@ -183,10 +175,6 @@ func TestReportService_DailyRevenue_MocNgayTheoGioVietNam(t *testing.T) {
 	// Ngoặc bao quanh vế OR phải còn nguyên khi ghép thêm bộ lọc ngày. Mất nó
 	// thì AND bám chặt hơn OR và báo cáo một ngày cộng cả tiền nạp mọi ngày.
 	mock.ExpectQuery(`FROM "member_transactions" WHERE \(\(transaction_type IN \('topup', 'refund'\) OR \(transaction_type = 'combo_purchase' AND payment_method = 'cash'\)\)\) AND created_at >= \$1 AND created_at <= \$2`).
-		WithArgs(from, to).
-		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}))
-	// Tiền bán thẻ cũng phải neo theo cùng mốc giờ Việt Nam.
-	mock.ExpectQuery(`FROM "topup_cards" WHERE \(sold_at IS NOT NULL AND status <> 'cancelled' AND deleted_at IS NULL\) AND sold_at >= \$1 AND sold_at <= \$2`).
 		WithArgs(from, to).
 		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}))
 

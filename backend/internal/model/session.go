@@ -36,7 +36,7 @@ type MachineSession struct {
 	// đơn giá của phiên đang chạy.
 	MachineGroupID   *string `gorm:"type:uuid" json:"machine_group_id,omitempty"`
 	MemberGroupID    *string `gorm:"type:uuid" json:"member_group_id,omitempty"`
-	MachineCode      string  `gorm:"type:varchar(20)" json:"machine_code,omitempty"`
+	MachineCode      string  `gorm:"type:varchar(256)" json:"machine_code,omitempty"`
 	MachineGroupName string  `gorm:"type:varchar(50)" json:"machine_group_name,omitempty"`
 	PricePerHour     int64   `gorm:"default:0" json:"price_per_hour"`
 	BilledMinutes    int     `gorm:"default:0" json:"billed_minutes"`

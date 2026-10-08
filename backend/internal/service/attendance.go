@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
@@ -22,10 +23,18 @@ import (
 type AttendanceService struct {
 	db    *gorm.DB
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 func NewAttendanceService(db *gorm.DB, audit *AuditService) *AttendanceService {
 	return &AttendanceService{db: db, audit: audit}
+}
+
+// WithHub để báo điểm thưởng mới về máy trạm sau khi điểm danh. Điểm danh mở ở
+// cửa sổ riêng (tiến trình khác), nên thanh chính chỉ biết số dư đổi qua đây.
+func (s *AttendanceService) WithHub(h *hub.Hub) *AttendanceService {
+	s.hub = h
+	return s
 }
 
 // Cấu hình nằm ở nhóm cài đặt "attendance". Để 0 thì điểm danh vẫn ghi nhận
@@ -96,6 +105,7 @@ func (s *AttendanceService) Checkin(memberID, actorID string) (*CheckinResult, e
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
 	var res CheckinResult
+	var balance int64
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		var member model.Member
 		if err := tx.First(&member, "id = ?", memberID).Error; err != nil {
@@ -133,6 +143,7 @@ func (s *AttendanceService) Checkin(memberID, actorID string) (*CheckinResult, e
 			return err
 		}
 
+		balance = member.Balance
 		bonusAfter := member.BonusBalance
 		if reward > 0 {
 			bonusAfter += reward
@@ -166,6 +177,9 @@ func (s *AttendanceService) Checkin(memberID, actorID string) (*CheckinResult, e
 	})
 	if err != nil {
 		return nil, err
+	}
+	if res.RewardAmount > 0 {
+		phatSoDuMoi(s.hub, memberID, balance, res.BonusAfter)
 	}
 
 	s.audit.Log(&LogAuditRequest{

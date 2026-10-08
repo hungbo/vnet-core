@@ -2,10 +2,16 @@ package handler
 
 import (
 	"errors"
+	"log"
+	"net"
+	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/model"
+	"github.com/vnet/core/internal/remotedesk"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/response"
@@ -13,11 +19,18 @@ import (
 
 type MachineHandler struct {
 	svc *service.MachineService
+	hub *hub.Hub
 }
 
 func NewMachineHandler(svc *service.MachineService) *MachineHandler {
 	_ = model.Machine{}
 	return &MachineHandler{svc: svc}
+}
+
+// WithHub gắn hub để nâng cấp WebSocket cho remote desktop.
+func (h *MachineHandler) WithHub(wsHub *hub.Hub) *MachineHandler {
+	h.hub = wsHub
+	return h
 }
 
 // List
@@ -32,12 +45,13 @@ func NewMachineHandler(svc *service.MachineService) *MachineHandler {
 // @Param        sort      query  string false  "Sort field"
 // @Param        order     query  string false  "Sort order (asc/desc)"
 // @Param        search    query  string false  "Search keyword"
+// @Param        warning  query  int  false  "1 = chỉ máy có cảnh báo (tài khoản Windows quản trị hoặc card mạng lạ)"
 // @Success      200       {object}  response.Response{data=response.PaginatedData{data=[]model.Machine}}
 // @Failure      500       {object}  response.Response
 // @Router       /api/machines [get]
 func (h *MachineHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
-	result, err := h.svc.List(*params)
+	result, err := h.svc.ListFiltered(*params, c.Query("warning") == "1")
 	if err != nil {
 		response.InternalError(c, "Failed to fetch machines")
 		return
@@ -214,16 +228,25 @@ func (h *MachineHandler) HeartbeatByCode(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
-	machine, err := h.svc.GetByCode(code)
+	// Máy chưa khai thì tự thêm: chỉ cần cài máy trạm với địa chỉ máy chủ,
+	// mã máy là tên máy Windows.
+	machine, _, err := h.svc.RegisterByCode(code)
 	if err != nil {
-		response.NotFound(c, "Machine not found")
+		response.BadRequest(c, err.Error())
 		return
 	}
 	if err := h.svc.Heartbeat(machine.ID, req); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	response.Success(c, nil)
+	// Chính sách bảo vệ đi kèm phản hồi nhịp tim: máy trạm nhận được cả khi
+	// chưa ai đăng nhập, và không cần thêm một đường gọi riêng.
+	// Mật khẩu TightVNC cũng đi kèm: máy trạm cấu hình VNC theo nó.
+	vncPassword, err := h.svc.VNCPassword(machine.ID)
+	if err != nil {
+		log.Printf("[VNC] không lấy được mật khẩu VNC của máy %s: %v", code, err)
+	}
+	response.Success(c, gin.H{"policy": h.svc.ClientPolicy(), "vnc_password": vncPassword})
 }
 
 // GetHardware
@@ -300,6 +323,29 @@ func (h *MachineHandler) RemoteAction(c *gin.Context) {
 	case errors.Is(err, service.ErrMachineOffline):
 		// 409 chứ không phải 400: lệnh hợp lệ, chỉ là máy chưa kết nối. Nhân
 		// viên cần phân biệt "gõ sai lệnh" với "máy đang tắt".
+		response.Conflict(c, err.Error())
+	default:
+		response.BadRequest(c, err.Error())
+	}
+}
+
+// Wake
+// @Summary      Wake a machine (Wake-on-LAN)
+// @Description  Broadcast a magic packet on the shop LAN to power on a machine that is off. Needs the MAC address the machine reported in a past heartbeat and Wake-on-LAN enabled in its BIOS/NIC.
+// @Tags         Machines
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path  string  true  "Machine ID"
+// @Success      200  {object}  response.Response{data=service.WakeResult}
+// @Failure      400  {object}  response.Response
+// @Failure      409  {object}  response.Response "máy đang bật"
+// @Router       /api/machines/{id}/wake [post]
+func (h *MachineHandler) Wake(c *gin.Context) {
+	result, err := h.svc.Wake(c.Param("id"), middleware.GetUserID(c))
+	switch {
+	case err == nil:
+		response.Success(c, result)
+	case errors.Is(err, service.ErrWakeAlreadyOn):
 		response.Conflict(c, err.Error())
 	default:
 		response.BadRequest(c, err.Error())
@@ -525,4 +571,66 @@ func (h *MachineHandler) ReportProcesses(c *gin.Context) {
 		return
 	}
 	response.Success(c, nil)
+}
+
+// RemoteDesktop
+// @Summary      Prepare Remote Desktop
+// @Description  Kiểm tra máy đang bật, nối thử được TightVNC (cổng 5900), rồi trả mật khẩu VNC cho trình xem noVNC
+// @Tags         Machines
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path  string  true  "Machine ID"
+// @Success      200  {object}  response.Response{data=map[string]string}  "{ password }"
+// @Failure      409  {object}  response.Response  "máy tắt, chưa có IP, hoặc VNC không trả lời"
+// @Router       /api/machines/{id}/remote-desktop [get]
+func (h *MachineHandler) RemoteDesktop(c *gin.Context) {
+	m, err := h.svc.RemoteDesktopTarget(c.Param("id"))
+	if err != nil {
+		response.Conflict(c, err.Error())
+		return
+	}
+	// Nối thử trước: lỗi trong lúc bắt tay WebSocket trình duyệt không đọc
+	// được, nên mọi lỗi có thể đoán trước phải báo ở đây.
+	tcp, err := net.DialTimeout("tcp", net.JoinHostPort(m.IPAddress, remotedesk.Port), 3*time.Second)
+	if err != nil {
+		response.Conflict(c, "không nối được VNC trên máy "+m.MachineCode+" ("+m.IPAddress+"): máy trạm chưa cài TightVNC hoặc tường lửa chặn")
+		return
+	}
+	tcp.Close()
+	password, err := h.svc.VNCPassword(m.ID)
+	if err != nil {
+		response.InternalError(c, "không lấy được mật khẩu VNC")
+		return
+	}
+	response.Success(c, gin.H{"password": password})
+}
+
+// RemoteDesktopWS
+// @Summary      Remote Desktop WebSocket
+// @Description  WebSocket cho noVNC, chuyển byte hai chiều tới TightVNC trên máy trạm. Token qua ?token=
+// @Tags         Machines
+// @Security     BearerAuth
+// @Param        id   path  string  true  "Machine ID"
+// @Success      101
+// @Router       /api/machines/{id}/remote-desktop/ws [get]
+func (h *MachineHandler) RemoteDesktopWS(c *gin.Context) {
+	m, err := h.svc.RemoteDesktopTarget(c.Param("id"))
+	if err != nil {
+		response.Conflict(c, err.Error())
+		return
+	}
+	tcp, err := net.DialTimeout("tcp", net.JoinHostPort(m.IPAddress, remotedesk.Port), 5*time.Second)
+	if err != nil {
+		response.Error(c, http.StatusBadGateway, "không nối được VNC trên máy "+m.MachineCode)
+		return
+	}
+	ws, err := h.hub.Upgrade(c.Writer, c.Request)
+	if err != nil {
+		tcp.Close()
+		return
+	}
+	actorID := middleware.GetUserID(c)
+	h.svc.LogRemoteDesktop(m, actorID, true)
+	remotedesk.Bridge(ws, tcp)
+	h.svc.LogRemoteDesktop(m, actorID, false)
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
+	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -20,6 +21,9 @@ type SessionService struct {
 	hub    *hub.Hub
 	audit  *AuditService
 	curfew *CurfewService
+	// minCharge đọc "tiền tối thiểu mỗi lần đăng nhập". nil = 0: test dựng
+	// dịch vụ không gắn nó nên không phải khai thêm câu SQL đọc cài đặt.
+	minCharge func() int64
 }
 
 func NewSessionService(db *gorm.DB, wsHub *hub.Hub, audit *AuditService) *SessionService {
@@ -32,6 +36,41 @@ func NewSessionService(db *gorm.DB, wsHub *hub.Hub, audit *AuditService) *Sessio
 func (s *SessionService) WithCurfew(c *CurfewService) *SessionService {
 	s.curfew = c
 	return s
+}
+
+// WithMinCharge bật "tiền tối thiểu mỗi lần đăng nhập" (khoá min_session_charge
+// trong nhóm cài đặt "limits").
+//
+// Không có nó thì khách đăng nhập rồi thoát trong vòng một phút không mất đồng
+// nào — số phút tính tiền làm tròn xuống, 0 phút là 0₫.
+func (s *SessionService) WithMinCharge() *SessionService {
+	s.minCharge = func() int64 {
+		return settingInt(settingsGroup(s.db, "limits"), "min_session_charge", 0)
+	}
+	return s
+}
+
+func (s *SessionService) mucToiThieu() int64 {
+	if s.minCharge == nil {
+		return 0
+	}
+	if v := s.minCharge(); v > 0 {
+		return v
+	}
+	return 0
+}
+
+// apMucToiThieu nâng tiền của phiên lên mức tối thiểu.
+//
+// Mức tối thiểu TÍNH LUÔN cho những phút đầu chứ không cộng thêm: phiên 30
+// phút ở 10.000₫/giờ với mức 3.000₫ là 5.000₫, không phải 8.000₫. Chỉ áp cho
+// phiên trả theo phút của hội viên ở máy có giá — gói cước đã trả trước rồi.
+func apMucToiThieu(session *model.MachineSession, cost, pricePerHour, min int64) int64 {
+	if min <= 0 || session.MemberID == nil || *session.MemberID == "" ||
+		session.ComboID != nil || pricePerHour <= 0 || cost >= min {
+		return cost
+	}
+	return min
 }
 
 type StartRequest struct {
@@ -181,6 +220,40 @@ func affordableUntil(session *model.MachineSession, member *model.Member, at tim
 	return &until
 }
 
+// mocHetTien là cách DUY NHẤT tính mốc hết tiền của một phiên đang chạy.
+//
+// elapsed là số phút trọn đã chơi; traTruoc là phần tiền đã thu nhưng chưa
+// dùng hết (mức tối thiểu mỗi lần đăng nhập trả trước cho những phút đầu) —
+// vẫn là tiền chơi của khách nên được cộng vào số dư khi tính.
+//
+// Neo vào mốc phút tính từ lúc vào máy, KHÔNG vào "bây giờ": tiền tính theo
+// phút trọn kể từ started_at, nên phút cuối mua được cũng kết thúc ở đúng mốc
+// đó. Lượt trừ tiền và đường đọc phiên của máy trạm đều đi qua hàm này, nên
+// không còn hai con số khác nhau cho cùng một phiên.
+func mocHetTien(session *model.MachineSession, member model.Member, elapsed int, traTruoc int64) *time.Time {
+	if traTruoc > 0 {
+		member.Balance += traTruoc
+	}
+	mocPhut := session.StartedAt.Add(time.Duration(elapsed) * time.Minute)
+	until := affordableUntil(session, &member, mocPhut)
+
+	// Tiền mỗi phút làm tròn LÊN (CalculateCost), nên các phút đã chơi thường
+	// được thu dư một phần lẻ đồng. affordableUntil lại cắt phần lẻ của số dư
+	// còn lại. Bỏ cả hai phần lẻ thì đồng hồ hụt đúng 1 phút so với lúc máy
+	// thật sự dừng (8.000₫/giờ, 188.000₫: thấy 1409 phút, máy dừng ở 1410).
+	p := session.PricePerHour
+	conLai := member.Balance + member.BonusBalance
+	if until != nil && p > 0 && conLai > 0 {
+		billed := int64(billableMinutes(session, elapsed))
+		duLe := (billed*p+59)/60*60 - billed*p
+		if conLai*60%p+duLe >= p {
+			t := until.Add(time.Minute)
+			until = &t
+		}
+	}
+	return until
+}
+
 // billableMinutes trả về số phút PHẢI TRẢ TIỀN của một phiên sau khi trừ phần
 // gói cước đã phủ.
 //
@@ -326,7 +399,7 @@ func chargeSessionTo(tx *gorm.DB, session *model.MachineSession, target int64, m
 			BonusBefore: bonusBefore,
 			BonusAfter:  member.BonusBalance,
 			ReferenceID: &session.ID,
-			Description: "Session fee for " + machineCode,
+			Description: "Tiền giờ máy " + machineCode,
 		}
 		if err := tx.Create(&txn).Error; err != nil {
 			return nil, err
@@ -347,6 +420,43 @@ func chargeSessionTo(tx *gorm.DB, session *model.MachineSession, target int64, m
 	}
 
 	return res, nil
+}
+
+// hoanTienThuDu trả lại cho hội viên phần tiền giờ đã thu vượt tiền của cả
+// phiên, và sửa dòng session_fee duy nhất của phiên cho khớp.
+//
+// Hoàn vào số dư chính: sổ không ghi phần nào của khoản đã thu đến từ điểm
+// thưởng, và hoàn nhầm sang tiền thật có lợi cho khách chứ không cho quán.
+//
+// Người gọi phải đang ở trong transaction.
+func hoanTienThuDu(tx *gorm.DB, session *model.MachineSession, memberID string, soTien int64) (int64, error) {
+	var member model.Member
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", memberID).First(&member).Error; err != nil {
+		return 0, errors.New("không tìm thấy hội viên")
+	}
+	member.Balance += soTien
+	member.TotalSpent -= soTien
+	if member.TotalSpent < 0 {
+		member.TotalSpent = 0
+	}
+	if err := tx.Save(&member).Error; err != nil {
+		return 0, err
+	}
+
+	var txn model.MemberTransaction
+	err := tx.Where("reference_id = ? AND transaction_type = ?", session.ID, "session_fee").First(&txn).Error
+	if err == nil {
+		if err := tx.Model(&txn).Updates(map[string]interface{}{
+			"amount":        txn.Amount + soTien,
+			"balance_after": member.Balance,
+			"bonus_after":   member.BonusBalance,
+		}).Error; err != nil {
+			return 0, err
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, err
+	}
+	return member.Balance, nil
 }
 
 func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error) {
@@ -384,6 +494,11 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 		return nil, err
 	}
 
+	toiThieu := s.mucToiThieu()
+	if req.ComboPurchaseID == "" && toiThieu > 0 && member.Balance+member.BonusBalance < toiThieu {
+		return nil, fmt.Errorf("số dư %d₫ chưa đủ mức tối thiểu %d₫ mỗi lần đăng nhập — hãy nạp thêm",
+			member.Balance+member.BonusBalance, toiThieu)
+	}
 	if err := CheckMemberMayPlay(s.db, s.curfew, &member, req.ComboPurchaseID != ""); err != nil {
 		return nil, err
 	}
@@ -435,6 +550,20 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 	if dangDung > 0 {
 		tx.Rollback()
 		return nil, fmt.Errorf("máy %s đang có người chơi — hãy kết thúc phiên đó trước", lockedMachine.MachineCode)
+	}
+
+	// Máy đang được giữ cho một lịch đặt thì chỉ chủ lịch được ngồi; chủ lịch
+	// ngồi vào là tự nhận máy (trả cọc vào ví). Kiểm ở đây — sau khi đã khoá
+	// hội viên và máy — vì mọi cửa vào máy (quầy mở hộ, khách tự đăng nhập ở
+	// màn hình khoá, đổi máy) đều đi qua hàm này.
+	nhanLich, err := giuMayTheoLichDat(tx, &lockedMachine, &lockedMember, utils.VietnamTime())
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if nhanLich != nil {
+		// Cọc vừa về ví: đồng hồ "đủ tiền tới" bên dưới phải tính cả nó.
+		member.Balance = lockedMember.Balance
 	}
 
 	machine.Status = "in_use"
@@ -512,6 +641,19 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 		return nil, err
 	}
 
+	// Trừ mức tối thiểu NGAY lúc đăng nhập. AffordableUntil ở trên tính từ số dư
+	// trước khi trừ vẫn đúng: khoản này trả trước cho chính những phút đầu.
+	if tien := apMucToiThieu(&session, 0, session.PricePerHour, toiThieu); tien > 0 {
+		if _, err := chargeSessionTo(tx, &session, tien, machine.MachineCode, 0); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+		if err := tx.Model(&session).Update("charged_amount", session.ChargedAmount).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
+
 	// Gắn phiên vào gói SAU khi phiên đã có ID.
 	//
 	// Lệnh này vốn nằm ngay chỗ đọc gói, tức TRƯỚC tx.Create ở trên, nên
@@ -537,7 +679,9 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 		return nil, err
 	}
 
-	resp := toSessionDetail(&session, machine.MachineCode, member.FullName)
+	resp := toSessionDetail(&session, machine.MachineCode, tenHoiVien(&member))
+
+	nhanLich.bao(s.hub, s.audit, &lockedMember)
 
 	s.audit.Log(&LogAuditRequest{
 		Action:     "start_session",
@@ -559,7 +703,7 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 				"machine_id":   session.MachineID,
 				"member_id":    session.MemberID,
 				"machine_code": machine.MachineCode,
-				"member_name":  member.FullName,
+				"member_name":  tenHoiVien(&member),
 				"started_at":   session.StartedAt,
 			},
 		})
@@ -667,12 +811,20 @@ func (s *SessionService) ChargeTick(sessionID string) (*ChargeTickResult, error)
 		return nil, err
 	}
 
-	charge, err := chargeSessionTo(tx, &session, cost.FinalCost, machine.MachineCode, 0)
+	toiThieu := s.mucToiThieu()
+	target := apMucToiThieu(&session, cost.FinalCost, cost.PricePerHour, toiThieu)
+	charge, err := chargeSessionTo(tx, &session, target, machine.MachineCode, 0)
 	if err != nil {
 		tx.Rollback()
 		return nil, err
 	}
 	res.Charged = charge.Charged
+	// Phần mức tối thiểu chưa dùng hết vẫn là tiền chơi của khách: đếm nó vào
+	// mốc hết tiền, nếu không đồng hồ trên máy trạm hụt đi ngần ấy phút.
+	traTruocConLai := session.ChargedAmount - cost.FinalCost
+	if traTruocConLai < 0 {
+		traTruocConLai = 0
+	}
 
 	// Đơn giá được cập nhật mỗi lượt: phiên vắt qua ranh giới khung giờ cao điểm
 	// thì màn hình phải đổi theo giá đang thật sự áp dụng.
@@ -684,11 +836,22 @@ func (s *SessionService) ChargeTick(sessionID string) (*ChargeTickResult, error)
 		if err := tx.Where("id = ?", memberID).First(&member).Error; err == nil {
 			coMember = true
 			balanceAfter, bonusAfter = member.Balance, member.BonusBalance
-			session.AffordableUntil = affordableUntil(&session, &member, now)
-			// Hết tiền là hết giờ. Không đợi tới lúc trả máy mới lộ ra khoản nợ.
-			if session.PricePerHour > 0 && member.Balance+member.BonusBalance <= 0 &&
+			session.AffordableUntil = mocHetTien(&session, member, elapsed, traTruocConLai)
+			// Hết tiền là hết giờ: dừng ngay khi số dư KHÔNG ĐỦ trả phút kế tiếp,
+			// đúng lúc đồng hồ đếm ngược trên máy trạm về 0.
+			//
+			// Bản cũ đợi số dư về <= 0 mới dừng. Lúc đồng hồ về 0 số dư thường
+			// còn lẻ vài chục đồng, nên khách được chơi thêm trọn một phút và số
+			// dư âm. Phần lẻ còn lại giờ vẫn nằm trong tài khoản khách.
+			if session.PricePerHour > 0 &&
 				billableMinutes(&session, elapsed+1) > billableMinutes(&session, elapsed) {
-				res.OutOfCash = true
+				canThem := int64(0)
+				if next, err := s.CalculateCost(machine.ID, memberID, session.StartedAt, billableMinutes(&session, elapsed+1)); err == nil {
+					canThem = apMucToiThieu(&session, next.FinalCost, next.PricePerHour, toiThieu) - target
+				}
+				if canThem > 0 && balanceAfter+bonusAfter < canThem {
+					res.OutOfCash = true
+				}
 			}
 		}
 	}
@@ -885,6 +1048,9 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 	if err != nil {
 		return nil, err
 	}
+	// Mức tối thiểu đã trừ lúc đăng nhập: nâng tiền phiên lên đó để phần hoàn
+	// tiền thu dư bên dưới không trả nó lại.
+	costBreakdown.FinalCost = apMucToiThieu(&session, costBreakdown.FinalCost, costBreakdown.PricePerHour, s.mucToiThieu())
 
 	tx := s.db.Begin()
 
@@ -924,6 +1090,7 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 	//
 	// Phải chạy TRƯỚC khi lưu phiên: nó đặt session.ChargedAmount, chạy sau thì
 	// con số đó không được ghi xuống.
+	daThu := session.ChargedAmount
 	charge, err := chargeSessionTo(tx, &session, costBreakdown.FinalCost, machine.MachineCode, durationMinutes)
 	if err != nil {
 		tx.Rollback()
@@ -933,6 +1100,21 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 	balanceAfter := charge.BalanceAfter
 	bonusUsed := charge.BonusUsed
 	amountUnpaid := charge.AmountUnpaid
+
+	// Phiên chốt LÙI về nhịp tim cuối (máy tắt, reboot) thì các lượt trừ mỗi
+	// phút chạy trong quãng chờ phát hiện đã thu quá tiền của cả phiên.
+	// chargeSessionTo chỉ thu thêm, không bao giờ trả lại, nên phần dư phải
+	// hoàn ở đây — nếu không, sổ ví bị trừ nhiều hơn tiền ghi trên phiên.
+	hoanLai := int64(0)
+	if memberID != "" && daThu > costBreakdown.FinalCost {
+		hoanLai = daThu - costBreakdown.FinalCost
+		sau, err := hoanTienThuDu(tx, &session, memberID, hoanLai)
+		if err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+		balanceAfter = sau
+	}
 
 	// Phiên đã đóng thì không còn mốc hết tiền nào để đếm ngược.
 	session.AffordableUntil = nil
@@ -964,6 +1146,13 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
+	}
+
+	if hoanLai > 0 {
+		var mem model.Member
+		if err := s.db.Where("id = ?", memberID).First(&mem).Error; err == nil {
+			phatSoDuMoi(s.hub, memberID, mem.Balance, mem.BonusBalance)
+		}
 	}
 
 	s.audit.Log(&LogAuditRequest{
@@ -1028,7 +1217,7 @@ func (s *SessionService) GetSession(id string) (*SessionDetail, error) {
 	if session.MemberID != nil {
 		var member model.Member
 		if err := s.db.Where("id = ?", *session.MemberID).First(&member).Error; err == nil {
-			memberName = member.FullName
+			memberName = tenHoiVien(&member)
 		}
 	}
 
@@ -1095,7 +1284,91 @@ func (s *SessionService) GetActiveSessions() ([]SessionDetail, error) {
 	if err := s.db.Where("is_active = ?", true).Find(&sessions).Error; err != nil {
 		return nil, err
 	}
+	return s.kemTen(sessions), nil
+}
 
+// SessionListFilter là bộ lọc của trang Phiên. Status: "active", "ended" hoặc
+// rỗng (tất cả). Machine khớp một phần mã máy; Member khớp một phần tên đăng
+// nhập, họ tên (không dấu) hoặc số điện thoại.
+type SessionListFilter struct {
+	Status  string
+	Machine string
+	Member  string
+}
+
+// ListSessions trả cả phiên đã kết thúc, có phân trang — trang Phiên trước đây
+// chỉ thấy phiên đang chạy, nên lịch sử của một máy không xem được ở đâu cả.
+func (s *SessionService) ListSessions(f SessionListFilter, params pagination.Params) ([]SessionDetail, int64, error) {
+	query := s.db.Model(&model.MachineSession{})
+	switch f.Status {
+	case "active":
+		query = query.Where("is_active = ?", true)
+	case "ended":
+		query = query.Where("is_active = ?", false)
+	}
+	// Không lọc deleted_at: phiên của máy đã xoá vẫn là lịch sử cần tra.
+	if m := strings.TrimSpace(f.Machine); m != "" {
+		query = query.Where("machine_id IN (SELECT id FROM machines WHERE machine_code ILIKE ?)", "%"+m+"%")
+	}
+	if m := strings.TrimSpace(f.Member); m != "" {
+		like := "%" + m + "%"
+		query = query.Where(
+			"member_id IN (SELECT id FROM members WHERE unaccent(username) ILIKE unaccent(?) OR unaccent(full_name) ILIKE unaccent(?) OR phone ILIKE ?)",
+			like, like, like,
+		)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if params.Sort == pagination.DefaultSort {
+		params.Sort = "started_at"
+	}
+	var sessions []model.MachineSession
+	if err := pagination.Apply(query, &params).Find(&sessions).Error; err != nil {
+		return nil, 0, err
+	}
+	return s.kemTen(sessions), total, nil
+}
+
+// ErrPhienDangChay: phiên đang chạy còn đang tính tiền, xoá nó là khách chơi
+// không mất tiền và máy kẹt ở trạng thái "đang dùng".
+var ErrPhienDangChay = errors.New("phiên đang chạy — hãy kết thúc phiên trước khi xoá")
+
+// DeleteSession xoá hẳn một phiên ĐÃ KẾT THÚC.
+//
+// Tiền không đổi: số dư hội viên và lịch sử trừ tiền nằm ở bảng khác. Nhưng báo
+// cáo theo máy (giờ chơi, doanh thu, số phiên) đọc từ bảng này nên sẽ giảm theo.
+// Nhật ký kiểm toán giữ lại các con số của phiên để còn tra được về sau.
+func (s *SessionService) DeleteSession(id string) error {
+	var session model.MachineSession
+	if err := s.db.Where("id = ?", id).First(&session).Error; err != nil {
+		return err
+	}
+	if session.IsActive {
+		return ErrPhienDangChay
+	}
+	if err := s.db.Delete(&session).Error; err != nil {
+		return err
+	}
+	_ = s.audit.Log(&LogAuditRequest{
+		Action:     "delete",
+		EntityType: "machine_session",
+		EntityID:   session.ID,
+		Metadata: map[string]interface{}{
+			"machine_id": session.MachineID,
+			"member_id":  session.MemberID,
+			"started_at": session.StartedAt,
+			"ended_at":   session.EndedAt,
+			"total_cost": session.TotalCost,
+		},
+	})
+	return nil
+}
+
+// kemTen điền mã máy và tên hội viên cho từng phiên.
+func (s *SessionService) kemTen(sessions []model.MachineSession) []SessionDetail {
 	machineCache := make(map[string]string)
 	memberCache := make(map[string]string)
 
@@ -1121,7 +1394,7 @@ func (s *SessionService) GetActiveSessions() ([]SessionDetail, error) {
 			} else {
 				var m model.Member
 				if err := s.db.Where("id = ?", *session.MemberID).First(&m).Error; err == nil {
-					memberName = m.FullName
+					memberName = tenHoiVien(&m)
 					memberCache[*session.MemberID] = memberName
 				}
 			}
@@ -1130,7 +1403,7 @@ func (s *SessionService) GetActiveSessions() ([]SessionDetail, error) {
 		responses = append(responses, *toSessionDetail(&session, machineCode, memberName))
 	}
 
-	return responses, nil
+	return responses
 }
 
 func (s *SessionService) GetActiveSessionByMember(memberID string) (*SessionDetail, error) {
@@ -1152,7 +1425,30 @@ func (s *SessionService) GetActiveSessionByMember(memberID string) (*SessionDeta
 	if session.MemberID != nil {
 		var mem model.Member
 		if err := s.db.Where("id = ?", *session.MemberID).First(&mem).Error; err == nil {
-			memberName = mem.FullName
+			memberName = tenHoiVien(&mem)
+			// Tính lại mốc hết tiền theo số dư HIỆN TẠI, không trả con số lưu ở
+			// lượt trừ tiền gần nhất. Máy trạm đọc lại phiên ngay sau khi nạp
+			// tiền; trả con số cũ là đồng hồ đứng nguyên tới gần một phút sau,
+			// dù số dư trên cùng màn hình đã tăng.
+			//
+			// Phải tính ĐÚNG như lượt trừ tiền (mocHetTien): bản cũ ở đây bỏ
+			// quên phần tiền tối thiểu đã trả trước và neo vào "bây giờ", nên
+			// máy trạm thấy 8 phút trong khi khách còn 30 — đồng hồ về 0 rồi
+			// lại nhảy ngược lên khi đọc mốc đúng từ lượt trừ tiền.
+			if session.PricePerHour > 0 {
+				now := utils.VietnamTime()
+				elapsed := int(now.Sub(session.StartedAt).Minutes())
+				if elapsed < 0 {
+					elapsed = 0
+				}
+				traTruoc := int64(0)
+				if cost, err := s.CalculateCost(session.MachineID, mem.ID, session.StartedAt, billableMinutes(&session, elapsed)); err == nil {
+					traTruoc = session.ChargedAmount - cost.FinalCost
+				}
+				if until := mocHetTien(&session, mem, elapsed, traTruoc); until != nil {
+					session.AffordableUntil = until
+				}
+			}
 		}
 	}
 
@@ -1351,6 +1647,16 @@ func activeDuration(s *model.MachineSession) *int {
 		elapsed = 0
 	}
 	return &elapsed
+}
+
+// tenHoiVien là tên hiển thị của hội viên: họ tên, hoặc tên đăng nhập khi
+// hội viên không khai họ tên. Bản cũ chỉ lấy họ tên nên trang Phiên và bảng
+// "Máy đang hoạt động" để trống cột Hội viên với những tài khoản như vậy.
+func tenHoiVien(m *model.Member) string {
+	if strings.TrimSpace(m.FullName) != "" {
+		return m.FullName
+	}
+	return m.Username
 }
 
 func toSessionDetail(s *model.MachineSession, machineCode string, memberName string) *SessionDetail {

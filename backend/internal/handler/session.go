@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
+	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/response"
 	"github.com/vnet/core/pkg/utils"
 )
@@ -14,6 +15,57 @@ type SessionHandler struct {
 
 func NewSessionHandler(svc *service.SessionService) *SessionHandler {
 	return &SessionHandler{svc: svc}
+}
+
+// @Summary List sessions
+// @Description Paginated play sessions, including ended ones
+// @Tags Sessions
+// @Accept json
+// @Produce json
+// @Param status query string false "active | ended (empty = all)"
+// @Param machine query string false "Machine code (partial match)"
+// @Param member query string false "Member username, full name or phone (partial match)"
+// @Param page query int false "Page number"
+// @Param page_size query int false "Page size"
+// @Success 200 {object} response.Response{data=response.PaginatedData{items=[]service.SessionDetail}}
+// @Failure 400 {object} response.Response
+// @Router /sessions [get]
+// @Security BearerAuth
+func (h *SessionHandler) List(c *gin.Context) {
+	f := service.SessionListFilter{
+		Status:  c.Query("status"),
+		Machine: c.Query("machine"),
+		Member:  c.Query("member"),
+	}
+	if f.Status != "" && f.Status != "active" && f.Status != "ended" {
+		response.BadRequest(c, "status chỉ nhận active hoặc ended")
+		return
+	}
+	params := pagination.GetParams(c)
+	items, total, err := h.svc.ListSessions(f, *params)
+	if err != nil {
+		response.InternalError(c, "Failed to fetch sessions")
+		return
+	}
+	response.Paginated(c, items, total, params.Page, params.PageSize)
+}
+
+// @Summary Delete a session
+// @Description Permanently delete an ENDED session. Active sessions are rejected.
+// @Tags Sessions
+// @Produce json
+// @Param id path string true "Session ID"
+// @Success 200 {object} response.Response
+// @Failure 400 {object} response.Response "phiên đang chạy"
+// @Failure 404 {object} response.Response
+// @Router /sessions/{id} [delete]
+// @Security BearerAuth
+func (h *SessionHandler) Delete(c *gin.Context) {
+	if err := h.svc.DeleteSession(c.Param("id")); err != nil {
+		handleDeleteError(c, err)
+		return
+	}
+	response.Success(c, nil)
 }
 
 // @Summary List active sessions
@@ -131,6 +183,38 @@ func (h *SessionHandler) GetMySession(c *gin.Context) {
 	}
 
 	response.Success(c, session)
+}
+
+// @Summary End my own session
+// @Description Hội viên tự trả máy: kết thúc phiên đang chạy của chính mình. Không có phiên thì trả về null, không lỗi — máy trạm gọi hàm này mỗi lần đăng xuất.
+// @Tags Sessions
+// @Produce json
+// @Success 200 {object} response.Response{data=service.EndSessionResponse}
+// @Router /sessions/me/end [post]
+// @Security BearerAuth
+func (h *SessionHandler) EndMySession(c *gin.Context) {
+	memberID := middleware.GetUserID(c)
+	if memberID == "" {
+		response.BadRequest(c, "User not authenticated")
+		return
+	}
+
+	session, err := h.svc.GetActiveSessionByMember(memberID)
+	if err != nil {
+		response.InternalError(c, "Failed to fetch session")
+		return
+	}
+	if session == nil {
+		response.Success(c, nil)
+		return
+	}
+
+	result, err := h.svc.EndSession(session.ID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, result)
 }
 
 // @Summary Switch machine for a session

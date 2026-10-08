@@ -23,11 +23,11 @@ type Handlers struct {
 	Order             *OrderHandler
 	Printer           *PrinterHandler
 	Receipt           *ReceiptHandler
-	Card              *CardHandler
 	InventoryCount    *InventoryCountHandler
 	Attendance        *AttendanceHandler
 	WebsiteBlock      *WebsiteBlockHandler
 	AppUpdate         *AppUpdateHandler
+	Game              *GameHandler
 	Feedback          *FeedbackHandler
 	Pricing           *PricingHandler
 	Inventory         *InventoryHandler
@@ -50,7 +50,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 	chatSvc.HubRoomSync()
 	curfewSvc := service.NewCurfewService(db, auditSvc)
 	// Session starts are gated by curfew, so both handlers share one instance.
-	sessionSvc := service.NewSessionService(db, wsHub, auditSvc).WithCurfew(curfewSvc)
+	sessionSvc := service.NewSessionService(db, wsHub, auditSvc).WithCurfew(curfewSvc).WithMinCharge()
 	// Một MachineService dùng chung: handler chặn website cũng cần nó để kiểm
 	// khoá máy trạm, dựng hai bản là hai nguồn sự thật cho cùng một thứ.
 	// Dựng SAU sessionSvc vì tắt máy / khởi động lại từ xa phải chốt được phiên.
@@ -59,7 +59,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Auth:              NewAuthHandler(service.NewAuthService(db, jwtManager, auditSvc).WithCurfew(curfewSvc).WithSessions(sessionSvc)),
 		Route:             NewRouteHandler(service.NewRouteService()),
 		Member:            NewMemberHandler(service.NewMemberService(db, auditSvc).WithHub(wsHub)),
-		Machine:           NewMachineHandler(machineSvc),
+		Machine:           NewMachineHandler(machineSvc).WithHub(wsHub),
 		Session:           NewSessionHandler(sessionSvc),
 		Combo:             NewComboHandler(service.NewComboService(db, auditSvc).WithHub(wsHub)),
 		Booking:           NewBookingHandler(service.NewBookingService(db, auditSvc).WithHub(wsHub)),
@@ -70,11 +70,11 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Order:             NewOrderHandler(service.NewOrderService(db, wsHub, auditSvc, invSvc)),
 		Printer:           NewPrinterHandler(service.NewPrinterService(db, auditSvc)),
 		Receipt:           NewReceiptHandler(service.NewReceiptService(db, auditSvc)),
-		Card:              NewCardHandler(service.NewCardService(db, auditSvc).WithHub(wsHub)),
 		InventoryCount:    NewInventoryCountHandler(service.NewInventoryCountService(db, auditSvc).WithHub(wsHub)),
-		Attendance:        NewAttendanceHandler(service.NewAttendanceService(db, auditSvc)),
+		Attendance:        NewAttendanceHandler(service.NewAttendanceService(db, auditSvc).WithHub(wsHub)),
 		WebsiteBlock:      NewWebsiteBlockHandler(service.NewWebsiteBlockService(db, auditSvc)),
 		AppUpdate:         NewAppUpdateHandler(service.NewAppUpdateService(db, auditSvc)),
+		Game:              NewGameHandler(service.NewGameService(db, cfg.Game)),
 		Feedback:          NewFeedbackHandler(service.NewFeedbackService(db, auditSvc)),
 		Pricing:           NewPricingHandler(service.NewPricingService(db, auditSvc)),
 		Inventory:         NewInventoryHandler(invSvc),

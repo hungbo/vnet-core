@@ -34,7 +34,7 @@ func RegisterAdminUI(r *gin.Engine, assets fs.FS) {
 
 		// API, uploads and docs must keep returning their own errors instead of
 		// being swallowed by the SPA fallback.
-		if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/uploads/") || strings.HasPrefix(p, "/swagger/") {
+		if strings.HasPrefix(p, "/api/") || strings.HasPrefix(p, "/uploads/") || strings.HasPrefix(p, "/swagger/") || strings.HasPrefix(p, "/seed/") {
 			response.NotFound(c, "endpoint not found")
 			return
 		}
@@ -61,7 +61,7 @@ func RegisterAdminUI(r *gin.Engine, assets fs.FS) {
 	})
 }
 
-func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *config.Config) {
+func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *config.Config) *handler.Handlers {
 	h := handler.NewHandlers(db, jwtManager, wsHub, cfg)
 
 	uploadsDir := cfg.Server.UploadDir
@@ -69,6 +69,12 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		os.MkdirAll(uploadsDir, 0755)
 	}
 	r.Static("/uploads", uploadsDir)
+
+	// Webseed cho các quán tải game (BEP19), chỉ bật ở master.
+	if cfg.Game.Role == config.GameRoleMaster {
+		r.GET("/seed/:token/*filepath", h.Game.Seed(cfg.Game.Root))
+		r.HEAD("/seed/:token/*filepath", h.Game.Seed(cfg.Game.Root))
+	}
 
 	// The API explorer documents every endpoint; it stays off in production.
 	if cfg.Server.Mode != config.ModeRelease {
@@ -111,6 +117,12 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		api.GET("/machines/by-code/:code/blocklist", h.WebsiteBlock.EffectiveForMachine)
 		api.POST("/machines/by-code/:code/blocklist/violations", h.WebsiteBlock.ReportViolation)
 		api.GET("/machines/by-code/:code/app-update", h.AppUpdate.Latest)
+
+		// Catalog game cho các quán: khoá dùng chung GAME_CATALOG_KEY, kiểm trong handler.
+		if cfg.Game.Role == config.GameRoleMaster {
+			api.GET("/game-catalog", h.Game.Catalog)
+			api.GET("/game-catalog/:name/torrent", h.Game.Torrent)
+		}
 		// Máy trạm báo kết quả lệnh giám sát về: ảnh chụp và danh sách tiến
 		// trình. Đường lên bằng HTTP chứ không WebSocket vì readPump của hub
 		// giới hạn 4 KB, còn ảnh cỡ vài trăm KB.
@@ -148,7 +160,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				members.DELETE("/:id", middleware.StaffOnly(), middleware.PermissionRequired("members.delete"), h.Member.Delete)
 				members.POST("/:id/reset-password", middleware.StaffOnly(), middleware.PermissionRequired("members.reset_password"), h.Member.ResetPassword)
 				members.POST("/:id/topup", middleware.StaffOnly(), middleware.PermissionRequired("members.topup"), h.Member.Topup)
-				members.POST("/:id/refund", middleware.StaffOnly(), middleware.PermissionRequired("members.topup"), h.Member.Refund)
+				members.POST("/:id/refund", middleware.StaffOnly(), middleware.PermissionRequired("members.refund"), h.Member.Refund)
 
 				// The desktop client reads the signed-in member's own profile,
 				// balance history and sessions through these.
@@ -156,6 +168,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				members.GET("/:id/transactions", middleware.SelfOrStaff("id"), h.Member.GetTransactions)
 				members.GET("/:id/sessions", middleware.SelfOrStaff("id"), h.Member.GetSessions)
 				members.GET("/:id/combos", middleware.SelfOrStaff("id"), h.Member.GetCombos)
+				members.GET("/:id/orders", middleware.SelfOrStaff("id"), h.Order.ListByMember)
 			}
 
 			memberGroups := protected.Group("/member-groups", middleware.StaffOnly())
@@ -179,6 +192,9 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				machines.POST("/:id/heartbeat", middleware.StaffOnly(), middleware.PermissionRequired("machines.update"), h.Machine.Heartbeat)
 				machines.GET("/:id/hardware", middleware.StaffOnly(), middleware.PermissionRequired("machines.view"), h.Machine.GetHardware)
 				machines.POST("/:id/remote/:action", middleware.StaffOnly(), middleware.PermissionRequired("machines.remote"), h.Machine.RemoteAction)
+				machines.POST("/:id/wake", middleware.StaffOnly(), middleware.PermissionRequired("machines.remote"), h.Machine.Wake)
+				machines.GET("/:id/remote-desktop", middleware.StaffOnly(), middleware.PermissionRequired("machines.remote_desktop"), h.Machine.RemoteDesktop)
+				machines.GET("/:id/remote-desktop/ws", middleware.StaffOnly(), middleware.PermissionRequired("machines.remote_desktop"), h.Machine.RemoteDesktopWS)
 			}
 
 			machineGroups := protected.Group("/machine-groups", middleware.StaffOnly())
@@ -200,11 +216,16 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 			sessions := protected.Group("/sessions")
 			{
 				sessions.GET("/me", h.Session.GetMySession)
+				// Hội viên tự trả máy khi bấm Đăng xuất trên máy trạm. Không có
+				// đường này thì đăng xuất chỉ xoá token cục bộ và phiên vẫn trừ tiền.
+				sessions.POST("/me/end", h.Session.EndMySession)
 
+				sessions.GET("", middleware.StaffOnly(), middleware.PermissionRequired("sessions.view"), h.Session.List)
 				sessions.GET("/active", middleware.StaffOnly(), middleware.PermissionRequired("sessions.view"), h.Session.ListActive)
 				sessions.POST("/start", middleware.StaffOnly(), middleware.PermissionRequired("sessions.start"), h.Session.Start)
 				sessions.POST("/:id/end", middleware.StaffOnly(), middleware.PermissionRequired("sessions.end"), h.Session.End)
 				sessions.GET("/:id", middleware.StaffOnly(), middleware.PermissionRequired("sessions.view"), h.Session.Get)
+				sessions.DELETE("/:id", middleware.StaffOnly(), middleware.PermissionRequired("sessions.delete"), h.Session.Delete)
 				sessions.POST("/:id/switch-machine", middleware.StaffOnly(), middleware.PermissionRequired("sessions.switch"), h.Session.SwitchMachine)
 				sessions.GET("/calculate-cost", middleware.StaffOnly(), middleware.PermissionRequired("sessions.view"), h.Session.CalculateCost)
 			}
@@ -218,6 +239,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				combos.DELETE("/:id", middleware.PermissionRequired("combos.delete"), h.Combo.Delete)
 				combos.POST("/:id/purchase", middleware.PermissionRequired("combos.sell"), h.Combo.Purchase)
 				combos.POST("/:id/activate", middleware.PermissionRequired("combos.sell"), h.Combo.Activate)
+				combos.POST("/:id/print", middleware.PermissionRequired("combos.sell"), h.Receipt.PrintComboReceipt)
 			}
 
 			bookings := protected.Group("/bookings", middleware.StaffOnly())
@@ -248,6 +270,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				luckySpin.PUT("/rewards/:id", middleware.PermissionRequired("lucky_spin.update"), h.Promotion.UpdateLuckySpinReward)
 				luckySpin.DELETE("/rewards/:id", middleware.PermissionRequired("lucky_spin.delete"), h.Promotion.DeleteLuckySpinReward)
 				luckySpin.POST("/spin", middleware.PermissionRequired("lucky_spin.spin"), h.Promotion.Spin)
+				luckySpin.POST("/simulate", middleware.PermissionRequired("lucky_spin.view"), h.Promotion.SimulateSpin)
 			}
 
 			curfew := protected.Group("/curfew", middleware.StaffOnly())
@@ -305,28 +328,22 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				orders.GET("/:id/receipt-preview", middleware.StaffOnly(), middleware.PermissionRequired("orders.print"), h.Receipt.PreviewReceipt)
 			}
 
-			// Thẻ nạp: sinh/liệt kê/huỷ là việc của nhân viên. Riêng "nạp thẻ"
-			// hội viên tự làm được từ máy trạm — handler ép member_id về chính
-			// người gọi nên không nạp hộ tài khoản khác được.
-			topupCards := protected.Group("/topup-cards")
-			{
-				topupCards.POST("/redeem", h.Card.RedeemTopupCard)
-				topupCards.GET("", middleware.StaffOnly(), middleware.PermissionRequired("topup_cards.view"), h.Card.ListTopupCards)
-				topupCards.POST("/generate", middleware.StaffOnly(), middleware.PermissionRequired("topup_cards.generate"), h.Card.GenerateTopupCards)
-				topupCards.POST("/:id/cancel", middleware.StaffOnly(), middleware.PermissionRequired("topup_cards.cancel"), h.Card.CancelTopupCard)
-				topupCards.POST("/:id/sell", middleware.StaffOnly(), middleware.PermissionRequired("topup_cards.sell"), h.Card.SellTopupCard)
-			}
-
-			giftCards := protected.Group("/gift-cards")
-			{
-				giftCards.POST("/check", h.Card.CheckGiftCard)
-				giftCards.GET("", middleware.StaffOnly(), middleware.PermissionRequired("gift_cards.view"), h.Card.ListGiftCards)
-				giftCards.POST("/generate", middleware.StaffOnly(), middleware.PermissionRequired("gift_cards.generate"), h.Card.GenerateGiftCards)
-				giftCards.POST("/:id/cancel", middleware.StaffOnly(), middleware.PermissionRequired("gift_cards.cancel"), h.Card.CancelGiftCard)
-			}
-
 			// Điểm danh: hội viên tự làm được từ máy trạm; handler ép member_id
 			// về chính người gọi nên không điểm danh hộ người khác được.
+			games := protected.Group("/games", middleware.StaffOnly())
+			{
+				games.GET("/info", middleware.PermissionRequired("games.view"), h.Game.Info)
+				games.GET("", middleware.PermissionRequired("games.view"), h.Game.List)
+				games.POST("", middleware.PermissionRequired("games.create"), h.Game.Create)
+				games.PUT("/:id", middleware.PermissionRequired("games.update"), h.Game.Update)
+				games.DELETE("/:id", middleware.PermissionRequired("games.delete"), h.Game.Delete)
+				games.POST("/:id/publish", middleware.PermissionRequired("games.update"), h.Game.Publish)
+				games.POST("/:id/sync", middleware.PermissionRequired("games.update"), h.Game.Sync)
+			}
+			// Menu game của máy trạm: chỉ cần đăng nhập, hội viên cũng gọi được
+			// (giống /products). Nằm ngoài nhóm /games vì nhóm đó là StaffOnly.
+			protected.GET("/game-menu", h.Game.Menu)
+
 			appUpdates := protected.Group("/app-updates", middleware.StaffOnly())
 			{
 				appUpdates.GET("", middleware.PermissionRequired("app_updates.view"), h.AppUpdate.List)
@@ -445,6 +462,9 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				reports.GET("/promotion-usage", h.Report.PromotionUsage)
 			}
 
+			// Mọi màn hình nhận tiền đều cần danh sách này, nên chỉ cần đăng nhập.
+			protected.GET("/payment-methods", h.Settings.PaymentMethods)
+
 			settings := protected.Group("/settings")
 			{
 				settings.GET("/:group", h.Settings.GetByGroup)
@@ -523,4 +543,5 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 			}
 		}
 	}
+	return h
 }

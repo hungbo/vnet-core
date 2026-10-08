@@ -10,6 +10,7 @@ import (
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // HeartbeatTimeout is how long a machine may stay silent before it is treated
@@ -63,12 +64,27 @@ func Register(s *Scheduler, db *gorm.DB, wsHub *hub.Hub, sessions *service.Sessi
 	s.Add(Job{
 		Name:     "bookings:expire",
 		Interval: time.Minute,
-		Run:      func(ctx context.Context) error { return expireBookings(db) },
+		Run:      func(ctx context.Context) error { return expireBookings(db, wsHub) },
 	})
 	s.Add(Job{
-		Name:     "sessions:enforce-limits",
-		Interval: time.Minute,
+		Name: "sessions:enforce-limits",
+		// 10 giây, không phải một phút: đồng hồ trên máy trạm về 0 ở đúng mốc
+		// phút tính từ lúc khách vào, còn nhịp một phút thì lệch tuỳ lúc máy
+		// chủ khởi động — khách nhìn 00:00:00 tới gần một phút mới bị thoát.
+		// Lượt trừ tiền tính tới-đích theo phút trọn nên chạy dày hơn không
+		// trừ thêm đồng nào.
+		Interval: 10 * time.Second,
 		Run:      func(ctx context.Context) error { return enforceSessionLimits(db, sessions, wsHub) },
+	})
+	s.Add(Job{
+		Name: "sessions:end-due",
+		// Đồng hồ trên máy trạm về 0 là phiên phải dừng NGAY, không đợi lượt
+		// 10 giây ở trên. Lượt này chỉ đọc phiên đã tới mốc hết tiền hoặc hết
+		// khung giờ, nên mỗi giây một lần vẫn nhẹ. Chạy chồng với lượt trên
+		// không sao: trừ tiền tính tới-đích và khoá dòng phiên, đóng phiên
+		// kiểm lại is_active trong transaction.
+		Interval: time.Second,
+		Run:      func(ctx context.Context) error { return endDueSessions(db, sessions, wsHub) },
 	})
 	s.Add(Job{
 		Name:     "curfew:enforce",
@@ -137,16 +153,26 @@ func markStaleMachinesOffline(db *gorm.DB, wsHub *hub.Hub) error {
 
 // expireBookings releases slots nobody showed up for. Without this an expired
 // booking blocked its machine's time range permanently.
-func expireBookings(db *gorm.DB) error {
-	// A grace period after the slot start before the seat is given away.
-	const grace = 15 * time.Minute
-	cutoff := utils.VietnamTime().Add(-grace)
+//
+// Đánh vắng ở đây là MẤT CỌC, giống hệt nút "Đánh vắng" ở quầy: không đụng ví
+// (cọc đã rời ví từ lúc đặt). Mốc giờ dùng chung service.BookingNoShowGrace để
+// nút tay và tác vụ nền không lệch nhau.
+//
+// RETURNING id để báo booking:updated cho từng lịch: bản cũ đổi hàng loạt mà
+// không báo gì, nên trang Đặt chỗ đang mở vẫn hiện "đang chờ" tới khi tải lại.
+func expireBookings(db *gorm.DB, wsHub *hub.Hub) error {
+	cutoff := utils.VietnamTime().Add(-service.BookingNoShowGrace)
 
-	res := db.Model(&model.MachineBooking{}).
+	var vang []model.MachineBooking
+	res := db.Model(&vang).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
 		Where("status = ? AND booked_from < ?", "pending", cutoff).
 		Update("status", "no_show")
 	if res.Error != nil {
 		return res.Error
+	}
+	for _, b := range vang {
+		service.PhatLichDatDoi(wsHub, b.ID, "no_show")
 	}
 	if res.RowsAffected > 0 {
 		log.Printf("[scheduler] expired %d no-show bookings", res.RowsAffected)
@@ -154,11 +180,16 @@ func expireBookings(db *gorm.DB) error {
 
 	// Checked-in bookings whose slot has passed are finished, which also frees
 	// the range for future bookings.
-	done := db.Model(&model.MachineBooking{}).
+	var xong []model.MachineBooking
+	done := db.Model(&xong).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
 		Where("status = ? AND booked_to < ?", "checked_in", utils.VietnamTime()).
 		Update("status", "completed")
 	if done.Error != nil {
 		return done.Error
+	}
+	for _, b := range xong {
+		service.PhatLichDatDoi(wsHub, b.ID, "completed")
 	}
 	return nil
 }
@@ -193,6 +224,24 @@ func enforceSessionLimits(db *gorm.DB, sessions *service.SessionService, wsHub *
 	if err := db.Where("is_active = ?", true).Find(&active).Error; err != nil {
 		return err
 	}
+	xuLyPhien(db, sessions, wsHub, active, now)
+	return nil
+}
+
+// endDueSessions xử lý ngay những phiên vừa tới mốc kết thúc.
+func endDueSessions(db *gorm.DB, sessions *service.SessionService, wsHub *hub.Hub) error {
+	now := utils.VietnamTime()
+	var due []model.MachineSession
+	if err := db.Where("is_active = ? AND ((affordable_until IS NOT NULL AND affordable_until <= ?) OR (slot_end IS NOT NULL AND slot_end <= ?))",
+		true, now, now).Find(&due).Error; err != nil {
+		return err
+	}
+	xuLyPhien(db, sessions, wsHub, due, now)
+	return nil
+}
+
+// xuLyPhien trừ tiền rồi đóng những phiên đã hết thứ chúng được bán.
+func xuLyPhien(db *gorm.DB, sessions *service.SessionService, wsHub *hub.Hub, active []model.MachineSession, now time.Time) {
 
 	for _, sess := range active {
 		// Trừ tiền trước, rồi mới xét dừng: phút cuối cùng khách ngồi vẫn phải
@@ -244,22 +293,11 @@ func enforceSessionLimits(db *gorm.DB, sessions *service.SessionService, wsHub *
 			},
 		})
 
-		// Hết tiền thì khoá luôn màn hình: đóng phiên mà để máy mở là khách vẫn
-		// dùng máy miễn phí cho tới khi có người đi qua. Dùng đúng lệnh mà nút
-		// "Khoá" ở trang Máy đang gửi.
-		if reason == "out_of_balance" && machineCode != "" {
-			_ = wsHub.SendToMachine(machineCode, hub.Event{
-				Type: "remote:lock",
-				Data: map[string]interface{}{
-					"machine_code": machineCode,
-					"action":       "lock",
-					"payload":      map[string]interface{}{"reason": "Hết số dư — vui lòng nạp thêm tại quầy"},
-				},
-			})
-		}
+		// Máy trạm nhận session:auto-ended ở trên và tự đăng xuất về màn hình
+		// khoá có ô đăng nhập, kèm lý do — quán không người trực vẫn cho khách
+		// nạp thêm rồi đăng nhập lại được.
 		log.Printf("[scheduler] auto-ended session %s (%s)", sess.ID, reason)
 	}
-	return nil
 }
 
 // pruneHardwareHistory xoá số đo cũ hơn số ngày được cấu hình.

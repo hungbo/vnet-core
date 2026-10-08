@@ -37,10 +37,6 @@ var migrations = []migration{
 	{name: "website_schedule_start_to_time", sql: "ALTER TABLE website_blocking_schedules ALTER COLUMN start_time TYPE time USING start_time::time"},
 	{name: "website_schedule_end_to_time", sql: "ALTER TABLE website_blocking_schedules ALTER COLUMN end_time TYPE time USING end_time::time"},
 
-	// Mã bí mật của thẻ chuyển từ lưu thô sang lưu băm SHA-256 (64 ký tự hex).
-	{name: "topup_card_pin_hash_width", sql: "ALTER TABLE topup_cards ALTER COLUMN pin TYPE varchar(64)"},
-	{name: "gift_card_code_hash_width", sql: "ALTER TABLE gift_cards ALTER COLUMN code TYPE varchar(64)"},
-
 	// Một hội viên chỉ điểm danh một lần mỗi ngày. Ràng buộc phải ở tầng
 	// database: kiểm bằng câu lệnh SELECT rồi INSERT sẽ thua khi hai request
 	// gửi cùng lúc.
@@ -96,11 +92,8 @@ var migrations = []migration{
 	// Giữ nguyên TÊN index để AutoMigrate không dựng lại bản đầy đủ: GORM chỉ
 	// kiểm tra index có tồn tại theo tên hay không, không so định nghĩa.
 	//
-	// Bốn bảng CỐ Ý không đổi:
-	//   - orders.order_code: mã đơn sinh tuần tự và tra cứu Unscoped, trùng mã
-	//     giữa đơn sống và đơn đã xoá là hỏng sổ sách.
-	//   - topup_cards.code, gift_cards.code, gift_cards.serial: seri thẻ không
-	//     bao giờ được cấp lại, nếu không một thẻ đã huỷ có thể nạp lại lần hai.
+	// CỐ Ý không đổi: orders.order_code — mã đơn sinh tuần tự và tra cứu
+	// Unscoped, trùng mã giữa đơn sống và đơn đã xoá là hỏng sổ sách.
 	{name: "partial_unique_categories_name", sql: `
 		DO $$ BEGIN
 			DROP INDEX IF EXISTS idx_categories_name;
@@ -136,6 +129,43 @@ var migrations = []migration{
 			DROP INDEX IF EXISTS idx_users_username;
 			CREATE UNIQUE INDEX idx_users_username ON users (username) WHERE deleted_at IS NULL;
 		END $$`},
+	// Mã máy là tên máy Windows, tên máy có thể dài. varchar(20) cắt ngang
+	// bằng lỗi thô ngay ở nhịp tim đầu.
+	// Hai bước riêng: driver chạy mỗi câu như một prepared statement, không
+	// nhận hai lệnh trong một chuỗi.
+	{name: "machine_code_256", sql: `ALTER TABLE machines ALTER COLUMN machine_code TYPE varchar(256)`},
+	{name: "session_machine_code_256", sql: `ALTER TABLE machine_sessions ALTER COLUMN machine_code TYPE varchar(256)`},
+	// Tài khoản combo trước đây lưu role mặc định "member", không phân biệt được
+	// với hội viên thường. Nhận ra chúng bằng việc tài khoản được tạo cùng lúc
+	// với lượt mua gói (cùng một giao dịch, cách nhau vài mili giây); hội viên
+	// thường mua combo bằng tài khoản có sẵn thì tạo từ trước rất lâu.
+	{name: "backfill_combo_member_role", sql: `
+		UPDATE members m SET role = 'combo'
+		WHERE (m.role IS NULL OR m.role IN ('', 'member'))
+		  AND EXISTS (
+			SELECT 1 FROM combo_purchases p
+			WHERE p.member_id = m.id
+			  AND p.created_at BETWEEN m.created_at AND m.created_at + interval '1 minute'
+		  )`},
+
+	// Chức năng thẻ nạp và thẻ quà tặng đã gỡ. dongBoQuyen chỉ THÊM mã quyền,
+	// nên bảy mã cũ còn nằm trong bảng và hiện ở màn hình Phân quyền mà không
+	// mở được gì. Bảng thẻ (topup_cards, gift_cards, gift_card_transactions)
+	// cố ý KHÔNG xoá: đó là dữ liệu của quán, để chủ quán tự quyết.
+	{name: "remove_card_permissions", sql: `
+		DO $$ BEGIN
+			IF to_regclass('permissions') IS NOT NULL THEN
+				DELETE FROM role_permissions WHERE permission_id IN (
+					SELECT id FROM permissions WHERE code LIKE 'topup\_cards.%' OR code LIKE 'gift\_cards.%');
+				DELETE FROM permissions WHERE code LIKE 'topup\_cards.%' OR code LIKE 'gift\_cards.%';
+			END IF;
+		END $$`},
+
+	// Quán chỉ có MỘT két tiền nên cả quán chỉ được một ca mở cùng lúc. Kiểm tra
+	// ở service không đủ: hai lần bấm "Mở ca" đồng thời đều qua bước kiểm tra và
+	// đã tạo ra hai ca mở, cùng tính một khoản tiền mặt hai lần. Chỉ mục duy nhất
+	// trên hằng số (true), lọc status = 'open', cho phép tối đa một dòng như vậy.
+	{name: "unique_single_open_shift", sql: `CREATE UNIQUE INDEX IF NOT EXISTS uniq_shift_open ON shifts ((true)) WHERE status = 'open'`},
 }
 
 func main() {

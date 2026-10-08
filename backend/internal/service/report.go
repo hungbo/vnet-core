@@ -2,7 +2,6 @@ package service
 
 import (
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/vnet/core/internal/model"
@@ -114,8 +113,6 @@ type ReportParams struct {
 //     toán xong nó đồng thời sinh một dòng ví 'topup', nên đếm cả hai là đếm
 //     một khoản tiền hai lần.
 //   - payment_method = 'balance' là trả bằng số dư — tiền đã tính lúc nạp.
-//   - payment_method = 'gift_card' là thẻ quà tặng do quán phát, không có tiền
-//     vào lúc phát cũng như lúc dùng.
 const donHangThuTien = "order_type <> 'topup' AND payment_method = 'cash'"
 
 type txRevenueRow struct {
@@ -139,12 +136,12 @@ type txRevenueRow struct {
 //   - topup_bonus, attendance_bonus, lucky_spin_balance, lucky_spin_bonus:
 //     quán TẶNG số dư, không có đồng nào đi vào két.
 //   - booking_deposit, deposit_refund: tiền di chuyển trong ví, không ra vào quán.
+//     Cọc MẤT do khách không đến (lịch no_show) cũng không cộng thêm: đồng
+//     cọc ấy đã nằm trong doanh thu từ lần nạp ví sinh ra nó — tính đúng một
+//     lần ở đó; cộng lúc mất cọc nữa là đếm hai lần.
 //   - adjustment: điều chỉnh kiểm kê kho, không phải tiền khách.
 //   - refund_bonus: thu lại số dư tặng, cũng không có tiền thật đi ra.
 //
-// topup_card KHÔNG có mặt ở đây: tiền mua thẻ vào quán lúc BÁN, và khoản đó
-// nay được đếm riêng bằng thuTienBanThe. Đếm cả lúc bán lẫn lúc nạp là đếm hai
-// lần cùng một khoản.
 func (s *ReportService) txRevenueQuery(dateFrom, dateTo string, dateExpr string) ([]txRevenueRow, error) {
 	var results []txRevenueRow
 	query := s.db.Table("member_transactions").
@@ -168,37 +165,6 @@ func (s *ReportService) txRevenueQuery(dateFrom, dateTo string, dateExpr string)
 	if dateTo != "" {
 		if t, err := time.ParseInLocation("2006-01-02", dateTo, utils.VietnamLocation()); err == nil {
 			query = query.Where("created_at <= ?", utils.EndOfDay(t))
-		}
-	}
-
-	query = query.Group("date").Order("date asc")
-	if err := query.Find(&results).Error; err != nil {
-		return nil, err
-	}
-	return results, nil
-}
-
-// thuTienBanThe cộng mệnh giá những thẻ nạp đã bán, theo NGÀY BÁN.
-//
-// Bán thẻ là lúc tiền đi từ tay khách vào quầy, nên đây mới là thời điểm ghi
-// nhận. Thẻ đã bán mà khách chưa nạp vẫn tính — tiền đã vào két rồi. Thẻ phát
-// làm quà (không qua màn hình Bán) không có sold_at nên không lọt vào đây.
-//
-// Chỉ đếm thẻ chưa bị huỷ: huỷ thẻ là hoàn lại giao dịch bán.
-func (s *ReportService) thuTienBanThe(dateFrom, dateTo string, dateExpr string) ([]txRevenueRow, error) {
-	var results []txRevenueRow
-	query := s.db.Table("topup_cards").
-		Select(strings.ReplaceAll(dateExpr, "created_at", "sold_at") + " as date, COALESCE(SUM(face_value), 0) as amount, COUNT(*) as count").
-		Where("sold_at IS NOT NULL AND status <> 'cancelled' AND deleted_at IS NULL")
-
-	if dateFrom != "" {
-		if t, err := time.ParseInLocation("2006-01-02", dateFrom, utils.VietnamLocation()); err == nil {
-			query = query.Where("sold_at >= ?", utils.StartOfDay(t))
-		}
-	}
-	if dateTo != "" {
-		if t, err := time.ParseInLocation("2006-01-02", dateTo, utils.VietnamLocation()); err == nil {
-			query = query.Where("sold_at <= ?", utils.EndOfDay(t))
 		}
 	}
 
@@ -235,12 +201,6 @@ func (s *ReportService) DailyRevenue(dateFrom, dateTo string) ([]DailyRevenueRow
 	if err != nil {
 		return nil, err
 	}
-
-	theResults, err := s.thuTienBanThe(dateFrom, dateTo, "DATE(created_at)")
-	if err != nil {
-		return nil, err
-	}
-	txResults = append(txResults, theResults...)
 
 	dateMap := make(map[string]*DailyRevenueRow)
 	for i := range orderResults {
@@ -295,12 +255,6 @@ func (s *ReportService) MonthlyRevenue(year, month int) ([]MonthlyRevenueRow, er
 	if err != nil {
 		return nil, err
 	}
-
-	theResults, err := s.thuTienBanThe(dateFrom, dateTo, "TO_CHAR(created_at, 'YYYY-MM')")
-	if err != nil {
-		return nil, err
-	}
-	txResults = append(txResults, theResults...)
 
 	monthMap := make(map[string]*MonthlyRevenueRow)
 	for i := range orderResults {

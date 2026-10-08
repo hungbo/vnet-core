@@ -10,13 +10,14 @@ import (
 )
 
 type AuthHandler struct {
-	svc *service.AuthService
+	svc      *service.AuthService
+	throttle *loginThrottle
 }
 
 func NewAuthHandler(svc *service.AuthService) *AuthHandler {
 	// Giữ tham chiếu cho Swagger sinh được kiểu trả về của /auth/permissions.
 	_ = model.Permission{}
-	return &AuthHandler{svc: svc}
+	return &AuthHandler{svc: svc, throttle: newLoginThrottle()}
 }
 
 // Login
@@ -29,6 +30,7 @@ func NewAuthHandler(svc *service.AuthService) *AuthHandler {
 // @Success      200   {object}  response.Response{data=service.LoginResponse}
 // @Failure      400   {object}  response.Response
 // @Failure      401   {object}  response.Response
+// @Failure      429   {object}  response.Response  "Sai quá nhiều lần — kèm header Retry-After"
 // @Router       /api/auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req service.LoginRequest
@@ -37,7 +39,12 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	key, ok := h.allowLogin(c, req.Username)
+	if !ok {
+		return
+	}
 	result, err := h.svc.Login(&req)
+	h.settleLogin(key, err)
 	if err != nil {
 		response.Unauthorized(c, err.Error())
 		return
@@ -82,6 +89,7 @@ func (h *AuthHandler) QRLogin(c *gin.Context) {
 // @Success      200   {object}  response.Response{data=service.LoginResponse}
 // @Failure      400   {object}  response.Response
 // @Failure      401   {object}  response.Response
+// @Failure      429   {object}  response.Response  "Sai quá nhiều lần — kèm header Retry-After"
 // @Router       /api/auth/member-login [post]
 func (h *AuthHandler) MemberLogin(c *gin.Context) {
 	var req service.MemberLoginRequest
@@ -90,10 +98,15 @@ func (h *AuthHandler) MemberLogin(c *gin.Context) {
 		return
 	}
 
+	key, ok := h.allowLogin(c, req.Username)
+	if !ok {
+		return
+	}
 	// Mở phiên nằm trong MemberLogin: đăng nhập được mà không mở được phiên là
 	// khách ngồi máy không ai tính tiền, nên hai việc đó phải thành hoặc bại
 	// cùng nhau.
 	result, err := h.svc.MemberLogin(&req)
+	h.settleLogin(key, err)
 	if err != nil {
 		response.Unauthorized(c, err.Error())
 		return
@@ -111,6 +124,7 @@ func (h *AuthHandler) MemberLogin(c *gin.Context) {
 // @Param        body  body  service.MemberLoginRequest  true  "Tài khoản, mật khẩu, mã máy"
 // @Success      200   {object}  response.Response{data=service.ClientLoginResponse}
 // @Failure      401   {object}  response.Response
+// @Failure      429   {object}  response.Response  "Sai quá nhiều lần — kèm header Retry-After"
 // @Router       /api/auth/client-login [post]
 func (h *AuthHandler) ClientLogin(c *gin.Context) {
 	var req service.MemberLoginRequest
@@ -119,7 +133,14 @@ func (h *AuthHandler) ClientLogin(c *gin.Context) {
 		return
 	}
 
+	// Cùng bộ đếm với /auth/login: tên nhân viên gõ ở đây đi thẳng vào Login,
+	// nên chặn một cửa mà để cửa kia mở thì dò mật khẩu admin qua cửa còn lại.
+	key, ok := h.allowLogin(c, req.Username)
+	if !ok {
+		return
+	}
 	result, err := h.svc.ClientLogin(&req)
+	h.settleLogin(key, err)
 	if err != nil {
 		response.Unauthorized(c, err.Error())
 		return
@@ -173,10 +194,15 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	// gọi /auth/me luôn hỏng.
 	var result *service.UserResponse
 	var err error
+	kind := "member"
 	if middleware.GetKind(c) == jwt.KindStaff {
+		kind = "staff"
 		result, err = h.svc.GetCurrentUser(userID)
 	} else {
 		result, err = h.svc.GetCurrentMember(userID)
+	}
+	if err == nil && result != nil {
+		result.Kind = kind
 	}
 	if err != nil {
 		// 401 chứ KHÔNG phải 404: token hợp lệ về mặt chữ ký nhưng trỏ tới một
