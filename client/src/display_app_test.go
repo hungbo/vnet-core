@@ -17,21 +17,18 @@ type fakeScreen struct {
 	speed     int
 	precision bool
 
-	reg        DisplayMode // chế độ trong registry (mặc định của máy)
-	readErr    error       // làm modes() hỏng
-	regErr     error       // làm registryMode() hỏng
+	readErr    error // làm modes() hỏng
 	setModeErr error
 	// setModeFails: số lần setMode kế tiếp sẽ hỏng rồi mới tốt lại (card đồ hoạ bận tạm thời).
 	setModeFails int
 
 	setModes []DisplayMode // lịch sử setMode (chỉ những lần thành công)
-	restores int           // số lần restoreDefault
 	speeds   []int
 	precs    []bool
 }
 
 func (f *fakeScreen) writes() int {
-	return len(f.setModes) + f.restores + len(f.speeds) + len(f.precs)
+	return len(f.setModes) + len(f.speeds) + len(f.precs)
 }
 
 func (f *fakeScreen) hw() displayHW {
@@ -52,12 +49,6 @@ func (f *fakeScreen) hw() displayHW {
 			}
 			f.setModes = append(f.setModes, m)
 			f.cur.DisplayMode = m
-			return nil
-		},
-		registryMode: func() (DisplayMode, error) { return f.reg, f.regErr },
-		restoreDefault: func() error {
-			f.restores++
-			f.cur.DisplayMode = f.reg
 			return nil
 		},
 		getMouse: func() (int, bool, error) { return f.speed, f.precision, nil },
@@ -95,7 +86,6 @@ func newDisplayRig() *displayRig {
 	s := &fakeScreen{
 		raw:       []rawDisplayMode{raw32(1920, 1080, 60), raw32(1920, 1080, 144), raw32(1280, 720, 60), raw32(640, 480, 60)},
 		cur:       raw32(1920, 1080, 60),
-		reg:       modeGoc,
 		speed:     10,
 		precision: true,
 	}
@@ -443,82 +433,103 @@ func TestDisplayReset_LoiKhongChanCaiConLai(t *testing.T) {
 	}
 }
 
-// --- Mốc lấy lúc khởi động ---------------------------------------------------------
-
-// Lỗi gốc: mốc lấy ở lần đầu có người mở Cài đặt. Game đang giữ 1280x720 lúc đó thì
-// 1280x720 thành "mặc định" cho mọi khách sau. Mốc lấy lúc khởi động thì không.
-func TestDisplayStartup_MocKhongTheoGame(t *testing.T) {
+// Khởi động và mỗi lần khoá máy đều gọi resetIfTouched: chưa ai đổi gì qua Cài đặt thì
+// nó không được đọc màn hình (liệt kê chế độ tốn thời gian đúng lúc màn hình khoá đang
+// dựng), càng không được ghi. Màn hình "không đọc được" mà nó vẫn êm là bằng chứng nó
+// không đọc.
+func TestDisplayReset_ChuaDoiThiKhongDocManHinh(t *testing.T) {
 	r := newDisplayRig()
-	r.ctl.startup()
-
-	r.screen.cur.DisplayMode = modeA // game vào toàn màn hình 1280x720
-	if got := r.info(t); got.Baseline != modeGoc || got.Current != modeA {
-		t.Fatalf("mốc theo game: baseline %v, current %v", got.Baseline, got.Current)
+	r.screen.readErr = errors.New("không được đọc")
+	if changed, err := r.ctl.resetIfTouched(nil); err != nil || changed {
+		t.Errorf("máy mới bật: reset = %v, %v", changed, err)
 	}
-	r.screen.cur.DisplayMode = modeGoc // game thoát, Windows trả desktop về
+	if r.screen.writes() != 0 || len(r.clock.timers) != 0 {
+		t.Errorf("máy mới bật mà reset vẫn đụng vào máy: ghi %d, hẹn giờ %d", r.screen.writes(), len(r.clock.timers))
+	}
+
+	// Đã có mốc (khách mở Cài đặt) nhưng chưa đổi gì: vẫn không đọc.
+	r = newDisplayRig()
+	r.info(t)
+	r.screen.readErr = errors.New("không được đọc")
+	if changed, err := r.ctl.resetIfTouched(nil); err != nil || changed || r.screen.writes() != 0 {
+		t.Errorf("chỉ mở Cài đặt: reset = %v, %v, ghi %d", changed, err, r.screen.writes())
+	}
+}
+
+// Chỉ mở Cài đặt thì mốc có, nhưng thứ khác đổi màn hình (game, "độ phân giải tốt nhất"
+// của Cloud Update) không phải việc của VNET: khoá máy không kéo về mốc. Khách đổi qua
+// VNET thì khoá máy trả về; trả xong thì lại như chưa ai đổi gì.
+func TestDisplayReset_ChiMoCaiDatThiKhongTraVe(t *testing.T) {
+	r := newDisplayRig()
+	if got := r.info(t); got.Baseline != modeGoc {
+		t.Fatalf("mốc = %v, mong %v", got.Baseline, modeGoc)
+	}
+	r.screen.cur.DisplayMode = modeA // thứ khác đổi màn hình
+	if changed, err := r.ctl.resetIfTouched(nil); err != nil || changed || r.screen.writes() != 0 {
+		t.Errorf("chỉ mở Cài đặt: reset = %v, %v, ghi %d", changed, err, r.screen.writes())
+	}
+	if r.screen.cur.DisplayMode != modeA {
+		t.Errorf("chỉ mở Cài đặt mà máy bị kéo về %v", r.screen.cur.DisplayMode)
+	}
+
+	r.screen.cur.DisplayMode = modeGoc
 	if err := r.ctl.apply(modeB, r.onRedock); err != nil {
 		t.Fatal(err)
 	}
 	r.ctl.confirm()
-
-	// Khách đăng xuất: máy về 1920x1080@60, không phải 1280x720 của game.
-	if changed, err := r.ctl.reset(nil); err != nil || !changed {
-		t.Fatalf("reset = %v, %v", changed, err)
+	if changed, err := r.ctl.resetIfTouched(nil); err != nil || !changed {
+		t.Fatalf("khách đã đổi: reset = %v, %v", changed, err)
 	}
 	if r.screen.cur.DisplayMode != modeGoc {
-		t.Errorf("sau đăng xuất máy ở %v, mong %v", r.screen.cur.DisplayMode, modeGoc)
+		t.Errorf("sau reset máy ở %v, mong %v", r.screen.cur.DisplayMode, modeGoc)
+	}
+
+	r.screen.cur.DisplayMode = modeA // khách sau chưa đổi gì, thứ khác đổi màn hình
+	writes := r.screen.writes()
+	if changed, err := r.ctl.resetIfTouched(nil); err != nil || changed || r.screen.writes() != writes {
+		t.Errorf("reset xong rồi mà lần khoá sau vẫn kéo máy: %v, %v, ghi thêm %d", changed, err, r.screen.writes()-writes)
 	}
 }
 
-// Tiến trình giao diện chết giữa lúc một chế độ chưa xác nhận đang treo: máy đen màn
-// và đồng hồ cũ đã mất. Tiến trình mới phải kéo máy về mặc định và nhớ mặc định làm mốc,
-// không phải nhớ chế độ hỏng làm mốc.
-func TestDisplayStartup_VeMacDinhKhiMayKetOCheDoLa(t *testing.T) {
+// Nút "Khôi phục mặc định" khác khoá máy: khách tự bấm nên trả về mốc cả khi thứ làm
+// lệch là một game, không phải VNET.
+func TestDisplayReset_NutKhoiPhucTraVeDuGameDoi(t *testing.T) {
 	r := newDisplayRig()
-	r.screen.cur.DisplayMode = modeA // chế độ treo của tiến trình trước, registry vẫn là modeGoc
-
-	r.ctl.startup()
-	if r.screen.restores != 1 || r.screen.cur.DisplayMode != modeGoc {
-		t.Fatalf("restoreDefault %d lần, máy ở %v", r.screen.restores, r.screen.cur.DisplayMode)
+	r.info(t)                        // mốc modeGoc, chưa đổi gì
+	r.screen.cur.DisplayMode = modeA // game để lại 1280x720
+	if changed, err := r.ctl.resetIfTouched(nil); err != nil || changed || r.screen.writes() != 0 {
+		t.Errorf("khoá máy: resetIfTouched = %v, %v, ghi %d", changed, err, r.screen.writes())
 	}
-	if got := r.info(t); got.Baseline != modeGoc {
-		t.Errorf("mốc = %v, mong mặc định %v (không phải chế độ hỏng)", got.Baseline, modeGoc)
-	}
-	if changed, err := r.ctl.reset(nil); err != nil || changed {
-		t.Errorf("máy đã ở mốc mà reset vẫn đổi: %v, %v", changed, err)
+	changed, err := r.ctl.reset(r.onRedock)
+	if err != nil || !changed || r.screen.cur.DisplayMode != modeGoc {
+		t.Errorf("nút khôi phục: reset = %v, %v, máy ở %v", changed, err, r.screen.cur.DisplayMode)
 	}
 }
 
-// Không có bằng chứng lệch thì không đụng vào máy.
-func TestDisplayStartup_KhongLechThiKhongDung(t *testing.T) {
-	cases := map[string]func(r *displayRig){
-		"đúng mặc định":                func(r *displayRig) {},
-		"registry không đọc được":      func(r *displayRig) { r.screen.regErr = errors.New("hỏng"); r.screen.cur.DisplayMode = modeA },
-		"registry ra kích thước vô lý": func(r *displayRig) { r.screen.reg = DisplayMode{}; r.screen.cur.DisplayMode = modeA },
-		"registry tần số 0 (mặc định card)": func(r *displayRig) {
-			r.screen.reg = dm(1920, 1080, 0)
-		},
+// Khách chỉ đổi chuột thì khoá máy vẫn phải trả chuột về: mỗi phép đổi chuột tự đánh
+// dấu touched, không trông vào apply.
+func TestDisplayReset_ChiDoiChuotVanTraVe(t *testing.T) {
+	cases := map[string]func(r *displayRig) error{
+		"tốc độ":       func(r *displayRig) error { return r.ctl.setMouseSpeed(3) },
+		"độ chính xác": func(r *displayRig) error { return r.ctl.setMousePrecision(false) },
 	}
-	for name, setup := range cases {
+	for name, doi := range cases {
 		r := newDisplayRig()
-		setup(r)
-		want := r.screen.cur.DisplayMode
-		r.ctl.startup()
-		if r.screen.restores != 0 || r.screen.cur.DisplayMode != want {
-			t.Errorf("%s: vẫn đụng vào máy (restore %d, chế độ %v)", name, r.screen.restores, r.screen.cur.DisplayMode)
+		if err := doi(r); err != nil {
+			t.Fatalf("%s: %v", name, err)
 		}
-		if r.ctl.base == nil || r.ctl.base.mode != want {
-			t.Errorf("%s: mốc = %+v, mong %v", name, r.ctl.base, want)
+		if changed, err := r.ctl.resetIfTouched(nil); err != nil || changed {
+			t.Errorf("%s: resetIfTouched = %v, %v", name, changed, err)
 		}
-	}
-}
+		if r.screen.speed != 10 || !r.screen.precision {
+			t.Errorf("%s: chuột chưa về mốc: tốc độ %d, độ chính xác %v", name, r.screen.speed, r.screen.precision)
+		}
 
-func TestDisplayStartup_KhongHoTro(t *testing.T) {
-	r := newDisplayRig()
-	r.screen.readErr = errDisplayUnsupported
-	r.ctl.startup()
-	if r.ctl.base != nil || r.screen.writes() != 0 {
-		t.Errorf("không đọc được mà vẫn có mốc %+v / ghi %d", r.ctl.base, r.screen.writes())
+		r.screen.speed = 5 // khách sau chưa đổi gì, thứ khác đổi chuột
+		writes := r.screen.writes()
+		if _, err := r.ctl.resetIfTouched(nil); err != nil || r.screen.writes() != writes {
+			t.Errorf("%s: trả xong rồi mà lần khoá sau vẫn ghi thêm %d", name, r.screen.writes()-writes)
+		}
 	}
 }
 
@@ -634,5 +645,26 @@ func TestDisplayRetry_BiHuyKhiKhachLamViecKhac(t *testing.T) {
 	r.clock.fireStopped(displayRetryAfter)
 	if r.screen.writes() != writes {
 		t.Error("reset rồi mà lượt thử lại vẫn kéo máy")
+	}
+}
+
+// Màn hình khoá dựng theo chế độ của game (1280x960) phải bị coi là lệch khi màn hình
+// về 1920x1080; lệch vì làm tròn DPI (1-2px) thì không, để không nháy màn hình vô cớ.
+func TestLechManHinh(t *testing.T) {
+	cases := []struct {
+		w, h, mw, mh int
+		lech         bool
+	}{
+		{1920, 1080, 1920, 1080, false},
+		{1280, 960, 1920, 1080, true},
+		{1920, 1080, 1280, 720, true},
+		{1281, 721, 1280, 720, false},
+		{1918, 1080, 1920, 1080, false},
+		{1920, 1077, 1920, 1080, true},
+	}
+	for _, c := range cases {
+		if got := lechManHinh(c.w, c.h, c.mw, c.mh); got != c.lech {
+			t.Errorf("lechManHinh(%d,%d,%d,%d) = %v, muốn %v", c.w, c.h, c.mw, c.mh, got, c.lech)
+		}
 	}
 }

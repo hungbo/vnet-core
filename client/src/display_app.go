@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log"
 	"sync"
@@ -23,14 +24,22 @@ type displayCtl struct {
 	after func(d time.Duration, f func()) (stop func() bool)
 	guard revertGuard
 	base  *displayBaseline
+	// touched: từ lần reset trước, khách đã ĐỔI gì qua trang Cài đặt chưa (độ phân
+	// giải, tần số, chuột). Chỉ mở Cài đặt mà không đổi gì thì khoá máy không đọc lại
+	// màn hình, cũng không trả gì về mốc: thứ khác đổi màn hình (game, Cloud Update)
+	// không phải việc của VNET.
+	touched bool
 	// retries: số lần đã thử lại việc về chế độ cũ sau khi nó hỏng; đặt về 0 mỗi lần đổi.
 	retries int
 }
 
-// displayBaseline là mốc phải trả về: cài đặt của máy trước khi khách nào động tới.
-// Nhớ lúc tiến trình giao diện KHỞI ĐỘNG (startup), chứ không phải lúc có người mở
-// trang Cài đặt: lúc đó một game đang chạy có thể đã đổi độ phân giải, và cái chế độ
-// tạm của game sẽ thành "mặc định" cho mọi khách sau.
+// displayBaseline là mốc phải trả về: cài đặt của máy trước thay đổi đầu tiên của
+// khách. Nhớ ở lần ĐỌC đầu tiên — lúc có người mở trang Cài đặt (GetDisplayInfo) hoặc
+// đổi lần đầu — chứ không đọc lúc khởi động: liệt kê mọi chế độ màn hình tốn thời gian
+// đúng lúc màn hình khoá đang dựng, và bản cũ tự về chế độ trong registry lúc khởi động
+// đã giành giật với "độ phân giải/tần số tốt nhất" Cloud Update đặt mỗi lần bật máy.
+// Cái giá chấp nhận: mở Cài đặt đúng lúc một game đang giữ chế độ tạm thì chế độ tạm
+// đó thành mốc.
 type displayBaseline struct {
 	mode      DisplayMode
 	speed     int
@@ -69,39 +78,15 @@ func (d *displayCtl) read() (displaySnapshot, error) {
 	return displaySnapshot{filterDisplayModes(raw, cur.Orientation), cur.DisplayMode, speed, precision}, nil
 }
 
-// begin đọc trạng thái hiện tại và, nếu startup chưa kịp nhớ mốc (đọc lúc đó hỏng),
-// nhớ nó làm mốc ở lần đầu. Mọi thao tác ĐỔI phải đi qua đây trước khi đổi, nên mốc luôn
-// là thứ có trước thay đổi đầu tiên của khách.
+// begin đọc trạng thái hiện tại và nhớ nó làm mốc ở lần đọc thành công đầu tiên. Mọi
+// thao tác ĐỔI phải đi qua đây trước khi đổi, nên mốc luôn là thứ có trước thay đổi
+// đầu tiên của khách.
 func (d *displayCtl) begin() (displaySnapshot, error) {
 	s, err := d.read()
 	if err == nil && d.base == nil {
 		d.base = &displayBaseline{s.current, s.speed, s.precision}
 	}
 	return s, err
-}
-
-// startup chạy MỘT lần khi tiến trình giao diện khởi động, trước khi máy phủ màn hình
-// khoá. Lúc này chưa khách nào đụng tới, nên đây là chỗ lấy mốc đáng tin nhất.
-//
-// Nếu chế độ đang chạy lệch mặc định trong registry thì trả về mặc định TRƯỚC khi nhớ
-// mốc. Hai việc nó chặn: tiến trình giao diện chết (hoặc bị bật lại) đúng lúc một chế độ
-// chưa xác nhận đang treo — máy đen màn mà không đồng hồ nào còn sống để hoàn tác, và
-// mốc lại ghi nhầm chế độ hỏng đó; và giao diện bật lại giữa lúc game đang giữ một chế
-// độ tạm. Không đọc được registry hoặc không thấy lệch thì không đụng vào gì.
-func (d *displayCtl) startup() {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	s, err := d.read()
-	if err != nil {
-		return // không phải Windows, hoặc không đọc được: mốc sẽ nhớ ở lần đổi đầu tiên
-	}
-	if reg, err := d.hw.registryMode(); err == nil && staleDisplayMode(reg, s.current) {
-		log.Printf("[display] khởi động ở %s, lệch mặc định của máy (%s) — về mặc định", s.current, reg)
-		if err := d.hw.restoreDefault(); err != nil {
-			log.Printf("[display] không về được mặc định của máy: %v", err)
-		}
-	}
-	d.begin()
 }
 
 func (d *displayCtl) redockLater(redock func()) {
@@ -148,6 +133,7 @@ func (d *displayCtl) apply(m DisplayMode, redock func()) error {
 	if s.current == m && !d.guard.pending {
 		return nil
 	}
+	d.touched = true
 	if err := d.hw.setMode(m); err != nil {
 		return err
 	}
@@ -225,6 +211,7 @@ func (d *displayCtl) setMouseSpeed(speed int) error {
 	if _, err := d.begin(); err != nil {
 		return err
 	}
+	d.touched = true
 	return d.hw.setSpeed(clampMouseSpeed(speed))
 }
 
@@ -234,18 +221,37 @@ func (d *displayCtl) setMousePrecision(on bool) error {
 	if _, err := d.begin(); err != nil {
 		return err
 	}
+	d.touched = true
 	return d.hw.setPrecision(on)
 }
 
-// reset trả độ phân giải, tần số, tốc độ chuột và độ chính xác con trỏ về mốc.
-// Chưa ai chạm vào gì (chưa có mốc) hoặc mọi thứ đã đúng mốc thì không làm gì cả.
+// reset là nút "Khôi phục mặc định": khách tự bấm nên trả về mốc dù thứ làm lệch là
+// VNET hay một game.
+func (d *displayCtl) reset(redock func()) (changed bool, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.restoreBase(redock)
+}
+
+// resetIfTouched là reset của lúc khoá máy và đăng xuất: từ lần reset trước chưa ai
+// ĐỔI gì qua trang Cài đặt (touched) thì không làm gì, kể cả không đọc màn hình —
+// khởi động và mỗi lần khoá máy đều gọi vào đây.
+func (d *displayCtl) resetIfTouched(redock func()) (changed bool, err error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !d.touched {
+		return false, nil
+	}
+	return d.restoreBase(redock)
+}
+
+// restoreBase trả độ phân giải, tần số, tốc độ chuột và độ chính xác con trỏ về mốc;
+// gọi khi đã giữ d.mu. Chưa có mốc hoặc mọi thứ đã đúng mốc thì không làm gì.
 // changed báo ĐỘ PHÂN GIẢI có đổi thật không, để nơi gọi biết cửa sổ cần đo lại.
 //
 // Một thứ lỗi không chặn các thứ còn lại: không về được độ phân giải thì chuột vẫn
 // phải được trả.
-func (d *displayCtl) reset(redock func()) (changed bool, err error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+func (d *displayCtl) restoreBase(redock func()) (changed bool, err error) {
 	if d.base == nil {
 		return false, nil
 	}
@@ -258,6 +264,7 @@ func (d *displayCtl) reset(redock func()) (changed bool, err error) {
 	}
 	b := d.base
 	if s.current == b.mode && s.speed == b.speed && s.precision == b.precision {
+		d.touched = false
 		return false, nil
 	}
 
@@ -277,7 +284,11 @@ func (d *displayCtl) reset(redock func()) (changed bool, err error) {
 	if changed {
 		d.redockLater(redock)
 	}
-	return changed, errors.Join(errs...)
+	err = errors.Join(errs...)
+	if err == nil {
+		d.touched = false
+	}
+	return changed, err
 }
 
 // --- Các phương thức Wails gắn vào giao diện ---------------------------------
@@ -329,7 +340,7 @@ func (a *App) ResetDisplayAndMouse() error {
 //
 // Lỗi chỉ ghi log: không về được mốc không bao giờ được chặn việc khoá máy.
 func (a *App) resetDisplayForNextUser() {
-	changed, err := displays.reset(nil)
+	changed, err := displays.resetIfTouched(nil)
 	if err != nil {
 		log.Printf("[display] không trả hết cài đặt về mức ban đầu: %v", err)
 	}
@@ -351,6 +362,57 @@ func (a *App) refitFullscreen() bool {
 	wailsruntime.WindowUnfullscreen(a.ctx)
 	wailsruntime.WindowFullscreen(a.ctx)
 	return true
+}
+
+// lockRefitEvery: nhịp canh màn hình khoá có còn phủ kín màn hình không.
+const lockRefitEvery = time.Second
+
+// giuManHinhKhoaPhuKin canh màn hình khoá (cả khoá đăng nhập lẫn khoá mất mạng) luôn
+// phủ kín màn hình. Màn hình khoá dựng lúc một game toàn màn hình còn giữ chế độ riêng
+// (ví dụ hết giờ khi đang chơi 1280x960 trên màn 1920x1080) thì Wails đo theo chế độ
+// của game; game nhả chế độ đó là hở một dải desktop bấm được. Trước đây khoá máy luôn
+// trả màn hình về mốc nhớ lúc khởi động nên không gặp; nay không đọc màn hình lúc khởi
+// động nữa, và không trả về gì khi khách chưa đổi, nên phải tự canh.
+//
+// Chỉ đo lại MỘT lần cho mỗi kích thước màn hình đang lệch: đo lại rồi vẫn lệch (hai hệ
+// đơn vị lệch nhau trên máy lạ) thì thôi, không nháy màn hình mỗi giây.
+func (a *App) giuManHinhKhoaPhuKin(ctx context.Context) {
+	t := time.NewTicker(lockRefitEvery)
+	defer t.Stop()
+	var daDoLai [2]int
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if a.windowMode != "" || a.ctx == nil || !wailsruntime.WindowIsFullscreen(a.ctx) {
+			continue
+		}
+		s, ok := manHinhHienTai(a.ctx)
+		if !ok {
+			continue
+		}
+		w, h := wailsruntime.WindowGetSize(a.ctx)
+		man := [2]int{s.Size.Width, s.Size.Height}
+		if !lechManHinh(w, h, man[0], man[1]) {
+			daDoLai = [2]int{}
+			continue
+		}
+		if man == daDoLai {
+			continue
+		}
+		daDoLai = man
+		log.Printf("[display] màn hình khoá %dx%d không phủ kín màn hình %dx%d — đo lại", w, h, man[0], man[1])
+		a.refitFullscreen()
+	}
+}
+
+// lechManHinh: cửa sổ w x h có còn khớp màn hình mw x mh không. Cả hai đều là đơn vị
+// logic của Wails (WindowGetSize và Screen.Size cùng quy về 96 DPI); chừa 2px cho làm tròn.
+func lechManHinh(w, h, mw, mh int) bool {
+	lech := func(x int) bool { return x > 2 || x < -2 }
+	return lech(w-mw) || lech(h-mh)
 }
 
 // fitWindowToDisplay chạy displaySettle sau khi chế độ màn hình đổi, ở goroutine của

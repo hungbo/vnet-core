@@ -62,22 +62,6 @@ func TestWinSetDisplayMode_CheDoHienTai(t *testing.T) {
 	}
 }
 
-// ENUM_REGISTRY_SETTINGS là chỗ duy nhất startup() dựa vào để biết máy có đang kẹt ở một
-// chế độ động hay không. Bài này chỉ ĐỌC và in hai con số cạnh nhau (go test -v) để người
-// chạy trên máy thật thấy registry có khớp chế độ đang chạy không. Không có bài cho
-// winRestoreDefault: nó đổi màn hình nếu máy đang ở chế độ động.
-func TestWinRegistryMode_DocDuoc(t *testing.T) {
-	reg, err := winRegistryMode()
-	if err != nil {
-		t.Skipf("không đọc được registry màn hình: %v", err)
-	}
-	_, cur, err := winDisplayModes()
-	if err != nil {
-		t.Skipf("không đọc được màn hình chính: %v", err)
-	}
-	t.Logf("registry %s, đang chạy %s, lệch mặc định: %v", reg, cur.DisplayMode, staleDisplayMode(reg, cur.DisplayMode))
-}
-
 func TestWinMouse_GhiLaiDungGiaTriCu(t *testing.T) {
 	speed, precision, err := winGetMouse()
 	if err != nil {

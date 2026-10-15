@@ -124,24 +124,6 @@ func filterDisplayModes(raw []rawDisplayMode, orientation int) []DisplayMode {
 	return modes
 }
 
-// staleDisplayMode: chế độ đang chạy có lệch mặc định của máy (chế độ lưu trong
-// registry) không. Ta không bao giờ ghi registry (cờ 0), nên registry luôn là chế độ
-// lành; lệch tức là một tiến trình trước — game, hoặc chính giao diện này lúc chưa
-// kịp hoàn tác — đã đổi động rồi để lại.
-//
-// Chỉ kết luận khi registry nói RÕ: registry không đọc ra kích thước hợp lý thì bỏ qua
-// (đoán sai là kéo cả phòng máy về một chế độ lạ). Tần số 0 hoặc 1 là "mặc định của card"
-// chứ không phải một con số, nên không đem ra so.
-func staleDisplayMode(registry, current DisplayMode) bool {
-	if registry.Width < displayMinWidth || registry.Height < displayMinHeight {
-		return false
-	}
-	if registry.Width != current.Width || registry.Height != current.Height {
-		return true
-	}
-	return registry.Hz > 1 && registry.Hz != current.Hz
-}
-
 // validateDisplayMode: chỉ nhận chế độ nằm trong danh sách đã liệt kê. Số do giao
 // diện gửi lên không bao giờ được tin — đưa thẳng cho Windows là cho phép ép card
 // đồ hoạ vào một chế độ tuỳ ý.
@@ -215,15 +197,10 @@ type displayHW struct {
 	// modes liệt kê TOÀN BỘ chế độ thô của màn hình chính, kèm chế độ đang dùng.
 	modes func() (raw []rawDisplayMode, current rawDisplayMode, err error)
 	// setMode đổi động (không ghi registry) sang chế độ đã được kiểm là hợp lệ.
-	setMode func(DisplayMode) error
-	// registryMode là chế độ lưu trong registry của màn hình chính; restoreDefault bảo
-	// Windows trả màn hình về đúng chế độ đó (cách Windows dành cho "về lại sau một
-	// lần đổi động", không cần biết chế độ là gì). Chỉ dùng lúc khởi động.
-	registryMode   func() (DisplayMode, error)
-	restoreDefault func() error
-	getMouse       func() (speed int, precision bool, err error)
-	setSpeed       func(speed int) error
-	setPrecision   func(on bool) error
+	setMode      func(DisplayMode) error
+	getMouse     func() (speed int, precision bool, err error)
+	setSpeed     func(speed int) error
+	setPrecision func(on bool) error
 }
 
 // revertGuard là máy trạng thái của hộp thoại "giữ chế độ này?": đổi chế độ xong thì

@@ -26,8 +26,7 @@ var (
 )
 
 const (
-	enumCurrentSettings  = 0xFFFFFFFF // ENUM_CURRENT_SETTINGS = (DWORD)-1
-	enumRegistrySettings = 0xFFFFFFFE // ENUM_REGISTRY_SETTINGS = (DWORD)-2
+	enumCurrentSettings = 0xFFFFFFFF // ENUM_CURRENT_SETTINGS = (DWORD)-1
 
 	// Bit của dmFields: trường nào của DEVMODE đang có giá trị.
 	dmFieldDisplayOrientation = 0x00000080
@@ -129,13 +128,11 @@ var (
 
 func osDisplayHW() displayHW {
 	return displayHW{
-		modes:          winDisplayModes,
-		setMode:        winSetDisplayMode,
-		registryMode:   winRegistryMode,
-		restoreDefault: winRestoreDefault,
-		getMouse:       winGetMouse,
-		setSpeed:       winSetMouseSpeed,
-		setPrecision:   winSetMousePrecision,
+		modes:        winDisplayModes,
+		setMode:      winSetDisplayMode,
+		getMouse:     winGetMouse,
+		setSpeed:     winSetMouseSpeed,
+		setPrecision: winSetMousePrecision,
 	}
 }
 
@@ -236,31 +233,6 @@ func winSetDisplayMode(m DisplayMode) error {
 		return err
 	}
 	return changeDisplaySettings(&dev[0], &dm, 0)
-}
-
-// winRegistryMode đọc chế độ Windows lưu trong registry cho màn hình chính. Không kiểm
-// dmFields: nơi dùng (staleDisplayMode) đã bỏ qua kích thước vô lý và coi tần số 0/1
-// là "mặc định của card", nên một trường chưa khai (ra 0) không gây hại gì.
-func winRegistryMode() (DisplayMode, error) {
-	dev, err := primaryDisplayName()
-	if err != nil {
-		return DisplayMode{}, err
-	}
-	dm, ok := enumDisplaySettings(&dev[0], enumRegistrySettings)
-	if !ok {
-		return DisplayMode{}, errors.New("Không đọc được chế độ màn hình lưu trong registry")
-	}
-	return rawFromDevMode(&dm, 0).DisplayMode, nil
-}
-
-// winRestoreDefault: DEVMODE rỗng cùng cờ 0 là cách Windows ghi rõ để "về lại chế độ
-// trong registry sau một lần đổi động" — không cần biết chế độ đó là gì.
-func winRestoreDefault() error {
-	dev, err := primaryDisplayName()
-	if err != nil {
-		return err
-	}
-	return changeDisplaySettings(&dev[0], nil, 0)
 }
 
 func changeDisplaySettings(device *uint16, dm *devModeW, flags uintptr) error {

@@ -371,24 +371,3 @@ func TestRevertGuard_Rearm(t *testing.T) {
 		t.Error("lượt thử lại chạy muộn sau khi xác nhận vẫn về được")
 	}
 }
-
-func TestStaleDisplayMode(t *testing.T) {
-	cases := []struct {
-		name     string
-		reg, cur DisplayMode
-		want     bool
-	}{
-		{"giống hệt", dm(1920, 1080, 60), dm(1920, 1080, 60), false},
-		{"lệch độ phân giải", dm(1920, 1080, 60), dm(1280, 720, 60), true},
-		{"lệch tần số", dm(1920, 1080, 60), dm(1920, 1080, 144), true},
-		{"registry tần số 0 là mặc định card", dm(1920, 1080, 0), dm(1920, 1080, 144), false},
-		{"registry tần số 1 là mặc định card", dm(1920, 1080, 1), dm(1920, 1080, 144), false},
-		{"registry rỗng", DisplayMode{}, dm(1280, 720, 60), false},
-		{"registry dưới cỡ tối thiểu", dm(640, 480, 60), dm(1920, 1080, 60), false},
-	}
-	for _, c := range cases {
-		if got := staleDisplayMode(c.reg, c.cur); got != c.want {
-			t.Errorf("%s: staleDisplayMode(%v, %v) = %v, mong %v", c.name, c.reg, c.cur, got, c.want)
-		}
-	}
-}
