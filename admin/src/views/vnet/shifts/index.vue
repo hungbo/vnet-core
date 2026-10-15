@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
@@ -166,6 +167,9 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
 function fetchData() {
   getData();
 }
+
+// Ca mở, đóng, nộp/rút tiền ở máy khác. Tên nhân viên tra từ bảng tài khoản.
+useRealtimeRefresh(['shifts', 'systemManage'], getData);
 
 function handleOpenShift() {
   openForm.value = { opening_balance: 0 };

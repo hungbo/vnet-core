@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -230,6 +231,10 @@ async function saveMapping() {
 }
 
 onMounted(getData);
+
+// Máy in thêm/sửa/xoá, đổi máy mặc định ở tab hay máy khác. Chỉ tải lại bảng:
+// hộp phân luồng món đang mở là bảng chọn chưa lưu, không được ghi đè.
+useRealtimeRefresh(['printers'], getData);
 </script>
 
 <template>

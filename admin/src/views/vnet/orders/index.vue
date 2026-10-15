@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
-import { useWebSocketStore } from '@/store/modules/ws';
 import { useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
 const { enabledMethods, paymentLabel } = usePaymentMethods();
-const wsStore = useWebSocketStore();
 
 const search = ref('');
 const filterStatus = ref(null);
@@ -565,29 +564,42 @@ async function handleBatchDelete() {
   onBatchDeleted();
 }
 
-// Toast và âm thanh cho đơn mới nay do useWsNotify() ở base-layout lo, để nhân
-// viên nghe được dù đang đứng ở trang nào. Ở đây chỉ còn việc làm mới bảng —
-// giữ cả hai chỗ cùng báo sẽ ra hai thông báo chồng nhau.
-async function onOrderNew() {
-  await getData();
+// Hộp chi tiết đang mở cũng phải theo kịp: bếp đổi trạng thái món ở máy khác,
+// quầy khác thanh toán hay huỷ đơn. Chỉ ghi đè khi vẫn đang xem đúng đơn đó —
+// trong lúc chờ mạng, người dùng có thể đã đóng hộp hoặc mở đơn khác.
+async function refreshDetail() {
+  const id = detail.value?.id;
+  if (!detailVisible.value || !id) return;
+  try {
+    const res: any = await client.get(`/orders/${id}`);
+    if (detailVisible.value && detail.value?.id === id) detail.value = res;
+  } catch {}
 }
 
-// Đơn đổi trạng thái ở một thiết bị khác — kể cả thiết bị khác của chính người
-// đang ngồi đây. Không có handler này thì nút "Duyệt" vẫn nằm trên một đơn đã
-// nạp xong cho tới khi có người tự tải lại trang.
-async function onOrderUpdated() {
-  await getData();
-}
+// Toast và âm thanh cho đơn mới do useWsNotify() ở base-layout lo, để nhân viên
+// nghe được dù đang đứng ở trang nào. Ở đây chỉ làm mới bảng: đơn đặt từ máy
+// trạm, đổi trạng thái hay thanh toán ở thiết bị khác — kể cả thiết bị khác của
+// chính người đang ngồi đây. Không thì nút "Duyệt" vẫn nằm trên một đơn đã nạp
+// xong cho tới khi có người tự tải lại trang. Tên hội viên, mã máy, tên khuyến
+// mãi và người thao tác đọc từ bảng khác, nên sửa ở đó cũng phải tải lại.
+//
+// Đang tích chọn đơn để xoá thì hoãn: thay dữ liệu bảng là ElTable bỏ hết ô đã
+// tích. Bỏ chọn xong (hoặc xoá xong) thì tải bù.
+const { resume } = useRealtimeRefresh(
+  ['orders', 'members', 'machines', 'promotions', 'systemManage'],
+  () => {
+    getData();
+    refreshDetail();
+  },
+  { paused: () => checkedRowKeys.value.length > 0 }
+);
 
-onMounted(() => {
-  wsStore.on('order:new', onOrderNew);
-  wsStore.on('order:updated', onOrderUpdated);
-});
-
-onBeforeUnmount(() => {
-  wsStore.off('order:new', onOrderNew);
-  wsStore.off('order:updated', onOrderUpdated);
-});
+watch(
+  () => checkedRowKeys.value.length,
+  n => {
+    if (!n) resume();
+  }
+);
 </script>
 
 <template>

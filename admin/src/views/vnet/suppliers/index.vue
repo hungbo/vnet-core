@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -30,6 +31,9 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
     { prop: 'email', label: $t('vnetPages.suppliers.email'), minWidth: 180 }
   ]
 });
+
+// Nhà cung cấp thêm/sửa/xoá ở tab hay máy khác.
+useRealtimeRefresh(['suppliers'], getData);
 
 function handleCreate() {
   isEdit.value = false;

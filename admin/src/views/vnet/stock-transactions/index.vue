@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
@@ -102,6 +103,11 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     }
   ]
 });
+
+// Phiếu kho phần lớn sinh ra ở nơi khác: xác nhận, thanh toán, huỷ đơn; chốt
+// kiểm kê; nhập/xuất ở trang Sản phẩm. Mọi đường đó đều phát stock:changed sau
+// khi commit. Tên sản phẩm và người thực hiện tra từ bảng khác.
+useRealtimeRefresh(['stock-transactions', 'products', 'systemManage'], getData, { events: ['stock:changed'] });
 
 async function fetchProducts() {
   try {

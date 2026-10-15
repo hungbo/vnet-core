@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { h, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { h, nextTick, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
-import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 import ImageUpload from '@/components/common/ImageUpload.vue';
@@ -279,22 +279,24 @@ async function fetchUnits() {
 }
 
 // Tồn kho đổi ở nơi khác — máy trạm đặt món, nhân viên nhập kho, chốt phiên
-// kiểm kê — thì cột "Tồn kho" phải đổi theo, không đợi ai bấm nút làm mới.
-const wsStore = useWebSocketStore();
-
-function onStockChanged() {
-  getData();
-}
+// kiểm kê — thì cột "Tồn kho" phải đổi theo, không đợi ai bấm nút làm mới
+// (stock:changed). Sản phẩm, danh mục, nhà cung cấp sửa ở tab hay máy khác cũng
+// vậy: cột Danh mục tra tên từ danh sách danh mục, ô lọc và biểu mẫu chọn từ hai
+// danh sách đó. Bảng tải lại không đụng tới biểu mẫu đang mở, nên không cần hoãn.
+useRealtimeRefresh(
+  ['products', 'categories', 'suppliers'],
+  () => {
+    getData();
+    fetchCategories();
+    fetchSuppliers();
+  },
+  { events: ['stock:changed'] }
+);
 
 onMounted(() => {
   fetchCategories();
   fetchUnits();
   fetchSuppliers();
-  wsStore.on('stock:changed', onStockChanged);
-});
-
-onBeforeUnmount(() => {
-  wsStore.off('stock:changed', onStockChanged);
 });
 
 async function fetchProductIngredients(productId: string) {

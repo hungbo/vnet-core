@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
 
@@ -80,15 +81,8 @@ async function openDetail(row: any) {
   pickProduct.value = '';
   pickQty.value = 0;
   try {
-    const [d, p]: any[] = await Promise.all([
-      client.get(`/inventory-counts/${row.id}`),
-      client.get('/products', { params: { page_size: 500 } })
-    ]);
+    const [d]: any[] = await Promise.all([client.get(`/inventory-counts/${row.id}`), loadPickProducts()]);
     detail.value = d;
-    const list: any[] = Array.isArray(p) ? p : p?.items || [];
-    // Chỉ mặt hàng có theo dõi tồn kho mới kiểm kê được — backend cũng chặn,
-    // nhưng để lọt vào danh sách chọn là bẫy người dùng.
-    products.value = list.filter(x => x.has_stock);
   } catch (e: any) {
     ElMessage.error(e?.message || $t('vnetPages.common.error'));
     detailVisible.value = false;
@@ -97,9 +91,41 @@ async function openDetail(row: any) {
   }
 }
 
+async function loadPickProducts() {
+  const p: any = await client.get('/products', { params: { page_size: 500 } });
+  const list: any[] = Array.isArray(p) ? p : p?.items || [];
+  // Chỉ mặt hàng có theo dõi tồn kho mới kiểm kê được — backend cũng chặn,
+  // nhưng để lọt vào danh sách chọn là bẫy người dùng.
+  products.value = list.filter(x => x.has_stock);
+}
+
 async function refreshDetail() {
   detail.value = await client.get(`/inventory-counts/${detail.value.id}`);
 }
+
+// Một phiên có thể nhiều người cùng đếm trên nhiều máy, và chốt/huỷ ở máy khác:
+// danh sách và phiên đang mở phải theo kịp. Chỉ ghi đè khi vẫn đang xem đúng
+// phiên đó — trong lúc chờ mạng, người dùng có thể đã mở phiên khác.
+useRealtimeRefresh(['inventory-counts'], async () => {
+  load();
+  const id = detail.value?.id;
+  if (!detailVisible.value || !id) return;
+  try {
+    const d: any = await client.get(`/inventory-counts/${id}`);
+    if (detailVisible.value && detail.value?.id === id) detail.value = d;
+  } catch {}
+});
+
+// Ô chọn mặt hàng ghi kèm tồn sổ sách, mà quán vẫn bán trong lúc đếm. Chỉ tải
+// lại khi đang đếm dở một phiên — danh sách 500 món không rẻ, và đóng hộp rồi
+// mở lại thì openDetail đã tự tải.
+useRealtimeRefresh(
+  ['products'],
+  () => {
+    if (detailVisible.value && isOpen.value) loadPickProducts().catch(() => {});
+  },
+  { events: ['stock:changed'], delay: 2000 }
+);
 
 async function addLine() {
   if (!pickProduct.value) {

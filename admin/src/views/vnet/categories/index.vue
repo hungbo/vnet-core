@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -64,6 +65,13 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
     { prop: 'icon', label: $t('vnetPages.categories.icon'), width: 100 },
     { prop: 'sort_order', label: $t('vnetPages.categories.order'), width: 80 }
   ]
+});
+
+// Danh mục sửa ở tab hay máy khác thì bảng và cây chọn danh mục cha theo kịp —
+// cùng hai thứ mà lưu/xoá ở chính trang này tải lại.
+useRealtimeRefresh(['categories'], () => {
+  getData();
+  fetchTree();
 });
 
 function resetForm() {
