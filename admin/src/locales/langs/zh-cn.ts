@@ -260,6 +260,7 @@ const local: App.I18n.Schema = {
     vnet_transactions: '交易',
     vnet_settings: '设置',
     vnet_audit: '审计日志',
+    'vnet_error-logs': '错误日志',
     vnet_backups: '备份',
     vnet_printers: '打印机',
     'vnet_inventory-counts': '库存盘点',
@@ -1728,6 +1729,11 @@ const local: App.I18n.Schema = {
       hiddenShortcutsPlaceholder: '例如：Game Menu, Teamfight Tactics',
       hiddenShortcutsHint:
         '保存后约 15 秒内对所有客户机生效：客户端服务会从桌面（每个 Windows 用户的桌面）删除这些快捷方式。填写不带扩展名的快捷方式名称，例如 Game Menu, Teamfight Tactics，用逗号分隔。不区分大小写。VNET 快捷方式永远不会被删除。留空即关闭此功能。',
+      riotMetadataTitle: 'Riot 元数据（英雄联盟）',
+      riotMetadataSource: '游戏盘上的 Riot 元数据文件夹',
+      riotMetadataPlaceholder: '例如：D:\\Games\\Riot Games\\_metadata',
+      riotMetadataHint:
+        '适用于无盘客户机。填写文件夹的盘符路径（客户机看到的路径），其中应是已改好内部路径的 C:\\ProgramData\\Riot Games 副本。客户机在启动时及此后每分钟将其复制到 C:\\ProgramData\\Riot Games，因此 Riot 更新后只需更新这份副本，无需重新保存镜像，Riot 也不会再要求修复。会跳过 vanguard 文件夹和 machine.cfg，且不会删除已有文件。留空即关闭此功能。',
       localAdminTitle: '客户机管理员账号',
       localAdminHint:
         '技术人员在锁屏登录框输入此账号即可进入维护模式：不开会话、不计费，断网也能使用。保存后，各客户机在下一次心跳时接收新账号，并替换安装时设置的账号。清空名称则恢复为安装时的账号。',
@@ -1767,6 +1773,39 @@ const local: App.I18n.Schema = {
       messages: {
         saveSuccess: '设置保存成功',
         saveError: '设置保存失败'
+      }
+    },
+    errorLogs: {
+      title: '错误日志',
+      source: '来源',
+      kind: '类型',
+      message: '错误信息',
+      location: '位置',
+      count: '次数',
+      reporter: '机器 / 用户',
+      lastSeen: '最近出现',
+      firstSeen: '首次出现',
+      requestId: '请求 ID',
+      version: '版本',
+      detail: '详情（堆栈）',
+      noDetail: '无详情',
+      resolve: '标记已修复',
+      resolveSuccess: '已标记为已修复。若再次出现会自动重新打开。',
+      resolvedAt: '标记修复时间',
+      statuses: {
+        open: '未修复',
+        resolved: '已修复',
+        all: '全部'
+      },
+      sources: {
+        server: '服务器',
+        admin: '管理后台',
+        client: '工作站'
+      },
+      kinds: {
+        error: '错误',
+        panic: '崩溃（处理）',
+        crash: '崩溃（程序）'
       }
     },
     audit: {

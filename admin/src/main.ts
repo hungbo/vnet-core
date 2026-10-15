@@ -2,6 +2,7 @@ import { createApp } from 'vue';
 import './plugins/assets';
 import './plugins/ui';
 import {
+  setupAppErrorHandle,
   setupAppVersionNotification,
   setupDayjs,
   setupIconifyOffline,
@@ -24,6 +25,8 @@ async function setupApp() {
   setupDayjs();
 
   const app = createApp(App);
+
+  setupAppErrorHandle(app);
 
   setupStore(app);
 

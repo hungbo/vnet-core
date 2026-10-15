@@ -347,6 +347,7 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     vnet_settings: 'carbon:settings',
     vnet_backups: 'mdi:backup-restore',
     vnet_audit: 'mdi:clipboard-text-outline',
+    'vnet_error-logs': 'mdi:bug-outline',
     'vnet_machine-groups': 'carbon:data-center',
     'vnet_member-groups': 'carbon:user-multiple',
     vnet_notifications: 'carbon:notification',
@@ -428,7 +429,8 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
         'vnet_app-updates',
         'vnet_games',
         'vnet_backups',
-        'vnet_audit'
+        'vnet_audit',
+        'vnet_error-logs'
       ]
     }
   ];

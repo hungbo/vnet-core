@@ -1265,6 +1265,10 @@ declare namespace App {
           hiddenShortcuts: string;
           hiddenShortcutsPlaceholder: string;
           hiddenShortcutsHint: string;
+          riotMetadataTitle: string;
+          riotMetadataSource: string;
+          riotMetadataPlaceholder: string;
+          riotMetadataHint: string;
           localAdminTitle: string;
           localAdminHint: string;
           localAdminUsername: string;
@@ -1309,6 +1313,27 @@ declare namespace App {
             saveSuccess: string;
             saveError: string;
           };
+        };
+        errorLogs: {
+          title: string;
+          source: string;
+          kind: string;
+          message: string;
+          location: string;
+          count: string;
+          reporter: string;
+          lastSeen: string;
+          firstSeen: string;
+          requestId: string;
+          version: string;
+          detail: string;
+          noDetail: string;
+          resolve: string;
+          resolveSuccess: string;
+          resolvedAt: string;
+          statuses: { open: string; resolved: string; all: string };
+          sources: { server: string; admin: string; client: string };
+          kinds: { error: string; panic: string; crash: string };
         };
         audit: {
           title: string;

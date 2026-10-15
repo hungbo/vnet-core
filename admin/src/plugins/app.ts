@@ -1,12 +1,28 @@
 import { h } from 'vue';
 import type { App } from 'vue';
+import { reportAppError } from '@/utils/error-report';
 import { $t } from '@/locales';
 
 export function setupAppErrorHandle(app: App) {
   app.config.errorHandler = (err, vm, info) => {
     // eslint-disable-next-line no-console
     console.error(err, vm, info);
+    reportAppError(err, `vue: ${info}`);
   };
+
+  window.addEventListener('error', e => {
+    reportAppError(e.error ?? e.message, `${e.filename}:${e.lineno}:${e.colno}`);
+  });
+
+  window.addEventListener('unhandledrejection', e => {
+    const reason = e.reason;
+    // Lỗi gọi API (ApiError mang code/status, lỗi axios) thì server đã ghi phía
+    // nó, hoặc là lỗi của người dùng (4xx) — gửi lại chỉ làm rác nhật ký.
+    if (reason && (typeof reason.code === 'number' || typeof reason.status === 'number' || reason.isAxiosError)) {
+      return;
+    }
+    reportAppError(reason, 'unhandledrejection');
+  });
 }
 
 export function setupAppVersionNotification() {

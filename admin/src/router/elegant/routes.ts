@@ -720,6 +720,15 @@ export const generatedRoutes = [
         }
       },
       {
+        name: 'vnet_error-logs',
+        path: '/vnet/error-logs',
+        component: 'view.vnet_error-logs',
+        meta: {
+          title: 'vnet_error-logs',
+          i18nKey: 'route.vnet_error-logs'
+        }
+      },
+      {
         name: 'vnet_feedback',
         path: '/vnet/feedback',
         component: 'view.vnet_feedback',

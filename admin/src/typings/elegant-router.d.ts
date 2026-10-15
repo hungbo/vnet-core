@@ -98,6 +98,7 @@ declare module "@elegant-router/types" {
     "vnet_combos": "/vnet/combos";
     "vnet_curfew": "/vnet/curfew";
     "vnet_dashboard": "/vnet/dashboard";
+    "vnet_error-logs": "/vnet/error-logs";
     "vnet_feedback": "/vnet/feedback";
     "vnet_games": "/vnet/games";
     "vnet_inventory-counts": "/vnet/inventory-counts";
@@ -249,6 +250,7 @@ declare module "@elegant-router/types" {
     | "vnet_combos"
     | "vnet_curfew"
     | "vnet_dashboard"
+    | "vnet_error-logs"
     | "vnet_feedback"
     | "vnet_games"
     | "vnet_inventory-counts"

@@ -68,6 +68,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   vnet_combos: () => import("@/views/vnet/combos/index.vue"),
   vnet_curfew: () => import("@/views/vnet/curfew/index.vue"),
   vnet_dashboard: () => import("@/views/vnet/dashboard/index.vue"),
+  "vnet_error-logs": () => import("@/views/vnet/error-logs/index.vue"),
   vnet_feedback: () => import("@/views/vnet/feedback/index.vue"),
   vnet_games: () => import("@/views/vnet/games/index.vue"),
   "vnet_inventory-counts": () => import("@/views/vnet/inventory-counts/index.vue"),

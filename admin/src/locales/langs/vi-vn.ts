@@ -261,6 +261,7 @@ const local: App.I18n.Schema = {
     vnet_transactions: 'Giao dịch',
     vnet_settings: 'Cài đặt',
     vnet_audit: 'Nhật ký hoạt động',
+    'vnet_error-logs': 'Nhật ký lỗi',
     vnet_backups: 'Sao lưu',
     vnet_printers: 'Máy in',
     'vnet_inventory-counts': 'Kiểm kê kho',
@@ -1747,6 +1748,11 @@ const local: App.I18n.Schema = {
       hiddenShortcutsPlaceholder: 'Ví dụ: Game Menu, Teamfight Tactics',
       hiddenShortcutsHint:
         'Áp dụng cho TẤT CẢ máy trạm, trong khoảng 15 giây sau khi lưu: máy trạm tự xoá các lối tắt này khỏi màn hình desktop (của mọi tài khoản Windows). Ghi tên lối tắt không có đuôi, ví dụ Game Menu, Teamfight Tactics, cách nhau bằng dấu phẩy. Không phân biệt hoa thường. Lối tắt VNET không bao giờ bị xoá. Để trống là tắt tính năng.',
+      riotMetadataTitle: 'Metadata Riot (Liên Minh Huyền Thoại)',
+      riotMetadataSource: 'Thư mục metadata Riot trên Game Disk',
+      riotMetadataPlaceholder: 'Ví dụ: D:\\Games\\Riot Games\\_metadata',
+      riotMetadataHint:
+        'Dành cho máy diskless. Ghi đường dẫn ổ đĩa (đường dẫn máy trạm nhìn thấy) tới thư mục chứa bản sao của C:\\ProgramData\\Riot Games, đã sửa đường dẫn bên trong. Máy trạm tự chép thư mục này vào C:\\ProgramData\\Riot Games lúc bật và mỗi phút, nên sau bản vá Riot chỉ cần cập nhật bản sao này, không phải lưu lại image và Riot không đòi Repair. Bỏ qua thư mục vanguard và tệp machine.cfg, không xoá tệp có sẵn. Để trống là tắt tính năng.',
       localAdminTitle: 'Tài khoản quản trị máy trạm',
       localAdminHint:
         'Nhân viên kỹ thuật gõ tài khoản này vào ô đăng nhập trên màn hình khoá để mở máy ở chế độ bảo trì: không mở phiên, không tính tiền, mở được cả khi mất mạng. Lưu xong, mọi máy nhận tài khoản mới ở nhịp tim kế tiếp và bỏ tài khoản đặt lúc cài. Xoá tên để các máy quay về tài khoản đặt lúc cài.',
@@ -1789,6 +1795,39 @@ const local: App.I18n.Schema = {
       messages: {
         saveSuccess: 'Lưu cài đặt thành công',
         saveError: 'Lỗi lưu cài đặt'
+      }
+    },
+    errorLogs: {
+      title: 'Nhật ký lỗi',
+      source: 'Nguồn',
+      kind: 'Loại',
+      message: 'Thông báo lỗi',
+      location: 'Vị trí',
+      count: 'Số lần',
+      reporter: 'Máy / người dùng',
+      lastSeen: 'Gặp gần nhất',
+      firstSeen: 'Gặp lần đầu',
+      requestId: 'Mã yêu cầu',
+      version: 'Phiên bản',
+      detail: 'Chi tiết (stack)',
+      noDetail: 'Không có chi tiết',
+      resolve: 'Đã sửa',
+      resolveSuccess: 'Đã đánh dấu đã sửa. Nếu lỗi xuất hiện lại, nó sẽ tự mở lại.',
+      resolvedAt: 'Đánh dấu đã sửa lúc',
+      statuses: {
+        open: 'Chưa sửa',
+        resolved: 'Đã sửa',
+        all: 'Tất cả'
+      },
+      sources: {
+        server: 'Máy chủ',
+        admin: 'Trang quản trị',
+        client: 'Máy trạm'
+      },
+      kinds: {
+        error: 'Lỗi',
+        panic: 'Sập xử lý',
+        crash: 'Sập chương trình'
       }
     },
     audit: {

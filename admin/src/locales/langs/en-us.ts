@@ -261,6 +261,7 @@ const local: App.I18n.Schema = {
     vnet_transactions: 'Transactions',
     vnet_settings: 'Settings',
     vnet_audit: 'Audit Logs',
+    'vnet_error-logs': 'Error Logs',
     vnet_backups: 'Backups',
     vnet_printers: 'Printers',
     'vnet_inventory-counts': 'Stock takes',
@@ -1750,6 +1751,11 @@ const local: App.I18n.Schema = {
       hiddenShortcutsPlaceholder: 'e.g. Game Menu, Teamfight Tactics',
       hiddenShortcutsHint:
         'Applies to ALL client machines within about 15 seconds of saving: the client service deletes these shortcuts from the desktop (of every Windows user). Enter shortcut names without the extension, e.g. Game Menu, Teamfight Tactics, separated by commas. Not case-sensitive. The VNET shortcut is never removed. Leave empty to turn this off.',
+      riotMetadataTitle: 'Riot metadata (League of Legends)',
+      riotMetadataSource: 'Riot metadata folder on the Game Disk',
+      riotMetadataPlaceholder: 'e.g. D:\\Games\\Riot Games\\_metadata',
+      riotMetadataHint:
+        'For diskless machines. Enter the drive path (as the workstation sees it) of a folder holding a copy of C:\\ProgramData\\Riot Games, with the paths inside already adjusted. Workstations copy it into C:\\ProgramData\\Riot Games at startup and every minute, so after a Riot patch you only update this copy: no image re-save, and Riot stops asking to Repair. The vanguard folder and machine.cfg are skipped and existing files are never deleted. Leave empty to turn this off.',
       localAdminTitle: 'Workstation admin account',
       localAdminHint:
         'Technicians type this account into the lock screen login to open the machine in maintenance mode: no session, no billing, works even offline. After saving, every machine picks it up on its next heartbeat and drops the account set by the installer. Clear the name to fall back to the installer account.',
@@ -1793,6 +1799,39 @@ const local: App.I18n.Schema = {
       messages: {
         saveSuccess: 'Settings saved successfully',
         saveError: 'Error saving settings'
+      }
+    },
+    errorLogs: {
+      title: 'Error Logs',
+      source: 'Source',
+      kind: 'Kind',
+      message: 'Error message',
+      location: 'Location',
+      count: 'Count',
+      reporter: 'Machine / user',
+      lastSeen: 'Last seen',
+      firstSeen: 'First seen',
+      requestId: 'Request ID',
+      version: 'Version',
+      detail: 'Detail (stack)',
+      noDetail: 'No detail',
+      resolve: 'Mark fixed',
+      resolveSuccess: 'Marked as fixed. It will reopen automatically if it happens again.',
+      resolvedAt: 'Marked fixed at',
+      statuses: {
+        open: 'Open',
+        resolved: 'Fixed',
+        all: 'All'
+      },
+      sources: {
+        server: 'Server',
+        admin: 'Admin',
+        client: 'Workstation'
+      },
+      kinds: {
+        error: 'Error',
+        panic: 'Panic',
+        crash: 'Crash'
       }
     },
     audit: {
