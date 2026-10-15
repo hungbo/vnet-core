@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 )
 
 // Máy trạm ghi nhật ký ra TỆP.
@@ -20,6 +22,10 @@ import (
 const logMaxBytes = 5 << 20
 
 func setupLogFile(service bool, windowMode string) {
+	// Chạy cả khi không mở được tệp nhật ký bên dưới: gửi lỗi về server không
+	// cần đến tệp nào.
+	go runErrorReporter()
+
 	var dir string
 	if service {
 		exe, err := os.Executable()
@@ -56,4 +62,15 @@ func setupLogFile(service bool, windowMode string) {
 	}
 	log.SetOutput(io.MultiWriter(f, os.Stderr))
 	log.SetFlags(log.LstdFlags)
+
+	// Panic không ai recover (heartbeat, WS, watchdog…) in stack ra stderr, mà
+	// -H windowsgui không có stderr: tiến trình chết, dịch vụ bật lại, không còn
+	// dấu vết vì sao. Ghi stack vào một tệp crash riêng: tệp đó còn nội dung lúc
+	// khởi động nghĩa là lần trước đã sập, và nó được gửi về server.
+	crashPath := path + ".crash"
+	reportPreviousCrash(crashPath, strings.TrimSuffix(name, ".log"))
+	if cf, err := os.Create(crashPath); err == nil {
+		_ = debug.SetCrashOutput(cf, debug.CrashOptions{})
+		cf.Close() // SetCrashOutput giữ bản sao file descriptor của nó
+	}
 }

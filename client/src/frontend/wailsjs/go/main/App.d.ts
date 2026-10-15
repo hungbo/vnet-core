@@ -14,6 +14,10 @@ export function ConfirmDisplayMode():Promise<void>;
 
 export function CreateRoom(arg1:string,arg2:string,arg3:string):Promise<string>;
 
+export function CurrentLogin():Promise<string>;
+
+export function GameIcon(arg1:string):Promise<string>;
+
 export function GetAttendanceStatus():Promise<string>;
 
 export function GetCategories():Promise<string>;
@@ -85,6 +89,8 @@ export function MinimiseDock():Promise<void>;
 export function OpenWindow(arg1:string):Promise<void>;
 
 export function PlaceOrder(arg1:string):Promise<string>;
+
+export function ReportUIError(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function RequestTopup(arg1:number):Promise<string>;
 

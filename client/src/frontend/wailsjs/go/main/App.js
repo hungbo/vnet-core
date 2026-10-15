@@ -26,6 +26,14 @@ export function CreateRoom(arg1, arg2, arg3) {
   return window['go']['main']['App']['CreateRoom'](arg1, arg2, arg3);
 }
 
+export function CurrentLogin() {
+  return window['go']['main']['App']['CurrentLogin']();
+}
+
+export function GameIcon(arg1) {
+  return window['go']['main']['App']['GameIcon'](arg1);
+}
+
 export function GetAttendanceStatus() {
   return window['go']['main']['App']['GetAttendanceStatus']();
 }
@@ -168,6 +176,10 @@ export function OpenWindow(arg1) {
 
 export function PlaceOrder(arg1) {
   return window['go']['main']['App']['PlaceOrder'](arg1);
+}
+
+export function ReportUIError(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ReportUIError'](arg1, arg2, arg3);
 }
 
 export function RequestTopup(arg1) {
