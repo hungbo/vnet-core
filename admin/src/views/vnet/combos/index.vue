@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { h, ref } from 'vue';
+import { h, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { newIdempotencyKey } from '@/utils/idempotency';
@@ -264,16 +265,24 @@ const activatingId = ref('');
 const activateMachineId = ref('');
 const activateMachines = ref<any[]>([]);
 
+async function loadActivateMachines() {
+  const res: any = await client.get('/machines', { params: { page_size: 200 } }).catch(() => null);
+  const list: any[] = Array.isArray(res) ? res : res?.items || [];
+  // Máy đang có người ngồi thì backend từ chối kích hoạt, nên không đưa vào ô chọn.
+  activateMachines.value = list.filter(m => m.status !== 'in_use');
+  // Máy đã chọn vừa có người ngồi thì bỏ chọn, kẻo ô chọn hiện mã UUID trần.
+  if (activateMachineId.value && !activateMachines.value.some(m => m.id === activateMachineId.value)) {
+    activateMachineId.value = '';
+  }
+}
+
 async function openPurchases() {
   purchasesMemberId.value = '';
   purchases.value = [];
   members.value = [];
   activatingId.value = '';
   activateMachineId.value = '';
-  const res: any = await client.get('/machines', { params: { page_size: 200 } }).catch(() => null);
-  const list: any[] = Array.isArray(res) ? res : res?.items || [];
-  // Máy đang có người ngồi thì backend từ chối kích hoạt, nên không đưa vào ô chọn.
-  activateMachines.value = list.filter(m => m.status !== 'in_use');
+  await loadActivateMachines();
   purchasesVisible.value = true;
 }
 
@@ -382,6 +391,28 @@ async function handleDelete(row: any) {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(e?.message || $t('vnetPages.common.error'));
   }
 }
+
+// Bảng gói chỉ đổi qua /combos. Đang mở hộp sửa gói hoặc hộp bán gói thì hoãn,
+// đóng lại mới tải bù.
+const { resume } = useRealtimeRefresh(['combos'], fetchData, {
+  paused: () => dialogVisible.value || purchaseDialogVisible.value
+});
+watch([dialogVisible, purchaseDialogVisible], ([edit, sell]) => {
+  if (!edit && !sell) resume();
+});
+
+// Hộp "Combo đã bán": lượt mua đổi khi bán/kích hoạt (combos), khi phiên dùng gói
+// mở hoặc đóng — kể cả khách tự đăng nhập máy trạm và tác vụ nền tự đóng phiên —
+// nên phải nghe cả sự kiện phiên; ô chọn máy thì theo trạng thái máy.
+useRealtimeRefresh(
+  ['combos', 'sessions', 'machines'],
+  () => {
+    if (!purchasesVisible.value) return;
+    loadPurchases();
+    loadActivateMachines();
+  },
+  { events: ['session:started', 'session:ended', 'session:auto-ended', 'machine:status'] }
+);
 </script>
 
 <template>

@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPrice } from '@/utils/money';
 
 const { t: $t } = useI18n();
@@ -64,6 +65,19 @@ async function fetchData() {
 onMounted(() => {
   fetchData();
 });
+
+// Sổ giao dịch không có route ghi nào của riêng nó: mỗi dòng do một nghiệp vụ
+// khác ghi — nạp/hoàn/tặng (members), mua gói (combos), cọc đặt chỗ (bookings),
+// vòng quay (lucky-spin), điểm danh (attendance), đóng phiên (sessions). Mọi
+// đường đổi số dư, kể cả không qua HTTP (tác vụ nền đóng phiên, đăng nhập máy
+// trạm tự nhận lịch đặt), đều phát member:updated — bắt nó là đủ cho phía đơn
+// hàng, nên không nghe "orders" (đổi trạng thái bếp liên tục mà không ghi sổ).
+// systemManage: tên nhân viên ở cột "Người tạo".
+useRealtimeRefresh(
+  ['members', 'combos', 'bookings', 'lucky-spin', 'attendance', 'sessions', 'systemManage'],
+  fetchData,
+  { events: ['member:updated'] }
+);
 </script>
 
 <template>

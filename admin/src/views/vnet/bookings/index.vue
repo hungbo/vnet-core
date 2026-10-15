@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
-import { useWebSocketStore } from '@/store/modules/ws';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { newIdempotencyKey } from '@/utils/idempotency';
@@ -364,21 +364,17 @@ async function handleNoShow(row: any) {
   }
 }
 
-const wsStore = useWebSocketStore();
-
 // Nhận máy, huỷ, hay đánh vắng ở một thiết bị khác — kể cả thiết bị khác của
-// cùng nhân viên. Không có handler này thì danh sách bên kia giữ trạng thái cũ
-// tới khi có người tự tải lại trang.
-function onBookingUpdated() {
-  getData();
-}
-
-onMounted(() => {
-  wsStore.on('booking:updated', onBookingUpdated);
+// cùng nhân viên. "bookings" là mọi thao tác ghi qua /bookings; booking:updated
+// là đổi trạng thái không qua đó: tác vụ nền đánh vắng/hoàn tất, khách đăng
+// nhập máy trạm tự nhận lịch. "machines": mã máy trong bảng đọc từ bảng máy.
+// Đang mở hộp tạo/sửa thì hoãn, đóng lại mới tải bù.
+const { resume } = useRealtimeRefresh(['bookings', 'machines'], getData, {
+  events: ['booking:updated'],
+  paused: () => dialogVisible.value
 });
-
-onBeforeUnmount(() => {
-  wsStore.off('booking:updated', onBookingUpdated);
+watch(dialogVisible, open => {
+  if (!open) resume();
 });
 </script>
 

@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { h, ref } from 'vue';
+import { h, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
 import { formatAmount, moneyInput } from '@/utils/money';
@@ -158,6 +159,12 @@ async function handleDelete(row: any) {
     if (e !== 'cancel' && e !== 'close') ElMessage.error(e?.message || $t('vnetPages.common.error'));
   }
 }
+
+// Nhóm chỉ đổi qua /member-groups. Đang mở hộp sửa thì hoãn, đóng lại mới tải bù.
+const { resume } = useRealtimeRefresh(['member-groups'], getData, { paused: () => dialogVisible.value });
+watch(dialogVisible, open => {
+  if (!open) resume();
+});
 </script>
 
 <template>

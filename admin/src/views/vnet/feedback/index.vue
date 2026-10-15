@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
 
@@ -83,6 +84,12 @@ onMounted(() => {
   load();
   loadMachines();
 });
+
+// Đánh giá mới đến từ máy trạm qua POST /feedback. Mỗi dòng còn kèm mã máy và
+// tên hội viên đọc lúc tải, nên đổi máy/hội viên cũng phải tải lại. Có biểu đồ
+// tổng hợp nên gộp dài hơn. Danh sách máy ở ô lọc chỉ theo "machines".
+useRealtimeRefresh(['feedback', 'members', 'machines'], load, { delay: 2000 });
+useRealtimeRefresh(['machines'], loadMachines, { delay: 2000 });
 </script>
 
 <template>

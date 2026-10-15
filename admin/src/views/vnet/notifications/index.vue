@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
@@ -149,6 +150,14 @@ async function handleDispatch(row: any) {
     if (e !== 'cancel') ElMessage.error(e?.message || $t('vnetPages.common.error'));
   }
 }
+
+// Mẫu thông báo chỉ đổi qua /admin/notifications (chủ đề "admin-notifications").
+// Gửi đi ghi vào hộp thư từng hội viên, không đổi bảng này. Đang mở hộp sửa
+// thì hoãn, đóng lại mới tải bù.
+const { resume } = useRealtimeRefresh(['admin-notifications'], getData, { paused: () => dialogVisible.value });
+watch(dialogVisible, open => {
+  if (!open) resume();
+});
 </script>
 
 <template>

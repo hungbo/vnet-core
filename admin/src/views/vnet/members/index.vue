@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { h, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
@@ -463,6 +464,33 @@ async function fetchDetailSessions() {
   }
 }
 
+// Bảng hội viên: sửa/nạp/hoàn/xoá (members), đổi tên hạng (member-groups), bán
+// gói sinh tài khoản combo (combos). Số dư đổi ở nơi khác thì member:updated vá
+// tại chỗ ở dưới, không cần tải lại. Đang mở biểu mẫu thì hoãn, đóng mới tải bù.
+const formOpen = computed(() => dialogVisible.value || topupVisible.value || refundVisible.value || giftVisible.value);
+const { resume } = useRealtimeRefresh(['members', 'member-groups', 'combos'], getData, {
+  paused: () => formOpen.value
+});
+watch(formOpen, open => {
+  if (!open) resume();
+});
+
+// Hộp chi tiết đang mở: thông tin, giao dịch và phiên của người đó. Phiên mở/đóng
+// không qua HTTP (khách đăng nhập máy trạm, tác vụ nền tự đóng) thì nghe sự kiện
+// phiên; số dư đổi thì onMemberUpdated gọi scheduleDetail.
+function reloadDetail() {
+  if (!detailVisible.value || !detailId.value) return;
+  fetchMemberDetail(detailId.value);
+  fetchDetailTransactions();
+  fetchDetailSessions();
+}
+
+const { schedule: scheduleDetail } = useRealtimeRefresh(
+  ['members', 'member-groups', 'sessions', 'combos'],
+  reloadDetail,
+  { events: ['session:started', 'session:ended', 'session:auto-ended'] }
+);
+
 const wsStore = useWebSocketStore();
 
 /**
@@ -481,12 +509,10 @@ function onMemberUpdated(payload: any) {
     row.bonus_balance = payload.bonus_balance;
   }
 
-  // Ngăn kéo chi tiết đang mở đúng người này thì phải khớp theo, cả số dư lẫn
-  // lịch sử giao dịch.
-  if (detailVisible.value && detailId.value === payload.member_id) {
-    fetchMemberDetail(payload.member_id);
-    if (detailTab.value === 'transactions') fetchDetailTransactions();
-  }
+  // Hộp chi tiết đang mở đúng người này thì phải khớp theo, cả số dư lẫn lịch
+  // sử giao dịch. Qua scheduleDetail để gộp với "members:changed" của cùng một
+  // lần nạp thành một lần tải.
+  if (detailVisible.value && detailId.value === payload.member_id) scheduleDetail();
 }
 
 onMounted(() => {
