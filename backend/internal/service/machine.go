@@ -661,6 +661,19 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 		return err
 	}
 	s.ghiBootReport(machine.MachineCode, req.BootReport)
+	// Máy vừa có lại tín hiệu (bật máy, thức dậy từ Lightning Boot, cắm lại mạng):
+	// tác vụ hẹn giờ báo "offline" lúc mất tín hiệu, thì lúc có lại cũng phải báo,
+	// không thì trang Máy trạm và Bảng điều khiển hiện "offline" tới khi F5.
+	if updates["status"] == "available" && s.hub != nil {
+		s.hub.BroadcastToType(hub.Event{
+			Type: "machine:status",
+			Data: map[string]interface{}{
+				"machine_id":   id,
+				"machine_code": machine.MachineCode,
+				"status":       "available",
+			},
+		}, hub.ClientTypeAdmin)
+	}
 	_ = s.audit.Log(&LogAuditRequest{
 		Action:     "heartbeat",
 		EntityType: "machine",

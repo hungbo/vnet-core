@@ -338,6 +338,15 @@ func (h *Hub) Broadcast(event Event) {
 	}
 }
 
+// Changed báo trang quản trị rằng dữ liệu của một chủ đề vừa đổi: sự kiện
+// "<topic>:changed" tới mọi kết nối admin. Yêu cầu HTTP ghi thì
+// middleware.DataChanged đã phát; hàm này cho thay đổi KHÔNG đi qua yêu cầu
+// HTTP — tác vụ hẹn giờ, chuyển trạng thái theo nhịp tim máy trạm. Hub nil thì
+// bỏ qua.
+func (h *Hub) Changed(topic string, data interface{}) {
+	h.BroadcastToType(Event{Type: topic + ":changed", Data: data}, ClientTypeAdmin)
+}
+
 func (h *Hub) BroadcastToType(event Event, ct ClientType) {
 	if h == nil {
 		return

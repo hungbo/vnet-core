@@ -90,6 +90,11 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 	// Phản hồi API không bao giờ được tầng trung gian dùng lại: thiếu header này
 	// thì danh sách vừa đổi vẫn có thể trả về bản cũ.
 	api.Use(middleware.NoCache())
+	// Mọi yêu cầu ghi thành công báo trang quản trị "<chủ đề>:changed" để trang
+	// đang mở tự tải lại (admin: hooks/common/realtime.ts).
+	api.Use(middleware.DataChanged(func(topic string, ev middleware.ChangeEvent) {
+		wsHub.Changed(topic, ev)
+	}))
 	{
 		api.GET("/health", func(c *gin.Context) {
 			// Server sống mà database chết vẫn là hỏng. Trước đây luôn trả "ok",
