@@ -151,3 +151,19 @@ func TestPruneHardwareHistory_KhongNgayThiKhongDungToiDatabase(t *testing.T) {
 		assert.NoError(t, pruneHardwareHistory(nil, days))
 	}
 }
+
+// Lượt trừ tiền chạy mỗi 10 giây (lượt end-due mỗi giây) mà mỗi lượt có phiên
+// bị trừ đều báo thì mọi trang nghe "sessions" tải lại sáu lần một phút. Chỉ
+// được báo lần đầu của mỗi phút đồng hồ.
+func TestBaoTruTien_MotLanMoiPhutDongHo(t *testing.T) {
+	phutBaoTruTien.Store(0)
+	t.Cleanup(func() { phutBaoTruTien.Store(0) })
+
+	goc := time.Date(2026, 10, 15, 20, 0, 5, 0, time.UTC)
+	assert.True(t, baoTruTien(nil, goc))
+	assert.False(t, baoTruTien(nil, goc.Add(10*time.Second)), "cùng phút 20:00")
+	assert.False(t, baoTruTien(nil, goc.Add(54*time.Second)), "20:00:59 vẫn là phút cũ")
+	assert.True(t, baoTruTien(nil, goc.Add(55*time.Second)), "20:01:00 là phút mới")
+	// Hai tác vụ chạy chồng có thể mang mốc giờ cũ hơn tới sau: không báo lại.
+	assert.False(t, baoTruTien(nil, goc.Add(30*time.Second)))
+}

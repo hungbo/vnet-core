@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
 
@@ -169,6 +170,9 @@ async function handleDelete(row: any) {
 }
 
 onMounted(load);
+
+// Tài sản thêm/sửa/xoá ở thiết bị khác; máy thêm/xoá đổi cột Máy và ô lọc máy.
+useRealtimeRefresh(['machine-assets', 'machines'], load);
 </script>
 
 <template>

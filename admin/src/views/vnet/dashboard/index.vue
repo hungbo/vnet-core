@@ -4,13 +4,12 @@ import { useRouter } from 'vue-router';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
-import { useWebSocketStore } from '@/store/modules/ws';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import MachineRemoteActions from '../machines/modules/machine-remote-actions.vue';
 import MemberTopupDialog from '../members/modules/member-topup-dialog.vue';
 
 const { t: $t } = useI18n();
-const wsStore = useWebSocketStore();
 
 const stats = ref([
   {
@@ -68,6 +67,12 @@ async function openOrders(row: any) {
   ordersRow.value = row;
   orders.value = [];
   ordersVisible.value = true;
+  await loadOrders();
+}
+
+async function loadOrders() {
+  const row = ordersRow.value;
+  if (!row) return;
   ordersLoading.value = true;
   try {
     const res: any = await client.get(`/members/${row.member_id}/orders`, { params: { page_size: 50 } });
@@ -135,32 +140,33 @@ async function refreshStats() {
   stats.value[3].value = formatMoney(rows.reduce((sum, r) => sum + (r.revenue || 0), 0));
 }
 
-// Phải là một hằng có tên, không phải hàm inline: gỡ handler cần đúng tham chiếu
-// đã đăng ký.
 // Cột "Còn lại" phải nhúc nhích mỗi giây, nếu không nhân viên tưởng số bị treo.
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
 
-function onStatsChanged() {
-  refreshStats();
-}
+// Bốn thẻ và bảng máy đổi theo: hội viên thêm/xoá, nạp/hoàn tiền ("members"),
+// máy bật/tắt ("machines", machine:status), mở/trả máy và tiền giờ trừ mỗi phút
+// ("sessions"), đơn thu tiền mặt ("orders") và gói cước bán tiền mặt ("combos")
+// — doanh thu hôm nay cộng cả ba nguồn sau. Gộp 2 giây: trang này mở cả ngày.
+useRealtimeRefresh(['members', 'machines', 'sessions', 'orders', 'combos'], refreshStats, {
+  events: ['session:started', 'session:ended', 'machine:status'],
+  delay: 2000
+});
+
+// Hộp "Đơn đang xử lý" của một khách: đơn mới, đổi trạng thái, thanh toán.
+useRealtimeRefresh(['orders'], () => ordersVisible.value && loadOrders(), {
+  events: ['order:new', 'order:updated']
+});
 
 onMounted(async () => {
   tick = setInterval(() => {
     now.value = Date.now();
   }, 1000);
   await refreshStats();
-
-  wsStore.on('session:started', onStatsChanged);
-  wsStore.on('session:ended', onStatsChanged);
-  wsStore.on('machine:status', onStatsChanged);
 });
 
 onBeforeUnmount(() => {
   if (tick) clearInterval(tick);
-  wsStore.off('session:started', onStatsChanged);
-  wsStore.off('session:ended', onStatsChanged);
-  wsStore.off('machine:status', onStatsChanged);
 });
 </script>
 

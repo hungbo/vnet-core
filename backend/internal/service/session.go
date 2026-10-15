@@ -750,6 +750,10 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 				"started_at":   session.StartedAt,
 			},
 		})
+		// Chủ đề "sessions" cho trang chỉ nghe theo chủ đề. Mở máy ở quầy thì
+		// middleware cũng báo, nhưng phần lớn phiên mở từ đường đăng nhập máy
+		// trạm (/api/auth/*), nơi middleware không báo gì.
+		s.hub.Changed("sessions", map[string]interface{}{"id": session.ID, "reason": "started"})
 	}
 
 	return resp, nil
@@ -1231,6 +1235,10 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 				"total_cost":   costBreakdown.FinalCost,
 			},
 		})
+		// Phiên đóng từ tác vụ nền (hết tiền, hết giờ, giới nghiêm, máy mất tín
+		// hiệu hay reboot), từ đường đăng nhập máy trạm, hay từ lệnh tắt máy từ
+		// xa (chủ đề "machines") đều không qua middleware với chủ đề "sessions".
+		s.hub.Changed("sessions", map[string]interface{}{"id": session.ID, "reason": "ended"})
 	}
 
 	return &EndSessionResponse{

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
 
@@ -48,11 +49,12 @@ async function load(silent = false) {
   if (!silent) loading.value = true;
   try {
     const [i, list]: any = await Promise.all([client.get('/games/info'), client.get('/games')]);
+    // Tải lặng chỉ đổi ô nào CHƯA bị sửa (còn đúng giá trị máy chủ lần trước):
+    // người khác vừa đổi cài đặt thì ô theo kịp, còn ô đang gõ dở giữ nguyên chữ.
+    const cu: any = info.value;
+    if (!silent || clientRoot.value === (cu.client_root || '')) clientRoot.value = i.client_root || '';
+    if (!silent || updateWindow.value === (cu.update_window || '')) updateWindow.value = i.update_window || '';
     info.value = i;
-    if (!silent) {
-      clientRoot.value = i.client_root || '';
-      updateWindow.value = i.update_window || '';
-    }
     rows.value = list || [];
   } catch (e: any) {
     if (!silent) ElMessage.error(e?.message || $t('vnetPages.common.error'));
@@ -193,6 +195,12 @@ async function submit() {
 
 onMounted(() => load());
 onBeforeUnmount(() => clearTimeout(timer));
+
+// Trạng thái game đổi chủ yếu ở vòng nền (publish xong, tải xong hay lỗi, catalog
+// của master có bản mới) — máy chủ báo "games". Khung giờ và gốc game nằm trong
+// cài đặt ("settings"). Tải lặng (silent) để không ghi đè hai ô đang gõ dở; phần
+// trăm đang tải vẫn hỏi mỗi 3 giây vì nó lấy thẳng từ engine, không ghi DB.
+useRealtimeRefresh(['games', 'settings'], () => load(true));
 </script>
 
 <template>

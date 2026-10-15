@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
@@ -210,6 +211,17 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
 function searchData() {
   getData();
 }
+
+useRealtimeRefresh(['machine-groups'], getData);
+
+// Hộp Bảng giá đang mở thì giá theo hạng, giá theo khung giờ và tên hạng (ô
+// chọn hạng) phải theo kịp người khác sửa. Ô nhập giá mới là biểu mẫu riêng,
+// tải lại danh sách không đụng tới chữ đang gõ.
+useRealtimeRefresh(['machine-prices', 'time-pricing', 'member-groups'], () => {
+  if (!priceVisible.value || !priceGroup.value) return;
+  loadPrices();
+  loadMemberGroups();
+});
 
 function openCreate() {
   isEdit.value = false;

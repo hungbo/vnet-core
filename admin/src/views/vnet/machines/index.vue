@@ -9,6 +9,7 @@ import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 import MachineRemoteActions from './modules/machine-remote-actions.vue';
@@ -413,9 +414,16 @@ async function handleDelete(row: any) {
   }
 }
 
-function onMachineStatus() {
-  getData();
-}
+// Bảng ghép máy với phiên đang chạy, nên đổi theo cả hai: máy thêm/sửa/xoá,
+// nhịp tim đổi trạng thái hay cảnh báo ("machines", machine:status), và mở/trả
+// máy, trừ tiền mỗi phút làm đổi cột Phiên ("sessions"). Thiếu phiên thì tắt
+// máy từ xa xong bảng vẫn hiện "Đang sử dụng" và nhân viên tưởng lệnh hỏng.
+// Hội viên đổi tên thì cột Phiên đổi theo ("members").
+const { schedule: reloadSoon } = useRealtimeRefresh(['machines', 'sessions', 'members'], getData, {
+  events: ['machine:status', 'session:started', 'session:ended']
+});
+// Cột Nhóm tra tên trong danh sách nhóm đã nạp, ô chọn nhóm cũng vậy.
+useRealtimeRefresh(['machine-groups'], fetchGroups);
 
 // Máy trạm vừa báo một dấu hiệu mới (hiện chỉ có card mạng lạ). Hiện thông báo
 // không tự tắt: chủ quán có thể không ngồi trước màn hình lúc nó xảy ra.
@@ -426,7 +434,7 @@ function onMachineAlert(alert: any) {
     type: 'warning',
     duration: 0
   });
-  getData();
+  reloadSoon();
 }
 
 onMounted(() => {
@@ -436,19 +444,11 @@ onMounted(() => {
   tick = setInterval(() => {
     now.value = Date.now();
   }, 1000);
-  wsStore.on('machine:status', onMachineStatus);
-  // Mở/trả máy đổi cột Trạng thái y như machine:status. Thiếu hai dòng này thì
-  // tắt máy từ xa xong bảng vẫn hiện "Đang sử dụng" và nhân viên tưởng lệnh hỏng.
-  wsStore.on('session:started', onMachineStatus);
-  wsStore.on('session:ended', onMachineStatus);
   wsStore.on('machine:alert', onMachineAlert);
 });
 
 onBeforeUnmount(() => {
   if (tick) clearInterval(tick);
-  wsStore.off('machine:status', onMachineStatus);
-  wsStore.off('session:started', onMachineStatus);
-  wsStore.off('session:ended', onMachineStatus);
   wsStore.off('machine:alert', onMachineAlert);
 });
 </script>

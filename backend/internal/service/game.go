@@ -28,6 +28,7 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/vnet/core/internal/config"
 	"github.com/vnet/core/internal/gameupdate"
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"gorm.io/gorm"
 )
@@ -137,6 +138,7 @@ type GameService struct {
 	cfg    config.GameConfig
 	engine *gameupdate.Engine
 	http   *http.Client
+	hub    *hub.Hub
 
 	mu          sync.Mutex
 	runCtx      context.Context // context của vòng nền; nil khi chưa chạy
@@ -185,6 +187,20 @@ func NewGameService(db *gorm.DB, cfg config.GameConfig) *GameService {
 		riotLogged:  map[string]bool{},
 		riotBroken:  map[string]bool{},
 	}
+}
+
+// WithHub nối hub WebSocket vào để vòng nền báo trang Game "games:changed" mỗi
+// khi trạng thái một game đổi (publish xong, tải xong, lỗi, catalog có bản mới).
+// Những việc đó không đi qua yêu cầu HTTP nên middleware không báo. Không nối
+// thì vẫn chạy đúng, trang chỉ thấy khi tự tải lại.
+func (s *GameService) WithHub(h *hub.Hub) *GameService {
+	s.hub = h
+	return s
+}
+
+// baoDoi báo trang quản trị rằng danh sách game vừa đổi. Hub nil thì bỏ qua.
+func (s *GameService) baoDoi(id string) {
+	s.hub.Changed("games", map[string]interface{}{"id": id})
 }
 
 func (s *GameService) Role() string { return s.cfg.Role }
@@ -721,6 +737,7 @@ func (s *GameService) recoverDownloading() {
 		Updates(map[string]interface{}{"status": model.GameStatusNotInstalled, "progress": 0})
 	if n += res.RowsAffected; n > 0 {
 		log.Printf("[game] %d game đang tải dở khi máy chủ dừng; sẽ tải lại theo khung giờ cập nhật", n)
+		s.baoDoi("")
 	}
 }
 
@@ -747,6 +764,9 @@ func (s *GameService) recoverPublishing() {
 		s.db.Model(&model.Game{}).Where("id = ?", g.ID).
 			Updates(map[string]interface{}{"status": model.GameStatusReady, "error": ""})
 		log.Printf("[game] %s: lần publish dở bị bỏ, giữ bản %d đã publish", g.Name, g.Version)
+	}
+	if len(games) > 0 {
+		s.baoDoi("")
 	}
 }
 
@@ -806,8 +826,10 @@ func (s *GameService) publishTick(ctx context.Context, now time.Time) {
 		// lần publish hỏng rồi thư mục trở lại như cũ) chỉ là tạm thời. Không gỡ thì /api/game-menu
 		// báo mãi một game đang tốt là chưa sẵn sàng, vì không còn gì đưa nó về "ready".
 		if g.Status == model.GameStatusError && g.Version > 0 && fp == g.Fingerprint {
-			s.db.Model(&model.Game{}).Where("id = ? AND status = ?", g.ID, model.GameStatusError).
-				Updates(map[string]interface{}{"status": model.GameStatusReady, "error": ""})
+			if s.db.Model(&model.Game{}).Where("id = ? AND status = ?", g.ID, model.GameStatusError).
+				Updates(map[string]interface{}{"status": model.GameStatusReady, "error": ""}).RowsAffected > 0 {
+				s.baoDoi(g.ID)
+			}
 		}
 		s.mu.Lock()
 		st := s.stabilizers[g.Name]
@@ -877,8 +899,10 @@ func (s *GameService) PublishNow(_ context.Context, id string) (*model.Game, err
 			return
 		}
 		// Thư mục không đổi kể từ lần publish trước: chỉ trả lại trạng thái.
-		s.db.Model(&model.Game{}).Where("id = ? AND status = ?", g.ID, model.GameStatusPublishing).
-			Update("status", model.GameStatusReady)
+		if s.db.Model(&model.Game{}).Where("id = ? AND status = ?", g.ID, model.GameStatusPublishing).
+			Update("status", model.GameStatusReady).RowsAffected > 0 {
+			s.baoDoi(g.ID)
+		}
 		s.mu.Lock()
 		if st := s.stabilizers[g.Name]; st != nil {
 			st.MarkPublished(fp)
@@ -986,6 +1010,7 @@ func (s *GameService) publish(ctx context.Context, g model.Game, dir, fp string)
 	if err != nil {
 		return err
 	}
+	s.baoDoi(g.ID)
 	log.Printf("[game] đã publish %s bản %d (%d tệp, %d byte)", g.Name, version, len(info.Files), info.TotalLength())
 	// Băm 40 GB có thể kéo dài hơn cả vòng nền: lúc xong, Run có thể đã dừng và engine đã đóng.
 	e := s.getEngine()
@@ -1005,6 +1030,7 @@ func (s *GameService) setError(id, msg string) {
 	s.db.Model(&model.Game{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"status": model.GameStatusError, "error": truncateRunes(msg, 2000),
 	})
+	s.baoDoi(id)
 }
 
 // ---------------------------------------------------------------- đồng bộ (quán)
@@ -1149,6 +1175,7 @@ func (s *GameService) installOne(ctx context.Context, g model.Game) {
 		}
 		s.db.Model(&model.Game{}).Where("id = ?", g.ID).
 			Updates(map[string]interface{}{"status": status, "progress": 0})
+		s.baoDoi(g.ID)
 	default:
 		log.Printf("[game] tải %s: %v", g.Name, err)
 		s.failInstall(g, err, time.Now())
@@ -1226,19 +1253,30 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 			if err := s.db.Create(&g).Error; err != nil {
 				return err
 			}
+			s.baoDoi(g.ID)
 			continue
 		}
 		if err != nil {
 			return err
 		}
+		// Vòng nền ghi lại catalog mỗi lượt dù không có gì mới: chỉ báo trang
+		// quản trị khi có cột thật sự đổi.
+		doi := g.Category != it.Category || g.Launcher != it.Launcher || g.LaunchArgs != it.LaunchArgs ||
+			g.RemoteVersion != it.Version || g.RemoteInfohash != it.Infohash
 		// Tên của master đã hỏng bảng mã thì không ghi đè tên đang tốt ở quán; quán chưa có tên tốt thì
 		// nhận như thường (Menu lo phần hiển thị).
 		if coKyTuLoi(it.DisplayName) && g.DisplayName != "" && !coKyTuLoi(g.DisplayName) {
 			log.Printf("[game] %s: master gửi tên hiển thị hỏng bảng mã, giữ tên cũ %q", it.Name, g.DisplayName)
 			delete(fields, "display_name")
 		}
+		if _, ok := fields["display_name"]; ok && g.DisplayName != it.DisplayName {
+			doi = true
+		}
 		if err := s.db.Model(&g).Updates(fields).Error; err != nil {
 			return err
+		}
+		if doi {
+			s.baoDoi(g.ID)
 		}
 		s.supersede(it.Name, it.Infohash)
 	}
@@ -1267,6 +1305,9 @@ func (s *GameService) install(ctx context.Context, g model.Game) error {
 		"status": model.GameStatusDownloading, "progress": 0, "error": "",
 		"size_bytes": info.TotalLength(),
 	})
+	// Trang Game thấy "đang tải" rồi tự hỏi phần trăm mỗi 3 giây (lấy từ engine,
+	// không ghi DB); lúc xong hay lỗi thì báo lại lần nữa.
+	s.baoDoi(g.ID)
 	log.Printf("[game] bắt đầu tải %s bản %d", g.Name, g.RemoteVersion)
 
 	e := s.getEngine()
@@ -1292,10 +1333,14 @@ func (s *GameService) install(ctx context.Context, g model.Game) error {
 	e.Remove(g.Name)
 	now := time.Now()
 	log.Printf("[game] %s bản %d đã sẵn sàng", g.Name, g.RemoteVersion)
-	return s.db.Model(&model.Game{}).Where("id = ?", g.ID).Updates(map[string]interface{}{
+	if err := s.db.Model(&model.Game{}).Where("id = ?", g.ID).Updates(map[string]interface{}{
 		"status": model.GameStatusReady, "progress": 100, "error": "",
 		"version": g.RemoteVersion, "infohash": hash, "last_updated_at": now,
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+	s.baoDoi(g.ID)
+	return nil
 }
 
 func (s *GameService) upstreamBytes(ctx context.Context, path string) ([]byte, error) {

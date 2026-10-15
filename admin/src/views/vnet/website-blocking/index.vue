@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
 
@@ -217,6 +218,10 @@ function switchTab(v: any) {
 }
 
 onMounted(load);
+
+// Tải lại đúng thẻ đang xem. Vi phạm do máy trạm gửi về cũng mang chủ đề
+// "website-rules"; nhóm máy đổi tên thì cột Phạm vi đổi theo.
+useRealtimeRefresh(['website-rules', 'machine-groups'], () => (tab.value === 'violations' ? loadViolations() : load()));
 </script>
 
 <template>

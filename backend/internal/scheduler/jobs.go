@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"github.com/vnet/core/internal/hub"
@@ -100,6 +101,9 @@ func Register(s *Scheduler, db *gorm.DB, wsHub *hub.Hub, sessions *service.Sessi
 			moved, err := members.RefreshTiers()
 			if moved > 0 {
 				log.Printf("[scheduler] moved %d members between tiers", moved)
+				// Nút "Xếp lại hạng" là yêu cầu HTTP nên middleware đã báo; lượt
+				// nền thì phải tự báo, không thì cột Hạng đứng yên tới khi F5.
+				wsHub.Changed("members", map[string]interface{}{"reason": "refresh_tier", "count": moved})
 			}
 			return err
 		},
@@ -147,6 +151,9 @@ func markStaleMachinesOffline(db *gorm.DB, wsHub *hub.Hub) error {
 			},
 		}, hub.ClientTypeAdmin)
 	}
+	// Một tin cho cả lượt, cho trang nào nghe chủ đề "machines" chứ không nghe
+	// machine:status (danh sách máy ở trang khác, ô chọn máy...).
+	wsHub.Changed("machines", map[string]interface{}{"reason": "offline", "count": len(stale)})
 	log.Printf("[scheduler] marked %d machines offline", len(stale))
 	return nil
 }
@@ -190,6 +197,11 @@ func expireBookings(db *gorm.DB, wsHub *hub.Hub) error {
 	}
 	for _, b := range xong {
 		service.PhatLichDatDoi(wsHub, b.ID, "completed")
+	}
+	// Một tin "bookings:changed" cho cả lượt, như middleware báo sau nút "Đánh
+	// vắng" ở quầy — trang chỉ nghe theo chủ đề vẫn thấy lịch đổi trạng thái.
+	if n := len(vang) + len(xong); n > 0 {
+		wsHub.Changed("bookings", map[string]interface{}{"reason": "expire", "count": n})
 	}
 	return nil
 }
@@ -242,6 +254,7 @@ func endDueSessions(db *gorm.DB, sessions *service.SessionService, wsHub *hub.Hu
 
 // xuLyPhien trừ tiền rồi đóng những phiên đã hết thứ chúng được bán.
 func xuLyPhien(db *gorm.DB, sessions *service.SessionService, wsHub *hub.Hub, active []model.MachineSession, now time.Time) {
+	daTru := false
 
 	for _, sess := range active {
 		// Trừ tiền trước, rồi mới xét dừng: phút cuối cùng khách ngồi vẫn phải
@@ -251,6 +264,9 @@ func xuLyPhien(db *gorm.DB, sessions *service.SessionService, wsHub *hub.Hub, ac
 		if err != nil {
 			log.Printf("[scheduler] charge %s: %v", sess.ID, err)
 			continue
+		}
+		if tick.Charged > 0 {
+			daTru = true
 		}
 
 		// Gói khung giờ có TotalMinutes = 0 nên RemainingMinutes = 0. Không loại
@@ -298,6 +314,36 @@ func xuLyPhien(db *gorm.DB, sessions *service.SessionService, wsHub *hub.Hub, ac
 		// nạp thêm rồi đăng nhập lại được.
 		log.Printf("[scheduler] auto-ended session %s (%s)", sess.ID, reason)
 	}
+
+	// Phiên đóng ở trên thì SessionService đã tự báo (session:ended và
+	// "sessions:changed"); ở đây chỉ còn phần tiền vừa trừ.
+	if daTru {
+		baoTruTien(wsHub, now)
+	}
+}
+
+// phutBaoTruTien là phút đồng hồ (Unix/60) của lần gần nhất báo lượt trừ
+// tiền. Hai tác vụ phiên chạy song song nên phải là atomic.
+var phutBaoTruTien atomic.Int64
+
+// baoTruTien báo trang quản trị "sessions:changed" vì lượt trừ tiền vừa đổi số
+// đã thu và mốc hết tiền của phiên, cùng số dư và dòng tiền giờ của hội viên —
+// nhiều nhất MỘT lần mỗi phút đồng hồ.
+//
+// Lượt trừ tiền chạy mỗi 10 giây, và quán đông thì lượt nào cũng có phiên vừa
+// qua mốc phút: báo theo từng lượt là mọi trang nghe "sessions" (Phiên, Máy,
+// Bảng điều khiển, Hội viên, Giao dịch...) tải lại sáu lần một phút. Một phiên
+// chỉ bị trừ một lần mỗi phút nên gộp theo phút là vừa: con số trên trang trễ
+// nhiều nhất chừng một phút, còn mở/trả máy vẫn báo ngay. Trả về true nếu lần
+// này có báo.
+func baoTruTien(wsHub *hub.Hub, now time.Time) bool {
+	phut := now.Unix() / 60
+	cu := phutBaoTruTien.Load()
+	if phut <= cu || !phutBaoTruTien.CompareAndSwap(cu, phut) {
+		return false
+	}
+	wsHub.Changed("sessions", map[string]interface{}{"reason": "charge"})
+	return true
 }
 
 // pruneHardwareHistory xoá số đo cũ hơn số ngày được cấu hình.

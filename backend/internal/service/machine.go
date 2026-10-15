@@ -648,6 +648,13 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 	if machine.Status == "offline" {
 		updates["status"] = "available"
 	}
+	// Các cột trang Máy trạm hiện (trạng thái, IP, hai cảnh báo) chỉ đổi qua
+	// nhịp tim, mà nhịp tim không qua middleware: 15 giây một lần mỗi máy, báo
+	// theo từng nhịp là trang tải lại liên tục. Chỉ báo khi chúng THẬT SỰ đổi.
+	doiHienThi := machine.Status == "offline" ||
+		(req.IP != "" && req.IP != machine.IPAddress) ||
+		(req.UserIsAdmin != nil && *req.UserIsAdmin != machine.UserIsAdmin) ||
+		(req.ExtraNetwork != nil && updates["extra_network"] != machine.ExtraNetwork)
 	// Suy ra thời điểm khởi động từ uptime. Chỉ là hiệu của hai giá trị đồng
 	// hồ khác nhau nhưng uptime là KHOẢNG (không phải mốc thời gian) nên không
 	// dính lệch đồng hồ — chỉ lệch vài giây do độ trễ mạng, vô hại với ngưỡng
@@ -673,6 +680,9 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 				"status":       "available",
 			},
 		}, hub.ClientTypeAdmin)
+	}
+	if doiHienThi {
+		s.hub.Changed("machines", map[string]interface{}{"id": id, "machine_code": machine.MachineCode})
 	}
 	_ = s.audit.Log(&LogAuditRequest{
 		Action:     "heartbeat",
