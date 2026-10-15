@@ -51,8 +51,6 @@ func (a *App) fetchGameMenu() (*gameMenu, error) {
 		m.Items = []gameMenuItem{}
 	}
 	rememberGameMenu(&m)
-	// Menu tải được thì đối chiếu lối tắt trên desktop, ở nền: không chờ, không lỗi.
-	a.queueGameShortcuts(&m)
 	return &m, nil
 }
 

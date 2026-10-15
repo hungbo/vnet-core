@@ -45,6 +45,10 @@ func main() {
 		adminPass   = flag.String("set-admin-pass", "", "mật khẩu tài khoản quản trị máy trạm")
 		ensureSvc   = flag.Bool("ensure-service", false, "bật lại dịch vụ nếu nó đang dừng (tác vụ theo lịch gọi)")
 	)
+	// Lối tắt "Menu Game" (gameshortcuts.go) chạy bản thứ hai với cờ này; bản đó chỉ gõ
+	// cửa thanh đang chạy, thanh đọc cờ trong SecondInstanceData. Khai báo để Parse
+	// không từ chối nó.
+	flag.String("open", "", "mở màn hình trên thanh điều khiển đang chạy: games")
 	flag.Parse()
 
 	// Lệnh cài/gỡ/đặt tài khoản chạy tay trên console: để nhật ký ra màn hình như cũ.
@@ -167,7 +171,11 @@ func runDock() {
 			// rồi thoát. ShowWindow đưa thanh về từ trạng thái thu nhỏ; màn hình khoá
 			// đang phủ kín thì giữ nguyên, màn khoá native thì được đưa lên trước (xem
 			// ShowWindow).
-			OnSecondInstanceLaunch: func(options.SecondInstanceData) {
+			OnSecondInstanceLaunch: func(d options.SecondInstanceData) {
+				if moBangTuThamSo(d.Args) == "games" {
+					app.moMenuGameTuLoiTat()
+					return
+				}
 				app.ShowWindow()
 			},
 		},

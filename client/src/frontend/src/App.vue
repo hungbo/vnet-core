@@ -115,10 +115,19 @@ function navigateTo(view: string) {
 	currentView.value = view
 }
 
+// Khách vừa vào máy thì mở luôn menu Game: quán muốn khách thấy game ngay, khỏi đi
+// tìm nút. Nhân viên vào máy để làm việc khác nên thôi. Chỉ ở lần đăng nhập mới (tay
+// hoặc màn khoá native): khôi phục phiên khi giao diện khởi động lại giữa buổi thì
+// không mở lại.
+function moMenuGameSauDangNhap() {
+	if (!windowMode.value && session.loggedIn && session.role !== 'admin') navigateTo('games')
+}
+
 async function handleLogin(username: string, password: string) {
 	try {
 		await session.login(username, password)
 		currentView.value = 'dashboard'
+		moMenuGameSauDangNhap()
 	} catch (e) {
 		// Bỏ tiền tố "Error:" mà JS gắn vào: thông báo từ máy chủ đã là câu
 		// tiếng Việt hoàn chỉnh, dán thêm chữ đó vào chỉ làm khách tưởng máy hỏng.
@@ -155,10 +164,16 @@ onMounted(async () => {
 	// trong lúc trang còn nạp phía sau — có lần đăng nhập đó thì nhận nó, không khôi
 	// phục gì nữa. Lần đăng nhập xong SAU lúc này thì Go gõ cửa; nghe cửa đăng ký trước
 	// lần hỏi để lần xong đúng giữa hai bước không lọt mất.
-	if (!windowMode.value) EventsOn('vnet:login:native', () => { session.adoptCurrentLogin() })
+	if (!windowMode.value) EventsOn('vnet:login:native', () => {
+		session.adoptCurrentLogin().then(co => { if (co) moMenuGameSauDangNhap() })
+	})
 	const dangNhapLucDung = windowMode.value
 		? session.restore()
-		: session.adoptCurrentLogin().then(co => co || session.restore())
+		: session.adoptCurrentLogin().then(co => {
+			if (!co) return session.restore()
+			moMenuGameSauDangNhap()
+			return co
+		})
 	dangNhapLucDung.finally(() => {
 		childReady.value = true
 		// Cần userID của phiên vừa khôi phục.

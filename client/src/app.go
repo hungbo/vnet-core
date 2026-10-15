@@ -943,6 +943,18 @@ var panelTitles = map[string]string{
 	"games":      "VNET · Game",
 }
 
+// moMenuGameTuLoiTat: khách bấm lối tắt "Menu Game" trên desktop (gameshortcuts.go).
+// Chưa ai đăng nhập thì menu Game không có gì để mở: làm như lối tắt VNET.
+func (a *App) moMenuGameTuLoiTat() {
+	if !a.loggedIn() {
+		a.ShowWindow()
+		return
+	}
+	if err := a.OpenWindow("games"); err != nil {
+		log.Printf("[window] không mở được menu Game từ lối tắt: %v", err)
+	}
+}
+
 // switchPanel đổi cửa sổ phụ đang chạy sang màn hình khác rồi đưa nó lên.
 func (a *App) switchPanel(mode string) {
 	title, ok := panelTitles[mode]
