@@ -409,6 +409,17 @@ onMounted(() => {
                 {{ $t('vnetPages.settings.hiddenShortcutsHint') }}
               </div>
             </ElFormItem>
+            <ElDivider content-position="left">{{ $t('vnetPages.settings.riotMetadataTitle') }}</ElDivider>
+            <ElFormItem :label="$t('vnetPages.settings.riotMetadataSource')">
+              <ElInput
+                v-model="settings.riot_metadata_source"
+                :placeholder="$t('vnetPages.settings.riotMetadataPlaceholder')"
+                clearable
+              />
+              <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
+                {{ $t('vnetPages.settings.riotMetadataHint') }}
+              </div>
+            </ElFormItem>
             <ElDivider content-position="left">{{ $t('vnetPages.settings.localAdminTitle') }}</ElDivider>
             <ElAlert type="info" :closable="false" show-icon style="margin-bottom: 16px">
               {{ $t('vnetPages.settings.localAdminHint') }}
