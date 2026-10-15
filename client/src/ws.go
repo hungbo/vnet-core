@@ -217,11 +217,13 @@ func (c *WSClient) readLoop(ctx context.Context) error {
 
 		var msg WSMessage
 		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("[WS] unmarshal error: %v raw=%s", err, string(data))
+			log.Printf("[WS] unmarshal error: %v raw=%s", err, logBody(data))
 			continue
 		}
 
-		log.Printf("[WS] received: type=%s data=%s", msg.Type, string(msg.Payload))
+		// Chỉ loại và kích thước: nội dung (tin chat, số dư) không được nằm trong ui.log,
+		// nơi khách sau ngồi cùng máy đọc được.
+		log.Printf("[WS] received: type=%s (%d byte)", msg.Type, len(msg.Payload))
 
 		if handler, ok := c.handlers[msg.Type]; ok {
 			go handler(msg)

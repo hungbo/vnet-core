@@ -6,6 +6,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -50,7 +52,7 @@ func httpPost(url string, body interface{}) error {
 		reqBody = bytes.NewReader(data)
 	}
 
-	log.Printf("[HTTP] POST %s body=%s", url, string(mustMarshal(body)))
+	log.Printf("[HTTP] POST %s body=%s", url, logBody(mustMarshal(body)))
 
 	req, err := http.NewRequest("POST", url, reqBody)
 	if err != nil {
@@ -67,8 +69,74 @@ func httpPost(url string, body interface{}) error {
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
-	log.Printf("[HTTP] POST %s → %d body=%s", url, resp.StatusCode, string(bodyBytes))
+	log.Printf("[HTTP] POST %s → %d (%d byte)", url, resp.StatusCode, len(bodyBytes))
 	return nil
+}
+
+// jwtLike khớp một JWT (header.payload.chữ ký). Token có thể nằm ở bất kỳ đâu, kể
+// cả trong một chuỗi lỗi, nên che theo dạng chứ không chỉ theo tên trường.
+var jwtLike = regexp.MustCompile(`eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*`)
+
+// maxLoggedBody: số byte tối đa của một thân JSON được ghi vào nhật ký.
+const maxLoggedBody = 300
+
+// logBody chuẩn bị một thân JSON để ghi nhật ký (chỉ dùng khi có lỗi). ui.log nằm
+// trong thư mục của tài khoản Windows của KHÁCH: che mọi trường bí mật
+// (isSecretField) ở mọi độ sâu, trừ "code"/"message" của khung trả lời VNET, che
+// mọi chuỗi trông như JWT, rồi cắt ngắn.
+func logBody(b []byte) string {
+	var v interface{}
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.UseNumber()
+	if d.Decode(&v) == nil {
+		if m, ok := v.(map[string]interface{}); ok {
+			for k, val := range m {
+				if k != "code" && k != "message" {
+					m[k] = redactSecrets(k, val)
+				}
+			}
+		} else {
+			v = redactSecrets("", v)
+		}
+		if out, err := json.Marshal(v); err == nil {
+			b = out
+		}
+	}
+	s := jwtLike.ReplaceAllString(string(b), "***")
+	if len(s) > maxLoggedBody {
+		s = s[:maxLoggedBody] + "..."
+	}
+	return s
+}
+
+// isPrivateText: trường chữ tự do của khách (tin chat, góp ý, ghi chú). Không bí mật
+// như mật khẩu nhưng khách sau ngồi cùng máy không được đọc, nên cũng không ghi.
+// So khớp đúng tên, không theo chuỗi con: "message_type" vẫn được ghi.
+func isPrivateText(key string) bool {
+	switch strings.ToLower(key) {
+	case "message", "content", "text", "note", "comment", "description":
+		return true
+	}
+	return false
+}
+
+// redactSecrets thay giá trị của trường bí mật hay chữ tự do bằng "***", đi vào mọi
+// object và mảng.
+func redactSecrets(key string, v interface{}) interface{} {
+	if key != "" && (isSecretField(key) || isPrivateText(key)) {
+		return "***"
+	}
+	switch x := v.(type) {
+	case map[string]interface{}:
+		for k, val := range x {
+			x[k] = redactSecrets(k, val)
+		}
+	case []interface{}:
+		for i, val := range x {
+			x[i] = redactSecrets("", val)
+		}
+	}
+	return v
 }
 
 func mustMarshal(v interface{}) []byte {
