@@ -44,7 +44,7 @@ func (h *SessionHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
 	items, total, err := h.svc.ListSessions(f, *params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch sessions")
+		response.InternalError(c, "Failed to fetch sessions", err)
 		return
 	}
 	response.Paginated(c, items, total, params.Page, params.PageSize)
@@ -80,7 +80,7 @@ func (h *SessionHandler) Delete(c *gin.Context) {
 func (h *SessionHandler) ListActive(c *gin.Context) {
 	sessions, err := h.svc.GetActiveSessions()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch active sessions")
+		response.InternalError(c, "Failed to fetch active sessions", err)
 		return
 	}
 	response.Success(c, sessions)
@@ -173,7 +173,7 @@ func (h *SessionHandler) GetMySession(c *gin.Context) {
 
 	session, err := h.svc.GetActiveSessionByMember(memberID)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch session")
+		response.InternalError(c, "Failed to fetch session", err)
 		return
 	}
 
@@ -201,7 +201,7 @@ func (h *SessionHandler) EndMySession(c *gin.Context) {
 
 	session, err := h.svc.GetActiveSessionByMember(memberID)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch session")
+		response.InternalError(c, "Failed to fetch session", err)
 		return
 	}
 	if session == nil {

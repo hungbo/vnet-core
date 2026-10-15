@@ -26,7 +26,7 @@ func NewCategoryHandler(svc *service.CategoryService) *CategoryHandler {
 func (h *CategoryHandler) List(c *gin.Context) {
 	result, err := h.svc.List()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch categories")
+		response.InternalError(c, "Failed to fetch categories", err)
 		return
 	}
 

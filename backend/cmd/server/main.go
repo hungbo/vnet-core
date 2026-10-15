@@ -37,6 +37,7 @@ import (
 	"github.com/vnet/core/internal/scheduler"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/jwt"
+	"github.com/vnet/core/pkg/response"
 )
 
 func main() {
@@ -85,7 +86,7 @@ func main() {
 		&model.Supplier{}, &model.StockTransaction{}, &model.InventoryCountSession{}, &model.InventoryCount{},
 		&model.Shift{}, &model.CashHandover{},
 		&model.ChatRoom{}, &model.ChatParticipant{}, &model.ChatMessage{}, &model.ServiceFeedback{},
-		&model.SystemSetting{}, &model.AuditLog{},
+		&model.SystemSetting{}, &model.AuditLog{}, &model.ErrorEvent{},
 		&model.Notification{}, &model.NotificationRecipient{},
 		&model.MemberNotification{},
 		&model.BackupLog{}, &model.EInvoiceConfig{}, &model.EInvoice{},
@@ -102,9 +103,30 @@ func main() {
 	wsHub := hub.New(cfg.Server.AllowedOrigins)
 
 	r := gin.New()
-	r.Use(gin.Recovery())
+	// RequestID trước để Logger và Recovery đều thấy mã; Logger bọc ngoài
+	// Recovery để yêu cầu bị panic vẫn có dòng log "500 ... id=...".
+	r.Use(middleware.RequestID())
 	r.Use(middleware.CORS(cfg.Server.AllowedOrigins))
 	r.Use(middleware.Logger())
+	errReports := service.NewErrorReportService(db)
+	r.Use(middleware.Recovery(func(c *gin.Context, kind, message, detail string) {
+		in := service.ErrorReportInput{
+			Source:    service.ErrorSourceServer,
+			Kind:      kind,
+			Message:   message,
+			Detail:    detail,
+			Location:  c.Request.Method + " " + c.FullPath(),
+			Reporter:  c.GetString(middleware.ContextKeyUsername),
+			RequestID: c.GetString(response.RequestIDKey),
+		}
+		// Ghi ngoài luồng yêu cầu: lỗi 500 hay do chính database, chờ nó thì
+		// yêu cầu nào đang lỗi cũng treo thêm đến hết thời gian chờ kết nối.
+		go func() {
+			if err := errReports.Record(in); err != nil {
+				log.Printf("[error-report] không ghi được lỗi id=%s: %v", in.RequestID, err)
+			}
+		}()
+	}))
 
 	h := router.Register(r, db, jwtManager, wsHub, cfg)
 	router.RegisterAdminUI(r, adminAssets())

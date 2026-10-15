@@ -204,6 +204,12 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Meta:      RouteMeta{Title: "vnet_audit", I18nKey: "route.vnet_audit", RequiredPermission: "audit.view"},
 		},
 		{
+			Name:      "vnet_error-logs",
+			Path:      "/vnet/error-logs",
+			Component: "view.vnet_error-logs",
+			Meta:      RouteMeta{Title: "vnet_error-logs", I18nKey: "route.vnet_error-logs", RequiredPermission: "errors.view"},
+		},
+		{
 			Name:      "vnet_notifications",
 			Path:      "/vnet/notifications",
 			Component: "view.vnet_notifications",

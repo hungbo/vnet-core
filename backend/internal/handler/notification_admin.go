@@ -28,7 +28,7 @@ func (h *NotificationAdminHandler) List(c *gin.Context) {
 	params := *pagination.GetParams(c)
 	items, total, page, pageSize, err := h.svc.List(params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch notifications")
+		response.InternalError(c, "Failed to fetch notifications", err)
 		return
 	}
 	response.Paginated(c, items, total, page, pageSize)
@@ -128,7 +128,7 @@ func (h *NotificationAdminHandler) Dispatch(c *gin.Context) {
 	id := c.Param("id")
 	count, err := h.svc.Dispatch(id)
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Success(c, gin.H{"dispatched": count})

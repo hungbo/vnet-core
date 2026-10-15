@@ -37,7 +37,7 @@ func (h *PromotionHandler) List(c *gin.Context) {
 
 	result, err := h.svc.List(&req)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch promotions")
+		response.InternalError(c, "Failed to fetch promotions", err)
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *PromotionHandler) GetLuckySpinRewards(c *gin.Context) {
 	// để bật lại. Vòng quay gọi không kèm tham số nên vẫn chỉ thấy ô đang bật.
 	result, err := h.svc.GetLuckySpinRewards(c.Query("include_inactive") == "true")
 	if err != nil {
-		response.InternalError(c, "Failed to fetch lucky spin rewards")
+		response.InternalError(c, "Failed to fetch lucky spin rewards", err)
 		return
 	}
 
@@ -282,7 +282,7 @@ func (h *PromotionHandler) Spin(c *gin.Context) {
 func (h *PromotionHandler) SimulateSpin(c *gin.Context) {
 	result, err := h.svc.SimulateSpin()
 	if err != nil {
-		response.InternalError(c, "Không quay thử được")
+		response.InternalError(c, "Không quay thử được", err)
 		return
 	}
 	response.Success(c, result)

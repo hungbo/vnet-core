@@ -63,7 +63,7 @@ func (h *FeedbackHandler) List(c *gin.Context) {
 	_ = c.ShouldBindQuery(&req)
 	res, err := h.svc.List(&req)
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Paginated(c, res.Items, res.Total, res.Page, res.PageSize)
@@ -80,7 +80,7 @@ func (h *FeedbackHandler) Summary(c *gin.Context) {
 	_ = c.ShouldBindQuery(&req)
 	res, err := h.svc.Summary(&req)
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Success(c, res)

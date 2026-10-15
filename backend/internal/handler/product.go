@@ -52,7 +52,7 @@ func (h *ProductHandler) List(c *gin.Context) {
 
 	result, err := h.svc.List(isRetail, isActive, c.Query("category_id"), c.Query("supplier_id"), search, page, pageSize)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch products")
+		response.InternalError(c, "Failed to fetch products", err)
 		return
 	}
 

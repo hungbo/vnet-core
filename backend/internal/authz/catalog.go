@@ -170,6 +170,8 @@ var Catalog = []Permission{
 	{"upload.file", "Tải tệp lên", "system"},
 
 	{"audit.view", "Xem nhật ký hoạt động", "backoffice"},
+	{"errors.view", "Xem nhật ký lỗi", "backoffice"},
+	{"errors.resolve", "Đánh dấu lỗi đã sửa", "backoffice"},
 	{"backups.view", "Xem bản sao lưu", "backoffice"},
 	{"backups.create", "Tạo bản sao lưu", "backoffice"},
 	{"backups.restore", "Phục hồi từ bản sao lưu", "backoffice"},

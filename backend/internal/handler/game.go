@@ -54,7 +54,7 @@ func (h *GameHandler) Info(c *gin.Context) {
 func (h *GameHandler) List(c *gin.Context) {
 	games, err := h.svc.List()
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Success(c, games)
@@ -71,7 +71,7 @@ func (h *GameHandler) List(c *gin.Context) {
 func (h *GameHandler) Menu(c *gin.Context) {
 	menu, err := h.svc.Menu()
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Success(c, menu)

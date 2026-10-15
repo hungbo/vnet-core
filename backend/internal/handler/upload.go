@@ -44,7 +44,7 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 	dateDir := time.Now().Format("2006/01/02")
 	saveDir := filepath.Join(h.uploadDir, dateDir)
 	if err := os.MkdirAll(saveDir, 0755); err != nil {
-		response.InternalError(c, "Không thể tạo thư mục upload")
+		response.InternalError(c, "Không thể tạo thư mục upload", err)
 		return
 	}
 
@@ -53,20 +53,20 @@ func (h *UploadHandler) Upload(c *gin.Context) {
 
 	src, err := file.Open()
 	if err != nil {
-		response.InternalError(c, "Không thể mở file")
+		response.InternalError(c, "Không thể mở file", err)
 		return
 	}
 	defer src.Close()
 
 	out, err := os.Create(dst)
 	if err != nil {
-		response.InternalError(c, "Không thể lưu file")
+		response.InternalError(c, "Không thể lưu file", err)
 		return
 	}
 	defer out.Close()
 
 	if _, err := io.Copy(out, src); err != nil {
-		response.InternalError(c, "Không thể ghi file")
+		response.InternalError(c, "Không thể ghi file", err)
 		return
 	}
 

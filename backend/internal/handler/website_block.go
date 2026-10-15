@@ -28,7 +28,7 @@ func (h *WebsiteBlockHandler) ListRules(c *gin.Context) {
 	_ = c.ShouldBindQuery(&req)
 	res, err := h.svc.ListRules(&req)
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Paginated(c, res.Items, res.Total, res.Page, res.PageSize)
@@ -206,7 +206,7 @@ func (h *WebsiteBlockHandler) ListViolations(c *gin.Context) {
 	_ = c.ShouldBindQuery(&req)
 	res, err := h.svc.ListViolations(&req)
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Paginated(c, res.Items, res.Total, res.Page, res.PageSize)

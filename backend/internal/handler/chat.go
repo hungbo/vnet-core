@@ -40,7 +40,7 @@ func (h *ChatHandler) ListRooms(c *gin.Context) {
 	rooms, total, page, pageSize, err := h.svc.ListRooms(participantID, participantType, *params)
 	if err != nil {
 		log.Printf("[Chat] ListRooms error: %v", err)
-		response.InternalError(c, "Failed to fetch rooms")
+		response.InternalError(c, "Failed to fetch rooms", err)
 		return
 	}
 	log.Printf("[Chat] ListRooms result: %d rooms (total=%d)", len(rooms), total)
@@ -62,7 +62,7 @@ func (h *ChatHandler) ensureRoomAccess(c *gin.Context, roomID string) bool {
 
 	ok, err := h.svc.IsParticipant(roomID, middleware.GetUserID(c))
 	if err != nil {
-		response.InternalError(c, "Failed to verify room access")
+		response.InternalError(c, "Failed to verify room access", err)
 		return false
 	}
 	if !ok {
@@ -235,7 +235,7 @@ func (h *ChatHandler) DeleteRoom(c *gin.Context) {
 
 func (h *ChatHandler) DeleteAllRooms(c *gin.Context) {
 	if err := h.svc.DeleteAllRooms(); err != nil {
-		response.InternalError(c, "Failed to delete all rooms")
+		response.InternalError(c, "Failed to delete all rooms", err)
 		return
 	}
 	response.Success(c, nil)
@@ -247,7 +247,7 @@ func (h *ChatHandler) MarkMessageDelivered(c *gin.Context) {
 		return
 	}
 	if err := h.svc.MarkMessageDelivered(id); err != nil {
-		response.InternalError(c, "Failed to mark delivered")
+		response.InternalError(c, "Failed to mark delivered", err)
 		return
 	}
 	response.Success(c, nil)
@@ -259,7 +259,7 @@ func (h *ChatHandler) MarkMessageRead(c *gin.Context) {
 		return
 	}
 	if err := h.svc.MarkMessageRead(id); err != nil {
-		response.InternalError(c, "Failed to mark read")
+		response.InternalError(c, "Failed to mark read", err)
 		return
 	}
 	response.Success(c, nil)
@@ -276,7 +276,7 @@ func (h *ChatHandler) MarkRoomMessagesRead(c *gin.Context) {
 	}
 	count, err := h.svc.MarkRoomMessagesRead(id, readerType)
 	if err != nil {
-		response.InternalError(c, "Failed to mark read")
+		response.InternalError(c, "Failed to mark read", err)
 		return
 	}
 	if userID := middleware.GetUserID(c); userID != "" {

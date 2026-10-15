@@ -32,7 +32,7 @@ func (h *ReportHandler) DailyRevenue(c *gin.Context) {
 	dateTo := c.Query("date_to")
 	results, err := h.svc.DailyRevenue(dateFrom, dateTo)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch daily revenue")
+		response.InternalError(c, "Failed to fetch daily revenue", err)
 		return
 	}
 	response.Success(c, results)
@@ -54,7 +54,7 @@ func (h *ReportHandler) MonthlyRevenue(c *gin.Context) {
 	month, _ := strconv.Atoi(c.Query("month"))
 	results, err := h.svc.MonthlyRevenue(year, month)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch monthly revenue")
+		response.InternalError(c, "Failed to fetch monthly revenue", err)
 		return
 	}
 	response.Success(c, results)
@@ -76,7 +76,7 @@ func (h *ReportHandler) ByMember(c *gin.Context) {
 	params := parseReportParams(c)
 	results, err := h.svc.ByMember(params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch member report")
+		response.InternalError(c, "Failed to fetch member report", err)
 		return
 	}
 	response.Success(c, results)
@@ -98,7 +98,7 @@ func (h *ReportHandler) ByMachine(c *gin.Context) {
 	params := parseReportParams(c)
 	results, err := h.svc.ByMachine(params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch machine report")
+		response.InternalError(c, "Failed to fetch machine report", err)
 		return
 	}
 	response.Success(c, results)
@@ -120,7 +120,7 @@ func (h *ReportHandler) ByEmployee(c *gin.Context) {
 	params := parseReportParams(c)
 	results, err := h.svc.ByEmployee(params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch employee report")
+		response.InternalError(c, "Failed to fetch employee report", err)
 		return
 	}
 	response.Success(c, results)
@@ -142,7 +142,7 @@ func (h *ReportHandler) TopProducts(c *gin.Context) {
 	params := parseReportParams(c)
 	results, err := h.svc.TopProducts(params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch top products")
+		response.InternalError(c, "Failed to fetch top products", err)
 		return
 	}
 	response.Success(c, results)
@@ -164,7 +164,7 @@ func (h *ReportHandler) PromotionUsage(c *gin.Context) {
 	params := parseReportParams(c)
 	results, err := h.svc.PromotionUsage(params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch promotion usage")
+		response.InternalError(c, "Failed to fetch promotion usage", err)
 		return
 	}
 	response.Success(c, results)
@@ -214,7 +214,7 @@ func (h *ReportHandler) ListTransactions(c *gin.Context) {
 
 	results, total, err := h.svc.ListTransactions(params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch transactions")
+		response.InternalError(c, "Failed to fetch transactions", err)
 		return
 	}
 	response.Paginated(c, results, total, params.Page, params.PageSize)

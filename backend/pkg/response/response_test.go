@@ -2,6 +2,7 @@ package response
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -120,13 +121,28 @@ func TestNotFound(t *testing.T) {
 
 func TestInternalError(t *testing.T) {
 	w := performRequest(func(c *gin.Context) {
-		InternalError(c, "internal server error")
+		InternalError(c, "internal server error", nil)
 	})
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 	resp := parseResponse(w)
 	assert.Equal(t, http.StatusInternalServerError, resp.Code)
 	assert.Equal(t, "internal server error", resp.Message)
+}
+
+// Lỗi gốc phải vào c.Errors (để log) nhưng không lọt ra câu trả cho client;
+// có mã yêu cầu thì câu trả kèm mã đó.
+func TestInternalError_LogsCauseAndShowsRequestID(t *testing.T) {
+	var errs []string
+	w := performRequest(func(c *gin.Context) {
+		c.Set(RequestIDKey, "abc123")
+		InternalError(c, "Failed to fetch members", errors.New("pq: deadlock detected"))
+		errs = c.Errors.Errors()
+	})
+
+	resp := parseResponse(w)
+	assert.Equal(t, "Failed to fetch members (mã lỗi: abc123)", resp.Message)
+	assert.Equal(t, []string{"pq: deadlock detected"}, errs)
 }
 
 func TestTokenExpired(t *testing.T) {

@@ -37,7 +37,7 @@ func (h *AuditHandler) List(c *gin.Context) {
 
 	logs, total, page, pageSize, err := h.svc.List(*params, filters)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch audit logs")
+		response.InternalError(c, "Failed to fetch audit logs", err)
 		return
 	}
 	response.Paginated(c, logs, total, page, pageSize)

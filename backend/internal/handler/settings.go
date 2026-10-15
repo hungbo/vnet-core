@@ -26,7 +26,7 @@ func NewSettingsHandler(svc *service.SettingsService) *SettingsHandler {
 func (h *SettingsHandler) List(c *gin.Context) {
 	settings, err := h.svc.List()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch settings")
+		response.InternalError(c, "Failed to fetch settings", err)
 		return
 	}
 	response.Success(c, settings)

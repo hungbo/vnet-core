@@ -25,7 +25,7 @@ func NewPricingHandler(svc *service.PricingService) *PricingHandler {
 func (h *PricingHandler) ListMachinePrices(c *gin.Context) {
 	res, err := h.svc.ListMachinePrices(c.Query("machine_group_id"))
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Success(c, res)
@@ -100,7 +100,7 @@ func (h *PricingHandler) DeleteMachinePrice(c *gin.Context) {
 func (h *PricingHandler) ListTimePricing(c *gin.Context) {
 	res, err := h.svc.ListTimePricing(c.Query("machine_group_id"))
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Success(c, res)

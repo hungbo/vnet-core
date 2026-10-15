@@ -71,7 +71,7 @@ func (h *ShiftHandler) List(c *gin.Context) {
 
 	result, err := h.svc.List(params, status)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch shifts")
+		response.InternalError(c, "Failed to fetch shifts", err)
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *ShiftHandler) GetByID(c *gin.Context) {
 			response.NotFound(c, err.Error())
 			return
 		}
-		response.InternalError(c, "Failed to fetch shift")
+		response.InternalError(c, "Failed to fetch shift", err)
 		return
 	}
 

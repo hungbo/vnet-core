@@ -35,7 +35,7 @@ func (h *MemberHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
 	result, total, page, pageSize, err := h.svc.List(*params, c.Query("role"))
 	if err != nil {
-		response.InternalError(c, "Failed to fetch members")
+		response.InternalError(c, "Failed to fetch members", err)
 		return
 	}
 	response.Paginated(c, result, total, page, pageSize)
@@ -229,7 +229,7 @@ func (h *MemberHandler) GetTransactions(c *gin.Context) {
 	params := pagination.GetParams(c)
 	result, total, page, pageSize, err := h.svc.GetTransactions(id, *params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch transactions")
+		response.InternalError(c, "Failed to fetch transactions", err)
 		return
 	}
 	response.Paginated(c, result, total, page, pageSize)
@@ -254,7 +254,7 @@ func (h *MemberHandler) GetSessions(c *gin.Context) {
 	params := pagination.GetParams(c)
 	result, total, page, pageSize, err := h.svc.GetSessions(id, *params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch sessions")
+		response.InternalError(c, "Failed to fetch sessions", err)
 		return
 	}
 	response.Paginated(c, result, total, page, pageSize)
@@ -279,7 +279,7 @@ func (h *MemberHandler) GetCombos(c *gin.Context) {
 	params := pagination.GetParams(c)
 	result, total, page, pageSize, err := h.svc.GetCombos(id, *params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch combos")
+		response.InternalError(c, "Failed to fetch combos", err)
 		return
 	}
 	response.Paginated(c, result, total, page, pageSize)
@@ -297,7 +297,7 @@ func (h *MemberHandler) GetCombos(c *gin.Context) {
 func (h *MemberHandler) ListGroups(c *gin.Context) {
 	groups, err := h.svc.GetGroups(c.Query("search"))
 	if err != nil {
-		response.InternalError(c, "Failed to fetch groups")
+		response.InternalError(c, "Failed to fetch groups", err)
 		return
 	}
 	response.Success(c, groups)
@@ -387,7 +387,7 @@ func (h *MemberHandler) DeleteGroup(c *gin.Context) {
 func (h *MemberHandler) RefreshTiers(c *gin.Context) {
 	moved, err := h.svc.RefreshTiers()
 	if err != nil {
-		response.InternalError(c, err.Error())
+		response.InternalError(c, err.Error(), err)
 		return
 	}
 	response.Success(c, gin.H{"moved": moved})

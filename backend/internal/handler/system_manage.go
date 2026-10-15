@@ -34,7 +34,7 @@ func (h *SystemManageHandler) GetUserList(c *gin.Context) {
 
 	result, err := h.svc.ListUsers(&params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch users")
+		response.InternalError(c, "Failed to fetch users", err)
 		return
 	}
 	response.Success(c, result)
@@ -167,7 +167,7 @@ func (h *SystemManageHandler) GetRoleList(c *gin.Context) {
 
 	result, err := h.svc.ListRoles(&params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch roles")
+		response.InternalError(c, "Failed to fetch roles", err)
 		return
 	}
 	response.Success(c, result)
@@ -184,7 +184,7 @@ func (h *SystemManageHandler) GetRoleList(c *gin.Context) {
 func (h *SystemManageHandler) GetAllRoles(c *gin.Context) {
 	roles, err := h.svc.GetAllRoles()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch roles")
+		response.InternalError(c, "Failed to fetch roles", err)
 		return
 	}
 	response.Success(c, roles)
@@ -209,7 +209,7 @@ func (h *SystemManageHandler) GetMenuList(c *gin.Context) {
 
 	result, err := h.svc.GetMenuList(&params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch menus")
+		response.InternalError(c, "Failed to fetch menus", err)
 		return
 	}
 	response.Success(c, result)
@@ -226,7 +226,7 @@ func (h *SystemManageHandler) GetMenuList(c *gin.Context) {
 func (h *SystemManageHandler) GetAllPages(c *gin.Context) {
 	pages, err := h.svc.GetAllPages()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch pages")
+		response.InternalError(c, "Failed to fetch pages", err)
 		return
 	}
 	response.Success(c, pages)
@@ -243,7 +243,7 @@ func (h *SystemManageHandler) GetAllPages(c *gin.Context) {
 func (h *SystemManageHandler) GetMenuTree(c *gin.Context) {
 	tree, err := h.svc.GetMenuTree()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch menu tree")
+		response.InternalError(c, "Failed to fetch menu tree", err)
 		return
 	}
 	response.Success(c, tree)
@@ -360,7 +360,7 @@ func (h *SystemManageHandler) BatchDeleteRole(c *gin.Context) {
 func (h *SystemManageHandler) GetAllPermissions(c *gin.Context) {
 	result, err := h.svc.GetAllPermissions()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch permissions")
+		response.InternalError(c, "Failed to fetch permissions", err)
 		return
 	}
 	response.Success(c, result)

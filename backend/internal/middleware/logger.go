@@ -2,16 +2,23 @@ package middleware
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/vnet/core/pkg/response"
 )
+
+// tokenTrongQuery: WebSocket xác thực bằng ?token=<JWT> (auth.go), nên in nguyên
+// query là ghi token đăng nhập vào server.log.
+var tokenTrongQuery = regexp.MustCompile(`(^|&)token=[^&]*`)
 
 func Logger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		path := c.Request.URL.Path
-		query := c.Request.URL.RawQuery
+		query := tokenTrongQuery.ReplaceAllString(c.Request.URL.RawQuery, "${1}token=***")
 
 		c.Next()
 
@@ -26,6 +33,14 @@ func Logger() gin.HandlerFunc {
 		)
 		if query != "" {
 			line += fmt.Sprintf(" ?%s", query)
+		}
+		if id := c.GetString(response.RequestIDKey); id != "" {
+			line += " id=" + id
+		}
+		// Lỗi gốc do handler gắn qua c.Error (response.InternalError) — thứ duy
+		// nhất cho biết VÌ SAO yêu cầu này hỏng. Giữ trên một dòng để grep được.
+		if len(c.Errors) > 0 {
+			line += " | err: " + strings.ReplaceAll(strings.Join(c.Errors.Errors(), "; "), "\n", " ")
 		}
 
 		if status >= 500 {

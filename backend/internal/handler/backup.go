@@ -35,7 +35,7 @@ func (h *BackupHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
 	backups, total, page, pageSize, err := h.svc.List(*params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch backups")
+		response.InternalError(c, "Failed to fetch backups", err)
 		return
 	}
 	response.Paginated(c, backups, total, page, pageSize)

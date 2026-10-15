@@ -28,7 +28,7 @@ func NewInventoryHandler(svc *service.InventoryService) *InventoryHandler {
 func (h *InventoryHandler) ListSuppliers(c *gin.Context) {
 	result, err := h.svc.ListSuppliers()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch suppliers")
+		response.InternalError(c, "Failed to fetch suppliers", err)
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *InventoryHandler) ListStockTransactions(c *gin.Context) {
 
 	result, err := h.svc.ListStockTransactions(params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch stock transactions")
+		response.InternalError(c, "Failed to fetch stock transactions", err)
 		return
 	}
 
@@ -177,7 +177,7 @@ func (h *InventoryHandler) ListProductIngredients(c *gin.Context) {
 
 	result, err := h.svc.ListProductIngredients(productID)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch product ingredients")
+		response.InternalError(c, "Failed to fetch product ingredients", err)
 		return
 	}
 

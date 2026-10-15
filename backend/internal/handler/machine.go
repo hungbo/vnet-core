@@ -53,7 +53,7 @@ func (h *MachineHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
 	result, err := h.svc.ListFiltered(*params, c.Query("warning") == "1")
 	if err != nil {
-		response.InternalError(c, "Failed to fetch machines")
+		response.InternalError(c, "Failed to fetch machines", err)
 		return
 	}
 	response.Paginated(c, result.Items, result.Total, result.Page, result.PageSize)
@@ -269,7 +269,7 @@ func (h *MachineHandler) GetHardware(c *gin.Context) {
 	params := pagination.GetParams(c)
 	result, err := h.svc.GetHardwareHistory(id, *params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch hardware history")
+		response.InternalError(c, "Failed to fetch hardware history", err)
 		return
 	}
 	response.Paginated(c, result.Items, result.Total, result.Page, result.PageSize)
@@ -365,7 +365,7 @@ func (h *MachineHandler) Wake(c *gin.Context) {
 func (h *MachineHandler) ListGroups(c *gin.Context) {
 	groups, err := h.svc.ListGroups(c.Query("search"))
 	if err != nil {
-		response.InternalError(c, "Failed to fetch machine groups")
+		response.InternalError(c, "Failed to fetch machine groups", err)
 		return
 	}
 	response.Success(c, groups)
@@ -461,7 +461,7 @@ func (h *MachineHandler) ListAssets(c *gin.Context) {
 	machineID := c.Query("machine_id")
 	assets, err := h.svc.ListAssets(machineID)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch machine assets")
+		response.InternalError(c, "Failed to fetch machine assets", err)
 		return
 	}
 	response.Success(c, assets)
@@ -599,7 +599,7 @@ func (h *MachineHandler) RemoteDesktop(c *gin.Context) {
 	tcp.Close()
 	password, err := h.svc.VNCPassword(m.ID)
 	if err != nil {
-		response.InternalError(c, "không lấy được mật khẩu VNC")
+		response.InternalError(c, "không lấy được mật khẩu VNC", err)
 		return
 	}
 	response.Success(c, gin.H{"password": password})

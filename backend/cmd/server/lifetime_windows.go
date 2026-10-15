@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -156,6 +157,10 @@ func (w *rotatingFile) open() error {
 		return err
 	}
 	w.f, w.size = f, st.Size()
+	// Panic ngoài tầm recover (goroutine nền) in stack ra stderr — dịch vụ không
+	// có stderr, nên trước đây server chết mà không để lại dòng nào. Gọi lại mỗi
+	// lần xoay vòng để luôn trỏ vào tệp hiện hành.
+	_ = debug.SetCrashOutput(f, debug.CrashOptions{})
 	return nil
 }
 

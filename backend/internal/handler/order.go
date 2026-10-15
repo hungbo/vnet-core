@@ -31,7 +31,7 @@ func (h *OrderHandler) List(c *gin.Context) {
 	params := pagination.GetParams(c)
 	result, total, page, pageSize, err := h.svc.List(*params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch orders")
+		response.InternalError(c, "Failed to fetch orders", err)
 		return
 	}
 	response.Paginated(c, result, total, page, pageSize)
@@ -51,7 +51,7 @@ func (h *OrderHandler) ListByMember(c *gin.Context) {
 	params := pagination.GetParams(c)
 	result, total, page, pageSize, err := h.svc.ListByMember(c.Param("id"), *params)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch orders")
+		response.InternalError(c, "Failed to fetch orders", err)
 		return
 	}
 	response.Paginated(c, result, total, page, pageSize)

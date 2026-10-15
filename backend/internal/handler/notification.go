@@ -21,7 +21,7 @@ func (h *NotificationHandler) List(c *gin.Context) {
 
 	notifications, total, page, pageSize, err := h.svc.List(memberID, *pagination.GetParams(c))
 	if err != nil {
-		response.InternalError(c, "Failed to fetch notifications")
+		response.InternalError(c, "Failed to fetch notifications", err)
 		return
 	}
 	response.Paginated(c, notifications, total, page, pageSize)
@@ -31,7 +31,7 @@ func (h *NotificationHandler) UnreadCount(c *gin.Context) {
 	memberID := middleware.GetUserID(c)
 	count, err := h.svc.UnreadCount(memberID)
 	if err != nil {
-		response.InternalError(c, "Failed to count notifications")
+		response.InternalError(c, "Failed to count notifications", err)
 		return
 	}
 	response.Success(c, map[string]int64{"count": count})
@@ -52,7 +52,7 @@ func (h *NotificationHandler) MarkAllRead(c *gin.Context) {
 	memberID := middleware.GetUserID(c)
 
 	if err := h.svc.MarkAllRead(memberID); err != nil {
-		response.InternalError(c, "Failed to mark notifications as read")
+		response.InternalError(c, "Failed to mark notifications as read", err)
 		return
 	}
 	response.Success(c, nil)

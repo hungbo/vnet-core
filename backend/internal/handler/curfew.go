@@ -36,7 +36,7 @@ func (h *CurfewHandler) List(c *gin.Context) {
 
 	result, err := h.svc.List(&req)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch curfew policies")
+		response.InternalError(c, "Failed to fetch curfew policies", err)
 		return
 	}
 

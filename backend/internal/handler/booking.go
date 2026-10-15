@@ -44,7 +44,7 @@ func (h *BookingHandler) List(c *gin.Context) {
 			response.BadRequest(c, err.Error())
 			return
 		}
-		response.InternalError(c, "Failed to fetch bookings")
+		response.InternalError(c, "Failed to fetch bookings", err)
 		return
 	}
 

@@ -27,7 +27,7 @@ func NewPrinterHandler(svc *service.PrinterService) *PrinterHandler {
 func (h *PrinterHandler) List(c *gin.Context) {
 	result, err := h.svc.List()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch printers")
+		response.InternalError(c, "Failed to fetch printers", err)
 		return
 	}
 

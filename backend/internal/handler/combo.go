@@ -36,7 +36,7 @@ func (h *ComboHandler) List(c *gin.Context) {
 
 	result, err := h.svc.List(&req)
 	if err != nil {
-		response.InternalError(c, "Failed to fetch combos")
+		response.InternalError(c, "Failed to fetch combos", err)
 		return
 	}
 

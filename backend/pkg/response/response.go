@@ -117,6 +117,22 @@ func Conflict(c *gin.Context, message string) {
 	Error(c, http.StatusConflict, message)
 }
 
-func InternalError(c *gin.Context, message string) {
+// RequestIDKey: khoá trong gin.Context nơi middleware.RequestID cất mã của yêu
+// cầu đang xử lý.
+const RequestIDKey = "request_id"
+
+// InternalError trả 500 với câu thân thiện; err là lỗi gốc và KHÔNG gửi cho
+// client — nó được gắn vào c.Errors để middleware.Logger ghi vào nhật ký.
+//
+// Trước đây phần lớn handler chỉ trả "Failed to fetch ..." và bỏ err, nên log
+// chỉ còn "500 /api/..." mà không ai biết vì sao. Mã yêu cầu được nối vào câu
+// báo lỗi để người dùng đọc lại cho dev, và dev tìm đúng dòng log đó.
+func InternalError(c *gin.Context, message string, err error) {
+	if err != nil {
+		_ = c.Error(err)
+	}
+	if id := c.GetString(RequestIDKey); id != "" {
+		message += " (mã lỗi: " + id + ")"
+	}
 	Error(c, http.StatusInternalServerError, message)
 }
