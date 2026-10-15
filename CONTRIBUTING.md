@@ -73,14 +73,6 @@ Chi tiết đầy đủ tại [AGENTS.md](./AGENTS.md). Tóm tắt:
 4. Nếu thêm API endpoint, cập nhật Swagger annotation
 5. Sẽ có ít nhất 1 review trước khi merge
 
-## GitNexus
-
-Dự án sử dụng GitNexus để phân tích tác động code:
-
-- **Trước khi sửa symbol**: chạy `impact({target: "symbolName", direction: "upstream"})` để biết code nào phụ thuộc
-- **Trước commit**: chạy `detect_changes()` để verify scope thay đổi
-- **Cảnh báo HIGH/CRITICAL**: phải được giải quyết trước khi merge
-
 ## Questions?
 
 Mở issue trên GitHub hoặc liên hệ maintainer.
