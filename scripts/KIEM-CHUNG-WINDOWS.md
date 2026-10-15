@@ -192,12 +192,13 @@ bảo vệ được gì.
    (`Ctrl+Alt+Del` thì Windows luôn ưu tiên — không hook được, và không nên hook.)
 3. Trang quản trị phải thấy máy ở trạng thái **Sẵn sàng**, không phải Ngoại tuyến.
 4. Đăng nhập bằng tài khoản hội viên: màn hình mở ra, cửa sổ thu về **thanh dọc
-   mép phải**, dùng máy bình thường. Phím thoát (`Alt+Tab`, `Win`) vẫn phải bị
-   chặn — khách chơi game được nhưng không ra desktop được.
+   mép phải**, dùng máy bình thường. `Alt+Tab`, `Win`, `Alt+F4` dùng được như
+   máy thường (chuyển giữa game và Discord, tắt game).
 4b. Đăng nhập bằng tài khoản **nhân viên** vào CÙNG ô đó: phải ra màn hình quản
    trị ("Không tính giờ"), và trang quản trị **không được** thấy phiên nào mới
    mở cho máy này.
-5. Bấm **Đăng xuất**: quay lại đúng màn hình khoá phủ kín ở bước 1.
+5. Bấm **Đăng xuất**: quay lại đúng màn hình khoá phủ kín ở bước 1, và các phím
+   ở bước 2 lại bị chặn.
 6. Khách hết tiền giữa phiên: máy tự về màn hình khoá, không kẹt ở desktop.
 7. Khởi động lại máy trong lúc đang đăng nhập: bật lên phải là màn hình khoá,
    không phải tự vào lại phiên cũ.
