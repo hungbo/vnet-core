@@ -149,16 +149,38 @@ const dialogVisible = ref(false);
 const saving = ref(false);
 const emptyForm = () => ({ name: '', display_name: '', category: '', launcher: '', launch_args: '', priority: 0 });
 const form = ref(emptyForm());
+// Có id là đang sửa game đã có, rỗng là thêm mới. Thư mục game (name) là khoá nối
+// master với các quán nên không đổi được.
+const editingId = ref('');
 
 function openCreate() {
+  editingId.value = '';
   form.value = emptyForm();
+  dialogVisible.value = true;
+}
+
+function openEdit(row: any) {
+  editingId.value = row.id;
+  form.value = {
+    name: row.name,
+    display_name: row.display_name,
+    category: row.category || '',
+    launcher: row.launcher || '',
+    launch_args: row.launch_args || '',
+    priority: row.priority || 0
+  };
   dialogVisible.value = true;
 }
 
 async function submit() {
   saving.value = true;
   try {
-    await client.post('/games', form.value);
+    if (editingId.value) {
+      const { display_name, category, launcher, launch_args, priority } = form.value;
+      await client.put(`/games/${editingId.value}`, { display_name, category, launcher, launch_args, priority });
+    } else {
+      await client.post('/games', form.value);
+    }
     ElMessage.success($t('vnetPages.common.success'));
     dialogVisible.value = false;
     load(true);
@@ -278,9 +300,12 @@ onBeforeUnmount(() => clearTimeout(timer));
             {{ row.last_updated_at ? dayjs(row.last_updated_at).format('DD/MM/YYYY HH:mm') : '-' }}
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.common.action')" width="190" fixed="right">
+        <ElTableColumn :label="$t('vnetPages.common.action')" width="250" fixed="right">
           <template #default="{ row }">
             <template v-if="isMaster">
+              <ElButton size="small" @click="openEdit(row)">
+                {{ $t('vnetPages.common.edit') }}
+              </ElButton>
               <ElButton size="small" type="primary" plain :loading="row.publishing" :disabled="row.status === 'publishing'" @click="publish(row)">
                 {{ $t('vnetPages.games.publishNow') }}
               </ElButton>
@@ -303,13 +328,17 @@ onBeforeUnmount(() => clearTimeout(timer));
       </ElTable>
     </ElCard>
 
-    <ElDialog v-model="dialogVisible" :title="$t('vnetPages.games.add')" width="560px">
-      <ElAlert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+    <ElDialog
+      v-model="dialogVisible"
+      :title="editingId ? $t('vnetPages.common.edit') : $t('vnetPages.games.add')"
+      width="560px"
+    >
+      <ElAlert v-if="!editingId" type="info" :closable="false" show-icon style="margin-bottom: 16px">
         {{ $t('vnetPages.games.addHint', { root: info.root }) }}
       </ElAlert>
       <ElForm label-width="150px">
         <ElFormItem :label="$t('vnetPages.games.folder')">
-          <ElInput v-model="form.name" placeholder="League of Legends" />
+          <ElInput v-model="form.name" placeholder="League of Legends" :disabled="!!editingId" />
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.displayName')">
           <ElInput v-model="form.display_name" />
