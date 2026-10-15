@@ -25,9 +25,23 @@
 
 			<div v-else class="game-grid">
 				<article v-for="g in games" :key="g.name" class="game-card" :class="{ ready: g.status === 'ready' }">
-					<div class="game-info">
-						<div class="game-name" :title="g.display_name">{{ g.display_name }}</div>
-						<div v-if="g.category" class="game-category">{{ g.category }}</div>
+					<div class="game-head">
+						<!-- Không có icon (chưa lấy được, hoặc tệp chạy không có) thì vẽ chữ cái đầu
+						     trên nền màu suy ra từ tên, để thẻ nào cũng có hình mà không phải đợi. -->
+						<div class="game-icon" :style="icons[g.name] ? undefined : placeholderStyle(g)">
+							<img
+								v-if="icons[g.name]"
+								:src="icons[g.name]"
+								alt=""
+								draggable="false"
+								@error="icons[g.name] = ''"
+							/>
+							<span v-else class="game-initial" aria-hidden="true">{{ initial(g) }}</span>
+						</div>
+						<div class="game-info">
+							<div class="game-name" :title="gameLabel(g)">{{ gameLabel(g) }}</div>
+							<div v-if="g.category" class="game-category">{{ g.category }}</div>
+						</div>
 					</div>
 					<div class="game-foot">
 						<el-tag :type="badge(g).type" effect="plain" round size="small">{{ badge(g).text }}</el-tag>
@@ -50,6 +64,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
+import { gameLabel } from '../utils/gameName'
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -60,6 +75,7 @@ interface Game {
 	category: string
 	status: string
 	progress: number
+	version?: number
 }
 
 // Tiến độ tải nhích theo từng lượt làm mới, nên đọc lại thường xuyên khi cửa
@@ -76,6 +92,15 @@ const loadError = ref('')
 // lần hai — và lần hai là hai bản game chạy chồng nhau.
 const launching = ref('')
 
+// Icon theo tên game: data URI PNG, hoặc '' khi không có. Giữ qua các lượt làm mới
+// để khỏi hỏi lại Go mỗi 10 giây.
+const icons = ref<Record<string, string>>({})
+// Lần hỏi icon gần nhất của từng game. Hỏi lại khi version/trạng thái đổi (game vừa
+// cập nhật hoặc vừa cài xong thì tệp chạy mới có), hoặc khi lần trước không ra icon
+// và đã quá ICON_RETRY_MS.
+const iconAsked = new Map<string, { key: string; at: number }>()
+const ICON_RETRY_MS = 5 * 60 * 1000
+
 let timer: number | undefined
 let inflight = false
 
@@ -91,6 +116,7 @@ async function load() {
 		const data = JSON.parse(await api().ListGames())
 		games.value = Array.isArray(data?.items) ? data.items : []
 		loadError.value = ''
+		syncIcons(games.value)
 	} catch (e) {
 		loadError.value = cleanError(e) || 'Không tải được danh sách game'
 	} finally {
@@ -98,6 +124,51 @@ async function load() {
 		refreshing.value = false
 		loading.value = false
 	}
+}
+
+function syncIcons(list: Game[]) {
+	// Game bị gỡ khỏi menu thì bỏ icon của nó, đừng giữ ảnh vô thời hạn.
+	const names = new Set(list.map(g => g.name))
+	for (const n of Object.keys(icons.value)) if (!names.has(n)) delete icons.value[n]
+	for (const n of [...iconAsked.keys()]) if (!names.has(n)) iconAsked.delete(n)
+
+	// Ngoài Wails (npm run dev) không có GameIcon: khỏi ghi là đã hỏi.
+	if (typeof api()?.GameIcon !== 'function') return
+	const now = Date.now()
+	for (const g of list) {
+		const key = `${g.version ?? 0}:${g.status === 'ready'}`
+		const asked = iconAsked.get(g.name)
+		if (asked && asked.key === key && (icons.value[g.name] || now - asked.at < ICON_RETRY_MS)) continue
+		iconAsked.set(g.name, { key, at: now })
+		loadIcon(g.name)
+	}
+}
+
+async function loadIcon(name: string) {
+	let uri = ''
+	try {
+		uri = await api().GameIcon(name)
+	} catch {
+		// Lỗi thì cứ để chữ cái đầu; lần thử lại sau ICON_RETRY_MS.
+	}
+	// Game có thể đã rời menu trong lúc chờ.
+	if (iconAsked.has(name)) icons.value[name] = typeof uri === 'string' ? uri : ''
+}
+
+function initial(g: Game): string {
+	// NFC để chữ có dấu tách rời (e + dấu mũ) gộp lại thành một ký tự; \p{L} khớp
+	// theo điểm mã nên không cắt đôi cặp thay thế.
+	const m = gameLabel(g).normalize('NFC').match(/[\p{L}\p{N}]/u)
+	return m ? Array.from(m[0].toUpperCase())[0] : '?'
+}
+
+// Màu nền chữ cái đầu suy từ slug (không đổi khi sửa tên hiển thị): cùng game luôn
+// cùng màu, các game khác nhau thì tản đều quanh vòng màu.
+function placeholderStyle(g: Game) {
+	let h = 2166136261
+	for (let i = 0; i < g.name.length; i++) h = Math.imul(h ^ g.name.charCodeAt(i), 16777619)
+	const hue = (h >>> 0) % 360
+	return { background: `linear-gradient(135deg, hsl(${hue} 55% 46%), hsl(${(hue + 40) % 360} 55% 30%))` }
 }
 
 // Chỉ "ready" mới chơi được. Mọi trạng thái còn lại (queued, publishing,
@@ -202,7 +273,7 @@ onUnmounted(() => {
 
 .game-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
 	gap: 12px;
 	/* Lưới cao hết cửa sổ thì hàng duy nhất giãn theo; giữ ô cao đúng bằng nội dung. */
 	align-content: start;
@@ -231,9 +302,54 @@ onUnmounted(() => {
 	border-color: var(--vnet-primary);
 }
 
+.game-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.game-icon {
+	flex: none;
+	width: 56px;
+	height: 56px;
+	border-radius: 12px;
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--vnet-surface-2);
+}
+
+.game-icon img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	/* Ảnh là trang trí: không cho kéo thả ra khỏi thẻ. */
+	user-select: none;
+	pointer-events: none;
+}
+
+.game-initial {
+	font-family: var(--vnet-font-display);
+	font-size: 26px;
+	font-weight: 700;
+	line-height: 1;
+	color: #fff;
+	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* min-width: 0 để cột tên co lại được trong hàng flex, nếu không tên dài đẩy
+   thẻ tràn ra ngoài lưới. */
+.game-info {
+	flex: 1;
+	min-width: 0;
+}
+
 .game-name {
 	font-size: 15px;
 	font-weight: 600;
+	/* Tên không có khoảng trắng (slug dài) cũng phải xuống dòng. */
+	overflow-wrap: anywhere;
 	display: -webkit-box;
 	-webkit-line-clamp: 2;
 	-webkit-box-orient: vertical;

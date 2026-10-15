@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"unicode/utf8"
 )
 
 // Menu game trong phòng máy: khách đăng nhập, mở "Game", thấy các game quán đã
@@ -49,6 +50,9 @@ func (a *App) fetchGameMenu() (*gameMenu, error) {
 	if m.Items == nil {
 		m.Items = []gameMenuItem{}
 	}
+	rememberGameMenu(&m)
+	// Menu tải được thì đối chiếu lối tắt trên desktop, ở nền: không chờ, không lỗi.
+	a.queueGameShortcuts(&m)
 	return &m, nil
 }
 
@@ -89,22 +93,25 @@ func (a *App) LaunchGame(name string) error {
 	// Máy chủ đánh dấu ready khi bản trên Game Disk đã đủ. Đang tải dở mà chạy
 	// thì game báo thiếu tệp, hoặc tệ hơn là chạy bản hỏng.
 	if g.Status != gameStatusReady {
-		return fmt.Errorf("%s chưa sẵn sàng, vui lòng chờ cập nhật xong", g.DisplayName)
+		return fmt.Errorf("%s chưa sẵn sàng, vui lòng chờ cập nhật xong", gameLabel(g))
 	}
 
 	exe, dir, err := resolveGameLaunch(m.Root, g.Name, g.Launcher)
 	if err != nil {
 		log.Printf("[game] từ chối %q: %v", g.Name, err)
+		reportError("error", "game", fmt.Sprintf("cấu hình chạy game %s không hợp lệ", g.Name), err.Error())
 		return errors.New("cấu hình chạy game không hợp lệ, vui lòng báo nhân viên")
 	}
 	if st, err := os.Stat(exe); err != nil || !st.Mode().IsRegular() {
 		log.Printf("[game] không thấy tệp chạy %q (%s): %v", g.Name, exe, err)
-		return fmt.Errorf("không tìm thấy tệp chạy %s trên ổ game, vui lòng báo nhân viên", g.DisplayName)
+		reportError("error", "game", fmt.Sprintf("không thấy tệp chạy game %s", g.Name), fmt.Sprintf("%s: %v", exe, err))
+		return fmt.Errorf("không tìm thấy tệp chạy %s trên ổ game, vui lòng báo nhân viên", gameLabel(g))
 	}
 
 	if err := startGame(exe, dir, g.LaunchArgs); err != nil {
 		log.Printf("[game] không mở được %q (%s): %v", g.Name, exe, err)
-		return fmt.Errorf("không mở được %s: %v", g.DisplayName, err)
+		reportError("error", "game", fmt.Sprintf("không mở được game %s", g.Name), fmt.Sprintf("%s: %v", exe, err))
+		return fmt.Errorf("không mở được %s: %v", gameLabel(g), err)
 	}
 	log.Printf("[game] %s mở %q (%s)", a.username, g.Name, exe)
 	return nil
@@ -217,4 +224,14 @@ func checkGameComponent(c string) error {
 func insideDir(dir, p string) bool {
 	prefix := dir + "/"
 	return len(p) > len(prefix) && strings.EqualFold(p[:len(prefix)], prefix)
+}
+
+// gameLabel là tên game hiện cho khách trong thông báo lỗi. Tên hiển thị hỏng
+// bảng mã (có U+FFFD, dữ liệu cũ mất dấu tiếng Việt lúc tạo game) thì dùng slug,
+// cho khớp với menu và lối tắt.
+func gameLabel(g *gameMenuItem) string {
+	if g.DisplayName == "" || strings.ContainsRune(g.DisplayName, utf8.RuneError) {
+		return g.Name
+	}
+	return g.DisplayName
 }

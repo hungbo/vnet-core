@@ -174,3 +174,21 @@ func TestInsideDir(t *testing.T) {
 		})
 	}
 }
+
+func TestGameLabel(t *testing.T) {
+	cases := []struct {
+		name string
+		g    gameMenuItem
+		want string
+	}{
+		{"tên tốt", gameMenuItem{Name: "lol", DisplayName: "Liên Minh Huyền Thoại"}, "Liên Minh Huyền Thoại"},
+		{"tên hỏng bảng mã", gameMenuItem{Name: "Riot Games", DisplayName: "Li�n Minh"}, "Riot Games"},
+		{"byte không hợp lệ", gameMenuItem{Name: "lol", DisplayName: "Li\xffn"}, "lol"},
+		{"rỗng", gameMenuItem{Name: "lol"}, "lol"},
+	}
+	for _, c := range cases {
+		if got := gameLabel(&c.g); got != c.want {
+			t.Errorf("%s: gameLabel = %q, muốn %q", c.name, got, c.want)
+		}
+	}
+}

@@ -95,7 +95,7 @@ const ACTIONS = [
 	{ key: 'topup', icon: Coin, label: 'Nạp tiền', color: '#d9a441', roles: ['member'], run: () => emit('navigate', 'topup') },
 	{ key: 'playtime', icon: Timer, label: 'Giờ chơi', color: '#4c7dff', roles: ['admin'], run: handlePlaytime },
 	{ key: 'order', icon: Chicken, label: 'Đồ ăn', color: '#f0603d', notRoles: ['admin'], run: () => emit('navigate', 'order') },
-	{ key: 'games', icon: Trophy, label: 'Game', color: '#7b5cff', notRoles: ['admin'], run: () => emit('navigate', 'games') },
+	{ key: 'games', icon: Trophy, label: 'Game', color: '#7b5cff', run: () => emit('navigate', 'games') },
 	{ key: 'chat', icon: ChatDotSquare, label: 'Hỗ trợ', color: '#3fb950', run: () => emit('navigate', 'chat') },
 	{ key: 'attendance', icon: Calendar, label: 'Điểm danh', color: '#4c7dff', roles: ['member'], feature: 'attendance_enabled', run: () => emit('navigate', 'attendance') },
 	{ key: 'feedback', icon: Star, label: 'Đánh giá', color: '#d9a441', notRoles: ['admin'], feature: 'feedback_enabled', run: () => emit('navigate', 'feedback') },
