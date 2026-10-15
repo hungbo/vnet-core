@@ -183,6 +183,18 @@ try {
     }
     # Cấu hình KHÔNG đi qua registry: dịch vụ tự đọc data\config.env (đã khoá
     # quyền), còn khoá Services trong registry thì mọi tài khoản Users đọc được.
+    # Ngoại lệ duy nhất là biến KHÔNG bí mật dưới đây, ghi lại mỗi lần cài và cập nhật.
+    #
+    # anacrolix (thư viện torrent) chọn cách đọc tệp lúc NẠP GÓI, trước khi server đọc config.env,
+    # nên biến này phải do SCM truyền. Mặc định mmap giữ mọi tệp đã phát bị ánh xạ tới khi tiến
+    # trình thoát: Windows không cho đổi tên, xoá hay cắt các tệp đó. Phải đúng chữ 'classic' —
+    # giá trị lạ là anacrolix panic, dịch vụ chết rồi bật lại liên tục. SCM chỉ đọc lúc bật dịch
+    # vụ nên ghi trước Restart-Service. Giữ các biến khác đã có, chỉ thay bản cũ của biến này.
+    $svcKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$AppService"
+    $svcEnv = @((Get-ItemProperty -Path $svcKey -Name Environment -ErrorAction SilentlyContinue).Environment |
+        Where-Object { $_ -and $_ -notlike 'TORRENT_STORAGE_DEFAULT_FILE_IO=*' })
+    Set-ItemProperty -Path $svcKey -Name Environment -Type MultiString `
+        -Value ($svcEnv + 'TORRENT_STORAGE_DEFAULT_FILE_IO=classic')
     # Server từ chối khởi động khi database chưa sẵn sàng (log.Fatalf) — SCM bật lại sau 10 giây.
     sc.exe failure $AppService reset= 86400 actions= restart/10000/restart/10000/restart/30000 | Out-Null
 
