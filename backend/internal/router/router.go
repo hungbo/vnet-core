@@ -1,11 +1,15 @@
 package router
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -14,6 +18,7 @@ import (
 	"github.com/vnet/core/internal/handler"
 	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/middleware"
+	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/jwt"
 	"github.com/vnet/core/pkg/response"
 	"gorm.io/gorm"
@@ -54,7 +59,7 @@ func RegisterAdminUI(r *gin.Engine, assets fs.FS) {
 
 		data, err := io.ReadAll(index)
 		if err != nil {
-			response.InternalError(c, "failed to read admin UI")
+			response.InternalError(c, "failed to read admin UI", err)
 			return
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
@@ -87,6 +92,23 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 	api.Use(middleware.NoCache())
 	{
 		api.GET("/health", func(c *gin.Context) {
+			// Server sống mà database chết vẫn là hỏng. Trước đây luôn trả "ok",
+			// nên bộ cài và Docker healthcheck báo khoẻ trong khi mọi API đều 500.
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+			defer cancel()
+			sqlDB, err := db.DB()
+			if err == nil {
+				err = sqlDB.PingContext(ctx)
+			}
+			if err != nil {
+				_ = c.Error(err)
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"code":    http.StatusServiceUnavailable,
+					"message": "database unavailable",
+					"data":    gin.H{"status": "db_down"},
+				})
+				return
+			}
 			c.JSON(200, gin.H{
 				"code":    0,
 				"message": "success",
@@ -128,6 +150,9 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		// giới hạn 4 KB, còn ảnh cỡ vài trăm KB.
 		api.POST("/machines/by-code/:code/screenshot", h.Machine.ReportScreenshot)
 		api.POST("/machines/by-code/:code/processes", h.Machine.ReportProcesses)
+		// Lỗi của máy trạm (crash lần chạy trước, lỗi giao diện, không mở được game):
+		// nhật ký trên ổ C: mất mỗi lần boot lại, nên phải gửi về đây mới còn.
+		api.POST("/machines/by-code/:code/errors", h.ErrorReport.ReportFromMachine)
 
 		// WebSocket nằm NGOÀI nhóm protected: nó nhận thêm một cách vào thứ hai —
 		// khoá riêng của máy trạm — để tiến trình nền giữ được kết nối kể cả khi
@@ -138,6 +163,12 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 
 		protected := api.Group("")
 		protected.Use(middleware.AuthRequired(jwtManager))
+		// Mọi thao tác thay đổi dữ liệu của nhân viên vào nhật ký hoạt động, kèm
+		// người làm và IP — ghi ở MỘT chỗ thay vì trông vào từng service.
+		staffAudit := service.NewAuditService(db)
+		protected.Use(middleware.StaffActionLog(func(a middleware.StaffAction) {
+			ghiThaoTacNhanVien(staffAudit, a)
+		}))
 		{
 			protected.POST("/upload", middleware.StaffOnly(), middleware.PermissionRequired("upload.file"), h.Upload.Upload)
 			protectedRoute := protected.Group("/route")
@@ -473,6 +504,15 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				settings.PUT("/:group", middleware.StaffOnly(), middleware.PermissionRequired("settings.edit"), h.Settings.Update)
 			}
 
+			// Nhân viên nào cũng gửi được lỗi JS của trang mình đang dùng; chỉ người có
+			// errors.view mới đọc được nhật ký lỗi.
+			protected.POST("/error-reports", middleware.StaffOnly(), h.ErrorReport.Report)
+			errorReports := protected.Group("/error-reports", middleware.StaffOnly())
+			{
+				errorReports.GET("", middleware.PermissionRequired("errors.view"), h.ErrorReport.List)
+				errorReports.PUT("/:id/resolve", middleware.PermissionRequired("errors.resolve"), h.ErrorReport.Resolve)
+			}
+
 			auditLogs := protected.Group("/audit-logs", middleware.StaffOnly(), middleware.PermissionRequired("client.admin"))
 			{
 				auditLogs.GET("", middleware.PermissionRequired("audit.view"), h.Audit.List)
@@ -544,4 +584,49 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		}
 	}
 	return h
+}
+
+var laUUIDRoute = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// ghiThaoTacNhanVien biến một thao tác HTTP thành một dòng audit_logs mà trang
+// "Nhật ký hoạt động" đọc được: action "request", đối tượng là nhóm tài nguyên
+// của route (/api/products/:id → products), mô tả "PUT /api/products/:id → 200".
+func ghiThaoTacNhanVien(audit *service.AuditService, a middleware.StaffAction) {
+	meta := map[string]any{
+		"method":      a.Method,
+		"route":       a.Route,
+		"path":        a.Path,
+		"status":      a.Status,
+		"duration_ms": a.Duration.Milliseconds(),
+		"request_id":  a.RequestID,
+		"ip":          a.IP,
+	}
+	if a.Body != nil {
+		meta["body"] = a.Body
+	}
+	req := &service.LogAuditRequest{
+		Action:      "request",
+		EntityType:  nhomTaiNguyen(a.Route),
+		IPAddress:   a.IP,
+		Description: fmt.Sprintf("%s %s → %d", a.Method, a.Route, a.Status),
+		Metadata:    meta,
+	}
+	// Cột entity_id là uuid: một :id không phải uuid làm hỏng cả dòng nhật ký.
+	if laUUIDRoute.MatchString(a.EntityID) {
+		req.EntityID = a.EntityID
+	}
+	if a.UserID != "" {
+		uid := a.UserID
+		req.UserID = &uid
+	}
+	_ = audit.Log(req)
+}
+
+// nhomTaiNguyen: "/api/products/:id/ingredients" → "products".
+func nhomTaiNguyen(route string) string {
+	parts := strings.Split(strings.TrimPrefix(route, "/api/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "api"
+	}
+	return parts[0]
 }

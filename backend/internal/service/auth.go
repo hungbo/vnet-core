@@ -149,6 +149,33 @@ type QRLoginRequest struct {
 	QRCode string `json:"qr_code" binding:"required"`
 }
 
+// LogLogin ghi một lần đăng nhập trang quản trị — thành công hay không — vào
+// nhật ký hoạt động. Trước đây không có dòng nào cho biết ai vào admin lúc nào,
+// từ máy nào, hay có ai đang dò mật khẩu.
+func (s *AuthService) LogLogin(username, userID, ip string, loginErr error) {
+	if s.audit == nil {
+		return
+	}
+	meta := map[string]interface{}{"username": username, "ip": ip}
+	req := &LogAuditRequest{
+		Action:      "login",
+		EntityType:  "user",
+		EntityID:    userID,
+		IPAddress:   ip,
+		Description: "Đăng nhập trang quản trị: " + username,
+		Metadata:    meta,
+	}
+	if userID != "" {
+		req.UserID = &userID
+	}
+	if loginErr != nil {
+		req.Action = "login_failed"
+		req.Description = "Đăng nhập thất bại: " + username
+		meta["reason"] = loginErr.Error()
+	}
+	_ = s.audit.Log(req)
+}
+
 func (s *AuthService) QRLogin(req *QRLoginRequest) (*LoginResponse, error) {
 	var member model.Member
 	if err := s.db.Where("id = ? AND is_active = ?", req.QRCode, true).First(&member).Error; err != nil {

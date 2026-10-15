@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -569,4 +570,27 @@ func TestAuthService_ChangePassword_NhanVienPhaiTu8KyTuVaKhacMacDinh(t *testing.
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+// Đăng nhập admin — kể cả thất bại — phải để lại dấu vết: ai, lúc nào, từ đâu.
+func TestAuthService_LogLogin(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), NewAuditService(db))
+	uid := "3f9a1c2e-0000-4000-8000-000000000001"
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+		WithArgs("login", "user", uid, uid, "Đăng nhập trang quản trị: lan", sqlmock.AnyArg(), "10.0.0.9").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a1", time.Now()))
+	mock.ExpectCommit()
+	svc.LogLogin("lan", uid, "10.0.0.9", nil)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+		WithArgs("login_failed", "user", nil, nil, "Đăng nhập thất bại: lan", sqlmock.AnyArg(), "10.0.0.9").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a2", time.Now()))
+	mock.ExpectCommit()
+	svc.LogLogin("lan", "", "10.0.0.9", errors.New("sai mật khẩu"))
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

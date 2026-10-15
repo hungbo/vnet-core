@@ -45,6 +45,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	}
 	result, err := h.svc.Login(&req)
 	h.settleLogin(key, err)
+	userID := ""
+	if err == nil && result.User != nil {
+		userID = result.User.ID
+	}
+	h.svc.LogLogin(req.Username, userID, c.ClientIP(), err)
 	if err != nil {
 		response.Unauthorized(c, err.Error())
 		return
@@ -262,7 +267,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 func (h *AuthHandler) GetPermissions(c *gin.Context) {
 	permissions, err := h.svc.GetPermissions()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch permissions")
+		response.InternalError(c, "Failed to fetch permissions", err)
 		return
 	}
 

@@ -1,6 +1,7 @@
 package router
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vnet/core/internal/config"
 	"github.com/vnet/core/internal/hub"
+	"github.com/vnet/core/internal/middleware"
+	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/jwt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -290,4 +293,67 @@ func TestMemberCannotReachAnotherChatRoom(t *testing.T) {
 			assert.NotEqual(t, http.StatusOK, w.Code, "must not succeed for a non-participant")
 		})
 	}
+}
+
+// /api/health phải hỏi database: trước đây nó luôn trả "ok", nên bộ cài và
+// Docker healthcheck báo khoẻ trong khi mọi API đều 500 vì mất kết nối DB.
+func TestHealth_ReflectsDatabase(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	mockDB, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = mockDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: mockDB}), &gorm.Config{DisableAutomaticPing: true})
+	require.NoError(t, err)
+
+	cfg := &config.Config{}
+	cfg.Server.Mode = "test"
+	cfg.Server.UploadDir = t.TempDir()
+	r := gin.New()
+	Register(r, db, jwt.New("test-secret", time.Hour, 7*24*time.Hour, "test"), hub.New(nil), cfg)
+
+	mock.ExpectPing()
+	w := do(r, http.MethodGet, "/api/health", "")
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	mock.ExpectPing().WillReturnError(errors.New("connection refused"))
+	w = do(r, http.MethodGet, "/api/health", "")
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), "db_down")
+
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Một thao tác HTTP thành một dòng nhật ký có NGƯỜI LÀM — thứ mà 73 trên 127
+// thao tác ghi ở tầng service đang thiếu.
+func TestGhiThaoTacNhanVien(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = mockDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: mockDB}), &gorm.Config{})
+	require.NoError(t, err)
+	audit := service.NewAuditService(db)
+	id := "3f9a1c2e-0000-4000-8000-000000000001"
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+		WithArgs("request", "products", id, "u-1", "PUT /api/products/:id → 200", sqlmock.AnyArg(), "10.0.0.5").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a1", time.Now()))
+	mock.ExpectCommit()
+	ghiThaoTacNhanVien(audit, middleware.StaffAction{
+		UserID: "u-1", Method: "PUT", Route: "/api/products/:id", Path: "/api/products/" + id,
+		EntityID: id, IP: "10.0.0.5", RequestID: "abc12345", Status: 200,
+		Body: []byte(`{"price":12000}`),
+	})
+
+	// :id không phải uuid (cột uuid) thì bỏ, không được làm hỏng cả dòng.
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+		WithArgs("request", "settings", nil, "u-1", "PUT /api/settings/:group → 403", sqlmock.AnyArg(), "10.0.0.5").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a2", time.Now()))
+	mock.ExpectCommit()
+	ghiThaoTacNhanVien(audit, middleware.StaffAction{
+		UserID: "u-1", Method: "PUT", Route: "/api/settings/:group", EntityID: "", IP: "10.0.0.5", Status: 403,
+	})
+
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

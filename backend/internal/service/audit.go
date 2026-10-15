@@ -36,6 +36,8 @@ type LogAuditRequest struct {
 	UserID     *string     `json:"user_id"`
 	Metadata   interface{} `json:"metadata"`
 	IPAddress  string      `json:"ip_address"`
+	// Description: để trống thì dựng từ Action/EntityType/Metadata như cũ.
+	Description string `json:"description"`
 }
 
 type AuditLogResponse struct {
@@ -123,7 +125,10 @@ func (s *AuditService) Log(req *LogAuditRequest) error {
 		metadata = toString(req.Metadata)
 	}
 
-	description := buildDescription(req.Action, req.EntityType, req.Metadata)
+	description := req.Description
+	if description == "" {
+		description = buildDescription(req.Action, req.EntityType, req.Metadata)
+	}
 
 	log := model.AuditLog{
 		Action:      req.Action,
