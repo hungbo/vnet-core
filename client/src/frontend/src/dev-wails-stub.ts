@@ -140,6 +140,8 @@ export function installDevWailsStub() {
 					ok(JSON.stringify(DEV_MENU.filter(p => !categoryId || p.category_id === categoryId))),
 				RestoreSession: () => ok(JSON.stringify({ id: 'dev-member', username: 'khach', full_name: 'Khách thử', role: 'member' })),
 				SetLoggedIn: () => ok(undefined),
+				// Ngoài Wails không có màn khoá native nào đăng nhập hộ trang.
+				CurrentLogin: () => ok(''),
 				HasCachedStaff: () => ok(true),
 				// Một ô cho cả hai loại, đúng như máy chủ làm: tên tài khoản
 				// quyết định đường đi.

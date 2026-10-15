@@ -91,15 +91,28 @@ func main() {
 // runDock chạy thanh điều khiển chính: cột hẹp dán mép phải, luôn nổi trên các
 // cửa sổ khác để khách vẫn thấy giờ và số dư khi đang chơi game toàn màn hình.
 func runDock() {
-	// Việc đầu tiên, trước cả NewApp: dựng màn che lúc mới bật máy để khách không
-	// thấy desktop trong lúc WebView2 khởi động lạnh. Hạ xuống ở OnDomReady.
-	startCurtain()
 	app := NewApp()
+	// Việc đầu tiên sau khi đọc cấu hình, trước cả wails.Run: dựng màn khoá native
+	// (curtain*.go) để khách không thấy desktop, và đăng nhập được ngay, trong lúc
+	// WebView2 còn khởi động lạnh phía sau. Nó giữ máy tới lần mở khoá đầu tiên; suốt
+	// quãng đó cửa sổ Wails dựng ẨN và không được hiện (applyLoginLock), còn hook chặn
+	// phím bật ngay từ đây chứ không chờ Startup. Nó dựng chậm (máy khởi động nặng) thì
+	// vẫn đi đường này; tới Startup vẫn chưa hiện thì Startup bỏ nó và hiện cửa sổ Wails.
+	khoaNative := nativeLockStart(app.machineCode, app.nativeSubmit)
+	if khoaNative {
+		app.dockHidden = true
+		if err := app.locker.Lock(); err != nil {
+			log.Printf("[login] màn khoá native đã phủ nhưng không chặn được phím: %v", err)
+		}
+	}
 
 	err := wails.Run(&options.App{
 		Title:  "VNET",
 		Width:  dockWidth,
 		Height: 900,
+		// Màn khoá native đang giữ máy thì cửa sổ chỉ hiện lần đầu khi giao diện đã ở
+		// trạng thái đăng nhập (SetLoggedIn), không bao giờ ở DomReady.
+		StartHidden: khoaNative,
 		// KHÔNG viền: thanh điều khiển không có nút tắt, chỉ có nút thu nhỏ.
 		//
 		// Viền hệ điều hành thì không làm được điều đó. Ba nút của Windows chung một
@@ -152,7 +165,8 @@ func runDock() {
 			UniqueId: "vnet-client-dock",
 			// Lối tắt VNET trên desktop chạy một bản thứ hai: nó gõ cửa bản đang chạy
 			// rồi thoát. ShowWindow đưa thanh về từ trạng thái thu nhỏ; màn hình khoá
-			// đang phủ kín thì giữ nguyên (xem ShowWindow).
+			// đang phủ kín thì giữ nguyên, màn khoá native thì được đưa lên trước (xem
+			// ShowWindow).
 			OnSecondInstanceLaunch: func(options.SecondInstanceData) {
 				app.ShowWindow()
 			},
@@ -175,12 +189,8 @@ func runDock() {
 		// OnDomReady chạy trong navigationCompleted, tức là SAU khi WindowCenter
 		// đã chạy xong từ lâu và ngay trước lúc cửa sổ được hiện lên.
 		OnDomReady: func(ctx context.Context) {
-			// TRƯỚC ApplyWindowState: màn che thôi tự nâng mình, để cửa sổ khoá mà
-			// nó đưa lên đỉnh nhóm cửa sổ nổi không bị màn che đè lại.
-			curtainStopRaise()
 			app.ApplyWindowState()
-			// Cửa sổ vừa được hiện: màn che hết việc (hạ sau một nhịp ngắn).
-			curtainDomReady()
+			logDomReady()
 		},
 		Bind: []interface{}{app},
 	})

@@ -4,13 +4,15 @@ package main
 
 import "time"
 
-// Màn che chỉ có trên Windows. Bản dựng ở nơi khác (để phát triển giao diện)
-// không che gì, nên cả bốn hàm đều đứng yên.
+// Màn khoá native chỉ có trên Windows. Bản dựng ở nơi khác (để phát triển giao
+// diện) không dựng gì: nativeLockStart trả false ngay và màn hình khoá web lo hết.
 
 func systemUptime() time.Duration { return 0 }
 
 func dockAlreadyRunning() bool { return false }
 
-func showCurtain() {}
+func startNativeLockThread(string, func(string, string) error, func()) bool { return false }
 
-func hideCurtain() {}
+func postNativeLockClose() {}
+
+func postNativeLockFocus() {}

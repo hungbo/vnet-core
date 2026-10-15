@@ -166,6 +166,13 @@ func (l *ScreenLocker) hookProc(nCode int32, wParam uintptr, lParam uintptr) uin
 		if blockedKey(k) {
 			return 1
 		}
+		// Màn khoá native phủ màn hình mà Windows chưa cho nó bàn phím (curtain_windows.go,
+		// nlLayBanPhim): nuốt phím, đừng để chữ khách gõ — cả mật khẩu lẫn Enter — rơi xuống
+		// desktop hay ứng dụng phía sau, rồi nhắc màn khoá giành lại.
+		if nativeLockMatBanPhim() {
+			nativeLockFocus()
+			return 1
+		}
 	}
 	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
 	return ret

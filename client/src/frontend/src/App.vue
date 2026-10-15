@@ -66,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, defineAsyncComponent } from 'vue'
 import { ElMessage } from 'element-plus'
 import { EventsOn } from '../wailsjs/runtime/runtime'
 import { phatAm } from './utils/sound'
@@ -80,9 +80,12 @@ import TopupDialog from './views/TopupDialog.vue'
 import AttendanceDialog from './views/AttendanceDialog.vue'
 import FeedbackDialog from './views/FeedbackDialog.vue'
 import GameMenu from './views/GameMenu.vue'
-import ChatWidget from './components/ChatWidget.vue'
 import MachineLockOverlay from './components/MachineLockOverlay.vue'
 import DockTitleBar from './components/DockTitleBar.vue'
+
+// Khung chat (vue-advanced-chat, ~520 kB, tự đăng ký custom element lúc nạp) chỉ có ở
+// cửa sổ phụ Hỗ trợ; thanh chính không bao giờ vẽ nó nên màn hình khoá không phải chờ nó.
+const ChatWidget = defineAsyncComponent(() => import('./components/ChatWidget.vue'))
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -132,6 +135,8 @@ onMounted(async () => {
 	// Biết mình là cửa sổ nào TRƯỚC khi dựng gì: cửa sổ phụ không có thanh điều
 	// khiển, không có màn hình khoá.
 	try { windowMode.value = (await api()?.GetWindowMode()) || '' } catch { /* ngoài Wails */ }
+	// Cửa sổ phụ dựng sẵn từ lúc đăng nhập: nạp trước khung chat để lần đầu bấm Hỗ trợ khỏi chờ.
+	if (windowMode.value) import('./components/ChatWidget.vue').catch(() => {})
 
 	// Địa chỉ máy chủ chỉ có MỘT nguồn: config.json cạnh vnet-client.exe, nơi
 	// dịch vụ nền cũng đọc. Bản cũ để một bản lưu trong trình duyệt ghi đè nó,
@@ -145,7 +150,16 @@ onMounted(async () => {
 	// Chỉ cửa sổ phụ phải chờ nó xong mới dựng (childReady). Các handler bên dưới
 	// đăng ký NGAY: để sau lời chờ này thì máy chủ treo là mất luôn sự kiện hết
 	// phiên, nối lại mạng và chốt kiểm 20 giây.
-	session.restore().finally(() => {
+	//
+	// Thanh điều khiển thì hỏi Go trước: khách có thể đã vào máy ở màn khoá native
+	// trong lúc trang còn nạp phía sau — có lần đăng nhập đó thì nhận nó, không khôi
+	// phục gì nữa. Lần đăng nhập xong SAU lúc này thì Go gõ cửa; nghe cửa đăng ký trước
+	// lần hỏi để lần xong đúng giữa hai bước không lọt mất.
+	if (!windowMode.value) EventsOn('vnet:login:native', () => { session.adoptCurrentLogin() })
+	const dangNhapLucDung = windowMode.value
+		? session.restore()
+		: session.adoptCurrentLogin().then(co => co || session.restore())
+	dangNhapLucDung.finally(() => {
 		childReady.value = true
 		// Cần userID của phiên vừa khôi phục.
 		chat.initWsHandlers(session.userID)

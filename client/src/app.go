@@ -106,14 +106,34 @@ type App struct {
 	thoat atomic.Bool
 	// prewarmRetry: số lần liên tiếp cửa sổ dựng sẵn chết lúc khởi động.
 	prewarmRetry atomic.Int32
+
+	// Màn khoá native (curtain*.go) giữ máy từ lúc thanh điều khiển bật tới lần mở
+	// khoá đầu tiên. lockMu: chỗ nào suy ra "khoá hay mở" từ trạng thái, hoặc đổi
+	// trạng thái rồi áp, đều giữ khoá này từ lúc đọc tới lúc áp xong — DomReady chạy
+	// chồng với một lần đăng nhập mà không giữ là hook chặn phím ở lại trên desktop.
+	lockMu sync.Mutex
+	// dockHidden: cửa sổ Wails dựng ẩn sau màn khoá native và chưa hiện lần nào.
+	// SetLoggedIn(true) hiện nó đúng một lần. Chỉ đọc ghi dưới lockMu.
+	dockHidden bool
+	// nativeDangGui: một lần Vào máy của màn khoá native đang gọi Login. Chỉ đọc ghi
+	// dưới lockMu. Nó và một lần RestoreSession không bao giờ chạy chồng nhau: bên nào
+	// tới trước thì bên kia nhường (nativeSubmit, RestoreSession).
+	nativeDangGui bool
+	// startupDone đóng ở cuối Startup. chinhSachSan đóng ở lượt trả lời đầu tiên của
+	// dịch vụ nền, chậm nhất nativeChoChinhSach sau Startup. nativeSubmit chờ cả hai.
+	startupDone  chan struct{}
+	chinhSachSan chan struct{}
+	chinhSachMot sync.Once
 }
 
 func NewApp() *App {
 	cfg := LoadConfig()
 	return &App{
-		cfg:         cfg,
-		machineCode: cfg.MachineCode,
-		locker:      NewScreenLocker(),
+		cfg:          cfg,
+		machineCode:  cfg.MachineCode,
+		locker:       NewScreenLocker(),
+		startupDone:  make(chan struct{}),
+		chinhSachSan: make(chan struct{}),
 	}
 }
 
@@ -128,6 +148,13 @@ func (a *App) Startup(ctx context.Context) {
 		return
 	}
 
+	// Mốc đo khởi động: Wails gọi OnStartup ngay sau Navigate, nên tới đây WebView2 đã
+	// dựng xong và trang bắt đầu nạp. Khúc từ đây tới "DOM sẵn sàng" là phần của trang.
+	log.Printf("[ui] Startup sau %dms (WebView2 đã dựng, trang đang nạp)", time.Since(processStart).Milliseconds())
+	bootRec.webViewSan(systemUptime())
+	// Trang tự gửi các mốc nạp của nó lúc nạp xong (main.ts).
+	wailsruntime.EventsOn(ctx, "vnet:ui:moc", ghiMocNapTrang)
+
 	aCtx, cancel := context.WithCancel(ctx)
 	a.cancel = cancel
 
@@ -140,16 +167,27 @@ func (a *App) Startup(ctx context.Context) {
 	// Chính sách gần nhất dịch vụ nền đã lưu, rồi kênh báo cáo với dịch vụ.
 	loadPolicyFile()
 	go runUILinkClient(aCtx, a)
-
-	// Nhớ mốc độ phân giải và chuột NGAY bây giờ, trước khi khách nào kịp đụng tới
-	// (và trước khi màn hình khoá đo kích thước), chứ không đợi lần đầu có người mở
-	// Cài đặt — lúc đó game có thể đang giữ một độ phân giải tạm.
-	displays.startup()
+	// Màn hình khoá phải phủ kín cả khi game nhả chế độ màn hình riêng của nó (display_app.go).
+	go a.giuManHinhKhoaPhuKin(aCtx)
 
 	// Chưa ai đăng nhập thì máy phải bị khoá NGAY, trước cả khi frontend kịp
 	// dựng xong. Đây là mặc định an toàn: mọi đường dẫn tới màn hình desktop
 	// đều phải đi qua một lần đăng nhập thành công.
+	//
+	// Màn khoá native quá nativeLockReadyWait mà vẫn đang dựng (choNativeLockHien) thì
+	// tới đây thôi chờ nó: từ giờ cửa sổ Wails phủ màn hình, cửa sổ native xong muộn hơn
+	// tự huỷ. dockHidden chỉ đọc ghi dưới lockMu.
+	a.lockMu.Lock()
+	if a.dockHidden && nativeLockAbandon() {
+		log.Printf("[ui] tới Startup màn khoá native vẫn chưa hiện — dùng màn hình khoá web")
+		a.dockHidden = false
+	}
 	a.applyLoginLock(true)
+	a.lockMu.Unlock()
+
+	// Ô đăng nhập native chờ tới đây mới gọi Login (nativeSubmit).
+	time.AfterFunc(nativeChoChinhSach, a.coChinhSach)
+	close(a.startupDone)
 }
 
 // applyLoginLock chuyển cửa sổ giữa hai hình dạng.
@@ -177,22 +215,36 @@ func (a *App) applyLoginLock(khoa bool) {
 		// sau không thừa hưởng cài đặt của khách trước, và màn hình khoá phải đo theo
 		// chế độ cuối cùng chứ không phải chế độ khách đã chọn.
 		a.resetDisplayForNextUser()
-		wailsruntime.WindowShow(a.ctx)
-		wailsruntime.WindowUnminimise(a.ctx)
-		wailsruntime.WindowFullscreen(a.ctx)
-		wailsruntime.WindowSetAlwaysOnTop(a.ctx, true)
+		// Màn khoá native còn giữ máy thì nó đã tự phủ kín, tự nổi trên cùng và tự giữ
+		// tiêu điểm. Cửa sổ Wails phải nằm yên phía sau: hiện nó lúc này là thêm một ô
+		// đăng nhập thứ hai giành phím với ô của khách.
+		if !nativeLockOwns() {
+			wailsruntime.WindowShow(a.ctx)
+			wailsruntime.WindowUnminimise(a.ctx)
+			wailsruntime.WindowFullscreen(a.ctx)
+			wailsruntime.WindowSetAlwaysOnTop(a.ctx, true)
+		}
 		if err := a.locker.Lock(); err != nil {
 			log.Printf("[login] đã phủ màn hình nhưng không chặn được phím: %v", err)
 		}
 		return
 	}
 
-	// KHÔNG gỡ hook chặn phím ở đây. Đăng nhập xong là chuyển từ "phủ kín màn
-	// hình" sang "thanh dọc mép phải", nhưng khách đang chơi vẫn không được
-	// thoát ra desktop. Chỉ đường mở khoá kỹ thuật mới gỡ hook.
+	// Gỡ hook chặn phím: đăng nhập xong khách dùng máy bình thường, Alt+Tab giữa
+	// game với Discord/trình duyệt, Alt+F4 tắt game. Hook chỉ để màn hình khoá
+	// không bị thoát ra; về lại màn hình khoá thì nhánh trên bật lại.
+	a.locker.Unlock()
 	wailsruntime.WindowUnfullscreen(a.ctx)
 	dockToRightEdge(a.ctx)
 	wailsruntime.WindowSetAlwaysOnTop(a.ctx, true)
+	// Lần mở khoá đầu tiên kể từ khi giao diện bật: hạ màn khoá native SAU CÙNG. Cửa sổ
+	// đang có bàn phím mà biến mất thì Windows trao bàn phím cho cửa sổ kế bên dưới, nên
+	// thanh điều khiển SetLoggedIn vừa hiện phải lên xong trước: WindowShow chỉ xếp việc
+	// vào hàng của luồng giao diện Wails, còn dockToRightEdge ở trên hỏi màn hình qua
+	// đúng hàng đó và chờ trả lời. Đã hạ rồi (hoặc chưa từng dựng) thì không làm gì.
+	nativeLockClose()
+	// Mốc mở khoá đầu tiên của lần bật máy (bootreport.go).
+	bootRec.moKhoa(systemUptime())
 }
 
 // ApplyWindowState đặt lại hình dạng cửa sổ theo trạng thái hiện tại.
@@ -200,11 +252,26 @@ func (a *App) applyLoginLock(khoa bool) {
 // Gọi từ OnDomReady. Wails chạy OnStartup trong goroutine song song với
 // f.WindowCenter() của chính nó, nên lần đặt vị trí trong Startup có thể bị ghi
 // đè; đây là lần chốt hạ, chạy ngay trước khi cửa sổ được hiện lên.
+//
+// Màn khoá native KHÔNG bao giờ hạ ở đây, chỉ ở một lần mở khoá thật (nativeSubmit,
+// SetLoggedIn(true), hai đường bảo trì): RestoreSession gán token trước khi giao diện
+// hỏi xong phiên còn hay không, và DomReady rơi đúng quãng đó là hạ màn khoá cho một
+// phiên có thể đã hết. Chế độ bảo trì cũng là đã mở: kỹ thuật viên mở khoá ở màn khoá
+// native trước DomReady thì DomReady không được khoá lại máy.
 func (a *App) ApplyWindowState() {
 	if a.windowMode != "" || a.ctx == nil {
 		return
 	}
-	a.applyLoginLock(!a.loggedIn())
+	a.lockMu.Lock()
+	defer a.lockMu.Unlock()
+	a.applyLoginLock(khoaKhiApTrangThai(nativeLockOwns(), a.loggedIn(), a.baoTri.Load()))
+}
+
+// khoaKhiApTrangThai: ApplyWindowState khoá hay mở. Hàm thuần để kiểm bằng bảng
+// (app_nativelock_test.go): màn khoá native còn giữ thì luôn khoá; không thì khoá khi
+// chưa ai đăng nhập, trừ lúc đang bảo trì.
+func khoaKhiApTrangThai(nativeGiu, dangNhap, baoTri bool) bool {
+	return nativeGiu || (!dangNhap && !baoTri)
 }
 
 // loggedIn suy ra từ token: frontend gọi SetLoggedIn mỗi lần trạng thái đổi,
@@ -216,6 +283,8 @@ func (a *App) loggedIn() bool {
 // SetLoggedIn được frontend gọi mỗi khi trạng thái đăng nhập đổi: đăng nhập
 // xong, đăng xuất, hoặc khôi phục phiên cũ lúc khởi động.
 func (a *App) SetLoggedIn(loggedIn bool) {
+	a.lockMu.Lock()
+	defer a.lockMu.Unlock()
 	// Frontend chỉ ĐỀ NGHỊ; mở khoá hay không do Go quyết theo xác nhận của máy
 	// chủ. Không có chốt này thì bất cứ thứ gì chạy được trong giao diện cũng
 	// gọi được hàm này để mở máy.
@@ -226,6 +295,20 @@ func (a *App) SetLoggedIn(loggedIn bool) {
 	}
 	if loggedIn {
 		a.baoTri.Store(false)
+	}
+	// Thanh điều khiển dựng ẩn sau màn khoá native: hiện nó ở đây, khi giao diện đã
+	// ở trạng thái đăng nhập — không bao giờ là một màn hình khoá bị bóp vào 360px.
+	// Hiện TRƯỚC khi màn khoá native đóng (applyLoginLock(false) đóng nó sau cùng) để
+	// bàn phím sang thanh điều khiển chứ không sang game hay Discord phía sau: phiên
+	// khôi phục xong lúc khách còn gõ dở trên màn khoá thì phần còn lại không được rơi
+	// vào ô chat của game. Màn khoá thôi giữ khoá trước, không thì nhịp 150 ms của nó
+	// giành bàn phím lại; thanh vào mép phải trước khi hiện, không thì nó chớp giữa
+	// màn hình.
+	if loggedIn && a.dockHidden && a.ctx != nil {
+		a.dockHidden = false
+		nativeLockRelease()
+		dockToRightEdge(a.ctx)
+		wailsruntime.WindowShow(a.ctx)
 	}
 	a.applyLoginLock(!loggedIn)
 }
@@ -241,9 +324,11 @@ func (a *App) SetLoggedIn(loggedIn bool) {
 // máy làm thường là tắt dịch vụ.
 func (a *App) unlockLocalAdmin(username string) {
 	log.Printf("[bảo trì] mở khoá bằng tài khoản quản trị máy trạm %q", username)
+	a.lockMu.Lock()
 	a.baoTri.Store(true)
 	a.locker.Unlock()
 	a.applyLoginLock(false)
+	a.lockMu.Unlock()
 	wailsruntime.WindowMinimise(a.ctx)
 }
 
@@ -261,9 +346,11 @@ func (a *App) unlockWithCachedStaff(username, password string) error {
 
 	log.Printf("[offline] mở khoá bằng tài khoản %q (%s) đã lưu ngày %s",
 		c.Username, c.Role, c.SavedAt.Format("02/01/2006"))
+	a.lockMu.Lock()
 	a.baoTri.Store(true)
 	a.locker.Unlock()
 	a.applyLoginLock(false)
+	a.lockMu.Unlock()
 	wailsruntime.WindowMinimise(a.ctx)
 	return nil
 }
@@ -279,6 +366,9 @@ func (a *App) GetServerURL() string {
 	}
 	return a.cfg.ServerURL
 }
+
+// loiTraLoiLa: máy chủ có trả lời nhưng không theo dạng của máy chủ VNET.
+const loiTraLoiLa = "máy chủ trả lời không hợp lệ, có thể sai địa chỉ máy chủ — vui lòng báo nhân viên"
 
 func (a *App) doRequest(method, path string, body interface{}) (json.RawMessage, error) {
 	return a.doRequestWith(a.token, uiTimeout, method, path, body)
@@ -329,12 +419,21 @@ func (a *App) doRequestWith(token string, timeout time.Duration, method, path st
 		log.Printf("[HTTP] read error: %v", err)
 		return nil, fmt.Errorf("%w: %v", errServerUnreachable, err)
 	}
-	log.Printf("[HTTP] %s %s → %d body=%s", method, fullURL, resp.StatusCode, string(bodyBytes))
+	// Thân trả lời KHÔNG được ghi: ui.log nằm trong thư mục của tài khoản Windows của
+	// khách, khách sau ngồi cùng máy đọc được. Trả lời đăng nhập mang access/refresh
+	// token (dùng được phiên và số dư của người trước), các trả lời khác mang thông tin
+	// hội viên và nội dung chat. Lỗi thì logBody ghi bản đã che, ở hai nhánh dưới.
+	log.Printf("[HTTP] %s %s → %d (%d byte)", method, fullURL, resp.StatusCode, len(bodyBytes))
 
 	var apiResp APIResponse
 	if err := json.Unmarshal(bodyBytes, &apiResp); err != nil {
-		log.Printf("[HTTP] parse error: %v", err)
-		return nil, fmt.Errorf("invalid response")
+		log.Printf("[HTTP] parse error: %v body=%s", err, logBody(bodyBytes))
+		// Máy chủ VNET luôn trả JSON, kể cả "sai mật khẩu", nên trả lời không đọc được
+		// nghĩa là thứ đang trả lời không phải nó (địa chỉ trỏ nhầm sang router, IIS,
+		// cổng đăng nhập wifi; proxy báo 502): với Login cũng như không với tới máy chủ, và
+		// bản lưu nhân viên vẫn được thử — mật khẩu của nó vẫn kiểm tại máy. Câu lỗi
+		// hiện thẳng cho khách nên phải là tiếng Việt.
+		return nil, fmt.Errorf("%w: %s", errServerUnreachable, loiTraLoiLa)
 	}
 
 	if apiResp.Code != 0 {
@@ -356,7 +455,7 @@ func (a *App) safeBody(body interface{}) string {
 	var m map[string]interface{}
 	if json.Unmarshal(b, &m) == nil {
 		for k := range m {
-			if isSecretField(k) {
+			if isSecretField(k) || isPrivateText(k) {
 				m[k] = "***"
 			}
 		}
@@ -395,12 +494,52 @@ func (a *App) connectWS() {
 	// lần — khách thấy hai hộp thông báo, quầy nhận hai ảnh chụp.
 	if a.windowMode == "" {
 		a.registerRemoteHandlers(a.wsClient)
+		a.khoaKhiHetPhienChuaNhan(a.wsClient)
 	}
 	go func() {
 		if err := a.wsClient.Connect(a.wsCtx); err != nil {
 			log.Printf("ws client: %v", err)
 		}
 	}()
+}
+
+// khoaKhiHetPhienChuaNhan: phiên trên máy này kết thúc (session:ended,
+// session:auto-ended, curfew:enforced) trong lúc giao diện web chưa nhận lần đăng nhập
+// ở màn khoá native — trang còn nạp sau lưng, hoặc trình hiển thị WebView2 đã chết. ws.go
+// chỉ báo cho trang, mà trang chưa đăng nhập thì bỏ qua sự kiện: không có gì ở đây là
+// desktop mở cho một máy không còn phiên, tới khi dịch vụ nền bật lại giao diện. Trang
+// vẫn nhận sự kiện như cũ (để hiện lý do khoá); Go tự đăng xuất, như trang sẽ làm
+// (clearSession → logout).
+func (a *App) khoaKhiHetPhienChuaNhan(c *WSClient) {
+	for _, loai := range []string{"session:ended", "session:auto-ended", "curfew:enforced"} {
+		baoTrang := c.handlers[loai]
+		c.On(loai, func(msg WSMessage) {
+			if baoTrang != nil {
+				baoTrang(msg)
+			}
+			if a.hetPhienTruocKhiTrangNhan(msg) {
+				log.Printf("[login] phiên kết thúc trước khi giao diện nhận lần đăng nhập ở màn khoá native — khoá máy")
+				a.Logout()
+			}
+		})
+	}
+}
+
+// hetPhienTruocKhiTrangNhan: sự kiện hết phiên này là của hội viên Go đang giữ, và giao
+// diện chưa nhận lần đăng nhập đó — dockHidden: thanh điều khiển chưa hiện lần nào, mà
+// SetLoggedIn(true) của trang mới hiện nó. Màn khoá native còn giữ khoá thì lần đăng
+// nhập là một lần RestoreSession trang đang tự lo (hỏi phiên còn không), không phải của
+// màn khoá native. Lọc như clearSession của trang: sự kiện ghi hội viên khác, hoặc nhân
+// viên đang đăng nhập, thì bỏ qua.
+func (a *App) hetPhienTruocKhiTrangNhan(msg WSMessage) bool {
+	var d struct {
+		MemberID string `json:"member_id"`
+	}
+	_ = json.Unmarshal(msg.Payload, &d) // hỏng thì như trang: coi như không ghi hội viên nào
+	a.lockMu.Lock()
+	defer a.lockMu.Unlock()
+	return a.dockHidden && !nativeLockOwns() && a.loggedIn() && a.role != "admin" &&
+		(d.MemberID == "" || d.MemberID == a.userID)
 }
 
 // Login là đường đăng nhập DUY NHẤT của máy trạm.
@@ -442,7 +581,7 @@ func (a *App) Login(username, password string) (string, error) {
 
 	var resp ClientLoginResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return "", fmt.Errorf("invalid response")
+		return "", errors.New(loiTraLoiLa)
 	}
 	if resp.User == nil {
 		return "", fmt.Errorf("máy chủ trả về phản hồi thiếu thông tin tài khoản")
@@ -469,16 +608,90 @@ func (a *App) Login(username, password string) (string, error) {
 		}
 	}
 
-	// Hook chặn phím bật cho CẢ hai loại: khách đang chơi vẫn không được thoát
-	// ra desktop. Nhân viên cần toàn quyền thì dùng đường mở khoá kỹ thuật.
-	if err := a.locker.Lock(); err != nil {
-		log.Printf("lock screen error: %v", err)
-	}
-
 	a.verified.Store(true)
 	a.connectWS()
+	a.refreshGameShortcuts()
 
 	return string(data), nil
+}
+
+// nativeChoChinhSach: ô đăng nhập native chờ lượt trả lời đầu tiên của dịch vụ nền
+// tối đa chừng này sau Startup. Tài khoản quản trị máy trạm đặt ở trang quản trị chỉ
+// tới qua lượt đó (policy.json cố ý không giữ nó); gọi Login sớm hơn là kỹ thuật viên
+// gõ đúng tài khoản mà máy đi hỏi máy chủ rồi báo sai mật khẩu.
+const nativeChoChinhSach = 2 * time.Second
+
+// coChinhSach mở cửa cho nativeSubmit: dịch vụ nền đã trả lời, hoặc đã chờ đủ.
+func (a *App) coChinhSach() {
+	a.chinhSachMot.Do(func() { close(a.chinhSachSan) })
+}
+
+// nativeSubmit là nút "Vào máy" của màn khoá native (curtain*.go), chạy trên goroutine
+// riêng của nó. Đi đúng đường Login của màn hình khoá web: nhân viên hay hội viên, tài
+// khoản quản trị máy trạm, bản lưu nhân viên khi mất mạng, câu lỗi của máy chủ — tất cả
+// nằm ở Login, không chép lại ở đây.
+//
+// Chờ Startup trước: Login cần a.ctx (WebSocket, thu nhỏ cửa sổ), và kênh báo cáo với
+// dịch vụ nền phải đang chạy. Cái giá là vài giây cho người bấm Vào máy ngay lúc máy
+// vừa lên — trước đây họ chờ màn hình khoá web còn lâu hơn.
+//
+// Trả nil là máy đã mở khoá VÀ màn khoá native đã hạ (applyLoginLock(false) hạ nó). Trả
+// lỗi thì màn khoá native hiện nguyên văn câu lỗi và nhận lần bấm kế.
+func (a *App) nativeSubmit(username, password string) error {
+	<-a.startupDone
+	<-a.chinhSachSan
+	// Giao diện web đang khôi phục phiên cũ (giao diện bật lại giữa buổi): phiên đó
+	// thắng. Login không từ chối khi máy đã có token, nên cho chạy song song là hai lần
+	// đăng nhập giành một máy — Go giữ người này, giao diện hiện người kia.
+	a.lockMu.Lock()
+	if nativeLockDangKhoiPhuc() {
+		a.lockMu.Unlock()
+		return errors.New("Máy đang khôi phục phiên trước, vui lòng chờ giây lát")
+	}
+	a.nativeDangGui = true
+	a.lockMu.Unlock()
+
+	_, err := a.Login(username, password)
+
+	a.lockMu.Lock()
+	a.nativeDangGui = false
+	var khoa, mo bool
+	khoa, mo, err = sauVaoMayNative(err, a.baoTri.Load(), a.loggedIn(), a.verified.Load())
+	if khoa {
+		a.applyLoginLock(true)
+	}
+	if mo {
+		a.applyLoginLock(false)
+	}
+	a.lockMu.Unlock()
+	if mo {
+		// Desktop dùng được ngay; thanh điều khiển hiện khi giao diện nhận lần đăng nhập
+		// này (CurrentLogin). Trang chưa nạp xong thì tiếng gõ cửa rơi mất, không sao: nó
+		// tự hỏi lúc dựng.
+		wailsruntime.EventsEmit(a.ctx, "vnet:login:native")
+	}
+	return err
+}
+
+// sauVaoMayNative: Login của màn khoá native đã trả về (loiLogin), máy phải về thế nào.
+// Đọc dưới lockMu. Hàm thuần để kiểm bằng bảng (app_nativelock_test.go).
+//
+//	khoa: khoá lại (applyLoginLock(true)).
+//	mo:   mở máy (applyLoginLock(false), hạ màn khoá native) rồi gõ cửa giao diện.
+//	err:  trả cho màn khoá native; nil là máy đã mở.
+func sauVaoMayNative(loiLogin error, baoTri, dangNhap, daXacNhan bool) (khoa, mo bool, err error) {
+	switch {
+	case loiLogin != nil:
+		return false, false, loiLogin
+	case baoTri:
+		// Tài khoản quản trị máy trạm và bản lưu nhân viên đã tự mở khoá bên trong Login.
+		return false, false, nil
+	case !dangNhap || !daXacNhan:
+		// Một lần đăng xuất chạy chồng (Logout không giữ lockMu lúc gọi máy chủ) đã dọn
+		// mất lần đăng nhập vừa xong: không mở máy cho một máy không còn ai đăng nhập.
+		return true, false, errors.New("Đăng nhập chưa xong, vui lòng thử lại")
+	}
+	return false, true, nil
 }
 
 func (a *App) Logout() error {
@@ -526,6 +739,16 @@ func (a *App) Logout() error {
 	if a.wsCancel != nil {
 		a.wsCancel()
 	}
+	// Khoá lại dưới lockMu SAU khi đã dọn trạng thái: lần mở khoá nào chen vào giữa lúc
+	// đọc token ở trên và lúc dọn xong (Vào máy ở màn khoá native, giao diện nhận lần
+	// đăng nhập Go đang giữ) cũng không được để desktop mở cho một máy không còn ai đăng
+	// nhập. Phiên khôi phục dở (nếu có) cũng hết ở đây: màn khoá native nhận Vào máy lại.
+	a.lockMu.Lock()
+	nativeLockRestoring(false)
+	if !a.baoTri.Load() {
+		a.applyLoginLock(true)
+	}
+	a.lockMu.Unlock()
 	if chuaTra != "" {
 		go a.traMayONen(chuaTra, lichTraMay{endRetryBackoff, time.Now().Add(endRetryFor), logoutTimeout})
 	}
@@ -575,6 +798,12 @@ func (a *App) traMayMotLan(token string, hanChot time.Duration) bool {
 	return !errors.Is(err, errServerUnreachable)
 }
 
+// errDangVaoMayNative: RestoreSession lui vì một lần Vào máy ở màn khoá native đang gọi
+// máy chủ. Khác "đã đăng nhập bằng cách khác": lần đó còn có thể hỏng (sai mật khẩu),
+// và lúc đó phiên cũ vẫn phải khôi phục được. session.store.ts (restore) nhận ra đúng
+// câu này để GIỮ phiên đã lưu và hỏi lại — đổi câu thì đổi cả bên đó.
+var errDangVaoMayNative = errors.New("đang vào máy ở màn khoá native, khôi phục phiên sau")
+
 // RestoreSession khôi phục đăng nhập sau khi giao diện tự khởi động lại.
 //
 // Chỉ nhận token; MỌI thứ khác (ai, vai trò gì) hỏi lại máy chủ. Bản cũ nhận cả
@@ -588,6 +817,24 @@ func (a *App) traMayMotLan(token string, hanChot time.Duration) bool {
 // động tới a.token là xoá mất phiên vừa đăng nhập của họ — và giữ token của
 // khách trước trong lúc chưa ai xác nhận nó thì làm máy trông như đã mở.
 func (a *App) RestoreSession(token string) (string, error) {
+	// Màn khoá native còn giữ máy thì báo "đang khôi phục" trên nó và khoá nút Vào máy
+	// cho tới khi xong: SetLoggedIn(true) hạ nó, còn Logout hay thất bại dưới đây thì mở
+	// lại nút. Khách đã bấm Vào máy trước thì lần đó đi trước: lui bằng
+	// errDangVaoMayNative để giao diện giữ phiên đã lưu và hỏi lại khi lần đó xong.
+	a.lockMu.Lock()
+	if a.nativeDangGui {
+		a.lockMu.Unlock()
+		return "", errDangVaoMayNative
+	}
+	nativeLockRestoring(true)
+	a.lockMu.Unlock()
+	xong := false
+	defer func() {
+		if !xong {
+			nativeLockRestoring(false)
+		}
+	}()
+
 	data, err := a.doRequestWith(token, uiTimeout, "GET", "/api/auth/me", nil)
 	if err != nil {
 		return "", err
@@ -614,11 +861,35 @@ func (a *App) RestoreSession(token string) (string, error) {
 	}
 	a.verified.Store(true)
 	a.connectWS()
+	a.refreshGameShortcuts()
+	xong = true
 
 	out, _ := json.Marshal(map[string]string{
 		"id": a.userID, "username": a.username, "full_name": a.fullName, "role": a.role,
 	})
 	return string(out), nil
+}
+
+// CurrentLogin trả lần đăng nhập Go đang giữ, cùng dạng với Login, để giao diện nhận
+// lấy: khách vào máy ở màn khoá native trong lúc trang còn nạp phía sau, hoặc trang vừa
+// nạp lại. Chuỗi rỗng khi chưa có lần đăng nhập nào được máy chủ xác nhận. Gọi bao
+// nhiêu lần cũng được.
+func (a *App) CurrentLogin() string {
+	if !a.loggedIn() || !a.verified.Load() {
+		return ""
+	}
+	kind := "member"
+	if a.role == "admin" {
+		kind = "staff"
+	}
+	out, _ := json.Marshal(ClientLoginResponse{
+		LoginResponse: LoginResponse{
+			AccessToken: a.token,
+			User:        &UserInfo{ID: a.userID, Username: a.username, FullName: a.fullName, Role: a.role},
+		},
+		Kind: kind,
+	})
+	return string(out)
 }
 
 // offlineReason hiện trên lớp phủ khi mất kết nối máy chủ.
@@ -639,6 +910,7 @@ func (a *App) linkStatus() uiStatus {
 // applyServiceReply làm theo chỉ thị của dịch vụ nền.
 func (a *App) applyServiceReply(r svcReply) {
 	setPolicy(r.Policy)
+	a.coChinhSach()
 	a.setOfflineLock(r.OfflineLock)
 }
 
@@ -652,8 +924,12 @@ func (a *App) setOfflineLock(on bool) {
 	if a.windowMode != "" || a.ctx == nil {
 		return
 	}
+	a.lockMu.Lock()
+	defer a.lockMu.Unlock()
 	if on {
-		if a.offlineLocked.Load() || a.baoTri.Load() || !a.loggedIn() || a.role == "admin" {
+		// Màn khoá native còn giữ máy thì máy đang khoá sẵn, và cửa sổ Wails không được
+		// hiện đè lên nó. Hạ nó rồi mà vẫn mất kết nối thì lượt trả lời kế khoá lại.
+		if a.offlineLocked.Load() || a.baoTri.Load() || !a.loggedIn() || a.role == "admin" || nativeLockOwns() {
 			return
 		}
 		a.offlineLocked.Store(true)
@@ -737,7 +1013,14 @@ func (a *App) HidePanel() {
 // khôi phục cửa sổ đang thu nhỏ rồi đưa lên trước. Đang khoá thì không có gì để
 // "khôi phục" — màn hình khoá phủ kín và không bao giờ thu nhỏ được; WindowUnminimise
 // bỏ qua khi đang toàn màn hình, nên lệnh này không đổi trạng thái khoá.
+//
+// Màn khoá native còn giữ máy thì cửa sổ Wails phải nằm ẩn sau nó: chỉ đưa ô đăng nhập
+// native lên trước.
 func (a *App) ShowWindow() {
+	if nativeLockOwns() {
+		nativeLockFocus()
+		return
+	}
 	if a.ctx == nil {
 		return
 	}

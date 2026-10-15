@@ -21,6 +21,13 @@ function lyDoKetThuc(reason?: string): string {
 // tới trước còn giao diện không bao giờ đứng chờ một lời gọi không trả về.
 const HAN_KHOI_PHUC_MS = 20000
 
+// Go lui khỏi RestoreSession bằng đúng câu này khi khách đang bấm Vào máy ở màn khoá
+// native (errDangVaoMayNative, app.go) — đổi bên này thì đổi cả bên đó. Lượt đó có thể
+// hỏng (sai mật khẩu) nên phiên đã lưu phải giữ lại để hỏi lại, mỗi giây một lần, tối
+// đa SO_LAN_CHO_NATIVE lần.
+const NATIVE_DANG_VAO = 'đang vào máy ở màn khoá native'
+const SO_LAN_CHO_NATIVE = 60
+
 function voiHan<T>(p: Promise<T>, ms: number): Promise<T> {
 	let timer: ReturnType<typeof setTimeout>
 	const het = new Promise<never>((_, reject) => {
@@ -70,37 +77,58 @@ export const useSessionStore = defineStore('session', () => {
 			// khoá bên Go rồi. KHÔNG dựng phiên ở đây — không có phiên nào cả.
 			if (data?.offline) return data
 
-			if (data?.access_token) {
-				token.value = data.access_token
-				userID.value = data.user?.id || ''
-				// Nhân viên (bảng users) mang vai trò "owner"/"manager"/"staff",
-				// nhưng giao diện máy trạm chỉ phân biệt ba loại màn hình. Quy
-				// hết về 'admin' — nếu không, chủ quán đăng nhập lại thấy màn
-				// hình của khách, kèm nút Nạp tiền và Điểm danh.
-				role.value = data.kind === 'staff' ? 'admin' : (data.user?.role || 'member')
-				displayName.value = data.user?.full_name || data.user?.username || ''
-				loggedIn.value = true
-				// Đổi hình dạng cửa sổ NGAY tại đây, không để component tự nhớ:
-				// có ba đường dẫn tới trạng thái đăng nhập (đăng nhập, đăng
-				// xuất, khôi phục phiên) và bỏ sót một đường là máy kẹt ở màn
-				// hình khoá hoặc ngược lại, mở toang cho ai cũng dùng được.
-				datLyDo('')
-				api().SetLoggedIn(true)
-				let bootTime = 0
-				try { bootTime = await api().GetBootTime() } catch { /* bản Go cũ */ }
-				localStorage.setItem('vnet_session', JSON.stringify({
-					token: data.access_token,
-					userId: data.user?.id,
-					role: role.value,
-					displayName: data.user?.full_name || data.user?.username || '',
-					bootTime,
-				}))
-				dungSanCuaSoPhu()
-			}
+			if (data?.access_token) await datDangNhap(data)
 			return data
 		} finally {
 			loginLoading.value = false
 		}
+	}
+
+	// Dựng trạng thái đăng nhập từ một phản hồi dạng Login: lần đăng nhập ngay trên
+	// màn hình khoá này, hoặc lần Go đang giữ mà trang chưa biết (adoptCurrentLogin).
+	async function datDangNhap(data: any) {
+		token.value = data.access_token
+		userID.value = data.user?.id || ''
+		// Nhân viên (bảng users) mang vai trò "owner"/"manager"/"staff",
+		// nhưng giao diện máy trạm chỉ phân biệt ba loại màn hình. Quy
+		// hết về 'admin' — nếu không, chủ quán đăng nhập lại thấy màn
+		// hình của khách, kèm nút Nạp tiền và Điểm danh.
+		role.value = data.kind === 'staff' ? 'admin' : (data.user?.role || 'member')
+		displayName.value = data.user?.full_name || data.user?.username || ''
+		loggedIn.value = true
+		// Đổi hình dạng cửa sổ NGAY tại đây, không để component tự nhớ:
+		// có ba đường dẫn tới trạng thái đăng nhập (đăng nhập, đăng
+		// xuất, khôi phục phiên) và bỏ sót một đường là máy kẹt ở màn
+		// hình khoá hoặc ngược lại, mở toang cho ai cũng dùng được.
+		datLyDo('')
+		api().SetLoggedIn(true)
+		let bootTime = 0
+		try { bootTime = await api().GetBootTime() } catch { /* bản Go cũ */ }
+		localStorage.setItem('vnet_session', JSON.stringify({
+			token: data.access_token,
+			userId: data.user?.id,
+			role: role.value,
+			displayName: data.user?.full_name || data.user?.username || '',
+			bootTime,
+		}))
+		dungSanCuaSoPhu()
+	}
+
+	// Nhận lần đăng nhập Go đang giữ mà trang chưa biết: khách vào máy ở màn khoá
+	// native trong lúc trang còn nạp phía sau, hoặc trang vừa nạp lại. App.vue gọi mỗi
+	// lần dựng và mỗi lần Go gõ cửa (vnet:login:native); gọi thừa không sao. Trả true
+	// nếu trang đã ở trạng thái đăng nhập.
+	async function adoptCurrentLogin() {
+		if (loggedIn.value) return true
+		let data: any = null
+		try { data = JSON.parse((await api().CurrentLogin()) || 'null') } catch { /* bản Go cũ, ngoài Wails */ }
+		// Đăng nhập tay hoặc khôi phục phiên có thể vừa xong trong lúc chờ.
+		if (loggedIn.value) return true
+		if (!data?.access_token) return false
+		// Như một lần đăng nhập tay: restore() đang chạy thì phải lui.
+		luotDangNhap++
+		await datDangNhap(data)
+		return true
 	}
 
 	async function logout(reason = '') {
@@ -250,7 +278,19 @@ export const useSessionStore = defineStore('session', () => {
 			// lưu ở đây. Máy chủ không xác nhận (kể cả không với tới) thì hàm này
 			// ném lỗi và máy ở lại màn hình khoá.
 			dangKhoiPhuc.value = true
-			const me = JSON.parse(await voiHan(api().RestoreSession(s.token), HAN_KHOI_PHUC_MS))
+			let me: any = null
+			for (let lan = 0; !me; lan++) {
+				try {
+					me = JSON.parse(await voiHan(api().RestoreSession(s.token), HAN_KHOI_PHUC_MS))
+				} catch (e) {
+					// Khách đang bấm Vào máy ở màn khoá native: chờ lượt đó xong rồi hỏi lại.
+					// Vào được thì Go gõ cửa, trang nhận lần đăng nhập đó (luotDangNhap tăng)
+					// và thôi khôi phục.
+					if (!String(e).includes(NATIVE_DANG_VAO) || lan + 1 >= SO_LAN_CHO_NATIVE) throw e
+					await new Promise(r => setTimeout(r, 1000))
+					if (luot !== luotDangNhap) return false
+				}
+			}
 			dangKhoiPhuc.value = false
 			// Người ở máy đã tự đăng nhập trong lúc chờ (bên Go cũng đang giữ phiên của
 			// họ): phiên của họ thắng, không ghi đè.
@@ -282,5 +322,5 @@ export const useSessionStore = defineStore('session', () => {
 		}
 	}
 
-	return { loggedIn, token, userID, machineCode, role, displayName, machineStatus, session, memberInfo, loginLoading, dangKhoiPhuc, lockReason, login, logout, loadData, updateSession, clearSession, verifySession, updateBalance, restore }
+	return { loggedIn, token, userID, machineCode, role, displayName, machineStatus, session, memberInfo, loginLoading, dangKhoiPhuc, lockReason, login, adoptCurrentLogin, logout, loadData, updateSession, clearSession, verifySession, updateBalance, restore }
 })
