@@ -115,8 +115,12 @@ const (
 	lnkRelease        = 2 // IUnknown::Release
 
 	lnkGetPath         = 3  // IShellLinkW::GetPath
+	lnkGetDescription  = 6  // IShellLinkW::GetDescription
 	lnkSetDescription  = 7  // IShellLinkW::SetDescription
+	lnkGetWorkingDir   = 8  // IShellLinkW::GetWorkingDirectory
 	lnkSetWorkingDir   = 9  // IShellLinkW::SetWorkingDirectory
+	lnkGetArguments    = 10 // IShellLinkW::GetArguments
+	lnkSetArguments    = 11 // IShellLinkW::SetArguments
 	lnkSetIconLocation = 17 // IShellLinkW::SetIconLocation
 	lnkSetPath         = 20 // IShellLinkW::SetPath
 	lnkPersistFileLoad = 5  // IPersistFile::Load
@@ -188,9 +192,63 @@ func readLinkTarget(lnk string) (string, error) {
 	return windows.UTF16ToString(buf), nil
 }
 
+// lnkInfo là phần của một tệp .lnk mà lối tắt game cần đối chiếu.
+type lnkInfo struct {
+	Target, Args, WorkDir, Desc string
+}
+
+// readLinkInfo đọc đích, tham số, thư mục làm việc và Description của một tệp
+// .lnk có sẵn. Chỉ đọc tệp — không Resolve, nên không chạm tới đích (ổ mạng
+// chậm, ổ đã gỡ) và không sửa lối tắt.
+func readLinkInfo(lnk string) (lnkInfo, error) {
+	link, file, err := lnkOpen()
+	if err != nil {
+		return lnkInfo{}, err
+	}
+	defer lnkClose(link, file)
+
+	const stgmRead = 0
+	if err := lnkCall(file, lnkPersistFileLoad, uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(lnk))), stgmRead); err != nil {
+		return lnkInfo{}, fmt.Errorf("Load: %w", err)
+	}
+	// Các hàm Get* của IShellLinkW cùng một dạng (bộ đệm, số ký tự); GetPath có thêm
+	// hai tham số nên đứng riêng. Bộ đệm quá nhỏ chỉ làm chuỗi bị cắt — lối tắt khi
+	// đó khác với mong muốn và được ghi lại, không hỏng gì.
+	get := func(slot uintptr, size int) (string, error) {
+		buf := make([]uint16, size)
+		if err := lnkCall(link, slot, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf))); err != nil {
+			return "", err
+		}
+		return windows.UTF16ToString(buf), nil
+	}
+
+	var info lnkInfo
+	buf := make([]uint16, 1024)
+	if err := lnkCall(link, lnkGetPath, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), 0, 0); err != nil {
+		return lnkInfo{}, fmt.Errorf("GetPath: %w", err)
+	}
+	info.Target = windows.UTF16ToString(buf)
+	if info.WorkDir, err = get(lnkGetWorkingDir, 1024); err != nil {
+		return lnkInfo{}, fmt.Errorf("GetWorkingDirectory: %w", err)
+	}
+	if info.Args, err = get(lnkGetArguments, 8192); err != nil {
+		return lnkInfo{}, fmt.Errorf("GetArguments: %w", err)
+	}
+	if info.Desc, err = get(lnkGetDescription, 1024); err != nil {
+		return lnkInfo{}, fmt.Errorf("GetDescription: %w", err)
+	}
+	return info, nil
+}
+
 // writeLink ghi tệp .lnk trỏ tới target, chạy ở workDir, lấy biểu tượng của
 // chính target. Ghi đè nếu tệp đã có.
 func writeLink(lnk, target, workDir, desc string) error {
+	return writeLinkArgs(lnk, target, "", workDir, desc)
+}
+
+// writeLinkArgs là writeLink có thêm tham số dòng lệnh (lối tắt game dùng
+// launch_args). args rỗng thì lối tắt không có tham số.
+func writeLinkArgs(lnk, target, args, workDir, desc string) error {
 	link, file, err := lnkOpen()
 	if err != nil {
 		return err
@@ -199,6 +257,11 @@ func writeLink(lnk, target, workDir, desc string) error {
 
 	if err := lnkCall(link, lnkSetPath, uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(target)))); err != nil {
 		return fmt.Errorf("SetPath: %w", err)
+	}
+	if args != "" {
+		if err := lnkCall(link, lnkSetArguments, uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(args)))); err != nil {
+			return fmt.Errorf("SetArguments: %w", err)
+		}
 	}
 	if err := lnkCall(link, lnkSetWorkingDir, uintptr(unsafe.Pointer(windows.StringToUTF16Ptr(workDir)))); err != nil {
 		return fmt.Errorf("SetWorkingDirectory: %w", err)
