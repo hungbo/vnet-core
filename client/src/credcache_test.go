@@ -1,15 +1,16 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
-// Mỗi bài kiểm dùng một thư mục riêng: bản đệm nằm trong thư mục cấu hình của
-// người dùng, và ghi vào thư mục thật của người đang chạy test là làm bẩn máy họ.
+// Mỗi bài kiểm dùng một thư mục riêng: tệp nằm trong thư mục cấu hình của người
+// dùng, và ghi vào thư mục thật của người đang chạy test là làm bẩn máy họ.
 func dungThuMucTam(t *testing.T) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // Linux
@@ -17,139 +18,59 @@ func dungThuMucTam(t *testing.T) {
 	t.Setenv("AppData", t.TempDir())         // Windows
 }
 
-func TestCredCache_LuuRoiMoDuocKhiMatMang(t *testing.T) {
-	dungThuMucTam(t)
-
-	if err := rememberStaff("quanly", "matkhau-dai-1234", "manager"); err != nil {
-		t.Fatal(err)
-	}
-
-	c, err := verifyCachedStaff("quanly", "matkhau-dai-1234", time.Now())
-	if err != nil {
-		t.Fatalf("tài khoản đúng bị từ chối: %v", err)
-	}
-	if c.Role != "manager" {
-		t.Errorf("Role = %q", c.Role)
-	}
-
-	if _, err := verifyCachedStaff("quanly", "sai-mat-khau", time.Now()); err == nil {
-		t.Error("sai mật khẩu vẫn mở được")
-	}
-	if _, err := verifyCachedStaff("khong-co-ai", "matkhau-dai-1234", time.Now()); err == nil {
-		t.Error("tài khoản không có trong bản đệm vẫn mở được")
-	}
-}
-
-// Điều kiện quan trọng nhất: KHÔNG lưu hội viên. Lưu được nghĩa là khách chỉ
-// cần rút dây mạng rồi tự mở máy — chơi không mất tiền, đúng thứ lớp khoá sinh
-// ra để chặn.
-func TestCredCache_KhongLuuHoiVien(t *testing.T) {
-	dungThuMucTam(t)
-
-	for _, vaiTro := range []string{"member", ""} {
-		if err := rememberStaff("khach", "matkhau-dai-1234", vaiTro); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(loadCredCache()) != 0 {
-		t.Fatalf("đã lưu %d tài khoản — hội viên không được lưu", len(loadCredCache()))
-	}
-	if _, err := verifyCachedStaff("khach", "matkhau-dai-1234", time.Now()); err == nil {
-		t.Fatal("hội viên mở được máy khi mất mạng")
-	}
-}
-
-// Đuổi việc một nhân viên và đổi mật khẩu trên máy chủ mà bản đệm sống mãi thì
-// họ vẫn mở được mọi máy trong quán.
-func TestCredCache_QuaHanThiKhongMoDuoc(t *testing.T) {
-	dungThuMucTam(t)
-
-	if err := rememberStaff("nhanvien", "matkhau-dai-1234", "staff"); err != nil {
-		t.Fatal(err)
-	}
-
-	vuaKip := time.Now().Add(credCacheTTL - time.Hour)
-	if _, err := verifyCachedStaff("nhanvien", "matkhau-dai-1234", vuaKip); err != nil {
-		t.Errorf("chưa quá hạn mà đã từ chối: %v", err)
-	}
-
-	quaHan := time.Now().Add(credCacheTTL + time.Hour)
-	if _, err := verifyCachedStaff("nhanvien", "matkhau-dai-1234", quaHan); err == nil {
-		t.Error("bản đệm quá hạn vẫn mở được")
-	}
-}
-
-// Đổi mật khẩu trên máy chủ rồi đăng nhập một lần thì bản đệm phải theo kịp,
-// và mật khẩu CŨ phải hết tác dụng.
-func TestCredCache_DoiMatKhauThiBanDemTheoKip(t *testing.T) {
-	dungThuMucTam(t)
-
-	rememberStaff("quanly", "matkhau-cu-1234", "manager")
-	rememberStaff("quanly", "matkhau-moi-5678", "manager")
-
-	if _, err := verifyCachedStaff("quanly", "matkhau-moi-5678", time.Now()); err != nil {
-		t.Errorf("mật khẩu mới không dùng được: %v", err)
-	}
-	if _, err := verifyCachedStaff("quanly", "matkhau-cu-1234", time.Now()); err == nil {
-		t.Error("mật khẩu cũ vẫn mở được")
-	}
-	if n := len(loadCredCache()); n != 1 {
-		t.Errorf("có %d bản ghi — cùng một tài khoản phải ghi đè, không cộng dồn", n)
-	}
-}
-
-// Không giữ vô hạn: bản đệm là tệp trên máy khách, càng nhiều dòng càng nhiều
-// thứ để dò.
-func TestCredCache_ChiGiuMotSoTaiKhoanGanNhat(t *testing.T) {
-	dungThuMucTam(t)
-
-	for i := 0; i < credCacheMax+4; i++ {
-		rememberStaff(string(rune('a'+i))+"-nhanvien", "matkhau-dai-1234", "staff")
-	}
-	if n := len(loadCredCache()); n > credCacheMax {
-		t.Fatalf("giữ %d tài khoản, trần là %d", n, credCacheMax)
-	}
-}
-
-// Tệp trên đĩa KHÔNG được chứa mật khẩu.
-func TestCredCache_TepKhongChuaMatKhau(t *testing.T) {
-	dungThuMucTam(t)
-
-	rememberStaff("quanly", "matkhau-rat-de-nhan-ra", "manager")
-
-	path, err := credCachePath()
+// datTepDemGia ghi một offline-staff.json như khách tự tạo trong thư mục của mình.
+func datTepDemGia(t *testing.T) string {
+	t.Helper()
+	dir, err := os.UserConfigDir()
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
+	p := filepath.Join(dir, "VNET", "offline-staff.json")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := hashPin("khach-tu-dat")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), "matkhau-rat-de-nhan-ra") {
-		t.Fatalf("tệp %s chứa mật khẩu dạng chữ thường", filepath.Base(path))
+	body := `[{"username":"gia","hash":"` + hash + `","role":"staff","saved_at":"2099-01-01T00:00:00Z"}]`
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
 	}
+	return p
 }
 
-// Máy chưa từng có ai đăng nhập thì không mở offline được — và phải nói rõ lý
-// do, chứ không phải "sai mật khẩu" khiến nhân viên gõ lại mười lần.
-func TestCredCache_ChuaCoAiDangNhap(t *testing.T) {
+// Khách ghi được offline-staff.json: nếu máy còn tin tệp đó, khách tự thêm một
+// "nhân viên", rút dây mạng rồi mở máy chơi không mất tiền.
+func TestLogin_MatMangKhongMoMayBangTepDemCuaKhach(t *testing.T) {
 	dungThuMucTam(t)
+	datTepDemGia(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close() // máy chủ không với tới
+	a := &App{cfg: &Config{ServerURL: url}}
 
-	_, err := verifyCachedStaff("quanly", "matkhau-dai-1234", time.Now())
+	out, err := a.Login("gia", "khach-tu-dat")
 	if err == nil {
-		t.Fatal("bản đệm rỗng vẫn mở được")
+		t.Fatalf("mất mạng mà vẫn mở máy bằng tệp của khách: %s", out)
 	}
-	if err != errNoCachedCred {
-		t.Errorf("lỗi = %v, mong thông báo riêng cho trường hợp chưa có ai đăng nhập", err)
+	if !strings.Contains(err.Error(), "quản trị máy trạm") {
+		t.Errorf("câu lỗi không chỉ đường vào bằng tài khoản quản trị máy trạm: %v", err)
+	}
+	if a.baoTri.Load() {
+		t.Error("máy đã vào chế độ bảo trì")
 	}
 }
 
-// Cặp admin/admin cứng trong bản build đã bỏ: máy chưa có ai đăng nhập thì
-// đường vào là tài khoản quản trị máy trạm đặt lúc cài, không phải mật khẩu ai
-// cũng đoán ra.
-func TestCredCache_KhongConTaiKhoanMacDinh(t *testing.T) {
+// Tệp bản cũ để lại (trong image, có băm mật khẩu nhân viên thật) bị xoá khi giao
+// diện khởi động.
+func TestPurgeCredCache_XoaTepCu(t *testing.T) {
 	dungThuMucTam(t)
-	if _, err := verifyCachedStaff("admin", "admin", time.Now()); err == nil {
-		t.Fatal("admin/admin vẫn mở được máy")
+	p := datTepDemGia(t)
+
+	purgeCredCache()
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatalf("tệp vẫn còn: %v", err)
 	}
+	purgeCredCache() // không có tệp cũng không sao
 }

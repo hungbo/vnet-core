@@ -114,10 +114,6 @@ export function GetWindowMode() {
   return window['go']['main']['App']['GetWindowMode']();
 }
 
-export function HasCachedStaff() {
-  return window['go']['main']['App']['HasCachedStaff']();
-}
-
 export function IsLocked() {
   return window['go']['main']['App']['IsLocked']();
 }

@@ -73,8 +73,8 @@ export const useSessionStore = defineStore('session', () => {
 			const data = JSON.parse(result)
 			luotDangNhap++
 
-			// Mất mạng nhưng đúng tài khoản nhân viên đã lưu: máy đã được mở
-			// khoá bên Go rồi. KHÔNG dựng phiên ở đây — không có phiên nào cả.
+			// Tài khoản quản trị máy trạm (kiểm tại máy, không qua máy chủ): máy đã được
+			// mở khoá bên Go rồi. KHÔNG dựng phiên ở đây — không có phiên nào cả.
 			if (data?.offline) return data
 
 			if (data?.access_token) await datDangNhap(data)

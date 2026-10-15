@@ -142,14 +142,12 @@ export function installDevWailsStub() {
 				SetLoggedIn: () => ok(undefined),
 				// Ngoài Wails không có màn khoá native nào đăng nhập hộ trang.
 				CurrentLogin: () => ok(''),
-				HasCachedStaff: () => ok(true),
 				// Một ô cho cả hai loại, đúng như máy chủ làm: tên tài khoản
 				// quyết định đường đi.
-				//   quanly  → nhân viên   · khach → hội viên   · offline → bản lưu
+				//   quanly  → nhân viên   · khach → hội viên
 				//   kythuat → tài khoản quản trị máy trạm (chế độ bảo trì)
 				Login: (u: string, p: string) => {
 					if (p !== '123456') return Promise.reject(new Error('sai tài khoản hoặc mật khẩu'))
-					if (u === 'offline') return ok(JSON.stringify({ offline: true }))
 					if (u === 'kythuat') return ok(JSON.stringify({ offline: true, local_admin: true }))
 					const staff = u === 'quanly'
 					nguoiDangDangNhap = {

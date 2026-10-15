@@ -259,27 +259,22 @@ việc Wails đặt cửa sổ đúng chỗ thì chỉ Windows mới trả lời
    chỉ thấy chuỗi bắt đầu bằng `pbkdf2-sha256$`. Gọi `GET /api/settings/client`
    bằng tài khoản hội viên: **không** được có `local_admin_hash`.
 
-### 7c. Vào bằng tài khoản nhân viên khi mất mạng
+### 7c. Mất mạng: tài khoản nhân viên KHÔNG mở được máy
 
-Đường này tự có, không phải cấu hình: mỗi lần một tài khoản nhân viên đăng nhập
-thành công lúc còn mạng, máy trạm ghi lại tên và băm mật khẩu.
+Bản cũ ghi tên và băm mật khẩu nhân viên vào `%AppData%\VNET\offline-staff.json`
+để mở máy lúc mất mạng. Tệp đó nằm trong thư mục của tài khoản Windows dùng chung
+của khách: khách đọc được băm để dò mật khẩu, và ghi được để tự thêm một "nhân viên"
+rồi rút dây mạng mở máy. Đường đó đã bỏ; lúc mất mạng chỉ tài khoản quản trị máy
+trạm mở được máy.
 
-1. Khi **còn mạng**, bấm "Đăng nhập quản trị" và đăng nhập bằng một tài khoản
-   nhân viên. Phải vào được bình thường.
-2. Đăng xuất, **rút dây mạng**, rồi bấm "Đăng nhập quản trị" với **đúng tài
-   khoản đó**: máy phải mở ra kèm thông báo "Không có mạng — đã mở khoá máy
-   bằng tài khoản lưu sẵn".
-3. Kiểm trang quản trị sau khi có mạng lại: **không được có phiên nào** mở ra
-   trong lúc đó, và không có tiền nào bị trừ.
-4. Vẫn mất mạng, thử **sai mật khẩu**: bị từ chối, máy vẫn khoá, mỗi lần sai
-   chậm khoảng một giây.
-5. Thử một tài khoản **hội viên** (chưa từng đăng nhập kiểu quản trị): phải bị
-   từ chối. Hội viên không bao giờ được lưu — lưu được nghĩa là khách chỉ cần
-   rút dây mạng là tự mở máy.
-6. Đổi mật khẩu tài khoản đó trên máy chủ, đăng nhập **một lần** khi còn mạng,
-   rồi rút mạng: **mật khẩu mới** dùng được, **mật khẩu cũ** không.
-7. Mở `%AppData%\..\Roaming\VNET\offline-staff.json` (Windows) bằng Notepad:
-   chỉ được thấy tên tài khoản và chuỗi băm, **không có mật khẩu**.
+1. Khi **còn mạng**, đăng nhập bằng một tài khoản nhân viên rồi đăng xuất.
+2. **Rút dây mạng**, đăng nhập lại đúng tài khoản đó: phải **bị từ chối** với câu
+   "Không kết nối được máy chủ. Khi mất mạng chỉ tài khoản quản trị máy trạm mở
+   được máy". Máy vẫn khoá.
+3. Vẫn mất mạng, đăng nhập bằng **tài khoản quản trị máy trạm**: máy mở ở chế độ
+   bảo trì, không có phiên, không trừ tiền.
+4. Mở thư mục `%AppData%\VNET`: **không có** `offline-staff.json` (giao diện xoá tệp
+   do bản cũ để lại mỗi lần khởi động).
 
 ### 7d. Không còn tài khoản mặc định
 

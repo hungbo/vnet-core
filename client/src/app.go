@@ -148,6 +148,9 @@ func (a *App) Startup(ctx context.Context) {
 		return
 	}
 
+	// Bản cũ để lại băm mật khẩu nhân viên trong thư mục của khách: xoá.
+	purgeCredCache()
+
 	// Mốc đo khởi động: Wails gọi OnStartup ngay sau Navigate, nên tới đây WebView2 đã
 	// dựng xong và trang bắt đầu nạp. Khúc từ đây tới "DOM sẵn sàng" là phần của trang.
 	log.Printf("[ui] Startup sau %dms (WebView2 đã dựng, trang đang nạp)", time.Since(processStart).Milliseconds())
@@ -330,34 +333,6 @@ func (a *App) unlockLocalAdmin(username string) {
 	a.applyLoginLock(false)
 	a.lockMu.Unlock()
 	wailsruntime.WindowMinimise(a.ctx)
-}
-
-// unlockWithCachedStaff mở máy bằng tài khoản nhân viên đã lưu lúc còn mạng.
-//
-// KHÔNG mở phiên và KHÔNG tính tiền — giống tài khoản quản trị máy trạm. Đây là đường để
-// vào sửa máy hoặc gỡ máy trạm, không phải một cách đăng nhập thay thế.
-func (a *App) unlockWithCachedStaff(username, password string) error {
-	c, err := verifyCachedStaff(username, password, time.Now())
-	if err != nil {
-		time.Sleep(time.Second)
-		log.Printf("[offline] từ chối %q: %v", username, err)
-		return fmt.Errorf("Không kết nối được máy chủ. Khi mất mạng chỉ tài khoản nhân viên từng đăng nhập trên máy này mới mở được máy")
-	}
-
-	log.Printf("[offline] mở khoá bằng tài khoản %q (%s) đã lưu ngày %s",
-		c.Username, c.Role, c.SavedAt.Format("02/01/2006"))
-	a.lockMu.Lock()
-	a.baoTri.Store(true)
-	a.locker.Unlock()
-	a.applyLoginLock(false)
-	a.lockMu.Unlock()
-	wailsruntime.WindowMinimise(a.ctx)
-	return nil
-}
-
-// HasCachedStaff cho màn hình khoá biết máy này có đường vào offline hay chưa.
-func (a *App) HasCachedStaff() bool {
-	return len(loadCredCache()) > 0
 }
 
 func (a *App) GetServerURL() string {
@@ -568,13 +543,11 @@ func (a *App) Login(username, password string) (string, error) {
 
 	data, err := a.doRequest("POST", "/api/auth/client-login", req)
 	if err != nil {
-		// Chỉ rơi sang bản lưu offline khi KHÔNG với tới máy chủ. Sai mật khẩu
-		// trả về lỗi bình thường; nhầm hai cái là sai mật khẩu cũng mở được máy.
+		// Không có đường mở máy offline nào khác ngoài tài khoản quản trị máy trạm,
+		// đã kiểm ở trên (xem credcache.go: vì sao bỏ bản đệm nhân viên).
 		if errors.Is(err, errServerUnreachable) {
-			if err := a.unlockWithCachedStaff(username, password); err != nil {
-				return "", err
-			}
-			return `{"offline":true}`, nil
+			time.Sleep(time.Second)
+			return "", errors.New("Không kết nối được máy chủ. Khi mất mạng chỉ tài khoản quản trị máy trạm mở được máy")
 		}
 		return "", err
 	}
@@ -598,14 +571,6 @@ func (a *App) Login(username, password string) (string, error) {
 	a.role = resp.User.Role
 	if resp.Kind == "staff" {
 		a.role = "admin"
-	}
-
-	if resp.Kind == "staff" {
-		// Lưu để lần sau mất mạng vẫn vào được máy mà sửa hoặc gỡ. Chỉ nhân
-		// viên; hội viên lưu được nghĩa là khách rút dây mạng là tự mở máy.
-		if err := rememberStaff(username, password, "staff"); err != nil {
-			log.Printf("[offline] không lưu được tài khoản nhân viên: %v", err)
-		}
 	}
 
 	a.verified.Store(true)

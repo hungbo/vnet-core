@@ -58,8 +58,6 @@ export function GetVersion():Promise<string>;
 
 export function GetWindowMode():Promise<string>;
 
-export function HasCachedStaff():Promise<boolean>;
-
 export function IsLocked():Promise<boolean>;
 
 export function HidePanel():Promise<void>;
