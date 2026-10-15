@@ -132,6 +132,7 @@ func (h *MachineHandler) BatchCreate(c *gin.Context) {
 	// Lần kiểm thử luôn là 200 kể cả khi vướng — giao diện cần đọc danh sách mã
 	// vướng để vẽ ra, không phải để bắt lỗi.
 	if result.DryRun {
+		middleware.SkipChange(c)
 		response.Success(c, result)
 		return
 	}

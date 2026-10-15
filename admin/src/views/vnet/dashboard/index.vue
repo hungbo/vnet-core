@@ -195,7 +195,9 @@ onBeforeUnmount(() => {
       <template #header>
         <span>{{ $t('vnetPages.dashboard.activeMachines') }}</span>
       </template>
-      <ElTable :data="activeMachines" style="width: 100%">
+      <!-- row-key: tải lại theo thời gian thực đổi thứ tự dòng; khoá theo vị trí thì
+           hộp thoại điều khiển từ xa đang mở của một dòng nhảy sang máy khác. -->
+      <ElTable :data="activeMachines" row-key="machine_id" style="width: 100%">
         <ElTableColumn prop="machine_code" :label="$t('vnetPages.dashboard.machine')" min-width="160" />
         <ElTableColumn :label="$t('vnetPages.common.status')" min-width="120">
           <template #default="{ row }">

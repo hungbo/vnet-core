@@ -482,7 +482,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <!-- row-key: bảng tự tải lại theo thời gian thực; khoá theo vị trí thì hộp thoại
+           điều khiển từ xa đang mở của một dòng nhảy sang máy khác khi thứ tự đổi. -->
+      <ElTable v-loading="loading" :data="data" row-key="id" border stripe style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.machines.remote.title')" width="110" fixed="right">
           <template #default="{ row }">

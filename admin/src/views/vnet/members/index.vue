@@ -468,7 +468,7 @@ async function fetchDetailSessions() {
 // gói sinh tài khoản combo (combos). Số dư đổi ở nơi khác thì member:updated vá
 // tại chỗ ở dưới, không cần tải lại. Đang mở biểu mẫu thì hoãn, đóng mới tải bù.
 const formOpen = computed(() => dialogVisible.value || topupVisible.value || refundVisible.value || giftVisible.value);
-const { resume } = useRealtimeRefresh(['members', 'member-groups', 'combos'], getData, {
+const { resume } = useRealtimeRefresh(['members', 'member-groups', 'combos', 'sessions'], getData, {
   paused: () => formOpen.value
 });
 watch(formOpen, open => {

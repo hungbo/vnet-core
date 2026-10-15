@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -129,7 +130,10 @@ func main() {
 			// Yêu cầu lỗi 500 không phát "<chủ đề>:changed" (middleware chỉ phát khi
 			// thành công), nên trang Nhật ký lỗi phải được báo ở đây. Trừ khi chính
 			// danh sách lỗi hỏng: báo thì trang tải lại, lại hỏng, lại báo — vòng lặp.
-			if in.Location != "GET /api/error-reports" {
+			// Và tối đa một lần mỗi 15 giây: trang nào khác nghe "error-reports" mà
+			// lúc tải lại cũng gặp lỗi 500 thì vòng lặp đó chậm lại thành một nhịp
+			// thưa, không dội máy chủ.
+			if in.Location != "GET /api/error-reports" && thuaBaoLoi.duocBao(time.Now()) {
 				wsHub.Changed("error-reports", nil)
 			}
 		}()
@@ -199,3 +203,20 @@ func main() {
 	}
 	log.Println("Stopped")
 }
+
+// nhipThua cho qua tối đa một lần trong mỗi quãng (an toàn khi gọi từ nhiều goroutine).
+type nhipThua struct {
+	quang time.Duration
+	luc   atomic.Int64 // UnixNano lần cuối cho qua; 0 = chưa lần nào
+}
+
+func (n *nhipThua) duocBao(now time.Time) bool {
+	last := n.luc.Load()
+	if last != 0 && now.Sub(time.Unix(0, last)) < n.quang {
+		return false
+	}
+	return n.luc.CompareAndSwap(last, now.UnixNano())
+}
+
+// thuaBaoLoi: nhịp báo trang quản trị khi máy chủ ghi một lỗi 500.
+var thuaBaoLoi = &nhipThua{quang: 15 * time.Second}

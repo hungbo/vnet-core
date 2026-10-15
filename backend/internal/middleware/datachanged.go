@@ -26,10 +26,14 @@ var changeSkip = map[string]bool{
 	"POST /api/machines/by-code/:code/screenshot": true,
 	"POST /api/machines/by-code/:code/processes":  true,
 	"POST /api/lucky-spin/simulate":               true,
-	"POST /api/orders/:id/print":                  true,
-	"POST /api/orders/:id/print-stations":         true,
-	"POST /api/printers/:id/test":                 true,
-	"POST /api/combos/:id/print":                  true,
+	// Lệnh điều khiển từ xa và đánh thức máy chỉ ghi nhật ký; tắt / khởi động lại
+	// máy thì đóng phiên qua SessionService, nơi tự phát "sessions:changed".
+	"POST /api/machines/:id/remote/:action": true,
+	"POST /api/machines/:id/wake":           true,
+	"POST /api/orders/:id/print":            true,
+	"POST /api/orders/:id/print-stations":   true,
+	"POST /api/printers/:id/test":           true,
+	"POST /api/combos/:id/print":            true,
 }
 
 var changeSkipPrefix = []string{"/api/auth/", "/api/chat/"}
@@ -38,6 +42,16 @@ var changeSkipPrefix = []string{"/api/auth/", "/api/chat/"}
 var changeTopicOverride = map[string]string{
 	"POST /api/machines/by-code/:code/errors":               "error-reports",
 	"POST /api/machines/by-code/:code/blocklist/violations": "website-rules",
+}
+
+// changeSkipKey: handler đặt cờ này khi yêu cầu ghi lần này không đổi gì (xem SkipChange).
+const changeSkipKey = "vnet.change.skip"
+
+// SkipChange báo DataChanged đừng phát cho yêu cầu này: route ghi nhưng lần này
+// không ghi gì — vd. kiểm thử (dry_run) tạo máy hàng loạt, giao diện gọi mỗi lần
+// sửa ô nhập, phát theo nó là mọi trang Máy trạm đang mở tải lại liên tục.
+func SkipChange(c *gin.Context) {
+	c.Set(changeSkipKey, true)
 }
 
 // ChangeTopic trả về chủ đề của một yêu cầu ghi: đoạn đầu của đường dẫn sau
@@ -96,7 +110,7 @@ func DataChanged(notify func(topic string, ev ChangeEvent)) gin.HandlerFunc {
 		c.Next()
 		route := c.FullPath()
 		topic := ChangeTopic(c.Request.Method, route)
-		if topic == "" || c.Writer.Status() >= http.StatusBadRequest {
+		if topic == "" || c.Writer.Status() >= http.StatusBadRequest || c.GetBool(changeSkipKey) {
 			return
 		}
 		notify(topic, ChangeEvent{Method: c.Request.Method, Route: route, ID: c.Param("id")})

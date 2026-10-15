@@ -591,7 +591,7 @@ const { resume } = useRealtimeRefresh(
     getData();
     refreshDetail();
   },
-  { paused: () => checkedRowKeys.value.length > 0 }
+  { events: ['order:new', 'order:updated'], paused: () => checkedRowKeys.value.length > 0 }
 );
 
 watch(

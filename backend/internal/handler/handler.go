@@ -54,13 +54,13 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 	sessionSvc := service.NewSessionService(db, wsHub, auditSvc).WithCurfew(curfewSvc).WithMinCharge()
 	// gameSvc dùng chung với handler Game (main.go chạy chính bản đó): nhịp tim máy trạm
 	// lấy nguồn metadata Riot mặc định của quán từ nó.
-	gameSvc := service.NewGameService(db, cfg.Game)
+	gameSvc := service.NewGameService(db, cfg.Game).WithHub(wsHub)
 	// Một MachineService dùng chung: handler chặn website cũng cần nó để kiểm
 	// khoá máy trạm, dựng hai bản là hai nguồn sự thật cho cùng một thứ.
 	// Dựng SAU sessionSvc vì tắt máy / khởi động lại từ xa phải chốt được phiên.
 	machineSvc := service.NewMachineService(db, wsHub, auditSvc).WithSessions(sessionSvc).WithRiotSource(gameSvc.RiotMetadataSource)
 	return &Handlers{Upload: NewUploadHandler(cfg.Server.UploadDir, cfg.Server.MaxFileSize),
-		Auth:              NewAuthHandler(service.NewAuthService(db, jwtManager, auditSvc).WithCurfew(curfewSvc).WithSessions(sessionSvc)),
+		Auth:              NewAuthHandler(service.NewAuthService(db, jwtManager, auditSvc).WithCurfew(curfewSvc).WithSessions(sessionSvc).WithHub(wsHub)),
 		Route:             NewRouteHandler(service.NewRouteService()),
 		Member:            NewMemberHandler(service.NewMemberService(db, auditSvc).WithHub(wsHub)),
 		Machine:           NewMachineHandler(machineSvc).WithHub(wsHub),
@@ -86,7 +86,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Settings:          NewSettingsHandler(service.NewSettingsService(db, auditSvc)),
 		Audit:             NewAuditHandler(auditSvc),
 		ErrorReport:       NewErrorReportHandler(service.NewErrorReportService(db)),
-		Backup:            NewBackupHandler(service.NewBackupService(db, &cfg.Database, cfg.Server.BackupDir, auditSvc)),
+		Backup:            NewBackupHandler(service.NewBackupService(db, &cfg.Database, cfg.Server.BackupDir, auditSvc).WithHub(wsHub)),
 		Chat:              NewChatHandler(chatSvc),
 		Report:            NewReportHandler(service.NewReportService(db)),
 		SystemManage:      NewSystemManageHandler(service.NewSystemManageService(db, auditSvc)),

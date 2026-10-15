@@ -70,6 +70,7 @@ async function fetchSettings() {
   if (activeTab.value === 'payment') {
     await fetchPaymentMethods();
     await markSaved();
+    resume();
     return;
   }
   loading.value = true;
@@ -100,6 +101,9 @@ async function fetchSettings() {
     loading.value = false;
   }
   await markSaved();
+  // Lúc đang tải, biểu mẫu bị xoá trắng nên trông như "sửa dở": sự kiện tới
+  // đúng lúc đó đã bị hoãn — tải bù, không thì lỡ tới lần thay đổi sau.
+  resume();
 }
 
 // Giá trị trong cột jsonb trở về dạng CHUỖI. ElInputNumber đòi số: đưa chuỗi

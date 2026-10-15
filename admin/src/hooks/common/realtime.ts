@@ -27,6 +27,7 @@ interface RealtimeRefreshOptions {
  * - Tab đang ẩn, hoặc trang đang nằm trong KeepAlive mà không hiện, thì không
  *   tải; tải một lần khi hiện lại.
  * - Mất kết nối WebSocket là có thể đã lỡ sự kiện: nối lại xong thì tải lại.
+ * - Khôi phục bản sao lưu (POST /backups/:id/restore) thì trang nào cũng tải lại.
  */
 export function useRealtimeRefresh(topics: string[], reload: () => unknown, options: RealtimeRefreshOptions = {}) {
   const wsStore = useWebSocketStore();
@@ -55,15 +56,25 @@ export function useRealtimeRefresh(topics: string[], reload: () => unknown, opti
     if (!document.hidden && pending) schedule();
   }
 
+  // Nối lại sau khi rớt mạng thì có thể đã lỡ sự kiện: tải lại. Trừ lần nối ĐẦU
+  // ngay sau khi tải trang — trang vừa tự tải dữ liệu lúc mount, tải thêm là thừa.
+  let mountedAt = 0;
   watch(
     () => wsStore.connected,
     (now, before) => {
-      if (now && before === false) schedule();
+      if (now && before === false && Date.now() - mountedAt > 3000) schedule();
     }
   );
 
+  // Khôi phục bản sao lưu thay CẢ cơ sở dữ liệu: mọi trang đang mở đều phải tải lại.
+  function onBackup(data: any) {
+    if (typeof data?.route === 'string' && data.route.endsWith('/restore')) schedule();
+  }
+
   onMounted(() => {
+    mountedAt = Date.now();
     names.forEach(n => wsStore.on(n, schedule));
+    if (!names.includes('backups:changed')) wsStore.on('backups:changed', onBackup);
     document.addEventListener('visibilitychange', onVisible);
   });
 
@@ -78,6 +89,7 @@ export function useRealtimeRefresh(topics: string[], reload: () => unknown, opti
 
   onBeforeUnmount(() => {
     names.forEach(n => wsStore.off(n, schedule));
+    if (!names.includes('backups:changed')) wsStore.off('backups:changed', onBackup);
     document.removeEventListener('visibilitychange', onVisible);
     if (timer) clearTimeout(timer);
   });

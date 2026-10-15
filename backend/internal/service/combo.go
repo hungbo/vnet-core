@@ -642,6 +642,19 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 	purchase.ActivatedAt = &activatedAt
 	purchase.CurrentSessionID = &session.ID
 
+	// Kích hoạt combo mở phiên và giữ máy mà không qua SessionService.StartSession,
+	// nên tự báo trang quản trị như nó: trang Phiên chơi / Máy trạm / Bảng điều
+	// khiển nghe "sessions" và machine:status.
+	s.hub.Changed("sessions", map[string]interface{}{"id": session.ID, "reason": "started"})
+	s.hub.BroadcastToType(hub.Event{
+		Type: "machine:status",
+		Data: map[string]interface{}{
+			"machine_id":   machine.ID,
+			"machine_code": machine.MachineCode,
+			"status":       "in_use",
+		},
+	}, hub.ClientTypeAdmin)
+
 	s.audit.Log(&LogAuditRequest{
 		Action:     "activate",
 		EntityType: "combo_purchase",

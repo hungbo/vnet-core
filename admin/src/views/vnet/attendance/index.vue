@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import { ElMessage, ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
@@ -64,6 +64,9 @@ async function loadConfig() {
   } catch {
     // Nhóm cài đặt chưa tồn tại là trạng thái lần đầu bình thường, không phải lỗi.
   }
+  // Chụp mốc SAU khi ô nhập đã vẽ: ElInputNumber kẹp/làm tròn giá trị ở nhịp DOM
+  // kế tiếp, chụp trước đó thì trang tưởng đang sửa dở và hoãn tải lại mãi.
+  await nextTick();
   savedCfg = JSON.stringify(cfg.value);
 }
 

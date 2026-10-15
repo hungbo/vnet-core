@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { $t } from '@/locales';
 
 /** Một phương thức ở Cài đặt > Thanh toán (`GET /payment-methods`). */
@@ -39,6 +40,10 @@ const SYSTEM_LABELS: Record<string, App.I18n.I18nKey> = {
 
 export function usePaymentMethods() {
   load();
+  // Danh sách dùng chung cả ứng dụng, nên nhân viên khác bật/tắt hay đổi tên một
+  // phương thức (PUT /settings/payment) thì mọi hộp thoại nhận tiền đang mở phải
+  // thấy ngay — không thì vẫn chọn được phương thức vừa bị tắt.
+  useRealtimeRefresh(['settings'], () => load(true));
 
   /** Các phương thức đang bật — dùng cho ô chọn. */
   const enabledMethods = computed(() => all.value.filter(m => m.enabled));

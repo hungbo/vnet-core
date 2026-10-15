@@ -361,7 +361,7 @@ onBeforeUnmount(() => {
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <ElTable v-loading="loading" :data="data" row-key="id" border stripe style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="200" fixed="right">
           <template #default="{ row }">

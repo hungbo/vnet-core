@@ -172,7 +172,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		// người làm và IP — ghi ở MỘT chỗ thay vì trông vào từng service.
 		staffAudit := service.NewAuditService(db)
 		protected.Use(middleware.StaffActionLog(func(a middleware.StaffAction) {
-			ghiThaoTacNhanVien(staffAudit, a)
+			ghiThaoTacNhanVien(staffAudit, wsHub, a)
 		}))
 		{
 			protected.POST("/upload", middleware.StaffOnly(), middleware.PermissionRequired("upload.file"), h.Upload.Upload)
@@ -596,7 +596,7 @@ var laUUIDRoute = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[
 // ghiThaoTacNhanVien biến một thao tác HTTP thành một dòng audit_logs mà trang
 // "Nhật ký hoạt động" đọc được: action "request", đối tượng là nhóm tài nguyên
 // của route (/api/products/:id → products), mô tả "PUT /api/products/:id → 200".
-func ghiThaoTacNhanVien(audit *service.AuditService, a middleware.StaffAction) {
+func ghiThaoTacNhanVien(audit *service.AuditService, wsHub *hub.Hub, a middleware.StaffAction) {
 	meta := map[string]any{
 		"method":      a.Method,
 		"route":       a.Route,
@@ -624,7 +624,11 @@ func ghiThaoTacNhanVien(audit *service.AuditService, a middleware.StaffAction) {
 		uid := a.UserID
 		req.UserID = &uid
 	}
-	_ = audit.Log(req)
+	if audit.Log(req) == nil {
+		// Trang Nhật ký thao tác: dòng này có cả khi thao tác bị từ chối hay lỗi,
+		// và cho route DataChanged bỏ qua — những lúc không có "<chủ đề>:changed".
+		wsHub.Changed("audit-logs", nil)
+	}
 }
 
 // nhomTaiNguyen: "/api/products/:id/ingredients" → "products".

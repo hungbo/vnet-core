@@ -339,7 +339,7 @@ func TestGhiThaoTacNhanVien(t *testing.T) {
 		WithArgs("request", "products", id, "u-1", "PUT /api/products/:id → 200", sqlmock.AnyArg(), "10.0.0.5").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a1", time.Now()))
 	mock.ExpectCommit()
-	ghiThaoTacNhanVien(audit, middleware.StaffAction{
+	ghiThaoTacNhanVien(audit, nil, middleware.StaffAction{
 		UserID: "u-1", Method: "PUT", Route: "/api/products/:id", Path: "/api/products/" + id,
 		EntityID: id, IP: "10.0.0.5", RequestID: "abc12345", Status: 200,
 		Body: []byte(`{"price":12000}`),
@@ -351,7 +351,7 @@ func TestGhiThaoTacNhanVien(t *testing.T) {
 		WithArgs("request", "settings", nil, "u-1", "PUT /api/settings/:group → 403", sqlmock.AnyArg(), "10.0.0.5").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a2", time.Now()))
 	mock.ExpectCommit()
-	ghiThaoTacNhanVien(audit, middleware.StaffAction{
+	ghiThaoTacNhanVien(audit, nil, middleware.StaffAction{
 		UserID: "u-1", Method: "PUT", Route: "/api/settings/:group", EntityID: "", IP: "10.0.0.5", Status: 403,
 	})
 
