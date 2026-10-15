@@ -30,6 +30,9 @@ type clientPolicy struct {
 	// Tên lối tắt (không đuôi) bị xoá khỏi desktop mọi máy, "Game Menu,Riot Client";
 	// xem shortcuts.go. Rỗng = tính năng tắt. Cũng là chuỗi, vì cùng lý do trên.
 	HiddenShortcuts string `json:"hidden_shortcuts,omitempty"`
+	// Thư mục (ổ đĩa tuyệt đối) chứa bản metadata Riot để chép vào
+	// C:\ProgramData\Riot Games; xem riotmeta.go. Rỗng = tính năng tắt.
+	RiotMetadataSource string `json:"riot_metadata_source,omitempty"`
 	// Màn hình khoá không ai đăng nhập bấy nhiêu phút thì tắt máy; 0 = không.
 	// Mặc định 0: chưa nghe máy chủ nói gì thì không tự tắt máy của ai cả.
 	IdleShutdownMinutes int64 `json:"idle_shutdown_minutes"`
@@ -64,6 +67,7 @@ func normalizePolicy(p clientPolicy) clientPolicy {
 	// Danh sách lối tắt cần xoá quyết định tệp nào bị xoá khỏi desktop của khách:
 	// ép về dạng chuẩn ngay cổng vào chứ không tin thẳng chuỗi nhận về.
 	p.HiddenShortcuts = chuanHoaLoiTat(p.HiddenShortcuts)
+	p.RiotMetadataSource = chuanHoaNguonRiot(p.RiotMetadataSource)
 	// Nửa tài khoản (có tên không băm hoặc ngược lại) là không có tài khoản.
 	if p.LocalAdminUsername == "" || p.LocalAdminHash == "" {
 		p.LocalAdminUsername, p.LocalAdminHash = "", ""
@@ -138,6 +142,9 @@ type uiStatus struct {
 	Member bool `json:"member"` // có hội viên đang đăng nhập
 	Admin  bool `json:"admin"`  // nhân viên đang đăng nhập
 	Maint  bool `json:"maint"`  // chế độ bảo trì (tài khoản quản trị máy trạm, tài khoản nhân viên ngoại tuyến)
+
+	// Các mốc khởi động giao diện đã ghi (bootreport.go); dịch vụ gộp vào báo cáo của nó.
+	Boot *bootGUI `json:"boot,omitempty"`
 }
 
 // svcReply là câu trả lời của dịch vụ nền cho mỗi báo cáo.
