@@ -12007,6 +12007,59 @@ const docTemplate = `{
                 }
             }
         },
+        "service.BootReport": {
+            "type": "object",
+            "properties": {
+                "boot_at": {
+                    "description": "Mốc kernel khởi động, UTC, RFC3339 (= giờ máy trạm − uptime).",
+                    "type": "string"
+                },
+                "client_version": {
+                    "type": "string"
+                },
+                "dom_ready_s": {
+                    "type": "number"
+                },
+                "gui_start_s": {
+                    "type": "number"
+                },
+                "lock_kind": {
+                    "type": "string"
+                },
+                "lock_shown_s": {
+                    "description": "Lúc màn khoá ĐẦU TIÊN hiện ra; lock_kind là loại của nó: \"native\" hoặc \"web\".",
+                    "type": "number"
+                },
+                "logon_s": {
+                    "description": "Lúc dịch vụ nền lấy được phiên người dùng Windows lần đầu.",
+                    "type": "number"
+                },
+                "page": {
+                    "description": "Chuỗi thời gian nạp trang do giao diện tự đo, tối đa 200 ký tự.",
+                    "type": "string"
+                },
+                "prefetch_done_s": {
+                    "description": "Đọc trước ổ đĩa lúc khởi động; bỏ trống cả ba khi bước này bị bỏ qua.",
+                    "type": "number"
+                },
+                "prefetch_mb": {
+                    "type": "number"
+                },
+                "prefetch_ms": {
+                    "type": "number"
+                },
+                "service_start_s": {
+                    "type": "number"
+                },
+                "unlock_s": {
+                    "description": "Lần mở khoá đầu tiên của lần khởi động này.",
+                    "type": "number"
+                },
+                "webview_ready_s": {
+                    "type": "number"
+                }
+            }
+        },
         "service.ByEmployeeRow": {
             "type": "object",
             "properties": {
@@ -13176,6 +13229,14 @@ const docTemplate = `{
         "service.HeartbeatRequest": {
             "type": "object",
             "properties": {
+                "boot_report": {
+                    "description": "Mốc thời gian khởi động máy trạm. Chỉ ghi một dòng [boot] vào log máy\nchủ khi nó đổi — không lưu DB.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/service.BootReport"
+                        }
+                    ]
+                },
                 "cpu_name": {
                     "description": "Cấu hình máy do máy trạm tự khai. Bốn cột này trước đây chỉ nhập tay ở\ntrang quản trị, trong khi máy trạm đọc được chính xác hơn người gõ.\nĐều là tuỳ chọn: gói tin không khai thì giữ nguyên giá trị đang có.",
                     "type": "string"
