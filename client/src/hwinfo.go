@@ -29,8 +29,9 @@ type MachineSpecs struct {
 	Peripherals []string
 }
 
-// readMachineSpecs đo một lần lúc khởi động. Trường nào không đọc được thì để
-// trống, và máy chủ giữ nguyên giá trị đang có thay vì ghi đè bằng số rỗng.
+// readMachineSpecs đo một lần mỗi tiến trình; khi nào đo do lazySpecs (agent.go)
+// quyết. Trường nào không đọc được thì để trống, và máy chủ giữ nguyên giá trị đang
+// có thay vì ghi đè bằng số rỗng.
 func readMachineSpecs() MachineSpecs {
 	var s MachineSpecs
 

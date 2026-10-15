@@ -333,6 +333,7 @@ func launchUIInUserSession() error {
 		// đang dở). Giữ mã lỗi gốc trong câu để nhật ký lần đầu còn cái mà đọc.
 		return fmt.Errorf("%w (WTSQueryUserToken: %v)", errChuaCoPhien, err)
 	}
+	bootRec.coPhienWindows(systemUptime())
 	defer userToken.Close()
 
 	var dup windows.Token

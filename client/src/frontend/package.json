@@ -13,7 +13,6 @@
 		"@fontsource/be-vietnam-pro": "^5.3.0",
 		"@fontsource/chakra-petch": "^5.3.0",
 		"element-plus": "^2.9.1",
-		"jsqr": "^1.4.0",
 		"pinia": "^3.0.4",
 		"vue": "^3.5.13",
 		"vue-advanced-chat": "^2.1.2"

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -40,7 +41,8 @@ type TelemetryPayload struct {
 	Uptime      uint64  `json:"uptime"`
 	Timestamp   string  `json:"timestamp"`
 
-	// Cấu hình máy, đo một lần lúc khởi động rồi gửi kèm mỗi lần báo.
+	// Cấu hình máy, đo một lần khi máy đã chạy specsAfterUptime (lazySpecs); chưa đo
+	// xong thì để trống, máy chủ giữ số cũ. Đo rồi thì gửi kèm mỗi lần báo.
 	// Gửi kèm chứ không gửi một lần duy nhất: gửi một lần thì máy chủ đang tắt
 	// lúc đó là mất luôn, và nâng RAM xong sẽ không có gì cập nhật lại.
 	CPUName   string `json:"cpu_name,omitempty"`
@@ -48,7 +50,7 @@ type TelemetryPayload struct {
 	RAMGB     int    `json:"ram_gb,omitempty"`
 	StorageGB int    `json:"storage_gb,omitempty"`
 	OSInfo    string `json:"os_info,omitempty"`
-	// Thiết bị ngoại vi đang cắm, cũng đo một lần lúc khởi động.
+	// Thiết bị ngoại vi đang cắm, đo cùng lúc đó.
 	Peripherals []string `json:"peripherals,omitempty"`
 
 	// Hai dấu hiệu chỉ DỊCH VỤ NỀN khai (giao diện để nil): tài khoản Windows
@@ -56,6 +58,10 @@ type TelemetryPayload struct {
 	// đã chạy. Hai tiến trình cùng khai là hai bản không khớp nhau đè lên nhau.
 	UserIsAdmin  *bool   `json:"user_is_admin,omitempty"`
 	ExtraNetwork *string `json:"extra_network,omitempty"`
+
+	// Các mốc của lần bật máy này (bootreport.go). Chỉ dịch vụ nền gửi: nó gộp mốc của
+	// cả hai tiến trình, giao diện chỉ có phần của mình.
+	BootReport *bootReport `json:"boot_report,omitempty"`
 }
 
 // runTelemetry báo cáo định kỳ: giữ máy ở trạng thái online, cập nhật nhiệt độ
@@ -74,15 +80,51 @@ func dangNoiDichVu() bool {
 	return t != 0 && time.Since(time.Unix(0, t)) < 10*time.Second
 }
 
+// specsAfterUptime: máy mới bật chưa tới chừng này thì chưa đo cấu hình. Trên Windows
+// đo cấu hình là hai lần chạy PowerShell cộng vài truy vấn WMI, nạp .NET từ ổ đĩa mạng
+// mất vài giây — đúng quãng WebView2 đang dựng màn hình khoá, ở cả dịch vụ nền lẫn giao
+// diện. Lấy đúng mốc của màn che: cả quán bật máy cùng lúc thì màn hình khoá có thể lên
+// sau phút thứ hai. Gói tin thiếu cấu hình thì máy chủ giữ nguyên số cũ, nên mấy nhịp
+// tim đầu không mất gì.
+const specsAfterUptime = curtainMaxUptime
+
+// lazySpecs đo cấu hình máy MỘT lần, ở nền, khi lần đầu cần gửi. Nhịp tim không bao giờ
+// chờ việc đo (hết hạn chờ cộng lại tới 26 giây): chưa xong thì gửi gói không có cấu hình.
+type lazySpecs struct {
+	read func() MachineSpecs
+	once sync.Once
+	v    atomic.Pointer[MachineSpecs]
+}
+
+// get trả cấu hình đã đo xong, hoặc rỗng. start=true thì lần đầu khởi động việc đo.
+func (l *lazySpecs) get(start bool) MachineSpecs {
+	if p := l.v.Load(); p != nil {
+		return *p
+	}
+	if start {
+		l.once.Do(func() {
+			go func() {
+				s := l.read()
+				l.v.Store(&s)
+			}()
+		})
+	}
+	return MachineSpecs{}
+}
+
 func runTelemetry(ctx context.Context, cfg *Config) {
 	// Cấu hình máy đo MỘT lần: trên Windows phải gọi ra ngoài hệ thống mới lấy
 	// được tên GPU, làm việc đó mỗi 15 giây là tự bắn vào chân mình.
-	specs := readMachineSpecs()
-	log.Printf("cấu hình máy: CPU=%q GPU=%q RAM=%dGB Ổ đĩa=%dGB HĐH=%q ngoại vi=%d",
-		specs.CPUName, specs.GPUName, specs.RAMGB, specs.StorageGB, specs.OSInfo, len(specs.Peripherals))
-	// Một dòng để kiểm nhanh trên máy thật: 0 nghĩa là Windows không cung cấp
-	// cảm biến đó cho tiến trình này (máy ảo, driver cũ, bo mạch không báo).
-	log.Printf("nhiệt độ lần đầu: CPU=%.1f°C GPU=%.1f°C", getCPUTemp(), getGPUTemp())
+	specs := &lazySpecs{read: func() MachineSpecs {
+		batDau := time.Now()
+		s := readMachineSpecs()
+		log.Printf("cấu hình máy: CPU=%q GPU=%q RAM=%dGB Ổ đĩa=%dGB HĐH=%q ngoại vi=%d, đo mất %dms",
+			s.CPUName, s.GPUName, s.RAMGB, s.StorageGB, s.OSInfo, len(s.Peripherals), time.Since(batDau).Milliseconds())
+		// Một dòng để kiểm nhanh trên máy thật: 0 nghĩa là Windows không cung cấp
+		// cảm biến đó cho tiến trình này (máy ảo, driver cũ, bo mạch không báo).
+		log.Printf("nhiệt độ lần đầu: CPU=%.1f°C GPU=%.1f°C", getCPUTemp(), getGPUTemp())
+		return s
+	}}
 
 	nics := &nicWatcher{}
 
@@ -102,6 +144,7 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 			if agentSupervisor == nil && dangNoiDichVu() {
 				continue
 			}
+			sp := specs.get(!osIsWindows || systemUptime() >= specsAfterUptime)
 			ip, mac := getNetworkInfo()
 			payload := TelemetryPayload{
 				MachineCode: cfg.MachineCode,
@@ -114,16 +157,17 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 				DiskUsage:   getDiskUsage(),
 				Uptime:      getUptime(),
 				Timestamp:   time.Now().UTC().Format(time.RFC3339),
-				CPUName:     specs.CPUName,
-				GPUName:     specs.GPUName,
-				RAMGB:       specs.RAMGB,
-				StorageGB:   specs.StorageGB,
-				OSInfo:      specs.OSInfo,
-				Peripherals: specs.Peripherals,
+				CPUName:     sp.CPUName,
+				GPUName:     sp.GPUName,
+				RAMGB:       sp.RAMGB,
+				StorageGB:   sp.StorageGB,
+				OSInfo:      sp.OSInfo,
+				Peripherals: sp.Peripherals,
 			}
 			if agentSupervisor != nil {
 				payload.UserIsAdmin = consoleUserIsAdmin()
 				payload.ExtraNetwork = nics.extra(listActiveNICs())
+				payload.BootReport = bootRec.baoCao(time.Now(), systemUptime())
 			}
 			data, err := json.Marshal(payload)
 			if err != nil {

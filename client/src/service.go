@@ -29,6 +29,14 @@ const (
 //
 // Trả về khi ctx bị huỷ.
 func runAgent(ctx context.Context) {
+	// Mốc dịch vụ bắt đầu, và báo cáo khởi động nạp lại nếu dịch vụ vừa được bật lại
+	// giữa lần bật máy này (bootreport.go). Trước lượt đọc trước: lượt đó cũng ghi
+	// vào báo cáo. Chỉ đọc một tệp nhỏ cạnh .exe.
+	bootRec.dichVuBatDau(bootFilePath(), time.Now(), systemUptime())
+	// Việc đầu tiên: đọc trước tệp giao diện sắp cần, trong vài giây trước khi
+	// Windows tự đăng nhập và dịch vụ bật giao diện (prefetch.go).
+	go runBootPrefetch(ctx)
+
 	cfg := LoadConfig()
 	log.Printf("[agent] máy %s → %s", cfg.MachineCode, cfg.ServerURL)
 
@@ -49,6 +57,8 @@ func runAgent(ctx context.Context) {
 	go superviseUI(ctx, agentSupervisor)
 	// Lối tắt VNET trên desktop và xoá lối tắt rác theo chính sách (shortcuts.go).
 	go runShortcutKeeper(ctx)
+	// Chép metadata Riot từ Game Disk vào ProgramData (riotmeta.go).
+	go runRiotMetaKeeper(ctx)
 	if osIsWindows {
 		go runAutoUpdate(ctx, cfg)
 	}

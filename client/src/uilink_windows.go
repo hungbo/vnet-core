@@ -91,6 +91,9 @@ func serveUIPipe(h windows.Handle, sup *uiSupervisor) {
 		if json.Unmarshal(buf[:n], &st) != nil {
 			return
 		}
+		if st.Boot != nil {
+			bootRec.gopGiaoDien(*st.Boot)
+		}
 		now := time.Now()
 		sup.noteStatus(now, st)
 		pol := currentPolicy()
@@ -142,7 +145,10 @@ func runUILinkClient(ctx context.Context, a *App) {
 func uiLinkLoop(ctx context.Context, h windows.Handle, a *App) {
 	buf := make([]byte, 4096)
 	for ctx.Err() == nil {
-		out, _ := json.Marshal(a.linkStatus())
+		st := a.linkStatus()
+		boot := bootRec.phanGiaoDien()
+		st.Boot = &boot
+		out, _ := json.Marshal(st)
 		var n uint32
 		if err := windows.WriteFile(h, out, &n, nil); err != nil {
 			return

@@ -23,8 +23,8 @@ func windowsSystemDrive() string {
 // readGPUName hỏi WMI qua PowerShell.
 //
 // gopsutil không có API nào cho GPU, và đây là thứ duy nhất trong cả gói cấu
-// hình phải gọi ra ngoài tiến trình — nên nó chỉ được chạy MỘT lần lúc khởi
-// động, không phải mỗi lần báo cáo.
+// hình phải gọi ra ngoài tiến trình — nên nó chỉ được chạy MỘT lần mỗi tiến
+// trình, không phải mỗi lần báo cáo.
 //
 // Máy hai card (đồ hoạ tích hợp + card rời) trả về nhiều dòng; lấy dòng cuối
 // vì card rời thường được liệt kê sau, và đó mới là card người ta quan tâm.
@@ -75,7 +75,7 @@ var peripheralLabels = map[string]string{
 	"sound":    "Âm thanh",
 }
 
-// readPeripherals chạy MỘT lần lúc khởi động, cùng lý do với readGPUName.
+// readPeripherals chạy MỘT lần mỗi tiến trình, cùng lý do với readGPUName.
 //
 // Windows liệt kê một con chuột USB thành hai ba mục HID giống hệt nhau, nên
 // trùng tên thì chỉ giữ một. Trần 20 mục: đủ cho máy nhiều màn hình, và không
