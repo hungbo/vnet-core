@@ -1,6 +1,7 @@
 <script setup lang="tsx">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { fetchBatchDeleteRole, fetchDeleteRole, fetchGetRoleList } from '@/service/api';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { $t } from '@/locales';
 import RoleOperateDrawer from './modules/role-operate-drawer.vue';
@@ -67,6 +68,19 @@ const {
   onDeleted
   // closeDrawer
 } = useTableOperate(data, 'id', getData);
+
+// Vai trò chỉ đổi qua /systemManage/*. Như trang Người dùng: đang tick chọn dòng
+// thì hoãn, vì nạp lại bảng xoá mất lựa chọn.
+const { resume } = useRealtimeRefresh(['systemManage'], getData, {
+  paused: () => checkedRowKeys.value.length > 0
+});
+
+watch(
+  () => checkedRowKeys.value.length,
+  n => {
+    if (!n) resume();
+  }
+);
 
 async function handleBatchDelete() {
   if (!checkedRowKeys.value.length) return;

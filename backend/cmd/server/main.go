@@ -124,6 +124,13 @@ func main() {
 		go func() {
 			if err := errReports.Record(in); err != nil {
 				log.Printf("[error-report] không ghi được lỗi id=%s: %v", in.RequestID, err)
+				return
+			}
+			// Yêu cầu lỗi 500 không phát "<chủ đề>:changed" (middleware chỉ phát khi
+			// thành công), nên trang Nhật ký lỗi phải được báo ở đây. Trừ khi chính
+			// danh sách lỗi hỏng: báo thì trang tải lại, lại hỏng, lại báo — vòng lặp.
+			if in.Location != "GET /api/error-reports" {
+				wsHub.Changed("error-reports", nil)
 			}
 		}()
 	}))

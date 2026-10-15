@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
 
@@ -106,6 +107,9 @@ async function handleDelete(row: any) {
 }
 
 onMounted(load);
+// Bản cập nhật chỉ đổi qua /app-updates. Tải lại chỉ thay bảng, không đụng
+// biểu mẫu trong hộp thoại phát hành, nên không cần hoãn khi hộp thoại mở.
+useRealtimeRefresh(['app-updates'], load);
 </script>
 
 <template>

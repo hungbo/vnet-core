@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vnet/core/internal/config"
+	"github.com/vnet/core/internal/hub"
 
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
@@ -22,6 +23,7 @@ type BackupService struct {
 	cfg   *config.DatabaseConfig
 	dir   string
 	audit *AuditService
+	hub   *hub.Hub
 }
 
 // NewBackupService needs the database settings because pg_dump is a separate
@@ -31,6 +33,14 @@ func NewBackupService(db *gorm.DB, cfg *config.DatabaseConfig, dir string, audit
 		dir = "backups"
 	}
 	return &BackupService{db: db, cfg: cfg, dir: dir, audit: audit}
+}
+
+// WithHub để báo trang Sao lưu khi pg_dump chạy nền xong. Yêu cầu tạo đã trả
+// về từ lúc bản sao lưu còn "running", nên middleware DataChanged không biết
+// lúc nó thành "completed" hay "failed".
+func (s *BackupService) WithHub(h *hub.Hub) *BackupService {
+	s.hub = h
+	return s
 }
 
 type CreateBackupRequest struct {
@@ -188,6 +198,9 @@ func (s *BackupService) Delete(id string) error {
 }
 
 func (s *BackupService) runPgDump(backup *model.BackupLog) {
+	// Chạy sau mọi lần Save bên dưới, kể cả nhánh hỏng sớm.
+	defer s.hub.Changed("backups", map[string]interface{}{"id": backup.ID})
+
 	now := time.Now()
 
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {

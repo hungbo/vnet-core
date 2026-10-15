@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
@@ -187,6 +188,16 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
         return [];
     }
   }
+});
+
+// Báo cáo đọc đơn hàng (orders), sổ ví hội viên (nạp/hoàn ở members, mua gói ở
+// combos), phiên đã kết thúc (sessions, hay tắt máy từ xa ở machines) và tên ở
+// members/machines/promotions/systemManage. Phiên do tác vụ nền đóng (hết giờ,
+// hết tiền, máy mất tín hiệu) không qua HTTP nhưng vẫn phát session:ended. Gộp
+// 2 giây để một loạt thao tác chỉ chạy truy vấn tổng hợp một lần.
+useRealtimeRefresh(['orders', 'members', 'combos', 'sessions', 'machines', 'promotions', 'systemManage'], getData, {
+  events: ['session:ended'],
+  delay: 2000
 });
 
 function onTabChange() {

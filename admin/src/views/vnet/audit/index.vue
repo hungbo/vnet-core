@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -104,6 +105,53 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
   ]
 });
 
+// Mọi thao tác ghi của nhân viên đều để lại một dòng nhật ký (StaffActionLog),
+// nên trang nghe MỌI chủ đề ghi của API — một cụm thao tác gộp lại thành một
+// lần tải sau 3 giây. "audit-logs": dòng ghi ngoài các yêu cầu ghi thành công
+// (đăng nhập trang quản trị); các sự kiện riêng: việc tác vụ nền làm và có ghi
+// nhật ký. Nhịp tim máy trạm cũng ghi nhật ký mỗi 15 giây mỗi máy nhưng cố ý
+// không làm trang tải lại.
+const AUDITED_TOPICS = [
+  'members',
+  'member-groups',
+  'machines',
+  'machine-groups',
+  'machine-assets',
+  'sessions',
+  'combos',
+  'bookings',
+  'promotions',
+  'lucky-spin',
+  'curfew',
+  'categories',
+  'products',
+  'orders',
+  'games',
+  'app-updates',
+  'website-rules',
+  'machine-prices',
+  'time-pricing',
+  'feedback',
+  'attendance',
+  'inventory-counts',
+  'printers',
+  'stock-transactions',
+  'suppliers',
+  'shifts',
+  'settings',
+  'error-reports',
+  'backups',
+  'notifications',
+  'admin-notifications',
+  'systemManage',
+  'audit-logs'
+];
+
+useRealtimeRefresh(AUDITED_TOPICS, getData, {
+  events: ['session:ended', 'curfew:enforced', 'machine:alert'],
+  delay: 3000
+});
+
 function fetchData() {
   getData();
 }
@@ -154,7 +202,8 @@ function fetchData() {
           </TableHeaderOperation>
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <!-- row-key: dòng đang mở xem chi tiết vẫn mở sau mỗi lần tự tải lại. -->
+      <ElTable v-loading="loading" :data="data" row-key="id" style="width: 100%">
         <ElTableColumn type="expand">
           <template #default="{ row }">
             <pre

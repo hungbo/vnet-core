@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { nextTick, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { type PaymentMethod, usePaymentMethods } from '@/hooks/business/payment-methods';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { moneyInput } from '@/utils/money';
 
 const { t: $t } = useI18n();
@@ -21,6 +22,21 @@ const presets = ref<number[]>([]);
 // Tab "Thanh toán" đọc qua GET /payment-methods thay vì /settings/payment: API
 // đó đã điền sẵn danh sách mặc định khi quán chưa lưu lần nào.
 const paymentMethods = ref<PaymentMethod[]>([]);
+
+// Biểu mẫu đúng như lúc vừa nạp từ máy chủ. Khác đi là người dùng đang sửa dở:
+// tải lại vì một thay đổi ở nơi khác lúc đó sẽ xoá mất những gì họ vừa gõ.
+let savedForm = '';
+
+function formSnapshot() {
+  return JSON.stringify([settings, presets.value, paymentMethods.value]);
+}
+
+async function markSaved() {
+  // Đợi các ô nhập chuẩn hoá giá trị vừa nạp (ElInputNumber kẹp về min/max)
+  // để chính việc đó không bị tính là sửa dở.
+  await nextTick();
+  savedForm = formSnapshot();
+}
 
 async function fetchPaymentMethods() {
   loading.value = true;
@@ -53,6 +69,7 @@ function parsePresets(raw: unknown): number[] {
 async function fetchSettings() {
   if (activeTab.value === 'payment') {
     await fetchPaymentMethods();
+    await markSaved();
     return;
   }
   loading.value = true;
@@ -82,6 +99,7 @@ async function fetchSettings() {
   } finally {
     loading.value = false;
   }
+  await markSaved();
 }
 
 // Giá trị trong cột jsonb trở về dạng CHUỖI. ElInputNumber đòi số: đưa chuỗi
@@ -136,6 +154,13 @@ function removePreset(idx: number) {
   presets.value.splice(idx, 1);
 }
 
+// Cài đặt chỉ đổi qua PUT /settings/:group (kể cả phương thức thanh toán, nhóm
+// "payment"). Sự kiện không nói nhóm nào nên tải lại tab đang mở, trừ lúc đang
+// sửa dở hay đang lưu.
+const { resume } = useRealtimeRefresh(['settings'], fetchSettings, {
+  paused: () => saving.value || formSnapshot() !== savedForm
+});
+
 async function handleSave() {
   saving.value = true;
   let body: Record<string, any> = { ...settings };
@@ -157,10 +182,15 @@ async function handleSave() {
       await fetchPaymentMethods();
       await reloadPaymentMethods();
     }
+    // Biểu mẫu giờ đã khớp với máy chủ, không còn là "sửa dở".
+    await markSaved();
   } catch (e: any) {
     ElMessage.error(e.message || $t('vnetPages.settings.messages.saveError'));
   } finally {
     saving.value = false;
+    // Sự kiện tới trong lúc lưu (của chính lần lưu này hay của ai khác) đã bị
+    // hoãn: tải bù.
+    resume();
   }
 }
 

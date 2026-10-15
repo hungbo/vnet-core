@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/jwt"
 	"github.com/vnet/core/pkg/utils"
@@ -19,6 +20,7 @@ type AuthService struct {
 	audit      *AuditService
 	curfew     *CurfewService
 	sessions   *SessionService
+	hub        *hub.Hub
 }
 
 func NewAuthService(db *gorm.DB, jwtManager *jwt.Manager, audit *AuditService) *AuthService {
@@ -37,6 +39,14 @@ func (s *AuthService) WithCurfew(c *CurfewService) *AuthService {
 // phiên, nếu không khách ngồi máy mà không có gì tính tiền.
 func (s *AuthService) WithSessions(sess *SessionService) *AuthService {
 	s.sessions = sess
+	return s
+}
+
+// WithHub để báo trang quản trị về những gì một lần đăng nhập ghi xuống: /api/auth/*
+// không đi qua middleware DataChanged (đăng nhập không phải thao tác trên dữ
+// liệu của quán), nhưng vẫn để lại "Đăng nhập lần cuối" và dòng nhật ký.
+func (s *AuthService) WithHub(h *hub.Hub) *AuthService {
+	s.hub = h
 	return s
 }
 
@@ -126,6 +136,8 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 	}
 
 	s.db.Model(&user).Update("last_login_at", time.Now())
+	// Cột "Đăng nhập lần cuối" của trang Người dùng.
+	s.hub.Changed("systemManage", nil)
 
 	return &LoginResponse{
 		AccessToken:  accessToken,
@@ -173,7 +185,9 @@ func (s *AuthService) LogLogin(username, userID, ip string, loginErr error) {
 		req.Description = "Đăng nhập thất bại: " + username
 		meta["reason"] = loginErr.Error()
 	}
-	_ = s.audit.Log(req)
+	if s.audit.Log(req) == nil {
+		s.hub.Changed("audit-logs", nil)
+	}
 }
 
 func (s *AuthService) QRLogin(req *QRLoginRequest) (*LoginResponse, error) {

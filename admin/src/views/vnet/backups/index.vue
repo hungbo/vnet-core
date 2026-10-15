@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -82,6 +83,10 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
     }
   ]
 });
+
+// Tạo/phục hồi/xoá đi qua /backups; bản sao lưu chạy nền xong ("running" →
+// "completed"/"failed") thì BackupService tự phát "backups:changed".
+useRealtimeRefresh(['backups'], getData);
 
 async function handleCreateBackup() {
   try {

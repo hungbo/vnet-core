@@ -1,8 +1,9 @@
 <script setup lang="tsx">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { enableStatusRecord, userGenderRecord } from '@/constants/business';
 import { fetchBatchDeleteUser, fetchDeleteUser, fetchGetUserList } from '@/service/api';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { $t } from '@/locales';
 import UserOperateDrawer from './modules/user-operate-drawer.vue';
@@ -130,6 +131,21 @@ const {
   onDeleted
   // closeDrawer
 } = useTableOperate(data, 'id', getData);
+
+// Người dùng đổi qua /systemManage/* và mỗi lần đăng nhập (cột "Đăng nhập lần
+// cuối" — AuthService tự phát vì /api/auth/* không qua middleware). Đang tick
+// chọn dòng để xoá hàng loạt thì hoãn: nạp lại bảng xoá mất lựa chọn. Ngăn kéo
+// sửa giữ bản sao riêng của dòng nên không cần hoãn.
+const { resume } = useRealtimeRefresh(['systemManage'], getData, {
+  paused: () => checkedRowKeys.value.length > 0
+});
+
+watch(
+  () => checkedRowKeys.value.length,
+  n => {
+    if (!n) resume();
+  }
+);
 
 async function handleBatchDelete() {
   if (!checkedRowKeys.value.length) return;

@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -62,6 +63,12 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
   ]
 });
 
+// Lỗi tới từ ba nơi: trang quản trị (POST /error-reports), máy trạm (POST
+// /machines/by-code/:code/errors — middleware gắn chủ đề "error-reports") và
+// chính máy chủ (lỗi 500, main.go tự phát). Bảng có row-key nên dòng đang mở
+// xem chi tiết vẫn mở sau khi tải lại.
+useRealtimeRefresh(['error-reports'], getData);
+
 async function resolve(row: any) {
   try {
     await client.put(`/error-reports/${row.id}/resolve`);
@@ -113,7 +120,7 @@ async function resolve(row: any) {
           </TableHeaderOperation>
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <ElTable v-loading="loading" :data="data" row-key="id" style="width: 100%">
         <ElTableColumn type="expand">
           <template #default="{ row }">
             <div class="px-12px text-12px leading-20px">

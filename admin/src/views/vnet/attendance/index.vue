@@ -4,6 +4,7 @@ import { ElMessage, ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { moneyInput } from '@/utils/money';
 
 const { t: $t } = useI18n();
@@ -49,6 +50,8 @@ async function load() {
 
 const cfg = ref({ daily_bonus: 0, streak_bonus: 0, streak_every: 7 });
 const savingCfg = ref(false);
+// Cấu hình đúng như lúc vừa nạp; khác đi là đang sửa dở, chưa được đè.
+let savedCfg = JSON.stringify(cfg.value);
 
 async function loadConfig() {
   try {
@@ -61,7 +64,15 @@ async function loadConfig() {
   } catch {
     // Nhóm cài đặt chưa tồn tại là trạng thái lần đầu bình thường, không phải lỗi.
   }
+  savedCfg = JSON.stringify(cfg.value);
 }
+
+// Điểm danh chỉ ghi qua POST /attendance/checkin; tên hội viên lấy từ bảng
+// members. Cấu hình thưởng là nhóm cài đặt "attendance" (PUT /settings/:group).
+useRealtimeRefresh(['attendance', 'members'], load);
+const { resume: resumeConfig } = useRealtimeRefresh(['settings'], loadConfig, {
+  paused: () => savingCfg.value || JSON.stringify(cfg.value) !== savedCfg
+});
 
 async function saveConfig() {
   savingCfg.value = true;
@@ -71,6 +82,7 @@ async function saveConfig() {
       streak_bonus: String(cfg.value.streak_bonus),
       streak_every: String(cfg.value.streak_every)
     });
+    savedCfg = JSON.stringify(cfg.value);
     ElNotification({
       type: 'success',
       title: $t('vnetPages.common.success'),
@@ -80,6 +92,8 @@ async function saveConfig() {
     ElMessage.error(e?.message || $t('vnetPages.common.error'));
   } finally {
     savingCfg.value = false;
+    // Sự kiện tới trong lúc lưu đã bị hoãn: tải bù.
+    resumeConfig();
   }
 }
 
