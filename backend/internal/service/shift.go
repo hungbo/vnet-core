@@ -348,6 +348,7 @@ func (s *ShiftService) CloseShift(id string, req *CloseShiftRequest, actor Shift
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			panic(r)
 		}
 	}()
 
@@ -444,6 +445,7 @@ func (s *ShiftService) Handover(shiftID string, req *HandoverRequest, actor Shif
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			panic(r)
 		}
 	}()
 

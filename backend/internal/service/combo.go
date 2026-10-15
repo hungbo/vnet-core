@@ -437,6 +437,7 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 	defer func() {
 		if r := recover(); r != nil {
 			payTx.Rollback()
+			panic(r)
 		}
 	}()
 
@@ -550,6 +551,7 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			panic(r)
 		}
 	}()
 

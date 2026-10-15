@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vnet/core/pkg/pagination"
+	"gorm.io/gorm"
 )
 
 // Gửi lại đúng một khoá idempotency phải bị từ chối, và phải bị từ chối trước
@@ -35,6 +36,25 @@ func TestMemberService_Topup_RejectsDuplicateIdempotencyKey(t *testing.T) {
 	require.ErrorIs(t, err, ErrDuplicateRequest)
 	// Không có SELECT ... FOR UPDATE trên members, không có INSERT
 	// member_transactions: mọi kỳ vọng đã khai đều khớp và không có gì khác chạy.
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Panic giữa transaction phải rút lại VÀ ném tiếp. Trước đây recover() nuốt nó
+// và Topup trả (nil, nil) — handler báo "nạp thành công" với dữ liệu rỗng, log
+// không có dòng nào. Ném tiếp thì middleware.Recovery ghi stack + mã lỗi.
+func TestMemberService_Topup_PanicInTransactionRollsBackAndPropagates(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMemberService(db, NewAuditService(db))
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register("test:panic", func(*gorm.DB) {
+		panic("boom")
+	}))
+
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
+	assert.PanicsWithValue(t, "boom", func() {
+		_, _ = svc.Topup("mem-1", &TopupRequest{Amount: 100000, PaymentMethod: "cash"}, "user-1")
+	})
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

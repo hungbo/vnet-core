@@ -453,6 +453,7 @@ func (s *BookingService) Create(req *CreateBookingRequest, userID string) (*Book
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			panic(r)
 		}
 	}()
 
@@ -644,6 +645,7 @@ func (s *BookingService) Update(id string, req *UpdateBookingRequest, userID str
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			panic(r)
 		}
 	}()
 

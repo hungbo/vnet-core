@@ -602,6 +602,7 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			panic(r)
 		}
 	}()
 
@@ -696,6 +697,7 @@ func (s *MemberService) Refund(id string, req *RefundRequest, userID string) (*M
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			panic(r)
 		}
 	}()
 

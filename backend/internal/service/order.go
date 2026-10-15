@@ -1594,6 +1594,7 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 	defer func() {
 		if r := recover(); r != nil {
 			tx.Rollback()
+			panic(r)
 		}
 	}()
 
