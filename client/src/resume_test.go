@@ -92,6 +92,36 @@ func TestResume_QuaDemKhongRaLenhVaDemLaiTuLucThuc(t *testing.T) {
 	}
 }
 
+// Cloud Update cho máy ngủ ngay khi vào tới desktop, lúc giao diện đang dựng
+// WebView2. Thử thật trên MAY1: dựng dở qua giấc ngủ thì không bao giờ xong, nên
+// lúc thức bật lại giao diện ngay chứ không đợi hết ân hạn khởi động.
+func TestResume_GiaoDienKhoiDongDoThiBatLaiNgay(t *testing.T) {
+	pol := defaultClientPolicy()
+	s := newUISupervisor(t0)
+	s.noteUIRunning(sec(37), true) // giao diện vừa bật, máy ngủ ngay sau đó
+	s.noteResume(sec(38))
+	s.noteUIRunning(sec(38), true)
+	if a := s.decide(sec(38), pol, false); a != actRestartUI {
+		t.Fatalf("giao diện chưa báo cáo lần nào trước lúc ngủ: nhận %v, mong bật lại ngay", a)
+	}
+	if a := s.decide(sec(40), pol, false); a != actNone {
+		t.Fatalf("giao diện mới vừa bật lại: nhận %v", a)
+	}
+}
+
+// Giao diện đã sẵn sàng trước lúc ngủ thì giấc ngủ không làm nó bị bật lại.
+func TestResume_GiaoDienDaSanSangThiKhongBatLai(t *testing.T) {
+	pol := defaultClientPolicy()
+	s := newUISupervisor(t0)
+	s.noteUIRunning(sec(37), true)
+	s.noteStatus(sec(45), uiStatus{Locked: true})
+	s.noteResume(sec(46))
+	s.noteUIRunning(sec(46), true)
+	if a := s.decide(sec(46), pol, false); a != actNone {
+		t.Fatalf("giao diện đã sẵn sàng trước lúc ngủ: nhận %v", a)
+	}
+}
+
 // Hội viên còn đăng nhập lúc máy ngủ: khoá cho tới khi máy chủ trả lời lại, để
 // giao diện hỏi lại phiên trước khi người bấm nút dùng được desktop. Giao diện
 // chỉ hỏi offlineLock mỗi 2 giây, nên khoá phải tới tay nó ít nhất một lần dù

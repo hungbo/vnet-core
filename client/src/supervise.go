@@ -220,6 +220,12 @@ func (s *uiSupervisor) noteServerOK(now time.Time) {
 //     khoá không ai đăng nhập thì giao diện bỏ qua khoá ngoại tuyến.
 //   - Đếm lại "không ai đăng nhập" từ lúc thức: có người vừa bấm nút nguồn, cho
 //     họ đủ thời gian đăng nhập chứ không chỉ phần còn lại từ trước lúc ngủ.
+//   - Giao diện chưa báo cáo lần nào thì bật lại NGAY. Cloud Update cho máy ngủ
+//     ngay khi vào tới desktop, tức đúng lúc giao diện đang dựng WebView2. Thử
+//     thật trên MAY1 (15/10): WebView2 dựng dở qua giấc ngủ thì không bao giờ
+//     xong — giao diện đứng ở màn khoá native, hết 30 giây ân hạn mới bị bật lại,
+//     đúng lúc khách đang gõ. Bật lại ngay thì vài giây sau khi bấm nút đã có
+//     màn khoá đầy đủ.
 func (s *uiSupervisor) noteResume(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -227,6 +233,9 @@ func (s *uiSupervisor) noteResume(now time.Time) {
 	s.khoaBaoLuc = time.Time{}
 	if !s.idleSince.IsZero() {
 		s.idleSince = now
+	}
+	if !s.uiSince.IsZero() && s.lastStatusAt.IsZero() {
+		s.uiSince = now.Add(-uiStartGrace - time.Second)
 	}
 }
 
