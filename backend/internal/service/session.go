@@ -1027,6 +1027,11 @@ func (s *SessionService) EndSessionsStaleAfterReboot(machineID string) (int, err
 //
 // KHÔNG đụng máy vừa reboot: máy đó đang báo cáo lại nên last_heartbeat mới
 // tinh, không rơi vào diện này; lớp reboot lo nó.
+//
+// Chỉ đóng phiên đã mở TRƯỚC mốc timeout: phiên mở sau đó là có người vừa đăng
+// nhập trên chính máy này, tức máy đang sống. Máy thức dậy từ Lightning Boot
+// (ngủ S3 cả đêm, last_heartbeat cũ hàng giờ) mà khách đăng nhập trước nhịp tim
+// đầu tiên thì không có điều kiện này, phiên vừa mở bị đóng ngay.
 func (s *SessionService) EndSessionsOnOfflineMachines(timeout time.Duration) (int, error) {
 	cutoff := utils.VietnamTime().Add(-timeout)
 
@@ -1038,8 +1043,8 @@ func (s *SessionService) EndSessionsOnOfflineMachines(timeout time.Duration) (in
 	err := s.db.Model(&model.MachineSession{}).
 		Select("machine_sessions.id AS session_id, machines.last_heartbeat AS last_heartbeat").
 		Joins("JOIN machines ON machines.id = machine_sessions.machine_id").
-		Where("machine_sessions.is_active = ? AND machines.last_heartbeat IS NOT NULL AND machines.last_heartbeat < ?",
-			true, cutoff).
+		Where("machine_sessions.is_active = ? AND machines.last_heartbeat IS NOT NULL AND machines.last_heartbeat < ? AND machine_sessions.started_at < ?",
+			true, cutoff, cutoff).
 		Scan(&rows).Error
 	if err != nil {
 		return 0, err
