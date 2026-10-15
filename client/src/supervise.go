@@ -36,10 +36,14 @@ type clientPolicy struct {
 	// Màn hình khoá không ai đăng nhập bấy nhiêu phút thì tắt máy; 0 = không.
 	// Mặc định 0: chưa nghe máy chủ nói gì thì không tự tắt máy của ai cả.
 	IdleShutdownMinutes int64 `json:"idle_shutdown_minutes"`
+	// Hết giờ rảnh ở trên thì làm gì: "shutdown" (tắt máy) hoặc "standby" — máy
+	// chưa ai đăng nhập từ lúc bật thì cho ngủ chờ, đã có người dùng thì khởi động
+	// lại cho sạch (decide, luật 4). Máy chủ cũ không gửi trường này: tắt máy.
+	IdleAction string `json:"idle_action"`
 }
 
 func defaultClientPolicy() clientPolicy {
-	return clientPolicy{TamperAction: "restart", OfflineLockSeconds: 60, OfflineRebootSeconds: 300}
+	return clientPolicy{TamperAction: "restart", OfflineLockSeconds: 60, OfflineRebootSeconds: 300, IdleAction: "shutdown"}
 }
 
 // normalizePolicy ép chính sách về khoảng hợp lệ, cùng luật với máy chủ. Máy
@@ -63,6 +67,9 @@ func normalizePolicy(p clientPolicy) clientPolicy {
 	}
 	if p.IdleShutdownMinutes > 1440 {
 		p.IdleShutdownMinutes = 1440
+	}
+	if p.IdleAction != "standby" {
+		p.IdleAction = "shutdown"
 	}
 	// Danh sách lối tắt cần xoá quyết định tệp nào bị xoá khỏi desktop của khách:
 	// ép về dạng chuẩn ngay cổng vào chứ không tin thẳng chuỗi nhận về.
@@ -160,6 +167,8 @@ const (
 	actRestartUI
 	actReboot
 	actShutdown
+	actSleep       // ngủ chờ (S3): máy chưa ai dùng từ lúc bật
+	actIdleRestart // khởi động lại cho sạch rồi mới ngủ chờ: máy đã có người dùng
 )
 
 const (
@@ -191,6 +200,10 @@ type uiSupervisor struct {
 	lockedSinceEnd bool
 
 	idleSince time.Time // màn hình khoá không ai đăng nhập từ lúc này; zero = đang có người
+	// daDung: từ lúc bật máy đã có người đăng nhập (hội viên, nhân viên hay bảo
+	// trì). Máy như vậy còn dấu vết của người trước — tài khoản trình duyệt, game
+	// đang mở — nên không được cho ngủ chờ, phải khởi động lại cho sạch.
+	daDung bool
 
 	restarts  []time.Time
 	rebooting bool
@@ -239,11 +252,17 @@ func (s *uiSupervisor) noteResume(now time.Time) {
 	}
 }
 
-func (s *uiSupervisor) noteStatus(now time.Time, st uiStatus) {
+// noteStatus ghi báo cáo của giao diện. Trả về true đúng lần đầu thấy có người
+// đăng nhập kể từ lúc bật máy, để bên gọi ghi dấu ra đĩa (ghiDaDung).
+func (s *uiSupervisor) noteStatus(now time.Time, st uiStatus) (moiDung bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.lastStatusAt = now
 	s.status = st
+	if (st.Member || st.Admin || st.Maint) && !s.daDung {
+		s.daDung = true
+		moiDung = true
+	}
 	if st.Locked && !s.sessionEndedAt.IsZero() {
 		s.lockedSinceEnd = true
 	}
@@ -254,6 +273,15 @@ func (s *uiSupervisor) noteStatus(now time.Time, st uiStatus) {
 	} else {
 		s.idleSince = time.Time{}
 	}
+	return moiDung
+}
+
+// danhDauDaDung: lần bật máy này đã có người dùng — dịch vụ nền vừa khởi động lại
+// giữa chừng và đọc được dấu đã ghi, hoặc không biết chắc (mayDaDung).
+func (s *uiSupervisor) danhDauDaDung() {
+	s.mu.Lock()
+	s.daDung = true
+	s.mu.Unlock()
 }
 
 func (s *uiSupervisor) noteSessionEnded(now time.Time) {
@@ -269,6 +297,12 @@ func (s *uiSupervisor) noteUIRunning(now time.Time, running bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !running {
+		// Giao diện mất đi mà bộ giám sát không bảo nó tắt (restartOrRebootLocked xoá
+		// uiSince trước khi tắt): bị ai đó tắt hoặc tự chết, và trong lúc đó desktop
+		// lộ ra. Coi như máy đã có người dùng — đoán nhầm chỉ tốn một lần khởi động lại.
+		if !s.uiSince.IsZero() {
+			s.daDung = true
+		}
 		s.uiSince = time.Time{}
 		s.lastStatusAt = time.Time{}
 		s.status = uiStatus{}
@@ -311,6 +345,11 @@ func (s *uiSupervisor) decide(now time.Time, pol clientPolicy, maintFlag bool) s
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Có tệp bảo trì là có người (kỹ thuật) dùng máy theo cách VNET không thấy: coi
+	// như đã dùng, xoá tệp đi rồi cũng không được cho ngủ chờ.
+	if maintFlag {
+		s.daDung = true
+	}
 	if s.rebooting || s.uiSince.IsZero() {
 		return actNone
 	}
@@ -350,9 +389,27 @@ func (s *uiSupervisor) decide(now time.Time, pol clientPolicy, maintFlag bool) s
 	// chỉ chạy khi giao diện CHÍNH NÓ báo đang ở màn hình khoá và không có ai —
 	// hội viên, nhân viên hay bảo trì đều dừng nó lại, và một lượt im lặng thì
 	// đã bị luật 1 bắt trước khi tới đây.
+	//
+	// Chế độ "standby" là cho Lightning Boot của Cloud Update. Tắt máy thì Cloud
+	// Update chỉ đưa máy về ngủ chờ sau khoảng offline đặt trên Console, nên VNET tự
+	// làm:
+	//   - chưa ai đăng nhập từ lúc bật: máy vẫn sạch như vừa khởi động, cho ngủ
+	//     luôn. Thử thật trên MAY1 (15/10): Cloud Update không đánh thức máy do
+	//     Windows cho ngủ. Đồng hồ đếm lại: thức dậy mà vẫn không ai đăng nhập thì
+	//     đủ thời gian nữa mới ngủ lại, và ngủ không được thì cũng chừng ấy nữa
+	//     mới thử lại.
+	//   - đã có người dùng: khởi động lại cho sạch. Lên lại là máy chưa ai dùng,
+	//     đủ thời gian nữa vẫn không ai đăng nhập thì lượt sau cho ngủ.
 	if pol.IdleShutdownMinutes > 0 && !maint && !s.idleSince.IsZero() &&
 		now.Sub(s.idleSince) >= time.Duration(pol.IdleShutdownMinutes)*time.Minute {
+		if pol.IdleAction == "standby" && !s.daDung {
+			s.idleSince = now
+			return actSleep
+		}
 		s.rebooting = true
+		if pol.IdleAction == "standby" {
+			return actIdleRestart
+		}
 		return actShutdown
 	}
 	return actNone

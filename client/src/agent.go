@@ -407,8 +407,8 @@ func onHeartbeatOK(body []byte) {
 	}
 	if setPolicy(*resp.Data.Policy) && agentSupervisor != nil {
 		p := currentPolicy()
-		log.Printf("[chính sách] can thiệp→%s, khoá sau %ds, khởi động lại sau %ds, tắt máy khi không ai dùng sau %d phút, chặn ứng dụng [%s], ẩn lối tắt [%s]",
-			p.TamperAction, p.OfflineLockSeconds, p.OfflineRebootSeconds, p.IdleShutdownMinutes, p.BlockedApps, p.HiddenShortcuts)
+		log.Printf("[chính sách] can thiệp→%s, khoá sau %ds, khởi động lại sau %ds, không ai dùng sau %d phút thì %s, chặn ứng dụng [%s], ẩn lối tắt [%s]",
+			p.TamperAction, p.OfflineLockSeconds, p.OfflineRebootSeconds, p.IdleShutdownMinutes, p.IdleAction, p.BlockedApps, p.HiddenShortcuts)
 		savePolicyFile(p)
 		if appBlock != nil {
 			appBlock.setAll(p.BlockedApps)

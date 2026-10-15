@@ -1739,6 +1739,11 @@ const local: App.I18n.Schema = {
       idleShutdownMinutes: 'Không ai đăng nhập bao lâu thì tắt máy (phút)',
       idleShutdownHint:
         'Máy đang ở màn hình khoá mà không có ai đăng nhập (hội viên hay nhân viên) đủ thời gian này thì tự tắt. Có người đăng nhập là đếm lại từ đầu. 0 là không bao giờ tắt.',
+      idleAction: 'Hết thời gian trên thì',
+      idleActionShutdown: 'Tắt máy',
+      idleActionStandby: 'Ngủ chờ (Lightning Boot)',
+      idleActionHint:
+        'Ngủ chờ dành cho phòng máy bật Lightning Boot (pre-boot) của Cloud Update. Máy chưa ai đăng nhập từ lúc bật thì ngủ luôn, khách bấm nút nguồn là thức sau vài giây. Máy đã có người dùng thì khởi động lại để xoá dữ liệu của khách trước, rồi ngủ nếu vẫn không ai đăng nhập. Cần VNET client từ bản 1.0.16; máy trạm cũ hơn vẫn tắt máy.',
       blockedAppsTitle: 'Chặn ứng dụng',
       blockedApps: 'Ứng dụng bị chặn',
       blockedAppsPlaceholder: 'Mỗi dòng một tên tiến trình, ví dụ:\nchrome\ndiscord',

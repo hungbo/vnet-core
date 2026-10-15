@@ -191,12 +191,12 @@ func TestSettingBool(t *testing.T) {
 // phòng máy.
 func TestClientPolicyFrom(t *testing.T) {
 	macDinh := clientPolicyFrom(map[string]string{})
-	assert.Equal(t, ClientPolicy{TamperAction: "restart", OfflineLockSeconds: 60, OfflineRebootSeconds: 300, IdleShutdownMinutes: 5}, macDinh)
+	assert.Equal(t, ClientPolicy{TamperAction: "restart", OfflineLockSeconds: 60, OfflineRebootSeconds: 300, IdleShutdownMinutes: 5, IdleAction: "shutdown"}, macDinh)
 
 	p := clientPolicyFrom(map[string]string{
-		"tamper_action": "shutdown", "offline_lock_seconds": "90", "offline_reboot_seconds": "600", IdleShutdownKey: "15",
+		"tamper_action": "shutdown", "offline_lock_seconds": "90", "offline_reboot_seconds": "600", IdleShutdownKey: "15", IdleActionKey: "standby",
 	})
-	assert.Equal(t, ClientPolicy{TamperAction: "shutdown", OfflineLockSeconds: 90, OfflineRebootSeconds: 600, IdleShutdownMinutes: 15}, p)
+	assert.Equal(t, ClientPolicy{TamperAction: "shutdown", OfflineLockSeconds: 90, OfflineRebootSeconds: 600, IdleShutdownMinutes: 15, IdleAction: "standby"}, p)
 
 	// Tự tắt máy khi không ai đăng nhập: 0 là tắt tính năng, số âm cũng vậy,
 	// quá một ngày thì kẹp lại.
@@ -206,6 +206,7 @@ func TestClientPolicyFrom(t *testing.T) {
 
 	// Giá trị lạ cho hành động thì về mặc định, không truyền nguyên xuống máy trạm.
 	assert.Equal(t, "restart", clientPolicyFrom(map[string]string{"tamper_action": "format-c"}).TamperAction)
+	assert.Equal(t, "shutdown", clientPolicyFrom(map[string]string{IdleActionKey: "hibernate"}).IdleAction)
 
 	// Khoá quá sớm: một nhịp tim rớt cũng đủ khoá máy.
 	assert.Equal(t, int64(30), clientPolicyFrom(map[string]string{"offline_lock_seconds": "5"}).OfflineLockSeconds)

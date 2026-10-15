@@ -51,6 +51,12 @@ func runAgent(ctx context.Context) {
 	appBlock.setAll(currentPolicy().BlockedApps)
 	go appBlock.run(ctx)
 	agentSupervisor = newUISupervisor(supNow())
+	// Dịch vụ khởi động lại giữa một lần bật máy (tự cập nhật) vẫn phải nhớ máy đã
+	// có người dùng: cho ngủ chờ một máy còn dấu vết của khách trước là để lộ tài
+	// khoản của họ cho người bấm nút tiếp theo (decide, luật 4).
+	if mayDaDung(daDungFilePath(), time.Now(), systemUptime(), vuaTuCapNhat()) {
+		agentSupervisor.danhDauDaDung()
+	}
 
 	go runTelemetry(ctx, cfg)
 	go newWebBlocker(cfg).run(ctx)
@@ -246,6 +252,20 @@ func superviseUI(ctx context.Context, sup *uiSupervisor) {
 			log.Printf("[giám sát] không ai đăng nhập quá %d phút — tắt máy", currentPolicy().IdleShutdownMinutes)
 			if err := shutdownMachine(); err != nil {
 				log.Printf("[giám sát] không tắt được máy: %v", err)
+			}
+		case actSleep:
+			log.Printf("[giám sát] không ai đăng nhập quá %d phút, từ lúc bật chưa ai dùng — cho máy ngủ chờ", currentPolicy().IdleShutdownMinutes)
+			// SetSuspendState chỉ trả về khi máy đã thức dậy: chạy riêng để vòng
+			// giám sát không đứng theo nó.
+			go func() {
+				if err := sleepMachine(); err != nil {
+					log.Printf("[giám sát] không cho máy ngủ được: %v", err)
+				}
+			}()
+		case actIdleRestart:
+			log.Printf("[giám sát] không ai đăng nhập quá %d phút — khởi động lại cho sạch rồi mới ngủ chờ", currentPolicy().IdleShutdownMinutes)
+			if err := restartMachine(); err != nil {
+				log.Printf("[giám sát] không khởi động lại được: %v", err)
 			}
 		}
 	}

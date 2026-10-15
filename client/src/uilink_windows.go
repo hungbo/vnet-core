@@ -95,7 +95,9 @@ func serveUIPipe(h windows.Handle, sup *uiSupervisor) {
 			bootRec.gopGiaoDien(*st.Boot)
 		}
 		now := supNow()
-		sup.noteStatus(now, st)
+		if sup.noteStatus(now, st) {
+			ghiDaDung(daDungFilePath(), time.Now(), systemUptime())
+		}
 		pol := currentPolicy()
 		out, _ := json.Marshal(svcReply{OfflineLock: sup.offlineLock(now, pol), Policy: pol})
 		if err := windows.WriteFile(h, out, &n, nil); err != nil {

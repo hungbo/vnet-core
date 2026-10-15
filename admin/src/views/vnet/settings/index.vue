@@ -38,6 +38,13 @@ async function markSaved() {
   savedForm = formSnapshot();
 }
 
+// Cài đặt chỉ đổi qua PUT /settings/:group (kể cả phương thức thanh toán, nhóm
+// "payment"). Sự kiện không nói nhóm nào nên tải lại tab đang mở, trừ lúc đang
+// sửa dở hay đang lưu.
+const { resume } = useRealtimeRefresh(['settings'], fetchSettings, {
+  paused: () => saving.value || formSnapshot() !== savedForm
+});
+
 async function fetchPaymentMethods() {
   loading.value = true;
   try {
@@ -143,6 +150,7 @@ function applyClientDefaults() {
     settings.offline_reboot_seconds === undefined || settings.offline_reboot_seconds === '' || !Number.isFinite(reboot)
       ? 300
       : reboot;
+  if (settings.idle_action !== 'shutdown' && settings.idle_action !== 'standby') settings.idle_action = 'shutdown';
   const idle = Number(settings.idle_shutdown_minutes);
   settings.idle_shutdown_minutes =
     settings.idle_shutdown_minutes === undefined || settings.idle_shutdown_minutes === '' || !Number.isFinite(idle)
@@ -157,13 +165,6 @@ function addPreset() {
 function removePreset(idx: number) {
   presets.value.splice(idx, 1);
 }
-
-// Cài đặt chỉ đổi qua PUT /settings/:group (kể cả phương thức thanh toán, nhóm
-// "payment"). Sự kiện không nói nhóm nào nên tải lại tab đang mở, trừ lúc đang
-// sửa dở hay đang lưu.
-const { resume } = useRealtimeRefresh(['settings'], fetchSettings, {
-  paused: () => saving.value || formSnapshot() !== savedForm
-});
 
 async function handleSave() {
   saving.value = true;
@@ -417,6 +418,18 @@ onMounted(() => {
               <ElInputNumber v-model="settings.idle_shutdown_minutes" :min="0" :max="1440" :step="1" style="width: 100%" />
               <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
                 {{ $t('vnetPages.settings.idleShutdownHint') }}
+              </div>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.settings.idleAction')">
+              <ElRadioGroup
+                :model-value="settings.idle_action ?? 'shutdown'"
+                @update:model-value="(v: any) => (settings.idle_action = v)"
+              >
+                <ElRadio value="shutdown">{{ $t('vnetPages.settings.idleActionShutdown') }}</ElRadio>
+                <ElRadio value="standby">{{ $t('vnetPages.settings.idleActionStandby') }}</ElRadio>
+              </ElRadioGroup>
+              <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
+                {{ $t('vnetPages.settings.idleActionHint') }}
               </div>
             </ElFormItem>
             <ElDivider content-position="left">{{ $t('vnetPages.settings.blockedAppsTitle') }}</ElDivider>

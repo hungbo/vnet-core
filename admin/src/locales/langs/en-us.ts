@@ -1742,6 +1742,11 @@ const local: App.I18n.Schema = {
       idleShutdownMinutes: 'Shut down when nobody signs in for (minutes)',
       idleShutdownHint:
         'A machine sitting on the lock screen with nobody signed in (no member, no staff) for this long powers off. The timer restarts whenever someone signs in. 0 means never.',
+      idleAction: 'When that time is up',
+      idleActionShutdown: 'Shut the machine down',
+      idleActionStandby: 'Standby (Lightning Boot)',
+      idleActionHint:
+        "Standby is for rooms using Cloud Update Lightning Boot (pre-boot). A machine nobody has signed in to since it booted goes to sleep right away and wakes in a few seconds when the power button is pressed. A machine someone has used restarts first to wipe the previous customer's data, then sleeps if still nobody signs in. Needs VNET client 1.0.16 or later; older clients keep shutting down.",
       blockedAppsTitle: 'App blocking',
       blockedApps: 'Blocked apps',
       blockedAppsPlaceholder: 'One process name per line, e.g.:\nchrome\ndiscord',

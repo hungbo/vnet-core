@@ -259,10 +259,18 @@ type ClientPolicy struct {
 	// là 0, tức là tắt tính năng — không bao giờ tắt máy theo một mặc định
 	// máy chủ không hề biết.
 	IdleShutdownMinutes int64 `json:"idle_shutdown_minutes"`
+	// IdleAction: hết thời gian trên thì làm gì. "shutdown" là tắt máy. "standby"
+	// dành cho Lightning Boot của Cloud Update: máy chưa ai đăng nhập từ lúc bật thì
+	// cho ngủ chờ, đã có người dùng thì khởi động lại cho sạch rồi mới ngủ. Luôn
+	// gửi; máy trạm cũ (trước 1.0.16) không biết trường này thì vẫn tắt máy.
+	IdleAction string `json:"idle_action"`
 }
 
 // IdleShutdownKey: số phút máy sẵn sàng mà không ai đăng nhập thì tắt máy.
 const IdleShutdownKey = "idle_shutdown_minutes"
+
+// IdleActionKey: hết thời gian IdleShutdownKey thì "shutdown" hay "standby".
+const IdleActionKey = "idle_action"
 
 // BlockedAppsKey là danh sách ứng dụng bị chặn trong nhóm cài đặt máy trạm,
 // mỗi dòng (hoặc mỗi dấu phẩy) một tên.
@@ -389,12 +397,16 @@ func clientPolicyFrom(m map[string]string) ClientPolicy {
 		TamperAction:         "restart",
 		OfflineLockSeconds:   settingInt(m, "offline_lock_seconds", defaultOfflineLockSeconds),
 		OfflineRebootSeconds: settingInt(m, "offline_reboot_seconds", defaultOfflineRebootSeconds),
+		IdleAction:           "shutdown",
 	}
 	if u, h := m[LocalAdminUserKey], m[LocalAdminHashKey]; u != "" && h != "" {
 		p.LocalAdminUsername, p.LocalAdminHash = u, h
 	}
 	if m["tamper_action"] == "shutdown" {
 		p.TamperAction = "shutdown"
+	}
+	if m[IdleActionKey] == "standby" {
+		p.IdleAction = "standby"
 	}
 	p.BlockedApps = chuanHoaUngDungChan(m[BlockedAppsKey])
 	p.HiddenShortcuts = chuanHoaLoiTatAn(m[HiddenShortcutsKey])

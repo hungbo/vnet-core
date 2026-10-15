@@ -1257,6 +1257,10 @@ declare namespace App {
           offlineRebootHint: string;
           idleShutdownMinutes: string;
           idleShutdownHint: string;
+          idleAction: string;
+          idleActionShutdown: string;
+          idleActionStandby: string;
+          idleActionHint: string;
           blockedAppsTitle: string;
           blockedApps: string;
           blockedAppsPlaceholder: string;

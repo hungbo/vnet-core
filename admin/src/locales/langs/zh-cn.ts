@@ -1720,6 +1720,11 @@ const local: App.I18n.Schema = {
       idleShutdownMinutes: '无人登录多久后关机（分钟）',
       idleShutdownHint:
         '机器停留在锁屏且无人登录（会员或员工）达到该时长即自动关机。有人登录后重新计时。0 表示从不关机。',
+      idleAction: '到时后',
+      idleActionShutdown: '关机',
+      idleActionStandby: '待机（闪电开机）',
+      idleActionHint:
+        '待机适用于开启云更新闪电开机（pre-boot）的网吧。开机后无人登录过的机器直接睡眠，按电源键几秒即可唤醒。有人用过的机器先重启以清除上一位顾客的数据，若仍无人登录再睡眠。需要 VNET 客户端 1.0.16 及以上；更旧的客户端仍会关机。',
       blockedAppsTitle: '应用拦截',
       blockedApps: '被拦截的应用',
       blockedAppsPlaceholder: '每行一个进程名，例如：\nchrome\ndiscord',
