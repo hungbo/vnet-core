@@ -25,8 +25,17 @@ type vnetService struct {
 	ctx    context.Context
 }
 
+// Sự kiện nguồn Windows gửi kèm SERVICE_CONTROL_POWEREVENT (winuser.h); x/sys
+// không khai báo sẵn.
+const (
+	pbtApmSuspend         = 0x4
+	pbtApmResumeAutomatic = 0x12
+)
+
 func (s *vnetService) Execute(_ []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (bool, uint32) {
-	const accepted = svc.AcceptStop | svc.AcceptShutdown
+	// AcceptPowerEvent: để biết máy vừa thức dậy từ chế độ ngủ (Lightning Boot của
+	// Cloud Update) — xem onResume.
+	const accepted = svc.AcceptStop | svc.AcceptShutdown | svc.AcceptPowerEvent
 
 	changes <- svc.Status{State: svc.StartPending}
 	go runAgent(s.ctx)
@@ -40,6 +49,17 @@ func (s *vnetService) Execute(_ []string, r <-chan svc.ChangeRequest, changes ch
 			changes <- svc.Status{State: svc.StopPending}
 			s.cancel()
 			return false, 0
+		case svc.PowerEvent:
+			switch req.EventType {
+			case pbtApmSuspend:
+				log.Printf("[nguồn] máy sắp ngủ")
+			// Windows gửi RESUMEAUTOMATIC ở MỌI lần thức. RESUMESUSPEND chỉ tới khi
+			// thấy người dùng: máy thức bằng Wake-on-LAN thì tới lúc khách chạm
+			// chuột, có khi cả phút sau, đúng lúc WebSocket vừa nối lại xong — theo
+			// nó là cắt mất kết nối lành.
+			case pbtApmResumeAutomatic:
+				onResume()
+			}
 		}
 	}
 	return false, 0

@@ -128,67 +128,103 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 
 	nics := &nicWatcher{}
 
+	// guiMotLan gửi một nhịp tim; false = chưa tới được máy chủ, nên thử lại.
+	guiMotLan := func() bool {
+		// Dịch vụ nền (SYSTEM) và giao diện cùng chạy vòng này. Cả hai cùng
+		// gửi là mỗi 15 giây hai dòng số đo, và vì giao diện chạy bằng quyền
+		// của khách nên không đọc được cảm biến ACPI: cột nhiệt độ nhảy qua
+		// lại giữa số thật và 0. Còn nối được dịch vụ nền thì để nó gửi;
+		// dịch vụ chết thì giao diện tự gửi như cũ.
+		if agentSupervisor == nil && dangNoiDichVu() {
+			return true
+		}
+		sp := specs.get(!osIsWindows || systemUptime() >= specsAfterUptime)
+		ip, mac := getNetworkInfo()
+		payload := TelemetryPayload{
+			MachineCode: cfg.MachineCode,
+			CPUTemp:     getCPUTemp(),
+			GPUTemp:     getGPUTemp(),
+			IP:          ip,
+			MAC:         mac,
+			CPUUsage:    getCPUUsage(),
+			RAMUsage:    getRAMUsage(),
+			DiskUsage:   getDiskUsage(),
+			Uptime:      getUptime(),
+			Timestamp:   time.Now().UTC().Format(time.RFC3339),
+			CPUName:     sp.CPUName,
+			GPUName:     sp.GPUName,
+			RAMGB:       sp.RAMGB,
+			StorageGB:   sp.StorageGB,
+			OSInfo:      sp.OSInfo,
+			Peripherals: sp.Peripherals,
+		}
+		if agentSupervisor != nil {
+			payload.UserIsAdmin = consoleUserIsAdmin()
+			payload.ExtraNetwork = nics.extra(listActiveNICs())
+			payload.BootReport = bootRec.baoCao(time.Now(), systemUptime())
+		}
+		data, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("báo cáo: không đóng gói được dữ liệu: %v", err)
+			return true
+		}
+		resp, err := postHeartbeat(cfg, data)
+		if err != nil {
+			log.Printf("báo cáo: %v", err)
+			return false
+		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			log.Printf("báo cáo: máy chủ trả %d — kiểm tra mã máy trong config.json", resp.StatusCode)
+			// Lỗi phía máy chủ (đang khởi động lại) thì thử lại được; mã máy sai thì không.
+			return resp.StatusCode < 500
+		}
+		nics.setBaselineOnce(listActiveNICs())
+		onHeartbeatOK(body)
+		applyVNCFromHeartbeat(cfg, body)
+		return true
+	}
+
 	ticker := time.NewTicker(cfg.HeartbeatInterval)
 	defer ticker.Stop()
+	// Máy vừa thức dậy (giucNhipTim): gửi ngay, chưa được thì thử lại dày cho tới
+	// khi máy chủ nhận — mạng thường cần vài giây để lên lại sau khi ngủ.
+	thuLai := time.NewTimer(time.Hour)
+	thuLai.Stop()
+	var thuLaiToi time.Time
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// Dịch vụ nền (SYSTEM) và giao diện cùng chạy vòng này. Cả hai cùng
-			// gửi là mỗi 15 giây hai dòng số đo, và vì giao diện chạy bằng quyền
-			// của khách nên không đọc được cảm biến ACPI: cột nhiệt độ nhảy qua
-			// lại giữa số thật và 0. Còn nối được dịch vụ nền thì để nó gửi;
-			// dịch vụ chết thì giao diện tự gửi như cũ.
-			if agentSupervisor == nil && dangNoiDichVu() {
-				continue
+			guiMotLan()
+		case <-nhipTimGiuc:
+			thuLaiToi = time.Now().Add(nhipTimThuLaiTrong)
+			thuLai.Reset(0)
+		case <-thuLai.C:
+			if !guiMotLan() && time.Now().Before(thuLaiToi) {
+				thuLai.Reset(nhipTimThuLai)
 			}
-			sp := specs.get(!osIsWindows || systemUptime() >= specsAfterUptime)
-			ip, mac := getNetworkInfo()
-			payload := TelemetryPayload{
-				MachineCode: cfg.MachineCode,
-				CPUTemp:     getCPUTemp(),
-				GPUTemp:     getGPUTemp(),
-				IP:          ip,
-				MAC:         mac,
-				CPUUsage:    getCPUUsage(),
-				RAMUsage:    getRAMUsage(),
-				DiskUsage:   getDiskUsage(),
-				Uptime:      getUptime(),
-				Timestamp:   time.Now().UTC().Format(time.RFC3339),
-				CPUName:     sp.CPUName,
-				GPUName:     sp.GPUName,
-				RAMGB:       sp.RAMGB,
-				StorageGB:   sp.StorageGB,
-				OSInfo:      sp.OSInfo,
-				Peripherals: sp.Peripherals,
-			}
-			if agentSupervisor != nil {
-				payload.UserIsAdmin = consoleUserIsAdmin()
-				payload.ExtraNetwork = nics.extra(listActiveNICs())
-				payload.BootReport = bootRec.baoCao(time.Now(), systemUptime())
-			}
-			data, err := json.Marshal(payload)
-			if err != nil {
-				log.Printf("báo cáo: không đóng gói được dữ liệu: %v", err)
-				continue
-			}
-			resp, err := postHeartbeat(cfg, data)
-			if err != nil {
-				log.Printf("báo cáo: %v", err)
-				continue
-			}
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-			resp.Body.Close()
-			if resp.StatusCode >= 400 {
-				log.Printf("báo cáo: máy chủ trả %d — kiểm tra mã máy trong config.json", resp.StatusCode)
-				continue
-			}
-			nics.setBaselineOnce(listActiveNICs())
-			onHeartbeatOK(body)
-			applyVNCFromHeartbeat(cfg, body)
 		}
+	}
+}
+
+// nhipTimGiuc: onResume (dịch vụ nền) giục vòng nhịp tim gửi ngay. Máy chủ đóng
+// mọi phiên trên máy im quá 2 phút; máy vừa thức sau một đêm ngủ mà để khách
+// đăng nhập trước nhịp tim đầu tiên thì phiên vừa mở bị đóng ngay.
+var nhipTimGiuc = make(chan struct{}, 1)
+
+var (
+	nhipTimThuLai      = 2 * time.Second
+	nhipTimThuLaiTrong = time.Minute
+)
+
+func giucNhipTim() {
+	select {
+	case nhipTimGiuc <- struct{}{}:
+	default:
 	}
 }
 
@@ -358,7 +394,7 @@ func getNetworkInfo() (ip, mac string) {
 // với máy chủ, và nhận chính sách bảo vệ máy chủ gửi kèm.
 func onHeartbeatOK(body []byte) {
 	if agentSupervisor != nil {
-		agentSupervisor.noteServerOK(time.Now())
+		agentSupervisor.noteServerOK(supNow())
 	}
 	var resp struct {
 		Data struct {

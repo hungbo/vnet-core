@@ -25,6 +25,11 @@ import (
 const (
 	autoUpdateFirstCheck = 90 * time.Second
 	autoUpdateEvery      = 10 * time.Minute
+	// Máy vừa thức dậy (Lightning Boot) thì chưa cài: hẹn giờ kiểm đã quá hạn
+	// trong lúc ngủ nên chạy đúng lúc khách vừa bấm nút, và cài là tắt giao diện
+	// trước mặt khách. Bấy lâu sau thì khách đã đăng nhập (máy có khách, hoãn
+	// tiếp) hoặc đã bỏ đi.
+	autoUpdateAfterResume = 3 * time.Minute
 )
 
 func runAutoUpdate(ctx context.Context, cfg *Config) {
@@ -46,6 +51,9 @@ func runAutoUpdate(ctx context.Context, cfg *Config) {
 }
 
 func thuTuCapNhat(cfg *Config) error {
+	if vuaThucDay(autoUpdateAfterResume) {
+		return nil
+	}
 	info, err := checkUpdate(cfg)
 	if err != nil || info == nil || !info.HasUpdate {
 		return err
@@ -61,7 +69,7 @@ func thuTuCapNhat(cfg *Config) error {
 	// Hỏi lại ngay trước khi đổi tệp: tải mất vài chục giây, khách có thể đã
 	// ngồi vào trong lúc đó.
 	lai, err := checkUpdate(cfg)
-	if err != nil || lai == nil || lai.MachineInUse || lai.Version != info.Version {
+	if err != nil || lai == nil || lai.MachineInUse || lai.Version != info.Version || vuaThucDay(autoUpdateAfterResume) {
 		return fmt.Errorf("hoãn cài bản %s: máy vừa có khách hoặc bản phát hành đổi", info.Version)
 	}
 	return apDungBanMoi(path, info.Version)

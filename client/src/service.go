@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -48,7 +50,7 @@ func runAgent(ctx context.Context) {
 	appBlock = newAppBlocker()
 	appBlock.setAll(currentPolicy().BlockedApps)
 	go appBlock.run(ctx)
-	agentSupervisor = newUISupervisor(time.Now())
+	agentSupervisor = newUISupervisor(supNow())
 
 	go runTelemetry(ctx, cfg)
 	go newWebBlocker(cfg).run(ctx)
@@ -83,11 +85,12 @@ func runAgentWS(ctx context.Context, cfg *Config) {
 	}
 
 	ws := NewAgentWSClient(ctx, cfg)
+	agentWS.Store(ws)
 	// Phiên kết thúc vì bất kỳ lý do gì: ghi lại để vòng giám sát kiểm giao
 	// diện có thật sự về màn hình khoá không.
 	phienKetThuc := func(WSMessage) {
 		if agentSupervisor != nil {
-			agentSupervisor.noteSessionEnded(time.Now())
+			agentSupervisor.noteSessionEnded(supNow())
 		}
 	}
 	ws.On("session:ended", phienKetThuc)
@@ -172,6 +175,8 @@ func superviseUI(ctx context.Context, sup *uiSupervisor) {
 		lastErr     error
 		lastWaitLog time.Time
 		wait        time.Duration // lượt đầu: 0 = kiểm ngay
+		lastTick    time.Time
+		lastAwake   time.Duration
 	)
 
 	for {
@@ -182,11 +187,24 @@ func superviseUI(ctx context.Context, sup *uiSupervisor) {
 		}
 
 		now := time.Now()
+		// Phát hiện máy vừa ngủ dậy, phòng khi thông báo nguồn của Windows
+		// (service_windows.go) không tới. Bộ giám sát không cần việc này để chấm
+		// đúng — nó chạy theo supNow, đồng hồ không tính lúc ngủ — nhưng WebSocket
+		// và nhịp tim thì cần được giục (onResume).
+		awake := awakeTime()
+		if !lastTick.IsZero() && awake > 0 && lastAwake > 0 {
+			if ngu := daNgu(now.Sub(lastTick), awake-lastAwake); ngu > 0 {
+				log.Printf("[nguồn] máy đã ngủ khoảng %ds giữa hai lượt giám sát", int(ngu.Seconds()))
+				onResume()
+			}
+		}
+		lastTick, lastAwake = now, awake
+
 		running := uiIsRunning()
 		// Phần giám sát chỉ có nghĩa trên Windows: nơi khác uiIsRunning luôn
 		// báo "đang chạy" mà không có giao diện nào báo cáo về.
 		if osIsWindows {
-			sup.noteUIRunning(now, running)
+			sup.noteUIRunning(supNow(), running)
 		}
 
 		launch, next := nhipGiamSat(running, now.Sub(lastLaunch), lastErr)
@@ -215,7 +233,7 @@ func superviseUI(ctx context.Context, sup *uiSupervisor) {
 			continue
 		}
 
-		switch sup.decide(now, currentPolicy(), maintenanceMode()) {
+		switch sup.decide(supNow(), currentPolicy(), maintenanceMode()) {
 		case actRestartUI:
 			log.Printf("[giám sát] giao diện không phản hồi hoặc không về màn hình khoá — bật lại")
 			tatGiaoDienCu()
@@ -237,6 +255,104 @@ func superviseUI(ctx context.Context, sup *uiSupervisor) {
 // Nhịp tim dùng chung cho cả hai tiến trình nên phải hỏi biến này mới biết mình
 // đang chạy ở đâu.
 var agentSupervisor *uiSupervisor
+
+// agentWS: kết nối WebSocket bằng mã máy của dịch vụ nền, để onResume nối lại nó.
+var agentWS atomic.Pointer[WSClient]
+
+// sleepDetectMin: giữa hai lượt giám sát (cách 0,2–2 s), đồng hồ thường chạy hơn
+// đồng hồ "thức" chừng này thì máy đã ngủ giữa chừng. Lệch do làm tròn chỉ cỡ ms.
+const sleepDetectMin = 5 * time.Second
+
+// daNgu: khoảng máy đã ngủ giữa hai lượt, 0 nếu không ngủ. dThuong đo bằng đồng hồ
+// Go (tính cả lúc ngủ), dThuc bằng awakeTime (không tính). Khác với "hai lượt
+// cách nhau lâu": tiến trình bị chậm hay treo thì cả hai đồng hồ cùng chạy.
+func daNgu(dThuong, dThuc time.Duration) time.Duration {
+	if d := dThuong - dThuc; d >= sleepDetectMin {
+		return d
+	}
+	return 0
+}
+
+// Đồng hồ của bộ giám sát giao diện (supNow).
+var (
+	supClockMu    sync.Mutex
+	supClockEpoch time.Time // zero = chưa lấy mốc
+	supClockAwake bool      // đọc được đồng hồ thức không
+	supClockLast  time.Duration
+	awakeClock    = awakeTime // test thay được
+)
+
+// supNow là "bây giờ" của bộ giám sát giao diện: đồng hồ chỉ chạy khi máy THỨC.
+//
+// Đồng hồ Go trên Windows tính cả lúc ngủ. Lightning Boot (闪电开机) của Cloud
+// Update cho máy boot sẵn rồi ngủ S3, có khi cả đêm; đo bằng đồng hồ Go thì lúc
+// khách bấm nút, giao diện đã "im lặng" cả đêm (bị bật lại), máy "không ai đăng
+// nhập" cả đêm (bị TẮT ngay trước mặt khách) và "mất máy chủ" cả đêm. Đo bằng
+// đồng hồ thức thì giấc ngủ không có thật với bộ giám sát: không ai phải đặt lại
+// mốc nào lúc thức dậy, nên cũng không có cuộc đua giữa thông báo nguồn của
+// Windows và vòng giám sát. Mọi mốc đưa vào uiSupervisor phải lấy từ đây.
+//
+// Không đọc được đồng hồ thức (không phải Windows) thì là đồng hồ Go.
+func supNow() time.Time {
+	supClockMu.Lock()
+	defer supClockMu.Unlock()
+	a := awakeClock()
+	if supClockEpoch.IsZero() {
+		supClockAwake = a > 0
+		supClockEpoch = time.Now().Add(-a)
+	}
+	if !supClockAwake {
+		return time.Now()
+	}
+	if a < supClockLast { // đọc hỏng (0) thì đứng yên, không lùi
+		a = supClockLast
+	}
+	supClockLast = a
+	return supClockEpoch.Add(a)
+}
+
+var (
+	resumeMu     sync.Mutex
+	lastResumeAt time.Time
+)
+
+// onResume: máy vừa thức dậy từ chế độ ngủ. Hai đường cùng gọi vào đây: thông
+// báo nguồn của Windows và vòng giám sát tự phát hiện (superviseUI); lần thứ
+// hai trong 10 giây là cùng một lần thức, bỏ qua.
+//
+// Đồng hồ giám sát không cần đặt lại (supNow). Ở đây chỉ là những việc làm một
+// lần lúc thức:
+//   - giữ khoá ngoại tuyến tới khi máy chủ trả lời lại (noteResume): hội viên
+//     còn đăng nhập từ trước lúc ngủ thì phiên có thể đã bị máy chủ đóng;
+//   - nối lại WebSocket: máy chủ đã đóng kết nối cũ trong lúc máy ngủ;
+//   - gửi nhịp tim ngay: máy chủ coi máy im quá 2 phút là đã rời và đóng mọi
+//     phiên mở trên đó, kể cả phiên khách vừa đăng nhập sau khi thức.
+func onResume() {
+	resumeMu.Lock()
+	now := time.Now()
+	if !lastResumeAt.IsZero() && now.Sub(lastResumeAt) < 10*time.Second {
+		resumeMu.Unlock()
+		return
+	}
+	lastResumeAt = now
+	if sup := agentSupervisor; sup != nil {
+		sup.noteResume(supNow())
+	}
+	resumeMu.Unlock()
+
+	log.Printf("[nguồn] máy vừa thức dậy từ chế độ ngủ — nối lại WebSocket, gửi nhịp tim ngay")
+	if ws := agentWS.Load(); ws != nil {
+		ws.dropConn()
+	}
+	giucNhipTim()
+}
+
+// vuaThucDay: máy thức dậy chưa tới d.
+func vuaThucDay(d time.Duration) bool {
+	resumeMu.Lock()
+	defer resumeMu.Unlock()
+	return !lastResumeAt.IsZero() && time.Since(lastResumeAt) < d
+}
 
 // runService là điểm vào của chế độ --service.
 //

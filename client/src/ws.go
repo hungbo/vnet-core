@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -25,6 +26,7 @@ type WSClient struct {
 	baseURL     string
 	token       string
 	machineCode string
+	connMu      sync.Mutex // giữ conn khi dropConn gọi từ goroutine khác
 	conn        *websocket.Conn
 	handlers    map[string]WSHandler
 }
@@ -178,13 +180,15 @@ func (c *WSClient) Connect(ctx context.Context) error {
 		default:
 		}
 
-		var err error
-		c.conn, _, err = websocket.DefaultDialer.Dial(u, header)
+		conn, _, err := websocket.DefaultDialer.Dial(u, header)
 		if err != nil {
 			log.Printf("[WS] dial error: %v, retry in 5s", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
+		c.connMu.Lock()
+		c.conn = conn
+		c.connMu.Unlock()
 		log.Printf("[WS] connected: %s", u)
 
 		if err := c.readLoop(ctx); err != nil {
@@ -230,6 +234,18 @@ func (c *WSClient) readLoop(ctx context.Context) error {
 		} else {
 			log.Printf("[WS] no handler for type=%s", msg.Type)
 		}
+	}
+}
+
+// dropConn đóng kết nối đang dùng để vòng Connect nối lại. Dùng khi máy vừa thức
+// dậy từ chế độ ngủ: máy chủ đã đóng kết nối cũ trong lúc máy ngủ mà phía này chưa
+// biết, ReadMessage có thể treo hàng phút tới khi TCP tự nhận ra — trong lúc đó
+// quầy không gửi được lệnh nào tới máy vừa có khách.
+func (c *WSClient) dropConn() {
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
+	if c.conn != nil {
+		c.conn.Close()
 	}
 }
 

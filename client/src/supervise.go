@@ -179,6 +179,10 @@ type uiSupervisor struct {
 	mu sync.Mutex
 
 	lastServerOK time.Time // lần cuối gọi máy chủ thành công
+	// Máy vừa thức dậy (noteResume): khoá ngoại tuyến cho tới khi giao diện đã
+	// được báo khoá ít nhất một lần VÀ máy chủ trả lời sau lần báo đó.
+	choMayChu    bool
+	khoaBaoLuc   time.Time // lần đầu báo khoá cho giao diện sau khi thức; zero = chưa báo
 	uiSince      time.Time // giao diện bắt đầu được thấy đang chạy; zero = không chạy
 	lastStatusAt time.Time
 	status       uiStatus
@@ -202,6 +206,28 @@ func (s *uiSupervisor) noteServerOK(now time.Time) {
 	s.mu.Lock()
 	s.lastServerOK = now
 	s.mu.Unlock()
+}
+
+// noteResume: máy vừa thức dậy từ chế độ ngủ (onResume, service.go).
+//
+// Các mốc đo bằng supNow, đồng hồ không tính lúc ngủ, nên không cần đặt lại để
+// tránh "quá hạn cả đêm". Hai việc:
+//   - Khoá ngoại tuyến cho tới lần đầu máy chủ trả lời lại. Hội viên còn đăng
+//     nhập từ trước lúc ngủ thì trong lúc ngủ máy chủ đã đóng phiên của họ (máy
+//     im quá 2 phút); không khoá thì người bấm nút tiếp theo dùng luôn desktop
+//     và tài khoản của họ cho tới khi giao diện tự hỏi lại. Máy chủ trả lời thì
+//     giao diện mở khoá và hỏi lại phiên ngay (vnet:offline:cleared). Màn hình
+//     khoá không ai đăng nhập thì giao diện bỏ qua khoá ngoại tuyến.
+//   - Đếm lại "không ai đăng nhập" từ lúc thức: có người vừa bấm nút nguồn, cho
+//     họ đủ thời gian đăng nhập chứ không chỉ phần còn lại từ trước lúc ngủ.
+func (s *uiSupervisor) noteResume(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.choMayChu = true
+	s.khoaBaoLuc = time.Time{}
+	if !s.idleSince.IsZero() {
+		s.idleSince = now
+	}
 }
 
 func (s *uiSupervisor) noteStatus(now time.Time, st uiStatus) {
@@ -245,10 +271,25 @@ func (s *uiSupervisor) noteUIRunning(now time.Time, running bool) {
 	}
 }
 
-// offlineLock: đã mất kết nối máy chủ đủ lâu để phải khoá màn hình chưa.
+// offlineLock: đã mất kết nối máy chủ đủ lâu để phải khoá màn hình chưa. Chỉ
+// kênh nối với giao diện gọi hàm này, mỗi lần trả lời một báo cáo của nó.
 func (s *uiSupervisor) offlineLock(now time.Time, pol clientPolicy) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.choMayChu {
+		switch {
+		case s.khoaBaoLuc.IsZero():
+			// Lần báo đầu tiên sau khi thức luôn là khoá, kể cả khi nhịp tim đã kịp
+			// thành công: giao diện phải thấy khoá một lần thì lúc mở khoá mới hỏi
+			// lại phiên. Nhả ngay thì hội viên bỏ quên từ trước lúc ngủ vẫn còn đó.
+			s.khoaBaoLuc = now
+			return true
+		case s.lastServerOK.After(s.khoaBaoLuc):
+			s.choMayChu = false
+		default:
+			return true
+		}
+	}
 	return now.Sub(s.lastServerOK) >= time.Duration(pol.OfflineLockSeconds)*time.Second
 }
 

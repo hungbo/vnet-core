@@ -94,7 +94,7 @@ func serveUIPipe(h windows.Handle, sup *uiSupervisor) {
 		if st.Boot != nil {
 			bootRec.gopGiaoDien(*st.Boot)
 		}
-		now := time.Now()
+		now := supNow()
 		sup.noteStatus(now, st)
 		pol := currentPolicy()
 		out, _ := json.Marshal(svcReply{OfflineLock: sup.offlineLock(now, pol), Policy: pol})
