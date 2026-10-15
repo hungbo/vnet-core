@@ -11,12 +11,23 @@ import (
 
 // Fingerprint summarises a folder by every file's path, size and modification time. It is cheap
 // (no file contents are read), so the master can poll it to notice when a launcher has patched a
-// game, and only then pay for re-hashing.
+// game, and only then pay for re-hashing. It skips what listFiles skips (publishExcluded), so a
+// game rewriting its runtime files does not look like a new version.
 func Fingerprint(dir string) (string, error) {
 	h := sha256.New()
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		if rel != "." && publishExcluded(filepath.ToSlash(rel), d.IsDir()) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if d.IsDir() {
 			return nil
@@ -25,12 +36,16 @@ func Fingerprint(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
+		// An empty file's time is left out: its content cannot change without its size changing, and
+		// the torrent storage re-creates every zero-length file (O_TRUNC, so a new write time) each
+		// time it opens a game. Seeding a freshly published game would otherwise change the
+		// fingerprint and publish it again, forever (LibreOffice ships hundreds of empty files).
+		mt := fi.ModTime().UnixNano()
+		if fi.Size() == 0 {
+			mt = 0
 		}
 		// WalkDir visits in lexical order, so the hash is stable across runs.
-		_, _ = fmt.Fprintf(h, "%s\x00%d\x00%d\n", filepath.ToSlash(rel), fi.Size(), fi.ModTime().UnixNano())
+		_, _ = fmt.Fprintf(h, "%s\x00%d\x00%d\n", filepath.ToSlash(rel), fi.Size(), mt)
 		return nil
 	})
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -54,12 +55,34 @@ func BuildTorrent(dir, name string) (*metainfo.MetaInfo, error) {
 	return &metainfo.MetaInfo{InfoBytes: infoBytes, CreatedBy: "VNET"}, nil
 }
 
-// listFiles returns the regular files under dir in a stable order. Symlinks are rejected rather
-// than followed: a link out of the game folder would publish (or overwrite) unrelated files.
+// publishExcluded: runtime files a game recreates by itself, never part of a published version.
+// rel is slash-separated from the game folder; the match ignores case on every OS.
+func publishExcluded(rel string, isDir bool) bool {
+	l := strings.ToLower(rel)
+	if isDir {
+		return l == "league of legends/logs"
+	}
+	b := path.Base(l)
+	return b == "lockfile" || strings.HasSuffix(b, ".lockfile")
+}
+
+// listFiles returns the regular files under dir in a stable order, minus publishExcluded. Symlinks
+// are rejected rather than followed: a link out of the game folder would publish (or overwrite)
+// unrelated files.
 func listFiles(dir string) (files []metainfo.FileInfo, total int64, err error) {
 	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		if rel != "." && publishExcluded(filepath.ToSlash(rel), d.IsDir()) {
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
 			return fmt.Errorf("%s: symlinks are not supported", path)
@@ -71,10 +94,6 @@ func listFiles(dir string) (files []metainfo.FileInfo, total int64, err error) {
 			return fmt.Errorf("%s: not a regular file", path)
 		}
 		fi, err := d.Info()
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(dir, path)
 		if err != nil {
 			return err
 		}
