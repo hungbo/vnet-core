@@ -350,6 +350,8 @@ func chargeSessionTo(tx *gorm.DB, session *model.MachineSession, target int64, m
 	}
 	res.BalanceAfter = member.Balance
 	res.Charged = delta
+	ghiNguonTru(session, true, res.BonusUsed)
+	ghiNguonTru(session, false, owed)
 
 	// Tổng số phút đã chơi: cột này khai từ đầu nhưng không nơi nào cộng, nên
 	// trang hội viên luôn hiện 0 dù khách đã ngồi hàng trăm giờ.
@@ -422,11 +424,50 @@ func chargeSessionTo(tx *gorm.DB, session *model.MachineSession, target int64, m
 	return res, nil
 }
 
+// ghiNguonTru nối khoản vừa trừ từ một ví vào cuối session.ChargeSources, gộp
+// vào đoạn cuối nếu cùng ví.
+func ghiNguonTru(session *model.MachineSession, bonus bool, soTien int64) {
+	if soTien <= 0 {
+		return
+	}
+	if n := len(session.ChargeSources); n > 0 && session.ChargeSources[n-1].Bonus == bonus {
+		session.ChargeSources[n-1].Amount += soTien
+		return
+	}
+	session.ChargeSources = append(session.ChargeSources, model.ChargeRun{Bonus: bonus, Amount: soTien})
+}
+
+// tachHoanTien rút soTien khỏi session.ChargeSources và cho biết bao nhiêu
+// thuộc điểm thưởng, bao nhiêu thuộc số dư chính.
+//
+// Phần thu dư là những lượt trừ CUỐI (các phút sau mốc chốt lùi), nên rút từ
+// cuối danh sách ngược lên. Phần vượt quá danh sách — phiên mở trước khi có
+// cột này — về số dư chính như trước.
+func tachHoanTien(session *model.MachineSession, soTien int64) (bonus, chinh int64) {
+	runs := session.ChargeSources
+	for len(runs) > 0 && soTien > 0 {
+		cuoi := &runs[len(runs)-1]
+		lay := min(cuoi.Amount, soTien)
+		if cuoi.Bonus {
+			bonus += lay
+		} else {
+			chinh += lay
+		}
+		cuoi.Amount -= lay
+		soTien -= lay
+		if cuoi.Amount == 0 {
+			runs = runs[:len(runs)-1]
+		}
+	}
+	session.ChargeSources = runs
+	return bonus, chinh + soTien
+}
+
 // hoanTienThuDu trả lại cho hội viên phần tiền giờ đã thu vượt tiền của cả
 // phiên, và sửa dòng session_fee duy nhất của phiên cho khớp.
 //
-// Hoàn vào số dư chính: sổ không ghi phần nào của khoản đã thu đến từ điểm
-// thưởng, và hoàn nhầm sang tiền thật có lợi cho khách chứ không cho quán.
+// Trừ ví nào hoàn ví đó (xem tachHoanTien): hoàn hết vào số dư chính thì điểm
+// thưởng trừ sau lúc máy tắt quay về thành tiền thật.
 //
 // Người gọi phải đang ở trong transaction.
 func hoanTienThuDu(tx *gorm.DB, session *model.MachineSession, memberID string, soTien int64) (int64, error) {
@@ -434,7 +475,9 @@ func hoanTienThuDu(tx *gorm.DB, session *model.MachineSession, memberID string, 
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", memberID).First(&member).Error; err != nil {
 		return 0, errors.New("không tìm thấy hội viên")
 	}
-	member.Balance += soTien
+	hoanThuong, hoanChinh := tachHoanTien(session, soTien)
+	member.Balance += hoanChinh
+	member.BonusBalance += hoanThuong
 	member.TotalSpent -= soTien
 	if member.TotalSpent < 0 {
 		member.TotalSpent = 0
@@ -648,7 +691,7 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 			tx.Rollback()
 			return nil, err
 		}
-		if err := tx.Model(&session).Update("charged_amount", session.ChargedAmount).Error; err != nil {
+		if err := tx.Model(&session).Select("charged_amount", "charge_sources").Updates(&session).Error; err != nil {
 			tx.Rollback()
 			return nil, err
 		}
@@ -1065,6 +1108,7 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 	}
 	// chargeSessionTo khấu trừ phần đã thu dọc đường từ chính con số này.
 	session.ChargedAmount = lockedSession.ChargedAmount
+	session.ChargeSources = lockedSession.ChargeSources
 
 	session.EndedAt = &now
 	session.DurationMinutes = &durationMinutes

@@ -24,6 +24,14 @@ type MachineSession struct {
 	// Thiếu cột này thì mỗi lần khởi động lại máy chủ là trừ lại từ đầu.
 	ChargedAmount int64 `gorm:"default:0" json:"charged_amount"`
 
+	// ChargeSources là ChargedAmount tách theo ví đã trừ, đúng thứ tự trừ: mỗi
+	// phần tử là một đoạn liên tiếp trừ cùng một ví.
+	//
+	// Hoàn tiền thu dư phải trả về ĐÚNG ví đã bị trừ. Trước đây mọi khoản hoàn
+	// đều vào số dư chính, nên mấy phút trừ bằng điểm thưởng sau lúc máy tắt
+	// quay về thành tiền thật.
+	ChargeSources []ChargeRun `gorm:"type:jsonb;serializer:json" json:"-"`
+
 	// AffordableUntil là thời điểm số dư cạn theo đơn giá đang áp dụng.
 	//
 	// Tính sẵn ở máy chủ để mọi màn hình — máy trạm, trang Phiên, Bảng điều
@@ -42,4 +50,10 @@ type MachineSession struct {
 	BilledMinutes    int     `gorm:"default:0" json:"billed_minutes"`
 
 	CreatedAt time.Time `gorm:"default:now()" json:"created_at,omitempty"`
+}
+
+// ChargeRun là một đoạn tiền phiên trừ liên tiếp từ cùng một ví.
+type ChargeRun struct {
+	Bonus  bool  `json:"bonus"` // true = điểm thưởng, false = số dư chính
+	Amount int64 `json:"amount"`
 }

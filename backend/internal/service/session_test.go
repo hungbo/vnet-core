@@ -888,6 +888,123 @@ func TestSessionService_EndSessionAt_ChotLuiThiHoanTienThuDu(t *testing.T) {
 	assert.Equal(t, int64(12000), res.BalanceAfter, "phần thu dư 2.000₫ phải về lại ví")
 }
 
+// Trừ ví nào hoàn ví đó. Phần thu dư là những lượt trừ cuối nên hoàn từ cuối
+// ngược lên; phần không rõ nguồn (phiên mở trước khi ghi nguồn) về số dư chính.
+func TestTachHoanTien(t *testing.T) {
+	cases := []struct {
+		ten              string
+		runs             []model.ChargeRun
+		hoan             int64
+		wantBonus, wantM int64
+		wantRuns         []model.ChargeRun
+	}{
+		{
+			ten:       "điểm thưởng hết giữa phiên: phút cuối trừ số dư chính",
+			runs:      []model.ChargeRun{{Bonus: true, Amount: 3000}, {Amount: 200}},
+			hoan:      300,
+			wantBonus: 100, wantM: 200,
+			wantRuns: []model.ChargeRun{{Bonus: true, Amount: 2900}},
+		},
+		{
+			ten:       "nạp điểm thưởng giữa phiên: phút cuối trừ điểm thưởng",
+			runs:      []model.ChargeRun{{Amount: 5000}, {Bonus: true, Amount: 300}},
+			hoan:      300,
+			wantBonus: 300,
+			wantRuns:  []model.ChargeRun{{Amount: 5000}},
+		},
+		{
+			ten:   "phiên cũ chưa ghi nguồn: về số dư chính",
+			hoan:  2000,
+			wantM: 2000,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.ten, func(t *testing.T) {
+			s := &model.MachineSession{ChargeSources: c.runs}
+			bonus, chinh := tachHoanTien(s, c.hoan)
+			assert.Equal(t, c.wantBonus, bonus)
+			assert.Equal(t, c.wantM, chinh)
+			assert.Equal(t, c.wantRuns, s.ChargeSources)
+		})
+	}
+}
+
+func TestGhiNguonTru_GopDoanCungVi(t *testing.T) {
+	s := &model.MachineSession{}
+	ghiNguonTru(s, true, 100)
+	ghiNguonTru(s, true, 100)
+	ghiNguonTru(s, false, 0)
+	ghiNguonTru(s, false, 50)
+	ghiNguonTru(s, true, 30)
+	assert.Equal(t, []model.ChargeRun{{Bonus: true, Amount: 200}, {Amount: 50}, {Bonus: true, Amount: 30}}, s.ChargeSources)
+}
+
+// Như TestSessionService_EndSessionAt_ChotLuiThiHoanTienThuDu nhưng 4.000₫ đã
+// thu đều trừ bằng điểm thưởng: 2.000₫ thu dư phải về điểm thưởng, số dư chính
+// đứng yên. Trước đây nó vào số dư chính — điểm thưởng thành tiền thật.
+func TestSessionService_EndSessionAt_HoanVeDungViDaTru(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	startedAt := time.Now().Add(-5 * time.Minute)
+	endAt := startedAt.Add(2 * time.Minute)
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2`).
+		WithArgs("s1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "member_id", "started_at", "is_active"}).
+			AddRow("s1", "m1", "mem-1", startedAt, true))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "group_id"}).AddRow("m1", "PC-01", "g1"))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "Std", int64(60000)))
+	mock.ExpectQuery(`SELECT \* FROM "members"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", nil))
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "charged_amount", "charge_sources"}).
+			AddRow("s1", int64(4000), `[{"bonus":true,"amount":4000}]`))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2$`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", nil))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "bonus_balance", "total_spent"}).
+			AddRow("mem-1", int64(10000), int64(6000), int64(4000)))
+	mock.ExpectExec(`UPDATE "members" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT \* FROM "member_transactions" WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "amount"}).AddRow("tx-1", int64(-4000)))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "bonus_balance", "total_spent"}).
+			AddRow("mem-1", int64(10000), int64(6000), int64(4000)))
+	mock.ExpectExec(`UPDATE "members" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT \* FROM "member_transactions" WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "amount"}).AddRow("tx-1", int64(-4000)))
+	mock.ExpectExec(`UPDATE "member_transactions" SET "amount"=\$1,"balance_after"=\$2,"bonus_after"=\$3`).
+		WithArgs(int64(-2000), int64(10000), int64(8000), "tx-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Phần điểm thưởng còn lại sau khi hoàn được lưu xuống dòng phiên.
+	mock.ExpectExec(`UPDATE "machine_sessions" SET .*"charge_sources"=`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "machines" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	res, err := svc.EndSessionAt("s1", endAt)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2000), res.TotalCost)
+	assert.Equal(t, int64(10000), res.BalanceAfter, "số dư chính không được tăng")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 // Trang Phiên lọc theo trạng thái, mã máy và hội viên. Lọc máy không kèm
 // deleted_at: phiên của máy đã xoá vẫn phải tra được.
 func TestSessionService_ListSessions_Filters(t *testing.T) {
