@@ -26,6 +26,7 @@ var assets embed.FS
 //	vnet-client.exe --window order     cửa sổ thực đơn, tách rời
 //	vnet-client.exe --window support   cửa sổ hỗ trợ, tách rời
 //	vnet-client.exe --window topup     cửa sổ nạp tiền, tách rời
+//	vnet-client.exe --open=games       lối tắt Menu Game: gõ cửa thanh đang chạy để mở menu Game
 //	vnet-client.exe --service          tiến trình nền chạy như dịch vụ Windows
 //
 // Cửa sổ phụ phải là tiến trình riêng vì Wails v2 KHÔNG hỗ trợ đa cửa sổ: mọi
@@ -410,6 +411,7 @@ func runChildWindow(mode string) {
 		OnStartup: func(ctx context.Context) {
 			app.Startup(ctx)
 			canhGiuaManHinh(ctx, 640, 480)
+			app.panelKhoiDongXong()
 		},
 		// Xem ghi chú ở runDock: OnStartup đua với WindowCenter của Wails, nên
 		// lần đặt vị trí ăn thua là lần này.

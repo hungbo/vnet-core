@@ -119,8 +119,13 @@ function navigateTo(view: string) {
 // tìm nút. Nhân viên vào máy để làm việc khác nên thôi. Chỉ ở lần đăng nhập mới (tay
 // hoặc màn khoá native): khôi phục phiên khi giao diện khởi động lại giữa buổi thì
 // không mở lại.
+let daTuMoGameCho = '' // token của lần đăng nhập đã tự mở menu Game
 function moMenuGameSauDangNhap() {
-	if (!windowMode.value && session.loggedIn && session.role !== 'admin') navigateTo('games')
+	if (windowMode.value || !session.loggedIn || session.role === 'admin') return
+	// Đăng nhập ở màn khoá native có thể báo hai lần (sự kiện và lần hỏi lúc dựng).
+	if (daTuMoGameCho === session.token) return
+	daTuMoGameCho = session.token
+	navigateTo('games')
 }
 
 async function handleLogin(username: string, password: string) {

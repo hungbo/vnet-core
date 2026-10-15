@@ -41,8 +41,8 @@ var errGameLnkBusy = errors.New("tiến trình khác đang đối chiếu lối 
 type gameShortcutSpec struct {
 	File    string // "<Tên>.lnk", không đường dẫn
 	Desc    string // gameLnkPrefix + tên hiển thị
-	Target  string // tệp chạy game
-	Args    string // launch_args
+	Target  string // tệp lối tắt chạy
+	Args    string // tham số dòng lệnh
 	WorkDir string // thư mục chứa tệp chạy, giống startGame
 }
 
@@ -153,7 +153,7 @@ func applyGameShortcutPlan(dir string, p gameShortcutPlan, write func(path strin
 }
 
 // reconcileDesktop quét dir bằng scan, lập kế hoạch rồi làm theo. Trả về các tên
-// tệp bị lối tắt không phải của VNET chiếm (game đó bị bỏ qua).
+// tệp bị lối tắt không phải của VNET chiếm (bỏ qua, không ghi đè).
 func reconcileDesktop(dir string, desired []gameShortcutSpec,
 	scan func(dir string) ([]desktopLnk, error), write func(path string, s gameShortcutSpec) error) ([]string, error) {
 	fi, err := os.Stat(dir)

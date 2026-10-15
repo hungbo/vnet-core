@@ -40,6 +40,29 @@ func TestDesiredMenuShortcuts(t *testing.T) {
 	if !reflect.DeepEqual(p.Delete, []string{"Liên Minh Huyền Thoại.lnk", "Roblox.lnk"}) || len(p.Create) != 1 {
 		t.Errorf("kế hoạch %+v: phải xoá hai lối tắt game cũ và tạo Menu Game", p)
 	}
+	// Quán ẩn "Menu Game" sau khi lối tắt đã được tạo: lần đối chiếu sau xoá nó.
+	coSan := []desktopLnk{{File: "Menu Game.lnk", Ours: true, Desc: "VNET: Menu Game", Target: exe, Args: "--open=games"}}
+	if p := planGameShortcuts(desiredMenuShortcuts(exe, parseHiddenShortcuts("Menu Game")), coSan); !reflect.DeepEqual(p.Delete, []string{"Menu Game.lnk"}) {
+		t.Errorf("Menu Game bị ẩn mà không bị xoá: %+v", p)
+	}
+}
+
+// Lần gõ cửa tới trước khi cửa sổ phụ khởi động xong (khách vừa đăng nhập: cửa sổ dựng
+// sẵn và lần tự mở menu Game chạy gần như cùng lúc) không được mất: nhớ màn hình để
+// GetWindowMode trả về đúng, và đánh dấu chờ hiện.
+func TestSwitchPanel_TruocKhiKhoiDong(t *testing.T) {
+	a := &App{windowMode: "panel", panelMode: "blank"}
+	a.switchPanel("games")
+	if got := a.GetWindowMode(); got != "games" {
+		t.Errorf("GetWindowMode = %q, mong games", got)
+	}
+	if !a.panelChoHien {
+		t.Error("phải đánh dấu chờ hiện")
+	}
+	a.switchPanel("không-có")
+	if got := a.GetWindowMode(); got != "games" {
+		t.Errorf("màn hình lạ không được đè: %q", got)
+	}
 }
 
 func TestMoBangTuThamSo(t *testing.T) {

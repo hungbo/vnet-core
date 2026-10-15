@@ -102,6 +102,10 @@ type App struct {
 	// rồi hiện lên — không phải chạy lại .exe và dựng WebView2 mỗi lần.
 	panelMu   sync.Mutex
 	panelMode string
+	// panelSan: cửa sổ phụ đã khởi động xong (OnStartup, có ctx). panelChoHien: có lần
+	// gõ cửa tới TRƯỚC lúc đó — panelKhoiDongXong hiện nó sau.
+	panelSan     bool
+	panelChoHien bool
 	// thoat: cửa sổ phụ đang tắt thật (hết phiên). Bấm X thì chỉ ẩn.
 	thoat atomic.Bool
 	// prewarmRetry: số lần liên tiếp cửa sổ dựng sẵn chết lúc khởi động.
@@ -958,12 +962,22 @@ func (a *App) moMenuGameTuLoiTat() {
 // switchPanel đổi cửa sổ phụ đang chạy sang màn hình khác rồi đưa nó lên.
 func (a *App) switchPanel(mode string) {
 	title, ok := panelTitles[mode]
-	if !ok || a.ctx == nil {
+	if !ok {
 		return
 	}
 	a.panelMu.Lock()
 	a.panelMode = mode
+	san := a.panelSan && a.ctx != nil
+	if !san {
+		// Lần gõ cửa tới trước khi cửa sổ khởi động xong: khách vừa đăng nhập thì cửa
+		// sổ dựng sẵn ("prewarm") và lần tự mở menu Game chạy gần như cùng lúc, và
+		// WebView2 khởi động lạnh mất vài giây. Bỏ qua ở đây là khách không thấy gì.
+		a.panelChoHien = true
+	}
 	a.panelMu.Unlock()
+	if !san {
+		return
+	}
 	wailsruntime.WindowSetTitle(a.ctx, title)
 	wailsruntime.EventsEmit(a.ctx, "vnet:panel:mode", mode)
 	// Đo lại màn hình mỗi lần hiện: cửa sổ này dựng sẵn ẩn từ lúc khách đăng nhập và
@@ -971,6 +985,21 @@ func (a *App) switchPanel(mode string) {
 	// nguyên chỗ cũ — nửa dưới (nút thanh toán) tràn ra ngoài màn hình nhỏ hơn.
 	canhGiuaManHinh(a.ctx, 640, 480)
 	a.ShowWindow()
+}
+
+// panelKhoiDongXong: cửa sổ phụ vừa có ctx (OnStartup). Có lần gõ cửa tới trước đó
+// thì hiện đúng màn hình nó đòi; giao diện chưa nạp nên tự đọc màn hình đó qua
+// GetWindowMode lúc dựng.
+func (a *App) panelKhoiDongXong() {
+	a.panelMu.Lock()
+	a.panelSan = true
+	cho := a.panelChoHien
+	a.panelChoHien = false
+	mode := a.panelMode
+	a.panelMu.Unlock()
+	if cho {
+		a.switchPanel(mode)
+	}
 }
 
 // HidePanel ẩn cửa sổ phụ thay vì tắt, để lần mở sau hiện ngay.

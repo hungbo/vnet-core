@@ -24,9 +24,9 @@ func userDesktopDir() (string, error) {
 	return windows.KnownFolderPath(windows.FOLDERID_Desktop, 0)
 }
 
-// Hai tiến trình của VNET (thanh chính và cửa sổ phụ) cùng đối chiếu một desktop;
-// mutex tên này cho chúng lần lượt từng người, kẻo cả hai cùng thấy "chưa có" rồi
-// cùng ghi một tệp. "Local\" = trong phiên đăng nhập này.
+// Mỗi lần đăng nhập hay khôi phục phiên, thanh chính đối chiếu desktop trên một
+// goroutine riêng; mutex tên này cho các lần chồng nhau đi lần lượt, kẻo cùng thấy
+// "chưa có" rồi cùng ghi một tệp. "Local\" = trong phiên đăng nhập này.
 const (
 	gameLnkMutexName = `Local\VNETGameShortcuts`
 	gameLnkMutexWait = 8 * time.Second
