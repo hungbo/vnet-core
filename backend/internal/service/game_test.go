@@ -6,6 +6,8 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -165,6 +167,98 @@ func TestGameService_Menu_RongVaMacDinh(t *testing.T) {
 	raw, _ := json.Marshal(menu)
 	assert.JSONEq(t, `{"root":"D:\\Games","items":[]}`, string(raw))
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Quán tự điền nguồn metadata Riot: client_root của quán + game đầu tiên có bản chụp trên GAME_ROOT của chính nó.
+func TestGameService_RiotMetadataSource(t *testing.T) {
+	const pluckSQL = `SELECT "name" FROM "games" WHERE enabled = \$1 ORDER BY name`
+	snapshot := func(root, game string) string { return filepath.Join(root, game, "_vnet", "ProgramData", "Riot Games") }
+	cafeRoot := func(t *testing.T) string {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(snapshot(root, "Riot Games"), 0o755))
+		// "Game." cũng có bản chụp nhưng Windows hiểu tên đó là "Game": tenGameDungDuoc bỏ qua.
+		require.NoError(t, os.MkdirAll(snapshot(root, "Game."), 0o755))
+		return root
+	}
+	expectNames := func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(pluckSQL).WithArgs(true).
+			WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Audition").AddRow("Game.").AddRow("Riot Games"))
+	}
+	expectClientRoot := func(mock sqlmock.Sqlmock, stored string) {
+		rows := sqlmock.NewRows([]string{"group_name", "key", "value"})
+		if stored != "" {
+			rows.AddRow(GamesGroup, GameClientRootKey, stored)
+		}
+		mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs(GamesGroup).WillReturnRows(rows)
+	}
+	run := func(t *testing.T, cfg config.GameConfig, setup func(mock sqlmock.Sqlmock)) string {
+		t.Helper()
+		db, mock := newMockDB(t)
+		setup(mock)
+		got := NewGameService(db, cfg).RiotMetadataSource()
+		assert.NoError(t, mock.ExpectationsWereMet())
+		return got
+	}
+	// runNoSettings: không có bản chụp nào thì không được đọc cài đặt games (mỗi nhịp tim, mỗi máy).
+	// sqlmock không báo truy vấn ngoài dự kiến, nên đặt sẵn câu đọc cài đặt: nó phải là câu đầu tiên còn nguyên.
+	runNoSettings := func(t *testing.T, root string) string {
+		t.Helper()
+		db, mock := newMockDB(t)
+		expectNames(mock)
+		expectClientRoot(mock, "")
+		got := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe, Root: root}).RiotMetadataSource()
+		assert.ErrorContains(t, mock.ExpectationsWereMet(), "system_settings", "không được đọc cài đặt games")
+		return got
+	}
+
+	t.Run("có bản chụp", func(t *testing.T) {
+		got := run(t, config.GameConfig{Role: config.GameRoleCafe, Root: cafeRoot(t)}, func(mock sqlmock.Sqlmock) {
+			expectNames(mock)
+			expectClientRoot(mock, `"E:\\Game Disk\\"`)
+		})
+		assert.Equal(t, `E:\Game Disk\Riot Games\_vnet\ProgramData\Riot Games`, got)
+	})
+	t.Run("client_root trống: gốc mặc định", func(t *testing.T) {
+		got := run(t, config.GameConfig{Role: config.GameRoleCafe, Root: cafeRoot(t)}, func(mock sqlmock.Sqlmock) {
+			expectNames(mock)
+			expectClientRoot(mock, "")
+		})
+		assert.Equal(t, `D:\Games\Riot Games\_vnet\ProgramData\Riot Games`, got)
+	})
+	t.Run("chưa có bản chụp: rỗng, không đọc cài đặt", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(root, "Riot Games", "_vnet"), 0o755))
+		assert.Empty(t, runNoSettings(t, root))
+	})
+	t.Run("bản chụp là tệp: rỗng", func(t *testing.T) {
+		root := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Dir(snapshot(root, "Riot Games")), 0o755))
+		require.NoError(t, os.WriteFile(snapshot(root, "Riot Games"), nil, 0o644))
+		assert.Empty(t, runNoSettings(t, root))
+	})
+	t.Run("bản chụp là liên kết: rỗng, như máy trạm từ chối", func(t *testing.T) {
+		root, target := t.TempDir(), t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Dir(snapshot(root, "Riot Games")), 0o755))
+		if err := os.Symlink(target, snapshot(root, "Riot Games")); err != nil {
+			t.Skipf("không tạo được liên kết: %v", err)
+		}
+		assert.Empty(t, runNoSettings(t, root))
+	})
+	t.Run("master hoặc chưa đặt GAME_ROOT: không chạm DB", func(t *testing.T) {
+		for _, cfg := range []config.GameConfig{{Role: config.GameRoleMaster, Root: cafeRoot(t)}, {Role: config.GameRoleCafe}} {
+			db, mock := newMockDB(t)
+			// sqlmock không báo truy vấn ngoài dự kiến, nên đặt sẵn câu đọc tên: nó phải còn nguyên.
+			expectNames(mock)
+			assert.Empty(t, NewGameService(db, cfg).RiotMetadataSource(), cfg.Role)
+			assert.Error(t, mock.ExpectationsWereMet(), "%s: không được đọc danh sách game", cfg.Role)
+		}
+	})
+	t.Run("lỗi DB: rỗng", func(t *testing.T) {
+		got := run(t, config.GameConfig{Role: config.GameRoleCafe, Root: cafeRoot(t)}, func(mock sqlmock.Sqlmock) {
+			mock.ExpectQuery(pluckSQL).WithArgs(true).WillReturnError(errors.New("db down"))
+		})
+		assert.Empty(t, got)
+	})
 }
 
 // ---------------------------------------------------------------- vòng tải game ở quán
@@ -489,6 +583,152 @@ func TestPublishTick_GoLoiTamThoi(t *testing.T) {
 	assert.Error(t, run(t, 2, fp, model.GameStatusReady), "đang tốt thì không cần chạm vào")
 }
 
+// riotMasterRoot dựng GAME_ROOT của master có game "Riot Games" (có RiotClientServices.exe nên
+// publishTick chụp ProgramData) và trỏ %ProgramData% vào một thư mục tạm còn trống.
+func riotMasterRoot(t *testing.T) (root, programData string) {
+	t.Helper()
+	root, programData = t.TempDir(), t.TempDir()
+	exe := filepath.Join(root, "Riot Games", "Riot Client", "RiotClientServices.exe")
+	require.NoError(t, os.MkdirAll(filepath.Dir(exe), 0o755))
+	require.NoError(t, os.WriteFile(exe, []byte("exe"), 0o644))
+	t.Setenv("ProgramData", programData)
+	// Trên Windows thiếu classic thì chụp từ chối trước cả khi đọc ProgramData. Biến môi trường chỉ
+	// được đọc lúc nạp gói, nên đặt thẳng cờ.
+	classic := torrentFileIOClassic
+	torrentFileIOClassic = true
+	t.Cleanup(func() { torrentFileIOClassic = classic })
+	return root, programData
+}
+
+func expectRiotGameRow(mock sqlmock.Sqlmock) {
+	mock.ExpectQuery(`SELECT \* FROM "games" WHERE enabled = \$1`).WithArgs(true).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "enabled", "version", "status"}).
+			AddRow("g1", "Riot Games", true, 0, model.GameStatusNotInstalled))
+}
+
+// Chụp ProgramData lỗi: game báo lỗi đọc được, và lượt này không fingerprint, không Observe, không publish.
+func TestPublishTick_RiotCaptureErrorSetsError(t *testing.T) {
+	root, _ := riotMasterRoot(t) // ProgramData không có "Riot Games"
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: root, StableFor: time.Hour})
+	expectRiotGameRow(mock)
+	expectGameUpdate(mock, `UPDATE "games" SET "error"=\$1,"status"=\$2,"updated_at"=\$3 WHERE id = \$4`,
+		chuaChuoi{"không thấy", true}, model.GameStatusError, anyTime{}, "g1")
+
+	svc.publishTick(context.Background(), time.Now())
+	assert.NoError(t, mock.ExpectationsWereMet())
+	assert.Nil(t, svc.stabilizers["Riot Games"], "chụp lỗi thì không Observe")
+	assert.NoDirExists(t, filepath.Join(root, "Riot Games", "_vnet"), "chụp lỗi thì không ghi gì")
+}
+
+// Chụp xong thì bản chụp và bản ghi nằm trong thư mục game, rồi lượt đó fingerprint và Observe như thường.
+func TestPublishTick_RiotCaptureThenObserve(t *testing.T) {
+	root, programData := riotMasterRoot(t)
+	installs := filepath.Join(programData, "Riot Games", "RiotClientInstalls.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(installs), 0o755))
+	require.NoError(t, os.WriteFile(installs, []byte(`{}`), 0o644))
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: root, StableFor: time.Hour})
+	expectRiotGameRow(mock)
+
+	now := time.Now()
+	svc.publishTick(context.Background(), now)
+	assert.NoError(t, mock.ExpectationsWereMet(), "chỉ có câu SELECT: không lỗi, chưa đứng yên đủ lâu để publish")
+	game := filepath.Join(root, "Riot Games")
+	assert.FileExists(t, filepath.Join(game, "_vnet", gameupdate.MasterDirRecord))
+	assert.FileExists(t, filepath.Join(game, "_vnet", "ProgramData", "Riot Games", "RiotClientInstalls.json"))
+	require.NotNil(t, svc.stabilizers["Riot Games"])
+	// Chụp TRƯỚC fingerprint: lượt vừa rồi đã Observe dấu vân tay có bản chụp, nên sau StableFor nó
+	// đứng yên. Đảo thứ tự thì dấu vân tay này là mới, Stabilizer đếm lại từ đầu.
+	fp, err := gameupdate.Fingerprint(game)
+	require.NoError(t, err)
+	assert.True(t, svc.stabilizers["Riot Games"].Observe(fp, now.Add(time.Hour)))
+}
+
+// Riot chạy từ thư mục khác và chưa có bản chụp: không phải lỗi, thư mục vẫn đi tiếp như game thường.
+func TestPublishTick_RiotElsewhereStillObserves(t *testing.T) {
+	root, programData := riotMasterRoot(t)
+	installs := filepath.Join(programData, "Riot Games", "RiotClientInstalls.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(installs), 0o755))
+	require.NoError(t, os.WriteFile(installs, []byte(`{"rc_default": "E:/Other/Riot Client/RiotClientServices.exe"}`), 0o644))
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: root, StableFor: time.Hour})
+	expectRiotGameRow(mock)
+
+	svc.publishTick(context.Background(), time.Now())
+	assert.NoError(t, mock.ExpectationsWereMet(), "chỉ có câu SELECT: không ghi lỗi")
+	assert.NoDirExists(t, filepath.Join(root, "Riot Games", "_vnet"))
+	assert.NotNil(t, svc.stabilizers["Riot Games"], "vẫn fingerprint và Observe")
+}
+
+// Publish ngay cũng chụp trước tiên: chụp lỗi thì game báo đúng lỗi đó, không băm, không publish.
+func TestPublishNow_RiotCaptureErrorSetsError(t *testing.T) {
+	root, _ := riotMasterRoot(t) // ProgramData không có "Riot Games"
+	db, mock := newMockDB(t)
+	mock.MatchExpectationsInOrder(false) // luồng nền ghi lỗi song song với lần đọc lại cuối của PublishNow
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: root})
+	svc.runCtx, svc.engine = context.Background(), &gameupdate.Engine{} // lối lỗi không dùng tới engine
+	const id = "11111111-1111-1111-1111-111111111111"
+	const updateSQL = `UPDATE "games" SET "error"=\$1,"status"=\$2,"updated_at"=\$3 WHERE id = \$4`
+	load := func() {
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE id = \$1`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "enabled", "version", "status"}).
+				AddRow(id, "Riot Games", true, 0, model.GameStatusNotInstalled))
+	}
+	load()
+	expectGameUpdate(mock, updateSQL, "", model.GameStatusPublishing, anyTime{}, id)
+	expectGameUpdate(mock, updateSQL, chuaChuoi{"không thấy", true}, model.GameStatusError, anyTime{}, id)
+	load()
+
+	_, err := svc.PublishNow(context.Background(), id)
+	require.NoError(t, err)
+	assert.Eventually(t, func() bool { return mock.ExpectationsWereMet() == nil }, 5*time.Second, 10*time.Millisecond)
+	assert.NoDirExists(t, filepath.Join(root, "Riot Games", "_vnet"))
+}
+
+// Lần chụp gần nhất lỗi (có thể đã ghi/xoá dở bản chụp) thì publish() không băm, kể cả khi lượt kia
+// đã chụp xong và fingerprint trước lỗi đó. Chụp thành công lại thì publish đi tiếp như thường.
+func TestPublish_RefusesAfterFailedCapture(t *testing.T) {
+	root, programData := riotMasterRoot(t) // ProgramData chưa có "Riot Games": chụp lỗi
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: root})
+	dir := filepath.Join(root, "Riot Games")
+	g := model.Game{ID: "g1", Name: "Riot Games"}
+
+	require.Error(t, svc.captureLauncherState(dir))
+	err := svc.publish(context.Background(), g, dir, "fp")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "chưa trọn")
+	assert.NoError(t, mock.ExpectationsWereMet(), "từ chối trước cả lần đọc lại DB, không băm")
+
+	installs := filepath.Join(programData, "Riot Games", "RiotClientInstalls.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(installs), 0o755))
+	require.NoError(t, os.WriteFile(installs, []byte(`{}`), 0o644))
+	require.NoError(t, svc.captureLauncherState(dir))
+	// Đi tiếp tới lần đọc lại DB; bản này đã publish nên dừng ở đó, không băm.
+	mock.ExpectQuery(`SELECT \* FROM "games" WHERE id = \$1`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "version", "fingerprint"}).AddRow("g1", "Riot Games", 1, "fp"))
+	assert.NoError(t, svc.publish(context.Background(), g, dir, "fp"))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Riot chạy từ thư mục khác: thư mục là game thường, không cần classic, nên thiếu classic không được
+// chặn nó. runtime.GOOS không giả được nên chỉ trên Windows test này kiểm thứ tự; nơi khác lời từ
+// chối classic không bao giờ chạy và test chỉ còn kiểm đường ErrRiotElsewhere.
+func TestCaptureLauncherState_RiotElsewhereBeforeClassic(t *testing.T) {
+	root, programData := riotMasterRoot(t)
+	torrentFileIOClassic = false // riotMasterRoot đã hẹn trả lại giá trị cũ
+	installs := filepath.Join(programData, "Riot Games", "RiotClientInstalls.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(installs), 0o755))
+	require.NoError(t, os.WriteFile(installs, []byte(`{"rc_default": "E:/Other/Riot Client/RiotClientServices.exe"}`), 0o644))
+	db, _ := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: root})
+	dir := filepath.Join(root, "Riot Games")
+
+	assert.NoError(t, svc.captureLauncherState(dir))
+	assert.NoDirExists(t, filepath.Join(dir, "_vnet"))
+}
+
 func TestSetError_KhongBaoGioRong(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewGameService(db, config.GameConfig{})
@@ -523,4 +763,202 @@ func TestSyncNow_IdKhongTonTai(t *testing.T) {
 	assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 	assert.True(t, errors.Is(err, gorm.ErrRecordNotFound))
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ---------------------------------------------------------------- tên game hỏng bảng mã
+
+// DB đang có tên "Li\uFFFDn Minh Huy?n Tho?i (Riot)": mất dấu tiếng Việt lúc tạo game qua đường mã hoá sai.
+const tenHong = "Li\uFFFDn Minh Huy?n Tho?i (Riot)"
+
+func TestKiemTraChuGame(t *testing.T) {
+	for _, ok := range []string{
+		"", "League of Legends", "Liên Minh Huyền Thoại (Riot)", "Đột Kích", "🎮 CS2", "Ắằẳẵặ ếềểễệ",
+		"Lie\u0302n Minh", // dấu rời (NFD) là ký tự kết hợp, không phải ký tự điều khiển
+		"  Game\n",        // khoảng trắng thừa khi dán bị cắt trước khi lưu
+		"--launch-product=league_of_legends --patchlineoverride=live",
+	} {
+		assert.NoError(t, kiemTraChuGame("tên hiển thị", ok), ok)
+	}
+	for _, bad := range []string{tenHong, "\uFFFD", "a\xffb", "a\x00b", "a\tb", "a\x1bb", "a\x7fb", "a\u0085b"} {
+		err := kiemTraChuGame("tên hiển thị", bad)
+		require.Error(t, err, "%q", bad)
+		assert.Contains(t, err.Error(), "tên hiển thị", "lỗi phải chỉ đúng trường")
+	}
+	err := kiemTraChuGame("tên hiển thị", tenHong)
+	assert.Contains(t, err.Error(), "ký tự lỗi (mất dấu tiếng Việt do sai bảng mã), vui lòng nhập lại")
+}
+
+// masterRootCoGame dựng GAME_ROOT thật có sẵn thư mục "Game", vì Create kiểm thư mục trước khi ghi DB.
+func masterRootCoGame(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "Game"), 0o755))
+	return root
+}
+
+func TestGameService_Create_ChanTenHong(t *testing.T) {
+	for _, c := range []struct {
+		ten string
+		req CreateGameRequest
+		loi string
+	}{
+		{"tên hiển thị", CreateGameRequest{Name: "Game", DisplayName: tenHong}, "tên hiển thị có ký tự lỗi"},
+		{"nhóm", CreateGameRequest{Name: "Game", Category: "Tr\uFFFD chơi"}, "nhóm có ký tự lỗi"},
+		{"launcher", CreateGameRequest{Name: "Game", Launcher: "Bin/G\uFFFDme.exe"}, "launcher có ký tự lỗi"},
+		{"tham số chạy", CreateGameRequest{Name: "Game", LaunchArgs: "--x=\uFFFD"}, "tham số chạy có ký tự lỗi"},
+		{"không phải UTF-8", CreateGameRequest{Name: "Game", DisplayName: "a\xffb"}, "ký tự lỗi"},
+		{"ký tự điều khiển", CreateGameRequest{Name: "Game", DisplayName: "a\x00b"}, "ký tự điều khiển"},
+		{"tên game (slug) đã bị tenGameHopLe chặn", CreateGameRequest{Name: "G\uFFFDme"}, "tên game chỉ gồm"},
+	} {
+		db, mock := newMockDB(t)
+		svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: masterRootCoGame(t)})
+		_, err := svc.Create(&c.req)
+		require.Error(t, err, c.ten)
+		assert.Contains(t, err.Error(), c.loi, c.ten)
+		assert.NoError(t, mock.ExpectationsWereMet(), c.ten+": không được ghi DB")
+	}
+}
+
+func TestGameService_Create_TenTiengVietHopLeVanQua(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: masterRootCoGame(t)})
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "games"`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
+	mock.ExpectCommit()
+
+	g, err := svc.Create(&CreateGameRequest{
+		Name: "Game", DisplayName: "  Liên Minh Huyền Thoại (Riot) 🎮 ", Category: "Đột Kích",
+		Launcher: "Bin/Game.exe", LaunchArgs: "--lang=vi_VN",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "Liên Minh Huyền Thoại (Riot) 🎮", g.DisplayName)
+	assert.Equal(t, "Đột Kích", g.Category)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGameService_Update_ChanTenHong(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	expectLoad := func(mock sqlmock.Sqlmock) {
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE id = \$1`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "display_name"}).AddRow(id, "Game", "Game"))
+	}
+	for _, c := range []struct {
+		ten string
+		req UpdateGameRequest
+		loi string
+	}{
+		{"tên hiển thị", UpdateGameRequest{DisplayName: strPtr(tenHong)}, "tên hiển thị có ký tự lỗi"},
+		{"nhóm", UpdateGameRequest{Category: strPtr("Tr\uFFFD chơi")}, "nhóm có ký tự lỗi"},
+		{"launcher", UpdateGameRequest{Launcher: strPtr("Bin/G\uFFFDme.exe")}, "launcher có ký tự lỗi"},
+		{"tham số chạy", UpdateGameRequest{LaunchArgs: strPtr("--x=\uFFFD")}, "tham số chạy có ký tự lỗi"},
+		{"ký tự điều khiển", UpdateGameRequest{DisplayName: strPtr("a\x00b")}, "ký tự điều khiển"},
+	} {
+		db, mock := newMockDB(t)
+		svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster})
+		expectLoad(mock)
+		_, err := svc.Update(id, &c.req)
+		require.Error(t, err, c.ten)
+		assert.Contains(t, err.Error(), c.loi, c.ten)
+		assert.NoError(t, mock.ExpectationsWereMet(), c.ten+": không được UPDATE")
+	}
+
+	t.Run("tiếng Việt hợp lệ vẫn lưu được", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster})
+		expectLoad(mock)
+		expectGameUpdate(mock, `UPDATE "games" SET "display_name"=\$1,"updated_at"=\$2 WHERE "id" = \$3`,
+			"Liên Minh Huyền Thoại", anyTime{}, id)
+		expectLoad(mock)
+		_, err := svc.Update(id, &UpdateGameRequest{DisplayName: strPtr(" Liên Minh Huyền Thoại ")})
+		require.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("quán không sửa được tên nên không kiểm: hành vi cũ giữ nguyên", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe})
+		expectLoad(mock)
+		expectLoad(mock) // không có gì để UPDATE: chỉ đọc lại
+		_, err := svc.Update(id, &UpdateGameRequest{DisplayName: strPtr(tenHong)})
+		require.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+// Dữ liệu cũ đã hỏng trong DB: menu hiện slug, không hiện tên có ký tự lỗi, và không đụng DB.
+func TestGameService_Menu_TenHongHienSlug(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe})
+	mock.ExpectQuery(`SELECT \* FROM "games" ORDER BY priority DESC, display_name ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"name", "display_name", "launcher", "enabled", "status"}).
+			AddRow("LeagueOfLegends", tenHong, "Riot Client/RiotClientServices.exe", true, model.GameStatusReady).
+			AddRow("DotKich", "Đột Kích", "Game.exe", true, model.GameStatusReady))
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs("games").
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
+
+	menu, err := svc.Menu()
+	require.NoError(t, err)
+	require.Len(t, menu.Items, 2)
+	assert.Equal(t, "LeagueOfLegends", menu.Items[0].DisplayName, "tên hỏng thì dùng slug")
+	assert.Equal(t, "Đột Kích", menu.Items[1].DisplayName, "tên tốt giữ nguyên")
+	assert.NoError(t, mock.ExpectationsWereMet(), "không ghi gì vào DB")
+}
+
+// pullCatalogVoi chạy pullCatalog với một master giả trả items; setup đặt các truy vấn DB mong đợi.
+func pullCatalogVoi(t *testing.T, items []CatalogItem, setup func(mock sqlmock.Sqlmock)) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/game-catalog", r.URL.Path)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 0, "data": items})
+	}))
+	defer srv.Close()
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe, UpstreamURL: srv.URL, CatalogKey: "k"})
+	setup(mock)
+	require.NoError(t, svc.pullCatalog(context.Background()))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPullCatalog_KhongGhiDeTenTotBangTenHong(t *testing.T) {
+	const selectSQL = `SELECT \* FROM "games" WHERE name = \$1`
+	const updateKhongTen = `UPDATE "games" SET "category"=\$1,"launch_args"=\$2,"launcher"=\$3,"remote_infohash"=\$4,"remote_version"=\$5,"updated_at"=\$6 WHERE "id" = \$7`
+	const updateCoTen = `UPDATE "games" SET "category"=\$1,"display_name"=\$2,"launch_args"=\$3,"launcher"=\$4,"remote_infohash"=\$5,"remote_version"=\$6,"updated_at"=\$7 WHERE "id" = \$8`
+	item := func(ten string) []CatalogItem {
+		return []CatalogItem{{Name: "lol", DisplayName: ten, Category: "Online", Launcher: "a.exe", Version: 2, Infohash: "h2"}}
+	}
+	existing := func(mock sqlmock.Sqlmock, ten string) {
+		mock.ExpectQuery(selectSQL).WillReturnRows(sqlmock.NewRows([]string{"id", "name", "display_name"}).AddRow("g1", "lol", ten))
+	}
+
+	t.Run("master gửi tên hỏng, quán có tên tốt: giữ tên cũ", func(t *testing.T) {
+		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
+			existing(mock, "Liên Minh Huyền Thoại")
+			expectGameUpdate(mock, updateKhongTen, "Online", "", "a.exe", "h2", 2, anyTime{}, "g1")
+		})
+	})
+	t.Run("master gửi tên tốt: cập nhật như cũ", func(t *testing.T) {
+		pullCatalogVoi(t, item("Liên Minh Huyền Thoại (Riot)"), func(mock sqlmock.Sqlmock) {
+			existing(mock, "Liên Minh Huyền Thoại")
+			expectGameUpdate(mock, updateCoTen, "Online", "Liên Minh Huyền Thoại (Riot)", "", "a.exe", "h2", 2, anyTime{}, "g1")
+		})
+	})
+	t.Run("quán cũng đang có tên hỏng: nhận tên của master", func(t *testing.T) {
+		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
+			existing(mock, "Li\uFFFDn")
+			expectGameUpdate(mock, updateCoTen, "Online", tenHong, "", "a.exe", "h2", 2, anyTime{}, "g1")
+		})
+	})
+	t.Run("quán chưa có game đó: nhận như cũ, Menu lo hiển thị", func(t *testing.T) {
+		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
+			mock.ExpectQuery(selectSQL).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+			mock.ExpectBegin()
+			args := make([]driver.Value, 20) // 20 cột của bảng games; chỉ name và display_name cần khớp
+			for i := range args {
+				args[i] = sqlmock.AnyArg()
+			}
+			args[0], args[1] = "lol", tenHong
+			mock.ExpectQuery(`INSERT INTO "games"`).WithArgs(args...).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("g1"))
+			mock.ExpectCommit()
+		})
+	})
 }

@@ -301,6 +301,10 @@ func TestChuanHoaLoiTatAn(t *testing.T) {
 	// Luôn có trong chính sách, kể cả rỗng: rỗng là tắt tính năng. Chưa đặt thì
 	// mặc định rỗng.
 	assert.Equal(t, "Game Menu", clientPolicyFrom(map[string]string{HiddenShortcutsKey: "Game Menu.lnk"}).HiddenShortcuts)
+	assert.Equal(t, `D:\Games\meta`, clientPolicyFrom(map[string]string{RiotMetadataSourceKey: ` D:\Games\meta `}).RiotMetadataSource)
+	for _, bad := range []string{``, `meta`, `\\srv\share`, `D:\a\..\b`, `D:\a*`} {
+		assert.Equal(t, "", clientPolicyFrom(map[string]string{RiotMetadataSourceKey: bad}).RiotMetadataSource, bad)
+	}
 	assert.Equal(t, "", clientPolicyFrom(map[string]string{}).HiddenShortcuts)
 
 	raw, err := json.Marshal(clientPolicyFrom(map[string]string{}))

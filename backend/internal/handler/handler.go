@@ -34,6 +34,7 @@ type Handlers struct {
 	Shift             *ShiftHandler
 	Settings          *SettingsHandler
 	Audit             *AuditHandler
+	ErrorReport       *ErrorReportHandler
 	Backup            *BackupHandler
 	Chat              *ChatHandler
 	Report            *ReportHandler
@@ -51,10 +52,13 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 	curfewSvc := service.NewCurfewService(db, auditSvc)
 	// Session starts are gated by curfew, so both handlers share one instance.
 	sessionSvc := service.NewSessionService(db, wsHub, auditSvc).WithCurfew(curfewSvc).WithMinCharge()
+	// gameSvc dùng chung với handler Game (main.go chạy chính bản đó): nhịp tim máy trạm
+	// lấy nguồn metadata Riot mặc định của quán từ nó.
+	gameSvc := service.NewGameService(db, cfg.Game)
 	// Một MachineService dùng chung: handler chặn website cũng cần nó để kiểm
 	// khoá máy trạm, dựng hai bản là hai nguồn sự thật cho cùng một thứ.
 	// Dựng SAU sessionSvc vì tắt máy / khởi động lại từ xa phải chốt được phiên.
-	machineSvc := service.NewMachineService(db, wsHub, auditSvc).WithSessions(sessionSvc)
+	machineSvc := service.NewMachineService(db, wsHub, auditSvc).WithSessions(sessionSvc).WithRiotSource(gameSvc.RiotMetadataSource)
 	return &Handlers{Upload: NewUploadHandler(cfg.Server.UploadDir, cfg.Server.MaxFileSize),
 		Auth:              NewAuthHandler(service.NewAuthService(db, jwtManager, auditSvc).WithCurfew(curfewSvc).WithSessions(sessionSvc)),
 		Route:             NewRouteHandler(service.NewRouteService()),
@@ -74,13 +78,14 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Attendance:        NewAttendanceHandler(service.NewAttendanceService(db, auditSvc).WithHub(wsHub)),
 		WebsiteBlock:      NewWebsiteBlockHandler(service.NewWebsiteBlockService(db, auditSvc)),
 		AppUpdate:         NewAppUpdateHandler(service.NewAppUpdateService(db, auditSvc)),
-		Game:              NewGameHandler(service.NewGameService(db, cfg.Game)),
+		Game:              NewGameHandler(gameSvc),
 		Feedback:          NewFeedbackHandler(service.NewFeedbackService(db, auditSvc)),
 		Pricing:           NewPricingHandler(service.NewPricingService(db, auditSvc)),
 		Inventory:         NewInventoryHandler(invSvc),
 		Shift:             NewShiftHandler(service.NewShiftService(db, auditSvc)),
 		Settings:          NewSettingsHandler(service.NewSettingsService(db, auditSvc)),
 		Audit:             NewAuditHandler(auditSvc),
+		ErrorReport:       NewErrorReportHandler(service.NewErrorReportService(db)),
 		Backup:            NewBackupHandler(service.NewBackupService(db, &cfg.Database, cfg.Server.BackupDir, auditSvc)),
 		Chat:              NewChatHandler(chatSvc),
 		Report:            NewReportHandler(service.NewReportService(db)),

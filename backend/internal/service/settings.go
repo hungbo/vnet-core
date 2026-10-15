@@ -249,6 +249,11 @@ type ClientPolicy struct {
 	// hình desktop, đã chuẩn hoá và nối bằng dấu phẩy ("Game Menu,Teamfight
 	// Tactics"). Luôn gửi, kể cả rỗng: rỗng là tắt tính năng.
 	HiddenShortcuts string `json:"hidden_shortcuts"`
+	// RiotMetadataSource: thư mục trên Game Disk chứa bản metadata Riot mà dịch
+	// vụ máy trạm chép vào C:\ProgramData\Riot Games. Luôn gửi, kể cả rỗng:
+	// rỗng là tắt; máy chủ tự điền khi admin để trống cài đặt (xem
+	// MachineService.ClientPolicy), cài đặt `off` là tắt hẳn.
+	RiotMetadataSource string `json:"riot_metadata_source"`
 	// Máy ở màn hình khoá, không ai đăng nhập bấy nhiêu phút thì tự tắt. 0 là
 	// không bao giờ. Luôn gửi: máy chủ cũ không có trường này thì máy trạm hiểu
 	// là 0, tức là tắt tính năng — không bao giờ tắt máy theo một mặc định
@@ -281,6 +286,38 @@ func chuanHoaUngDungChan(raw string) string {
 	}
 	sort.Strings(out)
 	return strings.Join(out, ",")
+}
+
+// RiotMetadataSourceKey là thư mục metadata Riot trong nhóm cài đặt máy trạm.
+const RiotMetadataSourceKey = "riot_metadata_source"
+
+// RiotMetadataOff: giá trị cài đặt tắt hẳn tính năng (không phân biệt hoa thường). Để trống thì
+// máy chủ tự điền đường dẫn (xem MachineService.ClientPolicy).
+const RiotMetadataOff = "off"
+
+// chuanHoaNguonRiot: chỉ nhận đường dẫn ổ đĩa tuyệt đối ("D:\Games\_riot"). Máy
+// trạm đem đường dẫn này đi đọc bằng quyền SYSTEM nên tương đối, UNC, ký tự điều
+// khiển hay đoạn ".." đều bị bỏ (trả ""), cùng luật với chuanHoaNguonRiot của client.
+func chuanHoaNguonRiot(raw string) string {
+	p := strings.TrimSpace(raw)
+	if len(p) < 3 || len(p) > 260 {
+		return ""
+	}
+	drive := p[0]
+	if !(drive >= 'A' && drive <= 'Z' || drive >= 'a' && drive <= 'z') || p[1] != ':' || (p[2] != '\\' && p[2] != '/') {
+		return ""
+	}
+	for _, r := range p {
+		if unicode.IsControl(r) || strings.ContainsRune(`*?<>"|`, r) {
+			return ""
+		}
+	}
+	for _, part := range strings.FieldsFunc(p[3:], func(r rune) bool { return r == '\\' || r == '/' }) {
+		if part == ".." {
+			return ""
+		}
+	}
+	return p
 }
 
 // HiddenShortcutsKey là danh sách lối tắt cần ẩn trong nhóm cài đặt máy trạm,
@@ -341,18 +378,11 @@ const (
 	defaultOfflineLockSeconds   = 60
 	defaultOfflineRebootSeconds = 300
 	// Dưới mức này thì một nhịp tim rớt (15 giây một nhịp) cũng đủ khoá máy.
-	minOfflineLockSeconds = 30
+	minOfflineLockSeconds      = 30
 	defaultIdleShutdownMinutes = 5
 	// Một ngày. Lớn hơn nữa thì cũng như tắt tính năng, chỉ khó hiểu hơn.
 	maxIdleShutdownMinutes = 1440
 )
-
-// ClientPolicyFor đọc chính sách từ cài đặt và ép về khoảng hợp lệ. Giá trị sai
-// ở đây khoá oan hoặc khởi động lại oan cả phòng máy, nên không tin thẳng con số
-// người dùng gõ.
-func ClientPolicyFor(db *gorm.DB) ClientPolicy {
-	return clientPolicyFrom(settingsGroup(db, ClientGroup))
-}
 
 func clientPolicyFrom(m map[string]string) ClientPolicy {
 	p := ClientPolicy{
@@ -368,6 +398,7 @@ func clientPolicyFrom(m map[string]string) ClientPolicy {
 	}
 	p.BlockedApps = chuanHoaUngDungChan(m[BlockedAppsKey])
 	p.HiddenShortcuts = chuanHoaLoiTatAn(m[HiddenShortcutsKey])
+	p.RiotMetadataSource = chuanHoaNguonRiot(m[RiotMetadataSourceKey])
 	p.IdleShutdownMinutes = settingInt(m, IdleShutdownKey, defaultIdleShutdownMinutes)
 	if p.IdleShutdownMinutes < 0 {
 		p.IdleShutdownMinutes = 0

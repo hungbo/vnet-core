@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vnet/core/internal/hub"
@@ -16,10 +17,14 @@ import (
 )
 
 type MachineService struct {
-	db       *gorm.DB
-	hub      *hub.Hub
-	audit    *AuditService
-	sessions *SessionService
+	db         *gorm.DB
+	hub        *hub.Hub
+	audit      *AuditService
+	sessions   *SessionService
+	riotSource func() string
+	// Dòng [boot] đã ghi gần nhất theo mã máy — xem ghiBootReport.
+	bootMu    sync.Mutex
+	bootDaGhi map[string]string
 }
 
 func NewMachineService(db *gorm.DB, wsHub *hub.Hub, audit *AuditService) *MachineService {
@@ -30,6 +35,13 @@ func NewMachineService(db *gorm.DB, wsHub *hub.Hub, audit *AuditService) *Machin
 // tiền — xem ghi chú trong RemoteAction.
 func (s *MachineService) WithSessions(sess *SessionService) *MachineService {
 	s.sessions = sess
+	return s
+}
+
+// WithRiotSource nối nguồn metadata Riot mặc định (GameService.RiotMetadataSource) vào
+// ClientPolicy. Không có nó, cài đặt để trống nghĩa là tắt như trước.
+func (s *MachineService) WithRiotSource(f func() string) *MachineService {
+	s.riotSource = f
 	return s
 }
 
@@ -103,6 +115,9 @@ type HeartbeatRequest struct {
 	ExtraNetwork *string `json:"extra_network"`
 	// Thiết bị ngoại vi, máy trạm đọc một lần lúc khởi động. Rỗng = không khai.
 	Peripherals []string `json:"peripherals"`
+	// Mốc thời gian khởi động máy trạm. Chỉ ghi một dòng [boot] vào log máy
+	// chủ khi nó đổi — không lưu DB.
+	BootReport *BootReport `json:"boot_report,omitempty"`
 }
 
 type CreateMachineGroupRequest struct {
@@ -645,6 +660,7 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 	if err := s.db.Model(&machine).Updates(updates).Error; err != nil {
 		return err
 	}
+	s.ghiBootReport(machine.MachineCode, req.BootReport)
 	_ = s.audit.Log(&LogAuditRequest{
 		Action:     "heartbeat",
 		EntityType: "machine",
@@ -684,9 +700,17 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 	return nil
 }
 
-// ClientPolicy là chính sách bảo vệ mà máy trạm nhận về trong phản hồi nhịp tim.
+// ClientPolicy là chính sách bảo vệ mà máy trạm nhận về trong phản hồi nhịp tim. Đọc từ cài đặt
+// và ép về khoảng hợp lệ: giá trị sai khoá oan hoặc khởi động lại oan cả phòng máy. Nguồn metadata
+// Riot để trống thì máy chủ tự điền (GameService.RiotMetadataSource); "off" là tắt hẳn.
 func (s *MachineService) ClientPolicy() ClientPolicy {
-	return ClientPolicyFor(s.db)
+	m := settingsGroup(s.db, ClientGroup)
+	p := clientPolicyFrom(m)
+	if p.RiotMetadataSource == "" && s.riotSource != nil &&
+		!strings.EqualFold(strings.TrimSpace(m[RiotMetadataSourceKey]), RiotMetadataOff) {
+		p.RiotMetadataSource = s.riotSource()
+	}
+	return p
 }
 
 func (s *MachineService) GetHardwareHistory(id string, params pagination.Params) (*pagination.Result, error) {

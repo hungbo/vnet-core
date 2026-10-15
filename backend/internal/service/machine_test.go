@@ -884,3 +884,37 @@ func TestAnhChupHopLe(t *testing.T) {
 		assert.False(t, anhChupHopLe.MatchString(bad), bad)
 	}
 }
+
+// Nguồn metadata Riot trong nhịp tim: giá trị hợp lệ admin đặt thắng; để trống (hoặc sai) thì máy
+// chủ tự điền; "off" tắt hẳn. Chỉ một câu đọc cài đặt, như trước.
+func TestMachineService_ClientPolicy_RiotSource(t *testing.T) {
+	const auto = `E:\Games\Riot Games\_vnet\ProgramData\Riot Games`
+	derived := func() string { return auto }
+	never := func() string {
+		t.Fatal("cài đặt đã quyết định, không được hỏi nguồn tự điền")
+		return ""
+	}
+	policy := func(stored string, src func() string) string {
+		db, mock := newMockDB(t)
+		rows := sqlmock.NewRows([]string{"group_name", "key", "value"})
+		if stored != "" {
+			rows.AddRow(ClientGroup, RiotMetadataSourceKey, stored)
+		}
+		mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs(ClientGroup).WillReturnRows(rows)
+		svc := NewMachineService(db, nil, NewAuditService(db))
+		if src != nil {
+			svc = svc.WithRiotSource(src)
+		}
+		got := svc.ClientPolicy().RiotMetadataSource
+		require.NoError(t, mock.ExpectationsWereMet(), stored)
+		return got
+	}
+
+	assert.Equal(t, `D:\X\meta`, policy(`"D:\\X\\meta"`, never), "giá trị hợp lệ thắng")
+	assert.Equal(t, auto, policy("", derived), "chưa đặt")
+	assert.Equal(t, auto, policy(`""`, derived), "để trống")
+	assert.Equal(t, auto, policy(`"..\\x"`, derived), "giá trị sai coi như để trống")
+	assert.Equal(t, "", policy(`"off"`, never))
+	assert.Equal(t, "", policy(`" OFF "`, never), "off không phân biệt hoa thường và khoảng trắng")
+	assert.Equal(t, "", policy("", nil), "không nối nguồn tự điền: để trống là tắt như trước")
+}

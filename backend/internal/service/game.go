@@ -16,11 +16,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/vnet/core/internal/config"
@@ -69,6 +72,45 @@ func tenGameDungDuoc(name string) bool {
 	return tenGameHopLe.MatchString(name) && !strings.Contains(name, "..") && !thanhPhanWindowsXau(name)
 }
 
+// coKyTuLoi: chuỗi có U+FFFD (hoặc byte không phải UTF-8, range cũng ra U+FFFD). Đó là dấu vết
+// của một lần đổi bảng mã làm mất chữ, ví dụ "Liên Minh" thành "Li�n Minh".
+func coKyTuLoi(s string) bool {
+	return !utf8.ValidString(s) || strings.ContainsRune(s, utf8.RuneError)
+}
+
+// kiemTraChuGame từ chối chuỗi người dùng nhập mà đã hỏng bảng mã hoặc có ký tự điều khiển. Tiếng
+// Việt có dấu, emoji và các ký tự Unicode thường vẫn qua. nhan là tên trường để lỗi chỉ đúng chỗ.
+// Kiểm sau khi cắt khoảng trắng — đúng giá trị sẽ được lưu — nên dấu xuống dòng thừa khi dán không bị từ chối.
+func kiemTraChuGame(nhan, v string) error {
+	v = strings.TrimSpace(v)
+	if coKyTuLoi(v) {
+		return fmt.Errorf("%s có ký tự lỗi (mất dấu tiếng Việt do sai bảng mã), vui lòng nhập lại", nhan)
+	}
+	if strings.IndexFunc(v, unicode.IsControl) >= 0 {
+		return fmt.Errorf("%s có ký tự điều khiển không hợp lệ", nhan)
+	}
+	return nil
+}
+
+// kiemTraCacTruongChuGame kiểm các trường chữ của một game; con trỏ nil là trường không gửi lên (Update).
+// Tên game (name) không cần ở đây: tenGameHopLe chỉ nhận ASCII nên U+FFFD không lọt qua được.
+func kiemTraCacTruongChuGame(displayName, category, launcher, launchArgs *string) error {
+	for _, f := range []struct {
+		nhan string
+		v    *string
+	}{
+		{"tên hiển thị", displayName}, {"nhóm", category}, {"launcher", launcher}, {"tham số chạy", launchArgs},
+	} {
+		if f.v == nil {
+			continue
+		}
+		if err := kiemTraChuGame(f.nhan, *f.v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // thanhPhanWindowsXau: Windows bỏ dấu chấm và khoảng trắng ở cuối ("Game." thành "Game") và coi
 // CON, PRN, AUX, NUL, COM1-9, LPT1-9 (kể cả khi có đuôi, "con.txt") là thiết bị chứ không phải tệp —
 // thư mục hay tệp mang tên đó không tạo hay mở được như người đặt tên tưởng.
@@ -104,6 +146,8 @@ type GameService struct {
 	wake        chan struct{}         // vòng đọc catalog đánh thức luồng tải game (quán)
 	current     *installJob           // game đang tải; nil khi luồng tải rảnh
 	retry       map[string]*retryInfo // game tải lỗi: bao giờ được thử lại
+	riotLogged  map[string]bool       // game Riot đã báo "Riot chạy từ thư mục khác" trong nhật ký; giữ pubMu
+	riotBroken  map[string]bool       // thư mục game Riot có lần chụp gần nhất lỗi, bản chụp có thể dở; giữ pubMu
 }
 
 // installJob là lượt tải đang chạy, để lượt đọc catalog sau hủy được khi master đã có bản mới hơn.
@@ -138,6 +182,8 @@ func NewGameService(db *gorm.DB, cfg config.GameConfig) *GameService {
 		kick:        make(chan struct{}, 1),
 		wake:        make(chan struct{}, 1),
 		retry:       map[string]*retryInfo{},
+		riotLogged:  map[string]bool{},
+		riotBroken:  map[string]bool{},
 	}
 }
 
@@ -280,6 +326,9 @@ func (s *GameService) Create(req *CreateGameRequest) (*model.Game, error) {
 	if !tenGameDungDuoc(name) {
 		return nil, errors.New("tên game chỉ gồm chữ, số, khoảng trắng và . _ ( ) + -, không quá 100 ký tự, không kết thúc bằng dấu chấm và không trùng tên thiết bị Windows (CON, NUL, COM1…)")
 	}
+	if err := kiemTraCacTruongChuGame(&req.DisplayName, &req.Category, &req.Launcher, &req.LaunchArgs); err != nil {
+		return nil, err
+	}
 	if fi, err := os.Stat(filepath.Join(s.cfg.Root, name)); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("không thấy thư mục %s", filepath.Join(s.cfg.Root, name))
 	}
@@ -329,6 +378,9 @@ func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, er
 	// Ở quán, tên hiển thị, nhóm và launcher đến từ catalog của master: sửa tay
 	// sẽ bị lần đồng bộ sau ghi đè, nên chỉ cho sửa ở master.
 	if s.cfg.Role == config.GameRoleMaster {
+		if err := kiemTraCacTruongChuGame(req.DisplayName, req.Category, req.Launcher, req.LaunchArgs); err != nil {
+			return nil, err
+		}
 		if req.DisplayName != nil && strings.TrimSpace(*req.DisplayName) != "" {
 			updates["display_name"] = strings.TrimSpace(*req.DisplayName)
 		}
@@ -428,13 +480,46 @@ func (s *GameService) Menu() (*GameMenu, error) {
 		if !g.Enabled || g.Launcher == "" {
 			continue
 		}
+		// Tên đã lưu mà hỏng bảng mã (dữ liệu cũ, tạo qua đường mã hoá sai) thì hiện slug: một tên có
+		// ô vuông còn tệ hơn tên không dấu. Không sửa DB — chỉ là cách hiển thị cho tới khi quản trị viên nhập lại.
+		display := g.DisplayName
+		if coKyTuLoi(display) {
+			display = g.Name
+		}
 		menu.Items = append(menu.Items, GameMenuItem{
-			Name: g.Name, DisplayName: g.DisplayName, Category: g.Category,
+			Name: g.Name, DisplayName: display, Category: g.Category,
 			Launcher: g.Launcher, LaunchArgs: g.LaunchArgs,
 			Status: g.Status, Progress: g.Progress, Version: g.Version,
 		})
 	}
 	return menu, nil
+}
+
+// RiotMetadataSource: giá trị mặc định của riot_metadata_source khi admin để trống:
+// <client_root>\<game>\_vnet\ProgramData\Riot Games của game bật đầu tiên (theo tên) mà thư mục trên
+// GAME_ROOT CỦA QUÁN NÀY có bản chụp. "" nếu không phải quán hoặc chưa có.
+//
+// Không lọc theo trạng thái: giá trị đổi qua lại suốt mấy giờ tải lại game thì mỗi lần đổi máy trạm
+// lại ghi policy.json và chép lại metadata. Bản chụp là liên kết (Lstat) thì bỏ, như máy trạm từ chối.
+func (s *GameService) RiotMetadataSource() string {
+	if s.cfg.Role != config.GameRoleCafe || s.cfg.Root == "" {
+		return ""
+	}
+	var names []string
+	if s.db.Model(&model.Game{}).Where("enabled = ?", true).Order("name").Pluck("name", &names).Error != nil {
+		return ""
+	}
+	for _, n := range names {
+		if !tenGameDungDuoc(n) {
+			continue
+		}
+		if fi, err := os.Lstat(filepath.Join(s.cfg.Root, n, "_vnet", "ProgramData", "Riot Games")); err != nil || !fi.IsDir() {
+			continue
+		}
+		root := normalizeGameClientRoot(settingsGroup(s.db, GamesGroup)[GameClientRootKey])
+		return chuanHoaNguonRiot(root + `\` + n + `\_vnet\ProgramData\Riot Games`)
+	}
+	return ""
 }
 
 func checkLauncher(l string) error {
@@ -549,6 +634,14 @@ func (s *GameService) Kick() {
 	}
 }
 
+// torrentFileIOEnv: cách anacrolix đọc tệp đang phát, do bộ cài đặt vào môi trường của dịch vụ
+// Windows (=classic). Kiểm lại khi nâng anacrolix (đang v1.61.0).
+const torrentFileIOEnv = "TORRENT_STORAGE_DEFAULT_FILE_IO"
+
+// torrentFileIOClassic đọc biến lúc nạp gói như anacrolix, trước khi loadServiceConfig chép
+// config.env vào môi trường: biến đặt trong config.env không đổi được cách anacrolix đọc tệp.
+var torrentFileIOClassic = os.Getenv(torrentFileIOEnv) == "classic"
+
 // Run chạy cho tới khi ctx kết thúc. Không làm gì khi GAME_ROLE trống.
 func (s *GameService) Run(ctx context.Context) {
 	if s.cfg.Role == config.GameRoleOff {
@@ -580,6 +673,10 @@ func (s *GameService) Run(ctx context.Context) {
 		engine.Close()
 	}()
 	log.Printf("[game] bật vai trò %s, thư mục %s", s.cfg.Role, s.cfg.Root)
+	if runtime.GOOS == "windows" && !torrentFileIOClassic {
+		log.Printf("[game] CẢNH BÁO: dịch vụ thiếu %s=classic: tệp đã phát bị khoá tới khi dịch vụ dừng "+
+			"(quán không xoá được tệp thừa, master không chụp được ProgramData). Chạy lại bộ cài vnet-server.", torrentFileIOEnv)
+	}
 
 	s.recoverDownloading()
 	s.recoverPublishing()
@@ -694,6 +791,12 @@ func (s *GameService) publishTick(ctx context.Context, now time.Time) {
 			return
 		}
 		dir := filepath.Join(s.cfg.Root, g.Name)
+		if err := s.captureLauncherState(dir); err != nil {
+			// Chỉ ở master, để người quản trị đọc: Catalog không xét trạng thái nên quán vẫn nhận bản cũ.
+			// Lượt này không fingerprint, không Observe, không publish.
+			s.setError(g.ID, err.Error())
+			continue
+		}
 		fp, err := gameupdate.Fingerprint(dir)
 		if err != nil {
 			s.setError(g.ID, fmt.Sprintf("không đọc được thư mục: %v", err))
@@ -759,8 +862,12 @@ func (s *GameService) PublishNow(_ context.Context, id string) (*model.Game, err
 	s.db.Model(&model.Game{}).Where("id = ?", g.ID).Updates(map[string]interface{}{
 		"status": model.GameStatusPublishing, "error": "",
 	})
-	go func() {
-		fp, err := gameupdate.Fingerprint(dir)
+	go func(g model.Game) { // bản sao: lệnh First cuối hàm ghi lại g trong lúc goroutine còn đọc
+		err := s.captureLauncherState(dir)
+		var fp string
+		if err == nil {
+			fp, err = gameupdate.Fingerprint(dir)
+		}
 		if err == nil && (fp != g.Fingerprint || g.Version == 0) {
 			err = s.publish(ctx, g, dir, fp)
 		}
@@ -777,16 +884,68 @@ func (s *GameService) PublishNow(_ context.Context, id string) (*model.Game, err
 			st.MarkPublished(fp)
 		}
 		s.mu.Unlock()
-	}()
+	}(g)
 	if err := s.db.First(&g, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	return &g, nil
 }
 
+// captureLauncherState: chỉ game Riot. Chép %ProgramData%\Riot Games của master vào thư mục game
+// (gameupdate.CaptureRiot) trước khi fingerprint, để máy trạm nhận trạng thái cài cùng bản game.
+// Giữ pubMu để không bao giờ ghi đè tệp mà publish() (BuildTorrent) đang băm, và hai lượt chụp
+// không ghi cùng một tệp. Không bao giờ gọi khi đang giữ pubMu.
+func (s *GameService) captureLauncherState(dir string) error {
+	if !gameupdate.IsRiotGame(dir) {
+		return nil // không khoá: một lần băm dài ở game khác không được làm kẹt lượt này
+	}
+	pd := os.Getenv("ProgramData")
+	if pd == "" && runtime.GOOS == "windows" {
+		pd = `C:\ProgramData`
+	}
+	if pd == "" {
+		return nil
+	}
+	src := filepath.Join(pd, "Riot Games")
+	s.pubMu.Lock()
+	defer s.pubMu.Unlock()
+	// Riot chạy từ thư mục khác thì đây là game thường, publish không cần classic: xét trước.
+	err := gameupdate.RiotElsewhere(src, dir)
+	if err == nil {
+		if runtime.GOOS == "windows" && !torrentFileIOClassic {
+			return fmt.Errorf("dịch vụ thiếu %s=classic nên không ghi được vào thư mục đang phát: chạy lại bộ cài vnet-server rồi khởi động lại dịch vụ", torrentFileIOEnv)
+		}
+		var n int
+		n, err = gameupdate.CaptureRiot(src, dir)
+		if n > 0 {
+			log.Printf("[game] %s: chụp ProgramData\\Riot Games vào _vnet, %d thay đổi", filepath.Base(dir), n)
+		}
+	}
+	if errors.Is(err, gameupdate.ErrRiotElsewhere) {
+		// Không phải lỗi: publish thư mục như game thường. Nhưng quán sẽ không có bản chụp, nên
+		// báo một lần trong nhật ký, không thì không ai biết tính năng đang tắt.
+		if !s.riotLogged[dir] {
+			s.riotLogged[dir] = true
+			log.Printf("[game] %s: %v", filepath.Base(dir), err)
+		}
+		err = nil // chưa có bản chụp nào, nên không có gì dở
+	}
+	// Chụp lỗi có thể đã ghi/xoá dở bản chụp, mà lượt publish kia có thể đã chụp xong và fingerprint
+	// trước lỗi này: publish() đợi lần chụp thành công sau, không băm bản dở.
+	if err != nil {
+		s.riotBroken[dir] = true
+	} else {
+		delete(s.riotBroken, dir)
+	}
+	return err
+}
+
 func (s *GameService) publish(ctx context.Context, g model.Game, dir, fp string) error {
 	s.pubMu.Lock()
 	defer s.pubMu.Unlock()
+	if s.riotBroken[dir] && gameupdate.IsRiotGame(dir) {
+		return errors.New(`bản chụp ProgramData\Riot Games trong thư mục game chưa trọn (lần chụp gần nhất lỗi): chưa publish, sẽ thử lại sau lần chụp thành công`)
+	}
 	// Đọc lại sau khi giữ khoá: lượt kia có thể vừa publish xong chính bản này.
 	if err := s.db.First(&g, "id = ?", g.ID).Error; err != nil {
 		return err
@@ -1071,6 +1230,12 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 		}
 		if err != nil {
 			return err
+		}
+		// Tên của master đã hỏng bảng mã thì không ghi đè tên đang tốt ở quán; quán chưa có tên tốt thì
+		// nhận như thường (Menu lo phần hiển thị).
+		if coKyTuLoi(it.DisplayName) && g.DisplayName != "" && !coKyTuLoi(g.DisplayName) {
+			log.Printf("[game] %s: master gửi tên hiển thị hỏng bảng mã, giữ tên cũ %q", it.Name, g.DisplayName)
+			delete(fields, "display_name")
 		}
 		if err := s.db.Model(&g).Updates(fields).Error; err != nil {
 			return err
