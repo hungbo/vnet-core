@@ -17,7 +17,22 @@ const dateRange = ref(null);
 // Chỉ liệt kê giá trị mà backend thật sự ghi vào audit_logs. 'login', 'logout'
 // và 'export' không có một dòng nào trong mã nguồn — chọn chúng thì bảng luôn
 // rỗng, người trực tưởng hệ thống mất dữ liệu.
-const actionOptions = ['create', 'update', 'update_status', 'delete', 'pay', 'cancel', 'topup', 'refund'];
+// 'request': mọi thao tác thay đổi dữ liệu của nhân viên, ghi ở tầng HTTP kèm
+// người làm và IP (middleware.StaffActionLog); 'login' / 'login_failed': đăng
+// nhập trang quản trị.
+const actionOptions = [
+  'request',
+  'login',
+  'login_failed',
+  'create',
+  'update',
+  'update_status',
+  'delete',
+  'pay',
+  'cancel',
+  'topup',
+  'refund'
+];
 const entityOptions = [
   'member',
   'machine',
