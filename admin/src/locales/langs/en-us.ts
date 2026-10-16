@@ -727,6 +727,14 @@ const local: App.I18n.Schema = {
       category: 'Category',
       launcher: 'Launcher',
       launchArgs: 'Launch arguments',
+      icon: 'Icon',
+      iconHint:
+        'File the workstation menu takes the icon from (.exe or .ico, inside the game folder). Empty uses the launcher. For example League of Legends runs through the Riot Client: League of Legends/LeagueClient.exe',
+      menuEntries: 'Menu entries',
+      menuEntriesHint:
+        'Empty gives one menu entry from the display name and launcher above. Add entries when the folder holds several programs, e.g. LibreOffice: Word runs program/swriter.exe, Excel runs program/scalc.exe. Each entry needs a name and a launcher.',
+      entryName: 'Menu name',
+      addEntry: 'Add entry',
       version: 'Version',
       size: 'Size',
       status: 'Status',

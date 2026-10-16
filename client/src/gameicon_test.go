@@ -506,3 +506,43 @@ func TestGameIcon_DungMenuDaNho(t *testing.T) {
 		t.Error("menu quá hạn không được dùng lại")
 	}
 }
+
+// Một thư mục ra nhiều mục (khoá "<tên>/<số>"), và icon riêng thay cho launcher.
+func TestGameIconTarget_KhoaVaIconRieng(t *testing.T) {
+	m := &gameMenu{Root: `D:\Games`, Items: []gameMenuItem{
+		{Key: "Riot Games", Name: "Riot Games", Launcher: `Riot Client\RiotClientServices.exe`, Icon: `League of Legends\LeagueClient.exe`},
+		{Key: "LibreOffice/1", Name: "LibreOffice", Launcher: `program\swriter.exe`},
+		{Key: "LibreOffice/2", Name: "LibreOffice", Launcher: `program\scalc.exe`},
+		{Key: "hong/1", Name: "hong", Launcher: "a.exe", Icon: `..\evil.ico`},
+	}}
+	for _, c := range []struct{ key, exe, dir string }{
+		{"Riot Games", `D:\Games\Riot Games\League of Legends\LeagueClient.exe`, `D:\Games\Riot Games`},
+		{"LibreOffice/1", `D:\Games\LibreOffice\program\swriter.exe`, `D:\Games\LibreOffice`},
+		{"LibreOffice/2", `D:\Games\LibreOffice\program\scalc.exe`, `D:\Games\LibreOffice`},
+	} {
+		exe, dir, ok := gameIconTarget(m, c.key)
+		if !ok || exe != c.exe || dir != c.dir {
+			t.Errorf("%s: %q %q %v", c.key, exe, dir, ok)
+		}
+	}
+	if _, _, ok := gameIconTarget(m, "LibreOffice"); ok {
+		t.Error("tên thư mục không phải khoá của mục nào khi game có mục riêng")
+	}
+	if _, _, ok := gameIconTarget(m, "hong/1"); ok {
+		t.Error("icon thoát thư mục game phải bị từ chối")
+	}
+}
+
+// Máy chủ cũ không gửi key: khoá là tên game.
+func TestMenuKey_MayChuCu(t *testing.T) {
+	m := &gameMenu{Items: []gameMenuItem{{Name: "lol"}, {Key: "LibreOffice/1", Name: "LibreOffice"}}}
+	if g := m.findMenuItem("lol"); g == nil || g.Name != "lol" {
+		t.Errorf("lol: %+v", g)
+	}
+	if g := m.findMenuItem("LibreOffice/1"); g == nil || g.Name != "LibreOffice" {
+		t.Errorf("LibreOffice/1: %+v", g)
+	}
+	if g := m.findMenuItem("LibreOffice"); g != nil {
+		t.Errorf("LibreOffice: %+v", g)
+	}
+}

@@ -1356,6 +1356,152 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/error-reports": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ErrorReports"
+                ],
+                "summary": "Nhật ký lỗi, gộp theo loại, gặp gần nhất lên đầu",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "server | admin | client",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "open (mặc định) | resolved | all",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Trang",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Số dòng mỗi trang",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "allOf": [
+                                                {
+                                                    "$ref": "#/definitions/response.PaginatedData"
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "items": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "$ref": "#/definitions/model.ErrorEvent"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ErrorReports"
+                ],
+                "summary": "Trang quản trị gửi lỗi JS của chính nó",
+                "parameters": [
+                    {
+                        "description": "Lỗi",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.ErrorReportInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/error-reports/{id}/resolve": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ErrorReports"
+                ],
+                "summary": "Đánh dấu lỗi đã sửa (gặp lại sẽ tự mở lại)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/feedback": {
             "get": {
                 "produces": [
@@ -2849,6 +2995,46 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/machines/by-code/{code}/errors": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ErrorReports"
+                ],
+                "summary": "Máy trạm gửi lỗi: crash lần chạy trước, lỗi giao diện, không mở được game",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Mã máy",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Tối đa 20 lỗi mỗi lần",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.MachineErrorReportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
@@ -11613,6 +11799,58 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ErrorEvent": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "detail": {
+                    "description": "Stack trace / thông tin phụ của lần gần nhất.",
+                    "type": "string"
+                },
+                "fingerprint": {
+                    "type": "string"
+                },
+                "first_seen_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "error | panic | crash",
+                    "type": "string"
+                },
+                "last_seen_at": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "reporter": {
+                    "description": "Ai gặp: mã máy với máy trạm, tên đăng nhập với admin và server.",
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "resolved_at": {
+                    "description": "Dev đánh dấu đã sửa. Lỗi tái phát thì tự mở lại (về NULL).",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "server | admin | client",
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "model.Machine": {
             "type": "object",
             "properties": {
@@ -13137,6 +13375,34 @@ const docTemplate = `{
                 }
             }
         },
+        "service.ErrorReportInput": {
+            "type": "object",
+            "required": [
+                "message"
+            ],
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "error",
+                        "panic",
+                        "crash"
+                    ]
+                },
+                "location": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "service.GameMenu": {
             "type": "object",
             "properties": {
@@ -13158,6 +13424,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "display_name": {
+                    "type": "string"
+                },
+                "icon": {
+                    "description": "Icon: tệp lấy icon, tương đối trong thư mục game; rỗng là lấy từ Launcher.",
+                    "type": "string"
+                },
+                "key": {
+                    "description": "Key: khoá của mục, máy trạm gửi lại khi chạy hay lấy icon. Bằng Name khi game là\nmột mục; \"\u003cName\u003e/\u003cthứ tự từ 1\u003e\" cho từng mục riêng (tên game không chứa \"/\").",
                     "type": "string"
                 },
                 "launch_args": {
@@ -13383,6 +13657,22 @@ const docTemplate = `{
                 },
                 "reward_value": {
                     "type": "object"
+                }
+            }
+        },
+        "service.MachineErrorReportRequest": {
+            "type": "object",
+            "required": [
+                "events"
+            ],
+            "properties": {
+                "events": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/service.ErrorReportInput"
+                    }
                 }
             }
         },

@@ -136,7 +136,7 @@ func TestGameService_Menu(t *testing.T) {
 	assert.Equal(t, `E:\Game Disk`, menu.Root)
 	require.Len(t, menu.Items, 2, "game tắt và game chưa có launcher không lên menu")
 	assert.Equal(t, GameMenuItem{
-		Name: "lol", DisplayName: "League of Legends", Category: "Online",
+		Key: "lol", Name: "lol", DisplayName: "League of Legends", Category: "Online",
 		Launcher: "Riot Client/RiotClientServices.exe", LaunchArgs: "--launch-product=league_of_legends",
 		Status: model.GameStatusReady, Progress: 100, Version: 3,
 	}, menu.Items[0])
@@ -921,8 +921,8 @@ func pullCatalogVoi(t *testing.T, items []CatalogItem, setup func(mock sqlmock.S
 
 func TestPullCatalog_KhongGhiDeTenTotBangTenHong(t *testing.T) {
 	const selectSQL = `SELECT \* FROM "games" WHERE name = \$1`
-	const updateKhongTen = `UPDATE "games" SET "category"=\$1,"launch_args"=\$2,"launcher"=\$3,"remote_infohash"=\$4,"remote_version"=\$5,"updated_at"=\$6 WHERE "id" = \$7`
-	const updateCoTen = `UPDATE "games" SET "category"=\$1,"display_name"=\$2,"launch_args"=\$3,"launcher"=\$4,"remote_infohash"=\$5,"remote_version"=\$6,"updated_at"=\$7 WHERE "id" = \$8`
+	const updateKhongTen = `UPDATE "games" SET "category"=\$1,"icon"=\$2,"launch_args"=\$3,"launcher"=\$4,"menu_entries"=\$5,"remote_infohash"=\$6,"remote_version"=\$7,"updated_at"=\$8 WHERE "id" = \$9`
+	const updateCoTen = `UPDATE "games" SET "category"=\$1,"display_name"=\$2,"icon"=\$3,"launch_args"=\$4,"launcher"=\$5,"menu_entries"=\$6,"remote_infohash"=\$7,"remote_version"=\$8,"updated_at"=\$9 WHERE "id" = \$10`
 	item := func(ten string) []CatalogItem {
 		return []CatalogItem{{Name: "lol", DisplayName: ten, Category: "Online", Launcher: "a.exe", Version: 2, Infohash: "h2"}}
 	}
@@ -933,26 +933,26 @@ func TestPullCatalog_KhongGhiDeTenTotBangTenHong(t *testing.T) {
 	t.Run("master gửi tên hỏng, quán có tên tốt: giữ tên cũ", func(t *testing.T) {
 		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
 			existing(mock, "Liên Minh Huyền Thoại")
-			expectGameUpdate(mock, updateKhongTen, "Online", "", "a.exe", "h2", 2, anyTime{}, "g1")
+			expectGameUpdate(mock, updateKhongTen, "Online", "", "", "a.exe", nil, "h2", 2, anyTime{}, "g1")
 		})
 	})
 	t.Run("master gửi tên tốt: cập nhật như cũ", func(t *testing.T) {
 		pullCatalogVoi(t, item("Liên Minh Huyền Thoại (Riot)"), func(mock sqlmock.Sqlmock) {
 			existing(mock, "Liên Minh Huyền Thoại")
-			expectGameUpdate(mock, updateCoTen, "Online", "Liên Minh Huyền Thoại (Riot)", "", "a.exe", "h2", 2, anyTime{}, "g1")
+			expectGameUpdate(mock, updateCoTen, "Online", "Liên Minh Huyền Thoại (Riot)", "", "", "a.exe", nil, "h2", 2, anyTime{}, "g1")
 		})
 	})
 	t.Run("quán cũng đang có tên hỏng: nhận tên của master", func(t *testing.T) {
 		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
 			existing(mock, "Li\uFFFDn")
-			expectGameUpdate(mock, updateCoTen, "Online", tenHong, "", "a.exe", "h2", 2, anyTime{}, "g1")
+			expectGameUpdate(mock, updateCoTen, "Online", tenHong, "", "", "a.exe", nil, "h2", 2, anyTime{}, "g1")
 		})
 	})
 	t.Run("quán chưa có game đó: nhận như cũ, Menu lo hiển thị", func(t *testing.T) {
 		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
 			mock.ExpectQuery(selectSQL).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 			mock.ExpectBegin()
-			args := make([]driver.Value, 20) // 20 cột của bảng games; chỉ name và display_name cần khớp
+			args := make([]driver.Value, 22) // 22 cột của bảng games; chỉ name và display_name cần khớp
 			for i := range args {
 				args[i] = sqlmock.AnyArg()
 			}
@@ -961,4 +961,129 @@ func TestPullCatalog_KhongGhiDeTenTotBangTenHong(t *testing.T) {
 			mock.ExpectCommit()
 		})
 	})
+}
+
+// ---------------------------------------------------------------- icon và mục menu riêng
+
+func TestGameService_Menu_MucRiengVaIcon(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster})
+
+	mock.ExpectQuery(`SELECT \* FROM "games" ORDER BY priority DESC, display_name ASC`).
+		WillReturnRows(sqlmock.NewRows([]string{"name", "display_name", "category", "launcher", "launch_args", "icon", "menu_entries", "enabled", "version", "status"}).
+			AddRow("Riot Games", "Liên Minh Huyền Thoại", "Online", "Riot Client/RiotClientServices.exe", "--launch-product=league_of_legends",
+				"League of Legends/LeagueClient.exe", nil, true, 3, model.GameStatusReady).
+			// Mục riêng thay cho launcher của game, kể cả khi game không có launcher; mục thiếu launcher bị bỏ.
+			AddRow("LibreOffice", "LibreOffice", "Ứng dụng", "", "", "",
+				`[{"display_name":"Word","launcher":"program/swriter.exe"},{"display_name":"Hỏng","launcher":""},{"display_name":"Excel","launcher":"program/scalc.exe","launch_args":"--calc","icon":"program/x.ico"}]`,
+				true, 1, model.GameStatusReady))
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs("games").
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
+
+	menu, err := svc.Menu()
+	require.NoError(t, err)
+	require.Len(t, menu.Items, 3)
+	assert.Equal(t, "Riot Games", menu.Items[0].Key)
+	assert.Equal(t, "League of Legends/LeagueClient.exe", menu.Items[0].Icon)
+	assert.Equal(t, GameMenuItem{
+		Key: "LibreOffice/1", Name: "LibreOffice", DisplayName: "Word", Category: "Ứng dụng",
+		Launcher: "program/swriter.exe", Status: model.GameStatusReady, Version: 1,
+	}, menu.Items[1])
+	assert.Equal(t, GameMenuItem{
+		Key: "LibreOffice/3", Name: "LibreOffice", DisplayName: "Excel", Category: "Ứng dụng",
+		Launcher: "program/scalc.exe", LaunchArgs: "--calc", Icon: "program/x.ico", Status: model.GameStatusReady, Version: 1,
+	}, menu.Items[2], "khoá giữ thứ tự gốc của mục, không đánh lại số khi bỏ mục hỏng")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestChuanHoaMucMenu(t *testing.T) {
+	out, err := chuanHoaMucMenu(nil)
+	require.NoError(t, err)
+	assert.Nil(t, out)
+	out, err = chuanHoaMucMenu([]model.GameMenuEntry{})
+	require.NoError(t, err)
+	assert.Nil(t, out, "danh sách rỗng là bỏ mục riêng")
+
+	out, err = chuanHoaMucMenu([]model.GameMenuEntry{{DisplayName: " Word ", Launcher: " program/swriter.exe ", LaunchArgs: " -n ", Icon: " program/w.ico "}})
+	require.NoError(t, err)
+	assert.Equal(t, model.GameMenuEntries{{DisplayName: "Word", Launcher: "program/swriter.exe", LaunchArgs: "-n", Icon: "program/w.ico"}}, out)
+
+	for _, c := range []struct {
+		ten string
+		in  model.GameMenuEntry
+		loi string
+	}{
+		{"thiếu tên", model.GameMenuEntry{Launcher: "a.exe"}, "mục menu 1 cần tên hiển thị và launcher"},
+		{"thiếu launcher", model.GameMenuEntry{DisplayName: "A"}, "cần tên hiển thị và launcher"},
+		{"launcher ra ngoài", model.GameMenuEntry{DisplayName: "A", Launcher: "../x.exe"}, "launcher là đường dẫn tương đối"},
+		{"icon tuyệt đối", model.GameMenuEntry{DisplayName: "A", Launcher: "a.exe", Icon: `C:\x.ico`}, "icon là đường dẫn tương đối"},
+		{"tên hỏng", model.GameMenuEntry{DisplayName: tenHong, Launcher: "a.exe"}, "tên hiển thị có ký tự lỗi"},
+		{"tên quá dài", model.GameMenuEntry{DisplayName: strings.Repeat("ê", 201), Launcher: "a.exe"}, "tối đa 200"},
+	} {
+		_, err := chuanHoaMucMenu([]model.GameMenuEntry{c.in})
+		require.Error(t, err, c.ten)
+		assert.Contains(t, err.Error(), c.loi, c.ten)
+	}
+	_, err = chuanHoaMucMenu(make([]model.GameMenuEntry, maxGameMenuEntries+1))
+	assert.ErrorContains(t, err, "tối đa")
+}
+
+func TestKiemTraIcon(t *testing.T) {
+	assert.NoError(t, kiemTraIcon(""))
+	assert.NoError(t, kiemTraIcon("League of Legends/LeagueClient.exe"))
+	for _, bad := range []string{"../x.ico", `\\srv\x.ico`, "D:/x.ico", "Bin/NUL", "a\uFFFD.ico", strings.Repeat("a", 501)} {
+		assert.Error(t, kiemTraIcon(bad), bad)
+	}
+}
+
+func TestGameService_Update_IconVaMucMenu(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleMaster})
+	load := func() {
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE id = \$1`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "display_name"}).AddRow(id, "LibreOffice", "LibreOffice"))
+	}
+	load()
+	expectGameUpdate(mock, `UPDATE "games" SET "icon"=\$1,"menu_entries"=\$2,"updated_at"=\$3 WHERE "id" = \$4`,
+		"program/soffice.exe", `[{"display_name":"Word","launcher":"program/swriter.exe","launch_args":"","icon":""}]`, anyTime{}, id)
+	load()
+	icon := " program/soffice.exe "
+	entries := []model.GameMenuEntry{{DisplayName: "Word", Launcher: "program/swriter.exe"}}
+	_, err := svc.Update(id, &UpdateGameRequest{Icon: &icon, MenuEntries: &entries})
+	require.NoError(t, err)
+
+	// [] bỏ hết mục riêng: cột về NULL.
+	load()
+	expectGameUpdate(mock, `UPDATE "games" SET "menu_entries"=\$1,"updated_at"=\$2 WHERE "id" = \$3`, nil, anyTime{}, id)
+	load()
+	empty := []model.GameMenuEntry{}
+	_, err = svc.Update(id, &UpdateGameRequest{MenuEntries: &empty})
+	require.NoError(t, err)
+
+	// Mục hỏng: từ chối trước khi ghi.
+	load()
+	bad := []model.GameMenuEntry{{DisplayName: "X", Launcher: "../x.exe"}}
+	_, err = svc.Update(id, &UpdateGameRequest{MenuEntries: &bad})
+	assert.ErrorContains(t, err, "mục menu 1")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Catalog của master mang icon và mục menu riêng; game thường không có trường menu_entries.
+func TestCatalogItem_JSON(t *testing.T) {
+	raw, err := json.Marshal(CatalogItem{Name: "a", Icon: "x.ico"})
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"icon":"x.ico"`)
+	assert.NotContains(t, string(raw), "menu_entries")
+	raw, err = json.Marshal(CatalogItem{Name: "a", MenuEntries: model.GameMenuEntries{{DisplayName: "W", Launcher: "w.exe"}}})
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"menu_entries":[{"display_name":"W","launcher":"w.exe"`)
+}
+
+func TestCungMucMenu(t *testing.T) {
+	a := model.GameMenuEntries{{DisplayName: "W", Launcher: "w.exe"}}
+	assert.True(t, cungMucMenu(nil, model.GameMenuEntries{}))
+	assert.True(t, cungMucMenu(a, model.GameMenuEntries{{DisplayName: "W", Launcher: "w.exe"}}))
+	assert.False(t, cungMucMenu(a, nil))
+	assert.False(t, cungMucMenu(a, model.GameMenuEntries{{DisplayName: "W", Launcher: "w.exe", Icon: "i"}}))
 }

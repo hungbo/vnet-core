@@ -25,8 +25,15 @@ type Game struct {
 	// Launcher: đường dẫn tương đối trong thư mục game, ví dụ "Bin/Game.exe".
 	Launcher   string `gorm:"type:varchar(500)" json:"launcher"`
 	LaunchArgs string `gorm:"type:varchar(500)" json:"launch_args"`
-	Enabled    bool   `gorm:"default:true" json:"enabled"`
-	AutoUpdate bool   `gorm:"default:true" json:"auto_update"`
+	// Icon: tệp lấy icon cho menu máy trạm (.exe/.dll/.ico, tương đối trong thư mục
+	// game như Launcher). Rỗng là lấy từ Launcher. Cần khi launcher là trình mở chung,
+	// ví dụ Riot Client mở Liên Minh.
+	Icon string `gorm:"type:varchar(500)" json:"icon"`
+	// MenuEntries: nhiều mục trên menu máy trạm cho cùng một thư mục game (LibreOffice
+	// → Word và Excel). Rỗng là một mục theo DisplayName/Launcher/LaunchArgs/Icon.
+	MenuEntries GameMenuEntries `json:"menu_entries"`
+	Enabled     bool            `gorm:"default:true" json:"enabled"`
+	AutoUpdate  bool            `gorm:"default:true" json:"auto_update"`
 	// Priority: số lớn tải trước.
 	Priority int `gorm:"default:0" json:"priority"`
 

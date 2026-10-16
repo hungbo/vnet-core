@@ -24,17 +24,17 @@
 			</div>
 
 			<div v-else class="game-grid">
-				<article v-for="g in games" :key="g.name" class="game-card" :class="{ ready: g.status === 'ready' }">
+				<article v-for="g in games" :key="gid(g)" class="game-card" :class="{ ready: g.status === 'ready' }">
 					<div class="game-head">
 						<!-- Không có icon (chưa lấy được, hoặc tệp chạy không có) thì vẽ chữ cái đầu
 						     trên nền màu suy ra từ tên, để thẻ nào cũng có hình mà không phải đợi. -->
-						<div class="game-icon" :style="icons[g.name] ? undefined : placeholderStyle(g)">
+						<div class="game-icon" :style="icons[gid(g)] ? undefined : placeholderStyle(g)">
 							<img
-								v-if="icons[g.name]"
-								:src="icons[g.name]"
+								v-if="icons[gid(g)]"
+								:src="icons[gid(g)]"
 								alt=""
 								draggable="false"
-								@error="icons[g.name] = ''"
+								@error="icons[gid(g)] = ''"
 							/>
 							<span v-else class="game-initial" aria-hidden="true">{{ initial(g) }}</span>
 						</div>
@@ -47,8 +47,8 @@
 						<el-tag :type="badge(g).type" effect="plain" round size="small">{{ badge(g).text }}</el-tag>
 						<el-button
 							type="primary"
-							:disabled="g.status !== 'ready' || (!!launching && launching !== g.name)"
-							:loading="launching === g.name"
+							:disabled="g.status !== 'ready' || (!!launching && launching !== gid(g))"
+							:loading="launching === gid(g)"
 							@click="play(g)"
 						>
 							Chơi
@@ -70,12 +70,21 @@ declare const window: any
 const api = () => window.go?.main?.App
 
 interface Game {
+	// key: khoá của mục (máy chủ từ 1.1.15). Một thư mục game có thể ra nhiều mục
+	// (LibreOffice → Word, Excel), nên name không còn là khoá.
+	key?: string
 	name: string
 	display_name: string
 	category: string
 	status: string
 	progress: number
 	version?: number
+	icon?: string
+}
+
+// Khoá của mục: máy chủ cũ không gửi key thì mỗi game là một mục, khoá là tên.
+function gid(g: Game): string {
+	return g.key || g.name
 }
 
 // Tiến độ tải nhích theo từng lượt làm mới, nên đọc lại thường xuyên khi cửa
@@ -88,11 +97,11 @@ const games = ref<Game[]>([])
 const loading = ref(true)
 const refreshing = ref(false)
 const loadError = ref('')
-// Tên game đang được mở. Mở game mất vài giây mới thấy cửa sổ, khách hay bấm
+// Khoá của mục đang được mở. Mở game mất vài giây mới thấy cửa sổ, khách hay bấm
 // lần hai — và lần hai là hai bản game chạy chồng nhau.
 const launching = ref('')
 
-// Icon theo tên game: data URI PNG, hoặc '' khi không có. Giữ qua các lượt làm mới
+// Icon theo khoá của mục: data URI PNG, hoặc '' khi không có. Giữ qua các lượt làm mới
 // để khỏi hỏi lại Go mỗi 10 giây.
 const icons = ref<Record<string, string>>({})
 // Lần hỏi icon gần nhất của từng game. Hỏi lại khi version/trạng thái đổi (game vừa
@@ -128,7 +137,7 @@ async function load() {
 
 function syncIcons(list: Game[]) {
 	// Game bị gỡ khỏi menu thì bỏ icon của nó, đừng giữ ảnh vô thời hạn.
-	const names = new Set(list.map(g => g.name))
+	const names = new Set(list.map(gid))
 	for (const n of Object.keys(icons.value)) if (!names.has(n)) delete icons.value[n]
 	for (const n of [...iconAsked.keys()]) if (!names.has(n)) iconAsked.delete(n)
 
@@ -136,23 +145,25 @@ function syncIcons(list: Game[]) {
 	if (typeof api()?.GameIcon !== 'function') return
 	const now = Date.now()
 	for (const g of list) {
-		const key = `${g.version ?? 0}:${g.status === 'ready'}`
-		const asked = iconAsked.get(g.name)
-		if (asked && asked.key === key && (icons.value[g.name] || now - asked.at < ICON_RETRY_MS)) continue
-		iconAsked.set(g.name, { key, at: now })
-		loadIcon(g.name)
+		// Đổi tệp icon ở trang quản trị không đổi version: đưa nó vào khoá để hỏi lại.
+		const key = `${g.version ?? 0}:${g.status === 'ready'}:${g.icon ?? ''}`
+		const id = gid(g)
+		const asked = iconAsked.get(id)
+		if (asked && asked.key === key && (icons.value[id] || now - asked.at < ICON_RETRY_MS)) continue
+		iconAsked.set(id, { key, at: now })
+		loadIcon(id)
 	}
 }
 
-async function loadIcon(name: string) {
+async function loadIcon(id: string) {
 	let uri = ''
 	try {
-		uri = await api().GameIcon(name)
+		uri = await api().GameIcon(id)
 	} catch {
 		// Lỗi thì cứ để chữ cái đầu; lần thử lại sau ICON_RETRY_MS.
 	}
 	// Game có thể đã rời menu trong lúc chờ.
-	if (iconAsked.has(name)) icons.value[name] = typeof uri === 'string' ? uri : ''
+	if (iconAsked.has(id)) icons.value[id] = typeof uri === 'string' ? uri : ''
 }
 
 function initial(g: Game): string {
@@ -162,11 +173,12 @@ function initial(g: Game): string {
 	return m ? Array.from(m[0].toUpperCase())[0] : '?'
 }
 
-// Màu nền chữ cái đầu suy từ slug (không đổi khi sửa tên hiển thị): cùng game luôn
-// cùng màu, các game khác nhau thì tản đều quanh vòng màu.
+// Màu nền chữ cái đầu suy từ khoá (không đổi khi sửa tên hiển thị): cùng mục luôn
+// cùng màu, các mục khác nhau thì tản đều quanh vòng màu.
 function placeholderStyle(g: Game) {
+	const id = gid(g)
 	let h = 2166136261
-	for (let i = 0; i < g.name.length; i++) h = Math.imul(h ^ g.name.charCodeAt(i), 16777619)
+	for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619)
 	const hue = (h >>> 0) % 360
 	return { background: `linear-gradient(135deg, hsl(${hue} 55% 46%), hsl(${(hue + 40) % 360} 55% 30%))` }
 }
@@ -184,10 +196,10 @@ function badge(g: Game): { type: 'success' | 'primary' | 'info' | 'danger'; text
 
 async function play(g: Game) {
 	if (launching.value) return
-	launching.value = g.name
+	launching.value = gid(g)
 	try {
-		// Chỉ gửi TÊN: Go tra lại danh sách của máy chủ để dựng đường dẫn.
-		await api().LaunchGame(g.name)
+		// Chỉ gửi KHOÁ: Go tra lại danh sách của máy chủ để dựng đường dẫn.
+		await api().LaunchGame(gid(g))
 	} catch (e) {
 		ElMessage.error(cleanError(e))
 		launching.value = ''

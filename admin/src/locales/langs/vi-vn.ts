@@ -727,6 +727,14 @@ const local: App.I18n.Schema = {
       category: 'Nhóm',
       launcher: 'Tệp chạy',
       launchArgs: 'Tham số chạy',
+      icon: 'Icon',
+      iconHint:
+        'Tệp lấy icon cho menu máy trạm (.exe hoặc .ico, trong thư mục game). Để trống thì lấy từ tệp chạy. Ví dụ Liên Minh chạy qua Riot Client: League of Legends/LeagueClient.exe',
+      menuEntries: 'Mục trên menu',
+      menuEntriesHint:
+        'Để trống thì menu có một mục theo tên hiển thị và tệp chạy ở trên. Thêm mục khi thư mục có nhiều chương trình, ví dụ LibreOffice: Word chạy program/swriter.exe, Excel chạy program/scalc.exe. Mỗi mục cần tên và tệp chạy.',
+      entryName: 'Tên trên menu',
+      addEntry: 'Thêm mục',
       version: 'Phiên bản',
       size: 'Dung lượng',
       status: 'Trạng thái',

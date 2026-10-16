@@ -86,14 +86,14 @@ func recentGameMenu() *gameMenu {
 
 // ---- API cho giao diện ----------------------------------------------------
 
-// GameIcon trả icon của game dạng "data:image/png;base64,...", hoặc "" nếu không
+// GameIcon trả icon của một mục menu dạng "data:image/png;base64,...", hoặc "" nếu không
 // lấy được (giao diện khi đó vẽ chữ cái đầu của tên). "" không phải lỗi của
 // khách nên không trả error; error chỉ dành cho việc không tải nổi menu từ máy
 // chủ, để giao diện thử lại ở lượt làm mới sau.
 //
-// Cũng như LaunchGame, giao diện CHỈ gửi tên game: đường dẫn dựng lại từ menu
+// Cũng như LaunchGame, giao diện CHỈ gửi khoá của mục: đường dẫn dựng lại từ menu
 // của máy chủ, không tin chuỗi nào từ phía WebView.
-func (a *App) GameIcon(name string) (string, error) {
+func (a *App) GameIcon(key string) (string, error) {
 	m := recentGameMenu()
 	if m == nil {
 		var err error
@@ -101,32 +101,34 @@ func (a *App) GameIcon(name string) (string, error) {
 			return "", err
 		}
 	}
-	exe, gameDir, ok := gameIconTarget(m, name)
+	exe, gameDir, ok := gameIconTarget(m, key)
 	if !ok {
 		return "", nil
 	}
 	return gameIconDataURI(gameDir, exe), nil
 }
 
-// gameIconTarget tra game trong menu và dựng đường dẫn tệp chạy cùng thư mục
-// game, bằng đúng hàm LaunchGame dùng. Cấu hình hỏng thì không có icon.
-func gameIconTarget(m *gameMenu, name string) (exe, gameDir string, ok bool) {
-	for i := range m.Items {
-		g := &m.Items[i]
-		if g.Name != name {
-			continue
-		}
-		exe, _, err := resolveGameLaunch(m.Root, g.Name, g.Launcher)
-		if err != nil {
-			return "", "", false
-		}
-		base, err := gameRootBase(m.Root)
-		if err != nil {
-			return "", "", false
-		}
-		return exe, base + `\` + g.Name, true
+// gameIconTarget tra mục trong menu và dựng đường dẫn tệp lấy icon (Icon, hoặc
+// Launcher khi Icon rỗng) cùng thư mục game, bằng đúng hàm LaunchGame dùng. Cấu
+// hình hỏng thì không có icon.
+func gameIconTarget(m *gameMenu, key string) (exe, gameDir string, ok bool) {
+	g := m.findMenuItem(key)
+	if g == nil {
+		return "", "", false
 	}
-	return "", "", false
+	src := g.Icon
+	if src == "" {
+		src = g.Launcher
+	}
+	exe, _, err := resolveGameLaunch(m.Root, g.Name, src)
+	if err != nil {
+		return "", "", false
+	}
+	base, err := gameRootBase(m.Root)
+	if err != nil {
+		return "", "", false
+	}
+	return exe, base + `\` + g.Name, true
 }
 
 // gameIconDataURI lấy icon của exe (nằm trong gameDir; cả hai là đường dẫn của

@@ -18,16 +18,21 @@ import (
 // phân biệt một trạng thái: sẵn sàng thì chạy được, còn lại thì chờ.
 const gameStatusReady = "ready"
 
-// gameMenuItem là một game trong phản hồi của GET /api/game-menu.
+// gameMenuItem là một mục trong phản hồi của GET /api/game-menu. Name là thư mục
+// game; một thư mục có thể ra nhiều mục (LibreOffice → Word, Excel), phân biệt
+// bằng Key.
 type gameMenuItem struct {
+	Key         string `json:"key"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
 	Category    string `json:"category"`
 	Launcher    string `json:"launcher"`
 	LaunchArgs  string `json:"launch_args"`
-	Status      string `json:"status"`
-	Progress    int    `json:"progress"`
-	Version     int    `json:"version"`
+	// Icon: tệp lấy icon, tương đối trong thư mục game; rỗng là lấy từ Launcher.
+	Icon     string `json:"icon"`
+	Status   string `json:"status"`
+	Progress int    `json:"progress"`
+	Version  int    `json:"version"`
 }
 
 // gameMenu: Root là đường dẫn GAME_ROOT NHƯ MÁY TRẠM THẤY (ổ Game Disk),
@@ -35,6 +40,25 @@ type gameMenuItem struct {
 type gameMenu struct {
 	Root  string         `json:"root"`
 	Items []gameMenuItem `json:"items"`
+}
+
+// menuKey là khoá giao diện dùng để chạy mục và lấy icon. Máy chủ trước 1.1.15
+// không gửi key: khi đó mỗi thư mục là một mục, khoá là tên game.
+func (g *gameMenuItem) menuKey() string {
+	if g.Key != "" {
+		return g.Key
+	}
+	return g.Name
+}
+
+// findMenuItem tra mục theo khoá; nil nếu không có.
+func (m *gameMenu) findMenuItem(key string) *gameMenuItem {
+	for i := range m.Items {
+		if m.Items[i].menuKey() == key {
+			return &m.Items[i]
+		}
+	}
+	return nil
 }
 
 func (a *App) fetchGameMenu() (*gameMenu, error) {
@@ -64,12 +88,13 @@ func (a *App) ListGames() (string, error) {
 	return string(out), nil
 }
 
-// LaunchGame chạy một game từ Game Disk.
+// LaunchGame chạy một mục của menu game từ Game Disk.
 //
-// Giao diện CHỈ gửi tên game, không gửi đường dẫn: tên được tra lại trong danh
-// sách máy chủ vừa trả, và đường dẫn dựng từ chính danh sách đó. Nếu tin đường
-// dẫn từ giao diện thì ai mở được DevTools cũng chạy được tệp bất kỳ trên máy.
-func (a *App) LaunchGame(name string) error {
+// Giao diện CHỈ gửi khoá của mục (menuKey), không gửi đường dẫn: khoá được tra
+// lại trong danh sách máy chủ vừa trả, và đường dẫn dựng từ chính danh sách đó.
+// Nếu tin đường dẫn từ giao diện thì ai mở được DevTools cũng chạy được tệp bất
+// kỳ trên máy.
+func (a *App) LaunchGame(key string) error {
 	if !a.loggedIn() {
 		return errors.New("chưa đăng nhập")
 	}
@@ -78,13 +103,7 @@ func (a *App) LaunchGame(name string) error {
 	if err != nil {
 		return err
 	}
-	var g *gameMenuItem
-	for i := range m.Items {
-		if m.Items[i].Name == name {
-			g = &m.Items[i]
-			break
-		}
-	}
+	g := m.findMenuItem(key)
 	if g == nil {
 		return errors.New("game này không còn trong danh sách của quán")
 	}
@@ -111,7 +130,7 @@ func (a *App) LaunchGame(name string) error {
 		reportError("error", "game", fmt.Sprintf("không mở được game %s", g.Name), fmt.Sprintf("%s: %v", exe, err))
 		return fmt.Errorf("không mở được %s: %v", gameLabel(g), err)
 	}
-	log.Printf("[game] %s mở %q (%s)", a.username, g.Name, exe)
+	log.Printf("[game] %s mở %q (%s)", a.username, g.menuKey(), exe)
 	return nil
 }
 

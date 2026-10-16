@@ -330,7 +330,10 @@ type CreateGameRequest struct {
 	Category    string `json:"category"`
 	Launcher    string `json:"launcher"`
 	LaunchArgs  string `json:"launch_args"`
-	Priority    int    `json:"priority"`
+	Icon        string `json:"icon"`
+	// MenuEntries: các mục riêng trên menu máy trạm (xem model.Game.MenuEntries).
+	MenuEntries []model.GameMenuEntry `json:"menu_entries"`
+	Priority    int                   `json:"priority"`
 }
 
 // Create thêm một game ở master. Thư mục GAME_ROOT/<name> phải có sẵn.
@@ -351,12 +354,21 @@ func (s *GameService) Create(req *CreateGameRequest) (*model.Game, error) {
 	if err := checkLauncher(req.Launcher); err != nil {
 		return nil, err
 	}
+	if err := kiemTraIcon(req.Icon); err != nil {
+		return nil, err
+	}
+	entries, err := chuanHoaMucMenu(req.MenuEntries)
+	if err != nil {
+		return nil, err
+	}
 	g := model.Game{
 		Name:        name,
 		DisplayName: orDefault(strings.TrimSpace(req.DisplayName), name),
 		Category:    strings.TrimSpace(req.Category),
 		Launcher:    strings.TrimSpace(req.Launcher),
 		LaunchArgs:  strings.TrimSpace(req.LaunchArgs),
+		Icon:        strings.TrimSpace(req.Icon),
+		MenuEntries: entries,
 		Priority:    req.Priority,
 		Enabled:     true,
 		AutoUpdate:  true,
@@ -377,9 +389,12 @@ type UpdateGameRequest struct {
 	Category    *string `json:"category"`
 	Launcher    *string `json:"launcher"`
 	LaunchArgs  *string `json:"launch_args"`
-	Enabled     *bool   `json:"enabled"`
-	AutoUpdate  *bool   `json:"auto_update"`
-	Priority    *int    `json:"priority"`
+	Icon        *string `json:"icon"`
+	// MenuEntries: gửi [] để bỏ các mục riêng, không gửi thì giữ nguyên.
+	MenuEntries *[]model.GameMenuEntry `json:"menu_entries"`
+	Enabled     *bool                  `json:"enabled"`
+	AutoUpdate  *bool                  `json:"auto_update"`
+	Priority    *int                   `json:"priority"`
 }
 
 func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, error) {
@@ -411,6 +426,19 @@ func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, er
 		}
 		if req.LaunchArgs != nil {
 			updates["launch_args"] = strings.TrimSpace(*req.LaunchArgs)
+		}
+		if req.Icon != nil {
+			if err := kiemTraIcon(*req.Icon); err != nil {
+				return nil, err
+			}
+			updates["icon"] = strings.TrimSpace(*req.Icon)
+		}
+		if req.MenuEntries != nil {
+			entries, err := chuanHoaMucMenu(*req.MenuEntries)
+			if err != nil {
+				return nil, err
+			}
+			updates["menu_entries"] = entries
 		}
 	}
 	if req.Enabled != nil {
@@ -462,17 +490,22 @@ func (s *GameService) Delete(id string) error {
 
 // ---------------------------------------------------------------- menu game (máy trạm)
 
-// GameMenuItem là một game trên menu của máy trạm. Máy trạm chỉ chạy được game
+// GameMenuItem là một mục trên menu của máy trạm. Máy trạm chỉ chạy được game
 // khi Status == ready; đường dẫn đầy đủ là Root + `\` + Name + `\` + Launcher.
 type GameMenuItem struct {
+	// Key: khoá của mục, máy trạm gửi lại khi chạy hay lấy icon. Bằng Name khi game là
+	// một mục; "<Name>/<thứ tự từ 1>" cho từng mục riêng (tên game không chứa "/").
+	Key         string `json:"key"`
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
 	Category    string `json:"category"`
 	Launcher    string `json:"launcher"`
 	LaunchArgs  string `json:"launch_args"`
-	Status      string `json:"status"`
-	Progress    int    `json:"progress"`
-	Version     int    `json:"version"`
+	// Icon: tệp lấy icon, tương đối trong thư mục game; rỗng là lấy từ Launcher.
+	Icon     string `json:"icon"`
+	Status   string `json:"status"`
+	Progress int    `json:"progress"`
+	Version  int    `json:"version"`
 }
 
 // GameMenu: Root là GAME_ROOT như máy trạm thấy (xem GameClientRootKey).
@@ -482,7 +515,8 @@ type GameMenu struct {
 }
 
 // Menu trả các game đang bật và có tệp chạy, mọi GAME_ROLE đều dùng được. Game
-// đang tải vẫn hiện (kèm tiến độ) để khách biết, nhưng chưa chạy được.
+// đang tải vẫn hiện (kèm tiến độ) để khách biết, nhưng chưa chạy được. Game có mục
+// menu riêng ra từng mục đó, cùng thư mục và trạng thái.
 func (s *GameService) Menu() (*GameMenu, error) {
 	games, err := s.List()
 	if err != nil {
@@ -493,20 +527,32 @@ func (s *GameService) Menu() (*GameMenu, error) {
 		Items: make([]GameMenuItem, 0, len(games)),
 	}
 	for _, g := range games {
-		if !g.Enabled || g.Launcher == "" {
+		if !g.Enabled {
 			continue
 		}
-		// Tên đã lưu mà hỏng bảng mã (dữ liệu cũ, tạo qua đường mã hoá sai) thì hiện slug: một tên có
-		// ô vuông còn tệ hơn tên không dấu. Không sửa DB — chỉ là cách hiển thị cho tới khi quản trị viên nhập lại.
-		display := g.DisplayName
-		if coKyTuLoi(display) {
-			display = g.Name
+		item := func(key, display, launcher, args, icon string) GameMenuItem {
+			// Tên đã lưu mà hỏng bảng mã (dữ liệu cũ, tạo qua đường mã hoá sai) thì hiện slug: một tên có
+			// ô vuông còn tệ hơn tên không dấu. Không sửa DB — chỉ là cách hiển thị cho tới khi quản trị viên nhập lại.
+			if display == "" || coKyTuLoi(display) {
+				display = g.Name
+			}
+			return GameMenuItem{
+				Key: key, Name: g.Name, DisplayName: display, Category: g.Category,
+				Launcher: launcher, LaunchArgs: args, Icon: icon,
+				Status: g.Status, Progress: g.Progress, Version: g.Version,
+			}
 		}
-		menu.Items = append(menu.Items, GameMenuItem{
-			Name: g.Name, DisplayName: display, Category: g.Category,
-			Launcher: g.Launcher, LaunchArgs: g.LaunchArgs,
-			Status: g.Status, Progress: g.Progress, Version: g.Version,
-		})
+		if len(g.MenuEntries) > 0 {
+			for i, e := range g.MenuEntries {
+				if e.Launcher != "" {
+					menu.Items = append(menu.Items, item(g.Name+"/"+strconv.Itoa(i+1), e.DisplayName, e.Launcher, e.LaunchArgs, e.Icon))
+				}
+			}
+			continue
+		}
+		if g.Launcher != "" {
+			menu.Items = append(menu.Items, item(g.Name, g.DisplayName, g.Launcher, g.LaunchArgs, g.Icon))
+		}
 	}
 	return menu, nil
 }
@@ -538,7 +584,11 @@ func (s *GameService) RiotMetadataSource() string {
 	return ""
 }
 
-func checkLauncher(l string) error {
+func checkLauncher(l string) error { return checkGamePath("launcher", l) }
+
+// checkGamePath kiểm một đường dẫn tương đối trong thư mục game (launcher, icon); nhan là tên
+// trường cho lỗi. Rỗng là hợp lệ.
+func checkGamePath(nhan, l string) error {
 	l = strings.TrimSpace(l)
 	if l == "" {
 		return nil
@@ -546,14 +596,75 @@ func checkLauncher(l string) error {
 	// Bắt đầu bằng "\" hay "/" là UNC hoặc gốc ổ đĩa, không phải đường dẫn trong thư mục game.
 	if filepath.IsAbs(l) || strings.HasPrefix(l, `\`) || strings.HasPrefix(l, "/") ||
 		strings.Contains(l, "..") || strings.Contains(l, ":") {
-		return errors.New("launcher là đường dẫn tương đối trong thư mục game, ví dụ Bin/Game.exe")
+		return fmt.Errorf("%s là đường dẫn tương đối trong thư mục game, ví dụ Bin/Game.exe", nhan)
 	}
 	for _, c := range strings.FieldsFunc(l, func(r rune) bool { return r == '/' || r == '\\' }) {
 		if c != "." && thanhPhanWindowsXau(c) {
-			return fmt.Errorf("launcher: thành phần %q kết thúc bằng dấu chấm hoặc khoảng trắng, hoặc trùng tên thiết bị Windows (CON, NUL, COM1…)", c)
+			return fmt.Errorf("%s: thành phần %q kết thúc bằng dấu chấm hoặc khoảng trắng, hoặc trùng tên thiết bị Windows (CON, NUL, COM1…)", nhan, c)
 		}
 	}
 	return nil
+}
+
+// kiemTraIcon kiểm trường icon của game hoặc của một mục menu.
+func kiemTraIcon(icon string) error {
+	if err := kiemTraChuGame("icon", icon); err != nil {
+		return err
+	}
+	if len(strings.TrimSpace(icon)) > 500 {
+		return errors.New("icon dài quá 500 ký tự")
+	}
+	return checkGamePath("icon", icon)
+}
+
+// maxGameMenuEntries: một thư mục game hiếm khi có hơn vài chương trình đáng đưa lên menu.
+const maxGameMenuEntries = 10
+
+// chuanHoaMucMenu cắt khoảng trắng rồi kiểm các mục menu riêng của một game: mỗi mục cần tên
+// hiển thị và launcher, icon tuỳ chọn. Danh sách rỗng trả nil (game là một mục như cũ).
+func chuanHoaMucMenu(in []model.GameMenuEntry) (model.GameMenuEntries, error) {
+	if len(in) > maxGameMenuEntries {
+		return nil, fmt.Errorf("một game có tối đa %d mục trên menu", maxGameMenuEntries)
+	}
+	var out model.GameMenuEntries
+	for i, e := range in {
+		e = model.GameMenuEntry{
+			DisplayName: strings.TrimSpace(e.DisplayName), Launcher: strings.TrimSpace(e.Launcher),
+			LaunchArgs: strings.TrimSpace(e.LaunchArgs), Icon: strings.TrimSpace(e.Icon),
+		}
+		nhan := fmt.Sprintf("mục menu %d", i+1)
+		if e.DisplayName == "" || e.Launcher == "" {
+			return nil, fmt.Errorf("%s cần tên hiển thị và launcher", nhan)
+		}
+		// Cùng giới hạn với các cột của bảng games.
+		if utf8.RuneCountInString(e.DisplayName) > 200 || len(e.Launcher) > 500 || len(e.LaunchArgs) > 500 {
+			return nil, fmt.Errorf("%s: tên hiển thị tối đa 200 ký tự, launcher và tham số tối đa 500", nhan)
+		}
+		if err := kiemTraCacTruongChuGame(&e.DisplayName, nil, &e.Launcher, &e.LaunchArgs); err != nil {
+			return nil, fmt.Errorf("%s: %w", nhan, err)
+		}
+		if err := checkLauncher(e.Launcher); err != nil {
+			return nil, fmt.Errorf("%s: %w", nhan, err)
+		}
+		if err := kiemTraIcon(e.Icon); err != nil {
+			return nil, fmt.Errorf("%s: %w", nhan, err)
+		}
+		out = append(out, e)
+	}
+	return out, nil
+}
+
+// cungMucMenu: hai danh sách mục menu giống hệt nhau (nil và rỗng là một).
+func cungMucMenu(a, b model.GameMenuEntries) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // ---------------------------------------------------------------- catalog (master)
@@ -565,10 +676,13 @@ type CatalogItem struct {
 	Category    string `json:"category"`
 	Launcher    string `json:"launcher"`
 	LaunchArgs  string `json:"launch_args"`
-	Priority    int    `json:"priority"`
-	Version     int    `json:"version"`
-	Infohash    string `json:"infohash"`
-	SizeBytes   int64  `json:"size_bytes"`
+	Icon        string `json:"icon"`
+	// MenuEntries: omitempty để catalog của game thường giữ nguyên như trước.
+	MenuEntries model.GameMenuEntries `json:"menu_entries,omitempty"`
+	Priority    int                   `json:"priority"`
+	Version     int                   `json:"version"`
+	Infohash    string                `json:"infohash"`
+	SizeBytes   int64                 `json:"size_bytes"`
 }
 
 // SeedToken là phần bí mật trong URL webseed: /seed/<token>/<game>/<tệp>.
@@ -617,8 +731,8 @@ func (s *GameService) Catalog() ([]CatalogItem, error) {
 	for _, g := range games {
 		out = append(out, CatalogItem{
 			Name: g.Name, DisplayName: g.DisplayName, Category: g.Category,
-			Launcher: g.Launcher, LaunchArgs: g.LaunchArgs, Priority: g.Priority,
-			Version: g.Version, Infohash: g.Infohash, SizeBytes: g.SizeBytes,
+			Launcher: g.Launcher, LaunchArgs: g.LaunchArgs, Icon: g.Icon, MenuEntries: g.MenuEntries,
+			Priority: g.Priority, Version: g.Version, Infohash: g.Infohash, SizeBytes: g.SizeBytes,
 		})
 	}
 	return out, nil
@@ -1241,13 +1355,14 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 		fields := map[string]interface{}{
 			"display_name": it.DisplayName, "category": it.Category,
 			"launcher": it.Launcher, "launch_args": it.LaunchArgs,
+			"icon": it.Icon, "menu_entries": it.MenuEntries,
 			"remote_version": it.Version, "remote_infohash": it.Infohash,
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			g = model.Game{
 				Name: it.Name, DisplayName: it.DisplayName, Category: it.Category,
-				Launcher: it.Launcher, LaunchArgs: it.LaunchArgs, Priority: it.Priority,
-				Enabled: true, AutoUpdate: true, Status: model.GameStatusNotInstalled,
+				Launcher: it.Launcher, LaunchArgs: it.LaunchArgs, Icon: it.Icon, MenuEntries: it.MenuEntries,
+				Priority: it.Priority, Enabled: true, AutoUpdate: true, Status: model.GameStatusNotInstalled,
 				RemoteVersion: it.Version, RemoteInfohash: it.Infohash, SizeBytes: it.SizeBytes,
 			}
 			if err := s.db.Create(&g).Error; err != nil {
@@ -1262,6 +1377,7 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 		// Vòng nền ghi lại catalog mỗi lượt dù không có gì mới: chỉ báo trang
 		// quản trị khi có cột thật sự đổi.
 		doi := g.Category != it.Category || g.Launcher != it.Launcher || g.LaunchArgs != it.LaunchArgs ||
+			g.Icon != it.Icon || !cungMucMenu(g.MenuEntries, it.MenuEntries) ||
 			g.RemoteVersion != it.Version || g.RemoteInfohash != it.Infohash
 		// Tên của master đã hỏng bảng mã thì không ghi đè tên đang tốt ở quán; quán chưa có tên tốt thì
 		// nhận như thường (Menu lo phần hiển thị).

@@ -723,6 +723,14 @@ const local: App.I18n.Schema = {
       category: '分类',
       launcher: '启动程序',
       launchArgs: '启动参数',
+      icon: '图标',
+      iconHint:
+        '工作站菜单使用的图标文件（.exe 或 .ico，位于游戏目录内）。留空则取自启动程序。例如英雄联盟通过 Riot Client 启动：League of Legends/LeagueClient.exe',
+      menuEntries: '菜单项',
+      menuEntriesHint:
+        '留空则按上方的显示名称和启动程序生成一个菜单项。目录内有多个程序时添加菜单项，例如 LibreOffice：Word 运行 program/swriter.exe，Excel 运行 program/scalc.exe。每项需要名称和启动程序。',
+      entryName: '菜单名称',
+      addEntry: '添加菜单项',
       version: '版本',
       size: '大小',
       status: '状态',

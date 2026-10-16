@@ -149,7 +149,24 @@ async function saveClientRoot() {
 
 const dialogVisible = ref(false);
 const saving = ref(false);
-const emptyForm = () => ({ name: '', display_name: '', category: '', launcher: '', launch_args: '', priority: 0 });
+// Một mục riêng trên menu máy trạm, cho thư mục có nhiều chương trình (LibreOffice → Word, Excel).
+interface MenuEntry {
+  display_name: string;
+  launcher: string;
+  launch_args: string;
+  icon: string;
+}
+const emptyEntry = (): MenuEntry => ({ display_name: '', launcher: '', launch_args: '', icon: '' });
+const emptyForm = () => ({
+  name: '',
+  display_name: '',
+  category: '',
+  launcher: '',
+  launch_args: '',
+  icon: '',
+  menu_entries: [] as MenuEntry[],
+  priority: 0
+});
 const form = ref(emptyForm());
 // Có id là đang sửa game đã có, rỗng là thêm mới. Thư mục game (name) là khoá nối
 // master với các quán nên không đổi được.
@@ -169,6 +186,8 @@ function openEdit(row: any) {
     category: row.category || '',
     launcher: row.launcher || '',
     launch_args: row.launch_args || '',
+    icon: row.icon || '',
+    menu_entries: (row.menu_entries || []).map((e: Partial<MenuEntry>) => ({ ...emptyEntry(), ...e })),
     priority: row.priority || 0
   };
   dialogVisible.value = true;
@@ -178,8 +197,16 @@ async function submit() {
   saving.value = true;
   try {
     if (editingId.value) {
-      const { display_name, category, launcher, launch_args, priority } = form.value;
-      await client.put(`/games/${editingId.value}`, { display_name, category, launcher, launch_args, priority });
+      const { display_name, category, launcher, launch_args, icon, menu_entries, priority } = form.value;
+      await client.put(`/games/${editingId.value}`, {
+        display_name,
+        category,
+        launcher,
+        launch_args,
+        icon,
+        menu_entries,
+        priority
+      });
     } else {
       await client.post('/games', form.value);
     }
@@ -339,7 +366,7 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
     <ElDialog
       v-model="dialogVisible"
       :title="editingId ? $t('vnetPages.common.edit') : $t('vnetPages.games.add')"
-      width="560px"
+      width="720px"
     >
       <ElAlert v-if="!editingId" type="info" :closable="false" show-icon style="margin-bottom: 16px">
         {{ $t('vnetPages.games.addHint', { root: info.root }) }}
@@ -359,6 +386,31 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.launchArgs')">
           <ElInput v-model="form.launch_args" />
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.games.icon')">
+          <ElInput v-model="form.icon" placeholder="League of Legends/LeagueClient.exe" />
+          <div class="text-12px text-gray-500">{{ $t('vnetPages.games.iconHint') }}</div>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.games.menuEntries')">
+          <div class="w-full">
+            <div class="text-12px text-gray-500">{{ $t('vnetPages.games.menuEntriesHint') }}</div>
+            <div
+              v-for="(e, i) in form.menu_entries"
+              :key="i"
+              class="grid grid-cols-[1fr_1fr_auto] mt-8px items-center gap-6px"
+            >
+              <ElInput v-model="e.display_name" :placeholder="$t('vnetPages.games.entryName')" />
+              <ElInput v-model="e.launcher" placeholder="program/swriter.exe" />
+              <ElButton type="danger" link @click="form.menu_entries.splice(i, 1)">
+                {{ $t('vnetPages.common.delete') }}
+              </ElButton>
+              <ElInput v-model="e.launch_args" :placeholder="$t('vnetPages.games.launchArgs')" />
+              <ElInput v-model="e.icon" :placeholder="$t('vnetPages.games.icon')" />
+            </div>
+            <ElButton class="mt-8px" size="small" @click="form.menu_entries.push(emptyEntry())">
+              {{ $t('vnetPages.games.addEntry') }}
+            </ElButton>
+          </div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.priority')">
           <ElInputNumber v-model="form.priority" style="width: 100%" />

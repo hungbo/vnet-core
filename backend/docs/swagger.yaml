@@ -46,6 +46,42 @@ definitions:
       status:
         type: string
     type: object
+  model.ErrorEvent:
+    properties:
+      count:
+        type: integer
+      detail:
+        description: Stack trace / thông tin phụ của lần gần nhất.
+        type: string
+      fingerprint:
+        type: string
+      first_seen_at:
+        type: string
+      id:
+        type: string
+      kind:
+        description: error | panic | crash
+        type: string
+      last_seen_at:
+        type: string
+      location:
+        type: string
+      message:
+        type: string
+      reporter:
+        description: 'Ai gặp: mã máy với máy trạm, tên đăng nhập với admin và server.'
+        type: string
+      request_id:
+        type: string
+      resolved_at:
+        description: Dev đánh dấu đã sửa. Lỗi tái phát thì tự mở lại (về NULL).
+        type: string
+      source:
+        description: server | admin | client
+        type: string
+      version:
+        type: string
+    type: object
   model.Machine:
     properties:
       booted_at:
@@ -1134,6 +1170,25 @@ definitions:
       total_cost:
         type: integer
     type: object
+  service.ErrorReportInput:
+    properties:
+      detail:
+        type: string
+      kind:
+        enum:
+        - error
+        - panic
+        - crash
+        type: string
+      location:
+        type: string
+      message:
+        type: string
+      version:
+        type: string
+    required:
+    - message
+    type: object
   service.GameMenu:
     properties:
       items:
@@ -1148,6 +1203,15 @@ definitions:
       category:
         type: string
       display_name:
+        type: string
+      icon:
+        description: 'Icon: tệp lấy icon, tương đối trong thư mục game; rỗng là lấy
+          từ Launcher.'
+        type: string
+      key:
+        description: |-
+          Key: khoá của mục, máy trạm gửi lại khi chạy hay lấy icon. Bằng Name khi game là
+          một mục; "<Name>/<thứ tự từ 1>" cho từng mục riêng (tên game không chứa "/").
         type: string
       launch_args:
         type: string
@@ -1319,6 +1383,17 @@ definitions:
         type: string
       reward_value:
         type: object
+    type: object
+  service.MachineErrorReportRequest:
+    properties:
+      events:
+        items:
+          $ref: '#/definitions/service.ErrorReportInput'
+        maxItems: 20
+        minItems: 1
+        type: array
+    required:
+    - events
     type: object
   service.MemberLoginRequest:
     properties:
@@ -3464,6 +3539,91 @@ paths:
       summary: In hoá đơn mua combo (tài khoản, mật khẩu, chi tiết gói)
       tags:
       - Combos
+  /api/error-reports:
+    get:
+      parameters:
+      - description: server | admin | client
+        in: query
+        name: source
+        type: string
+      - description: open (mặc định) | resolved | all
+        in: query
+        name: status
+        type: string
+      - description: Trang
+        in: query
+        name: page
+        type: integer
+      - description: Số dòng mỗi trang
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  allOf:
+                  - $ref: '#/definitions/response.PaginatedData'
+                  - properties:
+                      items:
+                        items:
+                          $ref: '#/definitions/model.ErrorEvent'
+                        type: array
+                    type: object
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Nhật ký lỗi, gộp theo loại, gặp gần nhất lên đầu
+      tags:
+      - ErrorReports
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Lỗi
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.ErrorReportInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Trang quản trị gửi lỗi JS của chính nó
+      tags:
+      - ErrorReports
+  /api/error-reports/{id}/resolve:
+    put:
+      parameters:
+      - description: ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - BearerAuth: []
+      summary: Đánh dấu lỗi đã sửa (gặp lại sẽ tự mở lại)
+      tags:
+      - ErrorReports
   /api/feedback:
     get:
       produces:
@@ -4713,6 +4873,33 @@ paths:
       summary: Máy trạm báo một lần truy cập bị chặn
       tags:
       - WebsiteBlocking
+  /api/machines/by-code/{code}/errors:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Mã máy
+        in: path
+        name: code
+        required: true
+        type: string
+      - description: Tối đa 20 lỗi mỗi lần
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.MachineErrorReportRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: 'Máy trạm gửi lỗi: crash lần chạy trước, lỗi giao diện, không mở được
+        game'
+      tags:
+      - ErrorReports
   /api/members/refresh-tiers:
     post:
       description: |-
