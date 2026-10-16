@@ -14,6 +14,19 @@
 		     trắng màn hình đang có game chơi được. -->
 		<div v-if="loadError && games.length" class="load-error">{{ loadError }} — đang thử lại</div>
 
+		<!-- Tìm không dấu, theo nhóm hoặc chữ cái đầu ("lmht"). Gõ phím bất kỳ ở đâu
+		     trong cửa sổ cũng vào ô này; Esc xoá. -->
+		<div v-if="games.length" class="search-bar">
+			<el-input
+				ref="searchInput"
+				v-model="query"
+				clearable
+				placeholder="Tìm game"
+				:prefix-icon="Search"
+				@keydown.esc="query = ''"
+			/>
+		</div>
+
 		<main v-loading="loading" class="menu-body">
 			<div v-if="!loading && !games.length" class="empty">
 				<template v-if="loadError">
@@ -23,8 +36,13 @@
 				<p v-else>Quán chưa có game nào</p>
 			</div>
 
+			<div v-else-if="!shown.length" class="empty">
+				<p>Không có game nào khớp "{{ query.trim() }}"</p>
+				<el-button @click="query = ''">Xoá tìm kiếm</el-button>
+			</div>
+
 			<div v-else class="game-grid">
-				<article v-for="g in games" :key="gid(g)" class="game-card" :class="{ ready: g.status === 'ready' }">
+				<article v-for="g in shown" :key="gid(g)" class="game-card" :class="{ ready: g.status === 'ready' }">
 					<div class="game-head">
 						<!-- Không có icon (chưa lấy được, hoặc tệp chạy không có) thì vẽ chữ cái đầu
 						     trên nền màu suy ra từ tên, để thẻ nào cũng có hình mà không phải đợi. -->
@@ -61,10 +79,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
-import { gameLabel } from '../utils/gameName'
+import { Refresh, Search } from '@element-plus/icons-vue'
+import { gameLabel, matchesSearch } from '../utils/gameName'
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -92,6 +110,11 @@ function gid(g: Game): string {
 const REFRESH_MS = 10000
 
 const games = ref<Game[]>([])
+// Ô tìm game. Cửa sổ dựng lại mỗi lần mở (App.vue khoá theo lanMo) nên khách sau
+// không thấy chữ khách trước gõ.
+const query = ref('')
+const searchInput = ref<{ focus: () => void } | null>(null)
+const shown = computed(() => games.value.filter(g => matchesSearch(g, query.value)))
 // Chỉ lần tải đầu mới che màn hình; các lượt sau cập nhật ngầm, nếu không cả
 // lưới nháy mờ mỗi 10 giây.
 const loading = ref(true)
@@ -210,23 +233,37 @@ async function play(g: Game) {
 	setTimeout(() => { launching.value = '' }, 3000)
 }
 
+// Gõ một phím chữ/số khi đang không ở ô nhập nào thì chuyển vào ô tìm: phím đó
+// được gõ luôn vào ô, khách khỏi phải bấm chuột vào ô trước.
+function onKeydown(e: KeyboardEvent) {
+	if (e.key.length !== 1 || e.ctrlKey || e.altKey || e.metaKey) return
+	const t = e.target as HTMLElement | null
+	if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+	searchInput.value?.focus()
+}
+
 // Cửa sổ bị ẩn (bấm X, hoặc vừa mở game) thì thôi hỏi máy chủ; hiện lại thì hỏi
 // ngay chứ không chờ hết nhịp.
 function onVisibility() {
 	if (document.visibilityState === 'visible') load()
 }
 
-onMounted(() => {
-	load()
+onMounted(async () => {
 	timer = window.setInterval(() => {
 		if (document.visibilityState === 'visible') load()
 	}, REFRESH_MS)
 	document.addEventListener('visibilitychange', onVisibility)
+	window.addEventListener('keydown', onKeydown)
+	// Ô tìm chỉ hiện khi đã có danh sách: chờ lượt tải đầu rồi mới đặt con trỏ vào.
+	await load()
+	await nextTick()
+	searchInput.value?.focus()
 })
 
 onUnmounted(() => {
 	if (timer) clearInterval(timer)
 	document.removeEventListener('visibilitychange', onVisibility)
+	window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
@@ -257,6 +294,10 @@ onUnmounted(() => {
 	width: 40px;
 	display: flex;
 	justify-content: flex-end;
+}
+
+.search-bar {
+	padding: 12px 16px 0;
 }
 
 .load-error {
