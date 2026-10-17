@@ -884,7 +884,7 @@ const local: App.I18n.Schema = {
       goOrders: 'Open Orders page',
       stats: {
         members: 'Members',
-        onlineMachines: 'Online Machines',
+        onlineMachines: 'Online / Total machines',
         playing: 'Playing',
         revenueToday: "Today's Cash In"
       }

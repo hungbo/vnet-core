@@ -884,7 +884,7 @@ const local: App.I18n.Schema = {
       goOrders: 'Mở trang Đơn hàng',
       stats: {
         members: 'Hội viên',
-        onlineMachines: 'Máy online',
+        onlineMachines: 'Máy online / Tổng số máy',
         playing: 'Đang chơi',
         revenueToday: 'Tiền thu hôm nay'
       }

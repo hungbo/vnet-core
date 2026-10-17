@@ -105,6 +105,28 @@ function formatMoney(v: number) {
   return `${new Intl.NumberFormat('vi-VN').format(v || 0)}₫`;
 }
 
+// Toàn bộ máy: API trả tối đa 100 máy một trang, quán lớn hơn thì tải nốt các
+// trang còn lại, nếu không thẻ online/tổng và bảng máy sẵn sàng thiếu máy.
+async function fetchAllMachines(): Promise<{ items: any[]; total: number } | null> {
+  const pageSize = 100;
+  const first: any = await (
+    client.get('/machines', { params: { page: 1, page_size: pageSize } }) as Promise<any>
+  ).catch(() => null);
+  if (!first) return null;
+  const items: any[] = Array.isArray(first) ? first : first.items || [];
+  const total: number = first.total ?? items.length;
+  const pages = Math.ceil(total / pageSize);
+  if (pages > 1) {
+    const rest = await Promise.all(
+      Array.from({ length: pages - 1 }, (_, i) =>
+        (client.get('/machines', { params: { page: i + 2, page_size: pageSize } }) as Promise<any>).catch(() => null)
+      )
+    );
+    for (const r of rest) items.push(...(r?.items || []));
+  }
+  return { items, total };
+}
+
 async function refreshStats() {
   // Cả bốn thẻ đều lấy số thật. Trước đây thẻ hội viên và doanh thu là số 0
   // cứng, còn thẻ "máy online" đếm toàn bộ máy kể cả máy đang tắt.
@@ -112,7 +134,7 @@ async function refreshStats() {
 
   const [members, machines, sessions, revenue] = await Promise.all([
     (client.get('/members', { params: { page_size: 1 } }) as Promise<any>).catch(() => null),
-    (client.get('/machines', { params: { page_size: 100 } }) as Promise<any>).catch(() => null),
+    fetchAllMachines(),
     (client.get('/sessions/active') as Promise<any>).catch(() => null),
     (
       client.get('/reports/daily-revenue', {
@@ -123,8 +145,9 @@ async function refreshStats() {
 
   stats.value[0].value = members?.total ?? 0;
 
-  const machineList: any[] = Array.isArray(machines) ? machines : machines?.items || [];
-  stats.value[1].value = machineList.filter(m => m.status && m.status !== 'offline').length;
+  const machineList: any[] = machines?.items || [];
+  const online = machineList.filter(m => m.status && m.status !== 'offline').length;
+  stats.value[1].value = `${online}/${machines?.total ?? machineList.length}`;
 
   activeSessions.value = Array.isArray(sessions) ? sessions : sessions?.items || [];
   stats.value[2].value = activeSessions.value.length;

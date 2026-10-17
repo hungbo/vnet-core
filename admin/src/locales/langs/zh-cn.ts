@@ -878,7 +878,7 @@ const local: App.I18n.Schema = {
       goOrders: '打开订单页面',
       stats: {
         members: '会员数',
-        onlineMachines: '在线机器',
+        onlineMachines: '在线 / 机器总数',
         playing: '游戏中',
         revenueToday: '今日进账'
       }
