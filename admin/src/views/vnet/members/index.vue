@@ -10,6 +10,7 @@ import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
+import { useTransactionTypeLabel } from '@/hooks/business/transaction-types';
 import { formatAmount, moneyInput } from '@/utils/money';
 import { newIdempotencyKey } from '@/utils/idempotency';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
@@ -17,6 +18,7 @@ import MemberTopupDialog from './modules/member-topup-dialog.vue';
 
 const { t: $t } = useI18n();
 const { paymentLabel } = usePaymentMethods();
+const txTypeLabel = useTransactionTypeLabel();
 
 const search = ref('');
 // Loại tài khoản: hội viên thường do quầy tạo, hoặc tài khoản combo sinh ra khi
@@ -240,6 +242,13 @@ const uploading = ref('');
 
 // total_played_minutes tính bằng PHÚT (cột cũ tên ...hours chưa bao giờ được
 // ghi); đổi sang "Xg Yp" cho dễ đọc.
+// Số phút của một phiên: phiên đã đóng có duration_minutes; phiên đang chơi thì
+// tính tới bây giờ.
+function sessionMinutes(row: any) {
+  if (typeof row.duration_minutes === 'number') return row.duration_minutes;
+  return row.started_at ? Math.max(0, dayjs().diff(dayjs(row.started_at), 'minute')) : 0;
+}
+
 function formatPlayed(minutes: number | null | undefined) {
   const m = minutes || 0;
   if (m < 60) return `${m}p`;
@@ -763,9 +772,11 @@ onBeforeUnmount(() => {
                 {{ detailMember?.username }}
               </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('vnetPages.members.fullName')">
-                {{ detailMember?.full_name }}
+                {{ detailMember?.full_name || '-' }}
               </ElDescriptionsItem>
-              <ElDescriptionsItem :label="$t('vnetPages.members.phone')">{{ detailMember?.phone }}</ElDescriptionsItem>
+              <ElDescriptionsItem :label="$t('vnetPages.members.phone')">
+                {{ detailMember?.phone || '-' }}
+              </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('vnetPages.members.email')">
                 {{ detailMember?.email || '-' }}
               </ElDescriptionsItem>
@@ -777,6 +788,16 @@ onBeforeUnmount(() => {
               </ElDescriptionsItem>
               <ElDescriptionsItem :label="$t('vnetPages.members.group')">
                 {{ detailMember?.group?.name || '-' }}
+              </ElDescriptionsItem>
+              <!-- Hạng xếp theo tổng chi tiêu nên phải nhìn thấy được con số này. -->
+              <ElDescriptionsItem :label="$t('vnetPages.reports.totalSpent')">
+                {{ formatAmount(detailMember?.total_spent) }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem :label="$t('vnetPages.members.form.dateOfBirth')">
+                {{ detailMember?.date_of_birth ? dayjs(detailMember.date_of_birth).format('DD/MM/YYYY') : '-' }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem :label="$t('vnetPages.members.form.idCardNumber')">
+                {{ detailMember?.id_card_number || '-' }}
               </ElDescriptionsItem>
               <!--
                 Hai ô này trước đây không hiện được: total_played_hours và
@@ -799,26 +820,42 @@ onBeforeUnmount(() => {
               <ElDescriptionsItem :label="$t('vnetPages.members.createdAt')">
                 {{ formatDate(detailMember?.created_at) }}
               </ElDescriptionsItem>
-              <ElDescriptionsItem :label="$t('vnetPages.members.lastLogin')">
-                {{ formatDate(detailMember?.last_login) }}
+              <!--
+                "Lần cuối đăng nhập" đọc last_login, trường mà máy chủ không có
+                (hội viên không lưu giờ đăng nhập) nên luôn là "-". Lần chơi gần
+                nhất đã có ở ô "Lần ghé gần nhất".
+              -->
+              <ElDescriptionsItem :label="$t('vnetPages.members.form.notes')" :span="2">
+                {{ detailMember?.notes || '-' }}
               </ElDescriptionsItem>
             </ElDescriptions>
           </ElTabPane>
           <ElTabPane :label="$t('vnetPages.members.transactions')" name="transactions">
-            <ElTable v-loading="detailTxLoading" :data="detailTxList" border stripe style="width: 100%">
-              <ElTableColumn prop="transaction_type" :label="$t('vnetPages.members.type')" width="100" />
-              <ElTableColumn :label="$t('vnetPages.members.amount')" width="120">
+            <ElTable v-loading="detailTxLoading" :data="detailTxList" border stripe class="w-full">
+              <ElTableColumn :label="$t('vnetPages.members.type')" width="115">
+                <template #default="{ row }">{{ txTypeLabel(row.transaction_type) }}</template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.members.amount')" width="95" align="right">
                 <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.members.method')" width="120">
+              <ElTableColumn :label="$t('vnetPages.transactions.balanceAfter')" width="95" align="right">
+                <template #default="{ row }">{{ formatAmount(row.balance_after) }}</template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.members.method')" width="95">
                 <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
               </ElTableColumn>
-              <ElTableColumn prop="reference_id" :label="$t('vnetPages.members.reference')" min-width="140" />
-              <ElTableColumn :label="$t('vnetPages.members.createdAt')" width="160">
+              <!-- Mô tả thay cho reference_id: mã UUID của đơn/phiên không ai đọc được. -->
+              <ElTableColumn
+                prop="description"
+                :label="$t('vnetPages.transactions.description')"
+                min-width="140"
+                show-overflow-tooltip
+              />
+              <ElTableColumn :label="$t('vnetPages.members.createdAt')" width="125">
                 <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
               </ElTableColumn>
             </ElTable>
-            <div style="display: flex; justify-content: center; margin-top: 12px">
+            <div class="mt-12px flex justify-center">
               <ElPagination
                 v-model:current-page="detailTxPage"
                 :page-size="detailTxSize"
@@ -830,20 +867,28 @@ onBeforeUnmount(() => {
             </div>
           </ElTabPane>
           <ElTabPane :label="$t('vnetPages.members.sessions')" name="sessions">
-            <ElTable v-loading="detailSesLoading" :data="detailSessions" border stripe style="width: 100%">
-              <ElTableColumn prop="machine_code" :label="$t('vnetPages.sessions.machineCode')" width="100" />
-              <ElTableColumn :label="$t('vnetPages.sessions.startTime')" width="160">
+            <ElTable v-loading="detailSesLoading" :data="detailSessions" border stripe class="w-full">
+              <ElTableColumn :label="$t('vnetPages.sessions.machineCode')" width="100">
+                <template #default="{ row }">{{ row.machine_code || '-' }}</template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.sessions.startTime')" width="130">
                 <template #default="{ row }">{{ formatDate(row.started_at) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.endTime')" width="160">
+              <ElTableColumn :label="$t('vnetPages.sessions.endTime')" width="130">
                 <template #default="{ row }">
-                  {{ formatDate(row.ended_at) || $t('vnetPages.sessions.running') }}
+                  {{ row.ended_at ? formatDate(row.ended_at) : $t('vnetPages.sessions.running') }}
                 </template>
               </ElTableColumn>
+              <!-- Phiên đang chơi chưa có duration_minutes: tính từ giờ bắt đầu tới lúc mở hộp. -->
               <ElTableColumn :label="$t('vnetPages.sessions.duration')" width="100">
-                <template #default="{ row }">{{ row.duration_minutes }}p</template>
+                <template #default="{ row }">{{ formatPlayed(sessionMinutes(row)) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.status')" width="100">
+              <ElTableColumn :label="$t('vnetPages.sessions.cost')" width="100" align="right">
+                <template #default="{ row }">
+                  {{ typeof row.total_cost === 'number' ? formatAmount(row.total_cost) : '-' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.sessions.status')" min-width="100">
                 <template #default="{ row }">
                   <ElTag :type="row.is_active ? 'warning' : 'info'" size="small">
                     {{ row.is_active ? $t('vnetPages.sessions.running') : $t('vnetPages.sessions.ended') }}
@@ -851,7 +896,7 @@ onBeforeUnmount(() => {
                 </template>
               </ElTableColumn>
             </ElTable>
-            <div style="display: flex; justify-content: center; margin-top: 12px">
+            <div class="mt-12px flex justify-center">
               <ElPagination
                 v-model:current-page="detailSesPage"
                 :page-size="detailSesSize"

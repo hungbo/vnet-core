@@ -206,3 +206,29 @@ func TestMemberService_Update_RejectsComboMember(t *testing.T) {
 	require.ErrorIs(t, err, errComboMemberLocked)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// Bảng "Phiên chơi" trong chi tiết hội viên cần mã máy; phiên chỉ lưu machine_id.
+// Máy đã xoá vẫn phải ra mã (không lọc deleted_at).
+func TestMemberService_GetSessions_MachineCode(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMemberService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE member_id = \$1`).
+		WithArgs("mem-1").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE member_id = \$1 ORDER BY created_at desc`).
+		WithArgs("mem-1", 10).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "is_active"}).
+			AddRow("s1", "m1", true).
+			AddRow("s2", "m2", false))
+	mock.ExpectQuery(`SELECT id, machine_code FROM "machines" WHERE id IN \(\$1,\$2\)$`).
+		WithArgs("m1", "m2").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}).AddRow("m1", "MAY01").AddRow("m2", "MAY02"))
+
+	rows, total, _, _, err := svc.GetSessions("mem-1", pagination.Params{Page: 1, PageSize: 10, Sort: "created_at", Order: "desc"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	require.Len(t, rows, 2)
+	assert.Equal(t, "MAY01", rows[0].MachineCode)
+	assert.Equal(t, "MAY02", rows[1].MachineCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

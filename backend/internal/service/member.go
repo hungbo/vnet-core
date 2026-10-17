@@ -136,10 +136,10 @@ type MemberResponse struct {
 	ParentConsentFileURL string         `json:"parent_consent_file_url"`
 	IsActive             bool           `json:"is_active"`
 	// Role "combo" là tài khoản sinh khi bán gói — trang quản trị chỉ cho đổi mật khẩu.
-	Role                 string         `json:"role"`
-	LastVisitAt          *time.Time     `json:"last_visit_at"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            time.Time      `json:"updated_at"`
+	Role        string     `json:"role"`
+	LastVisitAt *time.Time `json:"last_visit_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type GroupResponse struct {
@@ -174,6 +174,7 @@ type MemberTransactionResponse struct {
 type SessionResponse struct {
 	ID               string     `json:"id"`
 	MachineID        string     `json:"machine_id"`
+	MachineCode      string     `json:"machine_code,omitempty"`
 	MemberID         *string    `json:"member_id"`
 	ComboType        string     `json:"combo_type"`
 	ComboID          *string    `json:"combo_id"`
@@ -821,9 +822,25 @@ func (s *MemberService) GetSessions(id string, params pagination.Params) ([]*Ses
 		return nil, 0, 0, 0, err
 	}
 
+	// Mã máy cho bảng "Phiên chơi" trong chi tiết hội viên: phiên chỉ lưu machine_id.
+	// Unscoped để phiên cũ trên máy đã xoá vẫn hiện tên máy.
+	machineIDs := make([]string, 0, len(sessions))
+	for i := range sessions {
+		machineIDs = append(machineIDs, sessions[i].MachineID)
+	}
+	codes := map[string]string{}
+	if len(machineIDs) > 0 {
+		var machines []struct{ ID, MachineCode string }
+		s.db.Unscoped().Model(&model.Machine{}).Select("id, machine_code").Where("id IN ?", machineIDs).Find(&machines)
+		for _, m := range machines {
+			codes[m.ID] = m.MachineCode
+		}
+	}
+
 	result := make([]*SessionResponse, len(sessions))
 	for i := range sessions {
 		result[i] = toSessionResponse(&sessions[i])
+		result[i].MachineCode = codes[sessions[i].MachineID]
 	}
 
 	return result, total, params.Page, params.PageSize, nil

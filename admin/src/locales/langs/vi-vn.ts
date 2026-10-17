@@ -1130,7 +1130,7 @@ const local: App.I18n.Schema = {
       phone: 'SĐT',
       email: 'Email',
       balance: 'Số dư',
-      bonus: 'Điểm thưởng',
+      bonus: 'Tiền thưởng',
       group: 'Nhóm',
       password: 'Mật khẩu',
       passwordPlaceholder: 'Để trống nếu không đổi',

@@ -2030,6 +2030,8 @@ definitions:
         type: boolean
       is_overnight:
         type: boolean
+      machine_code:
+        type: string
       machine_id:
         type: string
       member_id:

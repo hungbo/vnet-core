@@ -14623,6 +14623,9 @@ const docTemplate = `{
                 "is_overnight": {
                     "type": "boolean"
                 },
+                "machine_code": {
+                    "type": "string"
+                },
                 "machine_id": {
                     "type": "string"
                 },

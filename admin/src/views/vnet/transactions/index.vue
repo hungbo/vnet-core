@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
+import { useTransactionTypeLabel } from '@/hooks/business/transaction-types';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPrice } from '@/utils/money';
 
@@ -19,28 +20,7 @@ const search = ref('');
 const typeFilter = ref('');
 const dateRange = ref<any>(null);
 
-// Backend ghi ra 12 loại giao dịch; bản đồ này từng chỉ có 5, nên những loại
-// còn lại rơi vào nhánh `|| type` và hiện NGUYÊN KHOÁ THÔ cho nhân viên đọc —
-// bảng sổ sách hiện "attendance_bonus" thay vì "Thưởng điểm danh".
-function typeLabel(type: string) {
-  const map: Record<string, string> = {
-    topup: $t('vnetPages.transactions.topup'),
-    topup_bonus: $t('vnetPages.transactions.topupBonus'),
-    topup_card: $t('vnetPages.transactions.topupCard'),
-    session_fee: $t('vnetPages.transactions.sessionFee'),
-    refund: $t('vnetPages.transactions.refund'),
-    refund_bonus: $t('vnetPages.transactions.refundBonus'),
-    cancel: $t('vnetPages.transactions.cancel'),
-    combo_purchase: $t('vnetPages.transactions.comboPurchase'),
-    attendance_bonus: $t('vnetPages.transactions.attendanceBonus'),
-    booking_deposit: $t('vnetPages.transactions.bookingDeposit'),
-    deposit_refund: $t('vnetPages.transactions.depositRefund'),
-    order_payment: $t('vnetPages.transactions.orderPayment'),
-    lucky_spin_balance: $t('vnetPages.transactions.luckySpinBalance'),
-    lucky_spin_bonus: $t('vnetPages.transactions.luckySpinBonus')
-  };
-  return map[type] || type;
-}
+const typeLabel = useTransactionTypeLabel();
 
 async function fetchData() {
   loading.value = true;

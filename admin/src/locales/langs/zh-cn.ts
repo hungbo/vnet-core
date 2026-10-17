@@ -1119,7 +1119,7 @@ const local: App.I18n.Schema = {
       phone: '手机号',
       email: '邮箱',
       balance: '余额',
-      bonus: '积分',
+      bonus: '赠送余额',
       group: '组',
       password: '密码',
       passwordPlaceholder: '留空则不修改',
