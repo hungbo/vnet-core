@@ -1,31 +1,45 @@
 <template>
 	<div class="game-menu">
 		<header class="menu-header">
-			<span class="header-spacer" />
-			<h3>Game</h3>
-			<div class="header-spacer">
-				<el-button text circle :loading="refreshing" title="Làm mới" @click="load">
-					<el-icon><Refresh /></el-icon>
-				</el-button>
+			<div class="menu-title">
+				<h3>Game</h3>
+				<span v-if="games.length" class="menu-count">{{ games.length }} game</span>
 			</div>
-		</header>
-
-		<!-- Mất mạng giữa chừng thì giữ danh sách cũ và báo một dòng, đừng xoá
-		     trắng màn hình đang có game chơi được. -->
-		<div v-if="loadError && games.length" class="load-error">{{ loadError }} — đang thử lại</div>
-
-		<!-- Tìm không dấu, theo nhóm hoặc chữ cái đầu ("lmht"). Gõ phím bất kỳ ở đâu
-		     trong cửa sổ cũng vào ô này; Esc xoá. -->
-		<div v-if="games.length" class="search-bar">
+			<!-- Tìm không dấu, theo nhóm hoặc chữ cái đầu ("lmht"). Gõ phím bất kỳ ở đâu
+			     trong cửa sổ cũng vào ô này; Esc xoá. -->
 			<el-input
+				v-if="games.length"
 				ref="searchInput"
 				v-model="query"
+				class="menu-search"
 				clearable
 				placeholder="Tìm game"
 				:prefix-icon="Search"
 				@keydown.esc="query = ''"
 			/>
-		</div>
+			<el-button text circle :loading="refreshing" title="Làm mới" @click="load">
+				<el-icon><Refresh /></el-icon>
+			</el-button>
+		</header>
+
+		<!-- Lọc theo nhóm: chỉ hiện khi quán chia game thành từ hai nhóm trở lên. -->
+		<nav v-if="categories.length > 1" class="menu-chips">
+			<button type="button" class="chip" :class="{ active: !category }" @click="category = ''">Tất cả</button>
+			<button
+				v-for="c in categories"
+				:key="c"
+				type="button"
+				class="chip"
+				:class="{ active: category === c }"
+				@click="category = category === c ? '' : c"
+			>
+				{{ c }}
+			</button>
+		</nav>
+
+		<!-- Mất mạng giữa chừng thì giữ danh sách cũ và báo một dòng, đừng xoá
+		     trắng màn hình đang có game chơi được. -->
+		<div v-if="loadError && games.length" class="load-error">{{ loadError }} — đang thử lại</div>
 
 		<main v-loading="loading" class="menu-body">
 			<div v-if="!loading && !games.length" class="empty">
@@ -37,16 +51,26 @@
 			</div>
 
 			<div v-else-if="!shown.length" class="empty">
-				<p>Không có game nào khớp "{{ query.trim() }}"</p>
-				<el-button @click="query = ''">Xoá tìm kiếm</el-button>
+				<p>Không có game nào khớp "{{ query.trim() || category }}"</p>
+				<el-button @click="clearFilters">Xoá bộ lọc</el-button>
 			</div>
 
 			<div v-else class="game-grid">
-				<article v-for="g in shown" :key="gid(g)" class="game-card" :class="{ ready: g.status === 'ready' }">
-					<div class="game-head">
+				<!-- Cả ô là nút: bấm vào đâu trên ô cũng mở game, và Tab/Enter dùng được. -->
+				<button
+					v-for="g in shown"
+					:key="gid(g)"
+					type="button"
+					class="tile"
+					:class="{ ready: g.status === 'ready', busy: launching === gid(g) }"
+					:disabled="g.status !== 'ready' || (!!launching && launching !== gid(g))"
+					:title="gameLabel(g)"
+					@click="play(g)"
+				>
+					<div class="tile-art" :style="artStyle(g)">
 						<!-- Không có icon (chưa lấy được, hoặc tệp chạy không có) thì vẽ chữ cái đầu
-						     trên nền màu suy ra từ tên, để thẻ nào cũng có hình mà không phải đợi. -->
-						<div class="game-icon" :style="icons[gid(g)] ? undefined : placeholderStyle(g)">
+						     trên nền màu suy ra từ tên, để ô nào cũng có hình mà không phải đợi. -->
+						<div class="tile-icon" :style="icons[gid(g)] ? undefined : placeholderStyle(g)">
 							<img
 								v-if="icons[gid(g)]"
 								:src="icons[gid(g)]"
@@ -56,23 +80,23 @@
 							/>
 							<span v-else class="game-initial" aria-hidden="true">{{ initial(g) }}</span>
 						</div>
-						<div class="game-info">
-							<div class="game-name" :title="gameLabel(g)">{{ gameLabel(g) }}</div>
-							<div v-if="g.category" class="game-category">{{ g.category }}</div>
+						<span v-if="g.status !== 'ready'" class="tile-status" :class="'is-' + badge(g).type">
+							{{ badge(g).text }}
+						</span>
+						<div v-if="g.status === 'ready'" class="tile-play">
+							<el-icon v-if="launching !== gid(g)"><VideoPlay /></el-icon>
+							<el-icon v-else class="is-loading"><Loading /></el-icon>
+							<span>{{ launching === gid(g) ? 'Đang mở…' : 'Chơi' }}</span>
+						</div>
+						<div v-if="g.status === 'downloading'" class="tile-progress">
+							<i :style="{ width: (g.progress || 0) + '%' }" />
 						</div>
 					</div>
-					<div class="game-foot">
-						<el-tag :type="badge(g).type" effect="plain" round size="small">{{ badge(g).text }}</el-tag>
-						<el-button
-							type="primary"
-							:disabled="g.status !== 'ready' || (!!launching && launching !== gid(g))"
-							:loading="launching === gid(g)"
-							@click="play(g)"
-						>
-							Chơi
-						</el-button>
+					<div class="tile-body">
+						<div class="tile-name">{{ gameLabel(g) }}</div>
+						<div class="tile-category">{{ g.category || '\u00a0' }}</div>
 					</div>
-				</article>
+				</button>
 			</div>
 		</main>
 	</div>
@@ -81,7 +105,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { Loading, Refresh, Search, VideoPlay } from '@element-plus/icons-vue'
 import { gameLabel, matchesSearch } from '../utils/gameName'
 
 declare const window: any
@@ -114,7 +138,19 @@ const games = ref<Game[]>([])
 // không thấy chữ khách trước gõ.
 const query = ref('')
 const searchInput = ref<{ focus: () => void } | null>(null)
-const shown = computed(() => games.value.filter(g => matchesSearch(g, query.value)))
+// Nhóm đang lọc ('' = tất cả). Nhóm lấy từ chính danh sách game của quán.
+const category = ref('')
+const categories = computed(() =>
+	[...new Set(games.value.map(g => (g.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi')),
+)
+const shown = computed(() =>
+	games.value.filter(g => matchesSearch(g, query.value) && (!category.value || (g.category || '').trim() === category.value)),
+)
+
+function clearFilters() {
+	query.value = ''
+	category.value = ''
+}
 // Chỉ lần tải đầu mới che màn hình; các lượt sau cập nhật ngầm, nếu không cả
 // lưới nháy mờ mỗi 10 giây.
 const loading = ref(true)
@@ -196,14 +232,27 @@ function initial(g: Game): string {
 	return m ? Array.from(m[0].toUpperCase())[0] : '?'
 }
 
-// Màu nền chữ cái đầu suy từ khoá (không đổi khi sửa tên hiển thị): cùng mục luôn
+// Màu riêng của mỗi mục suy từ khoá (không đổi khi sửa tên hiển thị): cùng mục luôn
 // cùng màu, các mục khác nhau thì tản đều quanh vòng màu.
-function placeholderStyle(g: Game) {
+function hue(g: Game): number {
 	const id = gid(g)
 	let h = 2166136261
 	for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619)
-	const hue = (h >>> 0) % 360
-	return { background: `linear-gradient(135deg, hsl(${hue} 55% 46%), hsl(${(hue + 40) % 360} 55% 30%))` }
+	return (h >>> 0) % 360
+}
+
+function placeholderStyle(g: Game) {
+	const h = hue(g)
+	return { background: `linear-gradient(135deg, hsl(${h} 55% 46%), hsl(${(h + 40) % 360} 55% 30%))` }
+}
+
+// Nền phía sau icon: vầng sáng cùng màu của mục, để lưới có màu sắc mà icon
+// vẫn nổi.
+function artStyle(g: Game) {
+	const h = hue(g)
+	return {
+		background: `radial-gradient(circle at 50% 45%, hsl(${h} 70% 50% / 0.38), transparent 68%), linear-gradient(160deg, hsl(${h} 45% 22%), var(--vnet-surface-2))`,
+	}
 }
 
 // Chỉ "ready" mới chơi được. Mọi trạng thái còn lại (queued, publishing,
@@ -272,46 +321,95 @@ onUnmounted(() => {
 	height: 100vh;
 	display: flex;
 	flex-direction: column;
-	background: var(--vnet-bg);
+	background:
+		radial-gradient(1200px 400px at 10% -10%, rgba(76, 125, 255, 0.16), transparent 60%),
+		radial-gradient(900px 360px at 100% 0%, rgba(123, 92, 255, 0.12), transparent 60%),
+		var(--vnet-bg);
 }
 
 .menu-header {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	padding: 12px 16px;
-	background: var(--vnet-surface);
-	box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+	gap: 16px;
+	padding: 16px 20px 12px;
 }
 
-.menu-header h3 {
-	font-size: 16px;
-	font-weight: 600;
-}
-
-/* Hai đầu cùng bề rộng để tiêu đề nằm đúng giữa; nút làm mới dựa phải. */
-.header-spacer {
-	width: 40px;
+.menu-title {
 	display: flex;
-	justify-content: flex-end;
+	align-items: baseline;
+	gap: 10px;
+	margin-right: auto;
 }
 
-.search-bar {
-	padding: 12px 16px 0;
+.menu-title h3 {
+	font-family: var(--vnet-font-display);
+	font-size: 24px;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	background: var(--vnet-brand);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+.menu-count {
+	font-size: 13px;
+	color: var(--vnet-text-muted);
+}
+
+.menu-search {
+	width: 320px;
+}
+
+.menu-search :deep(.el-input__wrapper) {
+	border-radius: 999px;
+	background: var(--vnet-surface);
+}
+
+.menu-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: 0 20px 8px;
+}
+
+.chip {
+	padding: 5px 14px;
+	border: 1px solid var(--vnet-border);
+	border-radius: 999px;
+	background: var(--vnet-surface);
+	color: var(--vnet-text-muted);
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+	transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.chip:hover {
+	color: var(--vnet-text);
+	border-color: var(--vnet-primary);
+}
+
+.chip.active {
+	color: #fff;
+	border-color: transparent;
+	background: var(--vnet-brand);
 }
 
 .load-error {
-	padding: 6px 16px;
+	margin: 0 20px 8px;
+	padding: 6px 12px;
+	border-radius: var(--vnet-radius-sm);
 	font-size: 12px;
 	color: var(--vnet-warning);
-	background: var(--vnet-surface);
+	background: rgba(255, 181, 71, 0.1);
 }
 
 .menu-body {
 	flex: 1;
 	min-height: 0;
 	overflow-y: auto;
-	padding: 16px;
+	padding: 8px 20px 20px;
 }
 
 .empty {
@@ -326,81 +424,171 @@ onUnmounted(() => {
 
 .game-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-	gap: 12px;
+	grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+	gap: 16px;
 	/* Lưới cao hết cửa sổ thì hàng duy nhất giãn theo; giữ ô cao đúng bằng nội dung. */
 	align-content: start;
 }
 
-.game-card {
+.tile {
 	display: flex;
 	flex-direction: column;
-	justify-content: space-between;
-	gap: 14px;
-	padding: 16px;
+	padding: 0;
 	border: 1px solid var(--vnet-border);
-	border-radius: var(--vnet-radius);
+	border-radius: 14px;
+	overflow: hidden;
 	background: var(--vnet-surface);
-	/* Game chưa sẵn sàng vẫn hiện: khách cần biết quán có game đó, chỉ là
-	   chưa chơi được. */
-	opacity: 0.7;
-	transition: border-color 0.15s, opacity 0.15s;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+	cursor: default;
+	transition: transform 0.18s ease, border-color 0.18s, box-shadow 0.18s;
 }
 
-.game-card.ready {
-	opacity: 1;
+.tile.ready {
+	cursor: pointer;
 }
 
-.game-card.ready:hover {
+.tile.ready:hover,
+.tile.ready:focus-visible,
+.tile.busy {
+	transform: translateY(-4px);
 	border-color: var(--vnet-primary);
+	box-shadow: 0 12px 28px rgba(3, 6, 16, 0.6), 0 0 0 1px rgba(76, 125, 255, 0.35);
+	outline: none;
 }
 
-.game-head {
+/* Game chưa sẵn sàng vẫn hiện: khách cần biết quán có game đó, chỉ là chưa
+   chơi được. */
+.tile:not(.ready) .tile-icon {
+	filter: grayscale(0.85) brightness(0.75);
+}
+
+.tile-art {
+	position: relative;
+	aspect-ratio: 16 / 11;
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	justify-content: center;
 }
 
-.game-icon {
-	flex: none;
-	width: 56px;
-	height: 56px;
-	border-radius: 12px;
+.tile-icon {
+	width: 76px;
+	height: 76px;
+	border-radius: 18px;
 	overflow: hidden;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	background: var(--vnet-surface-2);
+	filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.45));
+	transition: transform 0.18s ease;
 }
 
-.game-icon img {
+.tile.ready:hover .tile-icon,
+.tile.ready:focus-visible .tile-icon,
+.tile.busy .tile-icon {
+	transform: translateY(-12px) scale(1.04);
+}
+
+.tile-icon img {
 	width: 100%;
 	height: 100%;
 	object-fit: contain;
-	/* Ảnh là trang trí: không cho kéo thả ra khỏi thẻ. */
+	/* Ảnh là trang trí: không cho kéo thả ra khỏi ô. */
 	user-select: none;
 	pointer-events: none;
 }
 
 .game-initial {
 	font-family: var(--vnet-font-display);
-	font-size: 26px;
+	font-size: 34px;
 	font-weight: 700;
 	line-height: 1;
 	color: #fff;
 	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-/* min-width: 0 để cột tên co lại được trong hàng flex, nếu không tên dài đẩy
-   thẻ tràn ra ngoài lưới. */
-.game-info {
-	flex: 1;
-	min-width: 0;
+.tile-status {
+	position: absolute;
+	top: 8px;
+	left: 8px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--vnet-text-muted);
+	background: rgba(10, 15, 30, 0.72);
 }
 
-.game-name {
-	font-size: 15px;
+.tile-status.is-primary {
+	color: var(--vnet-primary);
+}
+
+.tile-status.is-danger {
+	color: var(--vnet-danger);
+}
+
+/* Nút Chơi hiện ở đáy hình khi rê chuột (icon nhích lên nhường chỗ): hình
+   thoáng lúc xem, rõ ràng lúc chọn. */
+.tile-play {
+	position: absolute;
+	left: 50%;
+	bottom: 10px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 16px;
+	border-radius: 999px;
+	white-space: nowrap;
+	font-family: var(--vnet-font-display);
+	font-size: 14px;
+	font-weight: 700;
+	color: #fff;
+	background: var(--vnet-brand);
+	box-shadow: 0 6px 16px rgba(76, 125, 255, 0.45);
+	opacity: 0;
+	transform: translate(-50%, 6px);
+	transition: opacity 0.18s, transform 0.18s;
+}
+
+.tile-play .el-icon {
+	font-size: 16px;
+}
+
+.tile.ready:hover .tile-play,
+.tile.ready:focus-visible .tile-play,
+.tile.busy .tile-play {
+	opacity: 1;
+	transform: translate(-50%, 0);
+}
+
+.tile-progress {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 4px;
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.tile-progress i {
+	display: block;
+	height: 100%;
+	background: var(--vnet-brand);
+	transition: width 0.4s ease;
+}
+
+/* min-width: 0 để tên dài co lại được trong ô, không đẩy ô tràn khỏi lưới. */
+.tile-body {
+	min-width: 0;
+	padding: 10px 12px 12px;
+}
+
+.tile-name {
+	font-size: 14px;
 	font-weight: 600;
+	line-height: 1.35;
+	min-height: 2.7em;
 	/* Tên không có khoảng trắng (slug dài) cũng phải xuống dòng. */
 	overflow-wrap: anywhere;
 	display: -webkit-box;
@@ -409,16 +597,9 @@ onUnmounted(() => {
 	overflow: hidden;
 }
 
-.game-category {
-	margin-top: 4px;
+.tile-category {
+	margin-top: 2px;
 	font-size: 12px;
 	color: var(--vnet-text-muted);
-}
-
-.game-foot {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 8px;
 }
 </style>
