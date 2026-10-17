@@ -84,7 +84,7 @@ watch(visible, () => {
 </script>
 
 <template>
-  <ElDialog v-model="visible" :title="title" class="w-560px">
+  <ElDialog v-model="visible" :title="title" width="900px" top="6vh">
     <ElTree
       ref="treeRef"
       v-loading="loading"
@@ -92,7 +92,7 @@ watch(visible, () => {
       node-key="id"
       show-checkbox
       default-expand-all
-      class="h-320px overflow-y-auto"
+      class="h-60vh overflow-y-auto"
     />
     <template #footer>
       <ElSpace class="w-full justify-end">
