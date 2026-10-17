@@ -42,6 +42,8 @@ var changeSkipPrefix = []string{"/api/auth/", "/api/chat/"}
 var changeTopicOverride = map[string]string{
 	"POST /api/machines/by-code/:code/errors":               "error-reports",
 	"POST /api/machines/by-code/:code/blocklist/violations": "website-rules",
+	// Lượt bấm "Chơi" đổi cột Lượt chơi ở trang Game.
+	"POST /api/game-menu/launch": "games",
 }
 
 // changeSkipKey: handler đặt cờ này khi yêu cầu ghi lần này không đổi gì (xem SkipChange).

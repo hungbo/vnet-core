@@ -131,7 +131,19 @@ func (a *App) LaunchGame(key string) error {
 		return fmt.Errorf("không mở được %s: %v", gameLabel(g), err)
 	}
 	log.Printf("[game] %s mở %q (%s)", a.username, g.menuKey(), exe)
+	go a.reportLaunch(g.menuKey())
 	return nil
+}
+
+// reportLaunch báo máy chủ một lượt bấm "Chơi" để trang Game đếm lượt chơi.
+// Chạy nền và chỉ ghi log khi lỗi: game đã mở rồi, không để khách chờ mạng.
+func (a *App) reportLaunch(key string) {
+	if _, err := a.doRequest("POST", "/api/game-menu/launch", map[string]string{
+		"key":          key,
+		"machine_code": a.machineCode,
+	}); err != nil {
+		log.Printf("[game] không báo được lượt chơi %q: %v", key, err)
+	}
 }
 
 // resolveGameLaunch dựng đường dẫn tệp chạy game: root\name\launcher.

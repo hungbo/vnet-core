@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/response"
 	"gorm.io/gorm"
@@ -75,6 +76,36 @@ func (h *GameHandler) Menu(c *gin.Context) {
 		return
 	}
 	response.Success(c, menu)
+}
+
+// Launch
+// @Summary      Ghi một lượt bấm "Chơi" trên menu máy trạm
+// @Description  Máy trạm gọi sau khi mở được game; trang Game đếm lượt chơi từ đây.
+// @Tags         Games
+// @Accept       json
+// @Produce      json
+// @Param        body  body  service.GameLaunchRequest  true  "Mục menu vừa bấm"
+// @Success      200  {object}  response.Response
+// @Router       /api/game-menu/launch [post]
+func (h *GameHandler) Launch(c *gin.Context) {
+	var req service.GameLaunchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	memberID := ""
+	if middleware.GetKind(c) == "member" {
+		memberID = middleware.GetUserID(c)
+	}
+	if err := h.svc.RecordLaunch(&req, memberID); err != nil {
+		if errors.Is(err, service.ErrGameNotFound) {
+			response.NotFound(c, err.Error())
+			return
+		}
+		response.InternalError(c, "Không ghi được lượt chơi", err)
+		return
+	}
+	response.Success(c, nil)
 }
 
 // Create

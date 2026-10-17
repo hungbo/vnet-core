@@ -737,6 +737,7 @@ const local: App.I18n.Schema = {
       addEntry: 'Add entry',
       version: 'Version',
       size: 'Size',
+      launchCount: 'Plays',
       status: 'Status',
       autoUpdate: 'Auto update',
       enabled: 'Enabled',

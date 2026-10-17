@@ -1675,6 +1675,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/game-menu/launch": {
+            "post": {
+                "description": "Máy trạm gọi sau khi mở được game; trang Game đếm lượt chơi từ đây.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Games"
+                ],
+                "summary": "Ghi một lượt bấm \"Chơi\" trên menu máy trạm",
+                "parameters": [
+                    {
+                        "description": "Mục menu vừa bấm",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.GameLaunchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/games": {
             "get": {
                 "produces": [
@@ -13419,6 +13453,22 @@ const docTemplate = `{
                 },
                 "version": {
                     "type": "string"
+                }
+            }
+        },
+        "service.GameLaunchRequest": {
+            "type": "object",
+            "required": [
+                "key"
+            ],
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "maxLength": 200
+                },
+                "machine_code": {
+                    "type": "string",
+                    "maxLength": 256
                 }
             }
         },

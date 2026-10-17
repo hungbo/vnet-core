@@ -379,6 +379,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 			// Menu game của máy trạm: chỉ cần đăng nhập, hội viên cũng gọi được
 			// (giống /products). Nằm ngoài nhóm /games vì nhóm đó là StaffOnly.
 			protected.GET("/game-menu", h.Game.Menu)
+			protected.POST("/game-menu/launch", h.Game.Launch)
 
 			appUpdates := protected.Group("/app-updates", middleware.StaffOnly())
 			{

@@ -1196,6 +1196,17 @@ definitions:
     required:
     - message
     type: object
+  service.GameLaunchRequest:
+    properties:
+      key:
+        maxLength: 200
+        type: string
+      machine_code:
+        maxLength: 256
+        type: string
+    required:
+    - key
+    type: object
   service.GameMenu:
     properties:
       items:
@@ -3747,6 +3758,29 @@ paths:
       security:
       - BearerAuth: []
       summary: Menu game cho máy trạm
+      tags:
+      - Games
+  /api/game-menu/launch:
+    post:
+      consumes:
+      - application/json
+      description: Máy trạm gọi sau khi mở được game; trang Game đếm lượt chơi từ
+        đây.
+      parameters:
+      - description: Mục menu vừa bấm
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/service.GameLaunchRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      summary: Ghi một lượt bấm "Chơi" trên menu máy trạm
       tags:
       - Games
   /api/games:

@@ -737,6 +737,7 @@ const local: App.I18n.Schema = {
       addEntry: 'Thêm mục',
       version: 'Phiên bản',
       size: 'Dung lượng',
+      launchCount: 'Lượt chơi',
       status: 'Trạng thái',
       autoUpdate: 'Tự cập nhật',
       enabled: 'Bật',

@@ -305,7 +305,33 @@ func kiemTraCaiDatGame(in map[string]interface{}) error {
 
 // ---------------------------------------------------------------- CRUD
 
+// List là danh sách cho trang Game, kèm số lượt bấm "Chơi" của từng game.
 func (s *GameService) List() ([]model.Game, error) {
+	games, err := s.listGames()
+	if err != nil {
+		return nil, err
+	}
+	// Lượt bấm "Chơi" của từng game, đếm gộp một truy vấn.
+	var luot []struct {
+		GameID string
+		N      int64
+	}
+	if err := s.db.Model(&model.GameLaunch{}).Select("game_id, COUNT(*) as n").
+		Group("game_id").Find(&luot).Error; err != nil {
+		return nil, err
+	}
+	theoGame := make(map[string]int64, len(luot))
+	for _, l := range luot {
+		theoGame[l.GameID] = l.N
+	}
+	for i := range games {
+		games[i].LaunchCount = theoGame[games[i].ID]
+	}
+	return games, nil
+}
+
+// listGames không đếm lượt chơi: Menu gọi nó mỗi lần máy trạm mở menu game.
+func (s *GameService) listGames() ([]model.Game, error) {
 	var games []model.Game
 	if err := s.db.Order("priority DESC, display_name ASC").Find(&games).Error; err != nil {
 		return nil, err
@@ -322,6 +348,34 @@ func (s *GameService) List() ([]model.Game, error) {
 		}
 	}
 	return games, nil
+}
+
+// GameLaunchRequest: máy trạm báo một lượt bấm "Chơi" (Key là GameMenuItem.Key).
+type GameLaunchRequest struct {
+	Key         string `json:"key" binding:"required,max=200"`
+	MachineCode string `json:"machine_code" binding:"max=256"`
+}
+
+// ErrGameNotFound: khoá menu không ứng với game nào (game vừa bị xoá khỏi danh sách).
+var ErrGameNotFound = errors.New("không có game này")
+
+// RecordLaunch ghi một lượt bấm "Chơi". memberID rỗng khi nhân viên kỹ thuật mở game.
+func (s *GameService) RecordLaunch(req *GameLaunchRequest, memberID string) error {
+	// Khoá menu là "<tên thư mục>" hoặc "<tên thư mục>/<i>"; tên thư mục không
+	// chứa "/", nên phần trước dấu "/" đầu tiên luôn là tên game.
+	name, _, _ := strings.Cut(req.Key, "/")
+	var g model.Game
+	if err := s.db.Select("id").Where("name = ?", name).First(&g).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrGameNotFound
+		}
+		return err
+	}
+	l := model.GameLaunch{GameID: g.ID, MenuKey: req.Key, MachineCode: req.MachineCode}
+	if memberID != "" {
+		l.MemberID = &memberID
+	}
+	return s.db.Create(&l).Error
 }
 
 type CreateGameRequest struct {
@@ -518,7 +572,7 @@ type GameMenu struct {
 // đang tải vẫn hiện (kèm tiến độ) để khách biết, nhưng chưa chạy được. Game có mục
 // menu riêng ra từng mục đó, cùng thư mục và trạng thái.
 func (s *GameService) Menu() (*GameMenu, error) {
-	games, err := s.List()
+	games, err := s.listGames()
 	if err != nil {
 		return nil, err
 	}

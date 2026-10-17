@@ -95,7 +95,7 @@ func main() {
 		&model.WebsiteBlockingSchedule{}, &model.WebsiteBlockingViolation{},
 		&model.AppUpdate{},
 		&model.IdempotencyKey{},
-		&model.Game{}, &model.GamePublish{},
+		&model.Game{}, &model.GamePublish{}, &model.GameLaunch{},
 	); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}

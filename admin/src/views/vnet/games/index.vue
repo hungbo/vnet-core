@@ -295,6 +295,10 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
         <ElTableColumn :label="$t('vnetPages.games.size')" width="100">
           <template #default="{ row }">{{ formatSize(row.size_bytes) }}</template>
         </ElTableColumn>
+        <!-- Số lượt khách bấm "Chơi" trên menu máy trạm (từ client 1.0.19). -->
+        <ElTableColumn :label="$t('vnetPages.games.launchCount')" width="100" align="right">
+          <template #default="{ row }">{{ (row.launch_count || 0).toLocaleString('vi-VN') }}</template>
+        </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.games.status')" min-width="190">
           <template #default="{ row }">
             <ElTag :type="statusType[row.status] || 'info'" size="small">

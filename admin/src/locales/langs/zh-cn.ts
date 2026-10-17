@@ -733,6 +733,7 @@ const local: App.I18n.Schema = {
       addEntry: '添加菜单项',
       version: '版本',
       size: '大小',
+      launchCount: '启动次数',
       status: '状态',
       autoUpdate: '自动更新',
       enabled: '启用',

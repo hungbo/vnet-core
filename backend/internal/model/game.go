@@ -53,6 +53,23 @@ type Game struct {
 	LastUpdatedAt *time.Time `json:"last_updated_at,omitempty"`
 	CreatedAt     time.Time  `json:"created_at,omitempty"`
 	UpdatedAt     time.Time  `json:"updated_at,omitempty"`
+
+	// LaunchCount: số lượt khách bấm "Chơi" trên menu máy trạm (bảng
+	// game_launches). Không phải cột: GameService.List đếm khi tải danh sách.
+	LaunchCount int64 `gorm:"-" json:"launch_count"`
+}
+
+// GameLaunch là một lượt bấm "Chơi" trên menu game của máy trạm, ghi sau khi
+// game đã mở được. Một dòng mỗi lượt để sau này đếm được theo ngày, theo máy.
+type GameLaunch struct {
+	ID     string `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	GameID string `gorm:"type:uuid;not null;index" json:"game_id"`
+	// MenuKey: "<tên thư mục>" hoặc "<tên thư mục>/<i>" khi game có nhiều mục
+	// menu (LibreOffice → Word, Excel).
+	MenuKey     string    `gorm:"type:varchar(200)" json:"menu_key"`
+	MemberID    *string   `gorm:"type:uuid;index" json:"member_id"`
+	MachineCode string    `gorm:"type:varchar(256)" json:"machine_code"`
+	CreatedAt   time.Time `gorm:"default:now();index" json:"created_at,omitempty"`
 }
 
 // GamePublish lưu tệp .torrent của từng bản đã publish (chỉ dùng ở master).
