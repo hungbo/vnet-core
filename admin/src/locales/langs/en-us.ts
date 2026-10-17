@@ -1155,6 +1155,7 @@ const local: App.I18n.Schema = {
       resetPasswordRequired: 'Password is required',
       transactions: 'Transactions',
       sessions: 'Sessions',
+      orders: 'Orders',
       amount: 'Amount',
       type: 'Type',
       method: 'Method',

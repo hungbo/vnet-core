@@ -45,6 +45,12 @@ const detailSesLoading = ref(false);
 const detailSesPage = ref(1);
 const detailSesSize = ref(10);
 const detailSesTotal = ref(0);
+// Tab "Đơn hàng": đơn gọi món và đơn nạp tiền của hội viên, mới nhất trước.
+const detailOrders = ref<any[]>([]);
+const detailOrdLoading = ref(false);
+const detailOrdPage = ref(1);
+const detailOrdSize = ref(10);
+const detailOrdTotal = ref(0);
 
 const formRef = ref<FormInstance>();
 
@@ -334,9 +340,11 @@ function viewDetail(row: any) {
   detailTab.value = 'info';
   detailTxPage.value = 1;
   detailSesPage.value = 1;
+  detailOrdPage.value = 1;
   fetchMemberDetail(row.id);
   fetchDetailTransactions();
   fetchDetailSessions();
+  fetchDetailOrders();
 }
 
 async function handleSubmit() {
@@ -449,6 +457,35 @@ async function fetchDetailTransactions() {
   }
 }
 
+async function fetchDetailOrders() {
+  detailOrdLoading.value = true;
+  try {
+    const res: any = await client.get(`/members/${detailId.value}/orders`, {
+      params: { page: detailOrdPage.value, page_size: detailOrdSize.value }
+    });
+    detailOrders.value = res.items || [];
+    detailOrdTotal.value = res.total || 0;
+  } catch {
+    detailOrders.value = [];
+  } finally {
+    detailOrdLoading.value = false;
+  }
+}
+
+const ORDER_STATUS_TAG: Record<string, 'info' | 'primary' | 'success' | 'danger'> = {
+  pending: 'info',
+  confirmed: 'primary',
+  completed: 'success',
+  cancelled: 'danger'
+};
+
+// Tóm tắt món trong đơn cho một ô: "Mì Hảo Hảo x2, Coca x1". Đơn nạp tiền không có món.
+function orderItemsSummary(row: any) {
+  if (row.order_type === 'topup') return $t('vnetPages.orders.topup');
+  const items: any[] = row.items || [];
+  return items.map(i => `${i.product_name} x${i.quantity}`).join(', ') || '-';
+}
+
 async function fetchDetailSessions() {
   detailSesLoading.value = true;
   try {
@@ -483,10 +520,11 @@ function reloadDetail() {
   fetchMemberDetail(detailId.value);
   fetchDetailTransactions();
   fetchDetailSessions();
+  fetchDetailOrders();
 }
 
 const { schedule: scheduleDetail } = useRealtimeRefresh(
-  ['members', 'member-groups', 'sessions', 'combos'],
+  ['members', 'member-groups', 'sessions', 'combos', 'orders'],
   reloadDetail,
   { events: ['session:started', 'session:ended', 'session:auto-ended'] }
 );
@@ -821,6 +859,45 @@ onBeforeUnmount(() => {
                 layout="prev, pager, next, total"
                 small
                 @current-change="fetchDetailSessions"
+              />
+            </div>
+          </ElTabPane>
+          <ElTabPane :label="$t('vnetPages.members.orders')" name="orders">
+            <ElTable v-loading="detailOrdLoading" :data="detailOrders" border stripe class="w-full">
+              <ElTableColumn prop="order_code" :label="$t('vnetPages.orders.orderCode')" width="100" />
+              <ElTableColumn :label="$t('vnetPages.orders.products')" min-width="145" show-overflow-tooltip>
+                <template #default="{ row }">{{ orderItemsSummary(row) }}</template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.orders.finalAmount')" width="90">
+                <template #default="{ row }">{{ formatAmount(row.final_amount) }}</template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.orders.paymentMethod')" width="95">
+                <template #default="{ row }">
+                  {{ row.payment_method ? paymentLabel(row.payment_method) : '-' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.orders.status')" width="110">
+                <template #default="{ row }">
+                  <ElTag :type="ORDER_STATUS_TAG[row.status] || 'info'" size="small">
+                    {{ $t(`vnetPages.orders.statusLabels.${row.status}`) }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.orders.machineCode')" width="70">
+                <template #default="{ row }">{{ row.machine_code || '-' }}</template>
+              </ElTableColumn>
+              <ElTableColumn :label="$t('vnetPages.orders.createdAt')" width="125">
+                <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
+              </ElTableColumn>
+            </ElTable>
+            <div class="mt-12px flex justify-center">
+              <ElPagination
+                v-model:current-page="detailOrdPage"
+                :page-size="detailOrdSize"
+                :total="detailOrdTotal"
+                layout="prev, pager, next, total"
+                small
+                @current-change="fetchDetailOrders"
               />
             </div>
           </ElTabPane>

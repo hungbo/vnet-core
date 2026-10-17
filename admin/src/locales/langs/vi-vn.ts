@@ -1155,6 +1155,7 @@ const local: App.I18n.Schema = {
       resetPasswordRequired: 'Vui lòng nhập mật khẩu',
       transactions: 'Giao dịch',
       sessions: 'Phiên chơi',
+      orders: 'Đơn hàng',
       amount: 'Số tiền',
       type: 'Loại',
       method: 'Phương thức',

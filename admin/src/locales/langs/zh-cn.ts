@@ -1143,6 +1143,7 @@ const local: App.I18n.Schema = {
       resetPasswordRequired: '请输入密码',
       transactions: '交易记录',
       sessions: '上机记录',
+      orders: '订单',
       amount: '金额',
       type: '类型',
       method: '方式',
