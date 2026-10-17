@@ -93,6 +93,10 @@ func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
 	mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE "user_roles"."user_id" = \$1`).
 		WithArgs("u1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "role_id"}))
+	// Lần sai đầu tiên chỉ được đếm (service/login_lock.go).
+	mock.ExpectQuery(`UPDATE users SET failed_logins = failed_logins \+ 1 WHERE id = \$1 RETURNING failed_logins`).
+		WithArgs("u1").
+		WillReturnRows(sqlmock.NewRows([]string{"failed_logins"}).AddRow(1))
 
 	router := gin.New()
 	router.POST("/api/auth/login", handler.Login)

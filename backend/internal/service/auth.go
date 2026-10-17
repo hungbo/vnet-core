@@ -100,13 +100,29 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 		return nil, err
 	}
 
+	sieuQuyen := false
+	for _, role := range user.Roles {
+		for _, perm := range role.Permissions {
+			if perm.Code == "*" {
+				sieuQuyen = true
+			}
+		}
+	}
+	khoa := khoaDangNhap{bang: "users", id: user.ID, isActive: user.IsActive,
+		failed: user.FailedLogins, lockedUntil: user.LockedUntil, sieuQuyen: sieuQuyen}
+	now := time.Now()
+	if err := khoa.truocKhiKiem(s.db, now); err != nil {
+		return nil, err
+	}
+
 	if !user.IsActive {
 		return nil, errors.New("tài khoản đã bị khoá — liên hệ quản lý")
 	}
 
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
-		return nil, ErrBadCredentials
+		return nil, khoa.sauKhiSai(s.db, now)
 	}
+	khoa.sauKhiDung(s.db)
 	// Mật khẩu vừa gõ đã khớp băm, nên so thẳng chuỗi là đủ — không tốn thêm một
 	// lần bcrypt.
 	mustChange := req.Password == DefaultSeedPassword
@@ -366,16 +382,28 @@ func (s *AuthService) openSessionForLogin(member *model.Member, machine *model.M
 
 func (s *AuthService) MemberLogin(req *MemberLoginRequest) (*MemberLoginResponse, error) {
 	var member model.Member
-	if err := s.db.Where("username = ? AND is_active = ?", req.Username, true).First(&member).Error; err != nil {
+	if err := s.db.Where("username = ?", req.Username).First(&member).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrBadCredentials
 		}
 		return nil, err
 	}
 
-	if !utils.CheckPassword(req.Password, member.PasswordHash) {
+	khoa := khoaDangNhap{bang: "members", id: member.ID, isActive: member.IsActive,
+		failed: member.FailedLogins, lockedUntil: member.LockedUntil}
+	now := time.Now()
+	if err := khoa.truocKhiKiem(s.db, now); err != nil {
+		return nil, err
+	}
+	// Tài khoản bị tắt vì lý do khác vẫn báo như không tồn tại, như trước.
+	if !member.IsActive {
 		return nil, ErrBadCredentials
 	}
+
+	if !utils.CheckPassword(req.Password, member.PasswordHash) {
+		return nil, khoa.sauKhiSai(s.db, now)
+	}
+	khoa.sauKhiDung(s.db)
 
 	// Đây là màn hình khoá mà KHÁCH tự gõ mật khẩu vào — cửa vào máy thật sự,
 	// chứ không phải /sessions/start (đường nhân viên mở máy từ trang quản trị).

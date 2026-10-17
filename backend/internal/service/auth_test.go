@@ -103,8 +103,8 @@ func TestAuthService_ClientLogin_TenLaThiDiDuongHoiVien(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).
 		WithArgs("khach", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
-	mock.ExpectQuery(`SELECT \* FROM "members" WHERE \(username = \$1 AND is_active = \$2\)`).
-		WithArgs("khach", true, 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE username = \$1`).
+		WithArgs("khach", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	_, err := svc.ClientLogin(&MemberLoginRequest{Username: "khach", Password: "bat-ky"})
 	assert.Error(t, err, "không có ở cả hai bảng thì phải báo sai tài khoản")
@@ -126,6 +126,10 @@ func TestAuthService_Login_InvalidPassword(t *testing.T) {
 	mock.ExpectQuery(`SELECT \* FROM "user_roles" WHERE "user_roles"."user_id" = \$1`).
 		WithArgs("u1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "role_id"}))
+	// Lần sai đầu tiên chỉ được đếm, chưa khoá (login_lock.go).
+	mock.ExpectQuery(`UPDATE users SET failed_logins = failed_logins \+ 1 WHERE id = \$1 RETURNING failed_logins`).
+		WithArgs("u1").
+		WillReturnRows(sqlmock.NewRows([]string{"failed_logins"}).AddRow(1))
 
 	_, err := svc.Login(&LoginRequest{Username: "admin", Password: "wrongpassword"})
 	assert.Error(t, err)
@@ -490,6 +494,8 @@ func TestAuthService_Login_SaiThongTinLaErrBadCredentials(t *testing.T) {
 			AddRow("u1", "admin", hash, true))
 	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "role_id"}))
+	mock.ExpectQuery(`UPDATE users SET failed_logins = failed_logins \+ 1`).
+		WillReturnRows(sqlmock.NewRows([]string{"failed_logins"}).AddRow(1))
 	_, err = svc.Login(&LoginRequest{Username: "admin", Password: "sai"})
 	assert.ErrorIs(t, err, ErrBadCredentials)
 

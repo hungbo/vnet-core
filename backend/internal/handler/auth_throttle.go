@@ -131,7 +131,8 @@ func (h *AuthHandler) allowLogin(c *gin.Context, username string) (string, bool)
 // chối vì lý do khác, như khách hết tiền) thì xoá, để khách nạp tiền xong đăng
 // nhập lại không dính 429.
 func (h *AuthHandler) settleLogin(key string, err error) {
-	if !errors.Is(err, service.ErrBadCredentials) {
+	// Tài khoản bị khoá vì gõ sai cũng là một lượt dò: không xoá bộ đếm.
+	if !errors.Is(err, service.ErrBadCredentials) && !service.IsLoginLocked(err) {
 		h.throttle.clear(key)
 	}
 }

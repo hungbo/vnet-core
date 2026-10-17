@@ -42,6 +42,10 @@ type Member struct {
 	CreatedAt            time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
 	UpdatedAt            time.Time      `gorm:"default:now()" json:"updated_at,omitempty"`
 	DeletedAt            gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+	// Số lần gõ sai mật khẩu LIÊN TIẾP và mốc hết khoá tạm (service/login_lock.go).
+	FailedLogins int        `gorm:"default:0" json:"-"`
+	LockedUntil  *time.Time `gorm:"type:timestamptz;default:null" json:"locked_until,omitempty"`
 }
 
 type MemberTransaction struct {

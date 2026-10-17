@@ -19,6 +19,9 @@ type User struct {
 	AvatarURL    string         `gorm:"type:text" json:"avatar_url"`
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
 	LastLoginAt  *time.Time     `gorm:"type:timestamptz" json:"last_login_at"`
+	// Số lần gõ sai mật khẩu LIÊN TIẾP và mốc hết khoá tạm (service/login_lock.go).
+	FailedLogins int        `gorm:"default:0" json:"-"`
+	LockedUntil  *time.Time `gorm:"type:timestamptz;default:null" json:"locked_until,omitempty"`
 	// PasswordChangedAt: lần đổi mật khẩu gần nhất (rỗng = chưa đổi lần nào). Refresh
 	// token cấp TRƯỚC mốc này không làm mới được phiên nữa — xem AuthService.RefreshToken.
 	PasswordChangedAt *time.Time `gorm:"type:timestamptz" json:"-"`
