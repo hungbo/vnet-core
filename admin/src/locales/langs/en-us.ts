@@ -993,7 +993,9 @@ const local: App.I18n.Schema = {
         wakeConfirm: 'Send a Wake-on-LAN signal to {code}? The machine needs Wake-on-LAN enabled in BIOS and on its network card.',
         shutdown: 'Shutdown',
         restart: 'Restart',
-        message: 'Message',
+        chat: 'Chat',
+        chatNoMember: 'No member is playing on {code} to chat with',
+        message: 'Notice',
         screenshot: 'Screenshot',
         remoteDesktop: 'Remote desktop',
         rdTitle: 'Remote desktop — {code}',
@@ -1031,8 +1033,8 @@ const local: App.I18n.Schema = {
         killed: 'Killed {n} process(es)',
         sent: 'Command sent to {code}',
         offline: 'Machine {code} is not connected — the command was not delivered',
-        messagePrompt: 'Message to show on the machine:',
-        messageRequired: 'Enter a message'
+        messagePrompt: 'Notice to show on the machine screen (the customer cannot reply):',
+        messageRequired: 'Enter the notice'
       },
       asset: {
         name: 'Name',

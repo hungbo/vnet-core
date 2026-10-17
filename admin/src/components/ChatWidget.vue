@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/modules/auth';
 import { useWebSocketStore } from '@/store/modules/ws';
 import { useChatRooms } from '@/hooks/chat/useChatRooms';
 import { useChatWs } from '@/hooks/chat/useChatWs';
-import { isChatOpen } from '@/hooks/chat/chatState';
+import { chatRequestedRoomId, isChatOpen } from '@/hooks/chat/chatState';
 register();
 
 const authStore = useAuthStore();
@@ -163,15 +163,33 @@ onBeforeUnmount(() => {
   wsStore.off('room:new', wsRoomNew);
 });
 
+// Nút "Nhắn tin" ở trang Máy/Bảng điều khiển yêu cầu một phòng cụ thể
+// (openChatWithMember). Lấy yêu cầu đúng một lần rồi xoá.
+function pickRequestedRoom() {
+  const want = chatRequestedRoomId.value;
+  if (!want) return false;
+  chatRequestedRoomId.value = '';
+  if (!rooms.value.some((r: any) => r.roomId === want)) return false;
+  currentRoomId.value = want;
+  return true;
+}
+
 watch(isChatOpen, async open => {
   if (open) {
     await fetchRooms();
-    if (rooms.value.length > 0 && !currentRoomId.value) {
+    if (!pickRequestedRoom() && rooms.value.length > 0 && !currentRoomId.value) {
       currentRoomId.value = rooms.value[0].roomId;
     }
   } else {
     currentRoomId.value = '';
   }
+});
+
+// Khung chat đang mở sẵn mà nhân viên bấm "Nhắn tin" cho máy khác: chuyển phòng.
+watch(chatRequestedRoomId, async id => {
+  if (!id || !isChatOpen.value) return;
+  await fetchRooms();
+  pickRequestedRoom();
 });
 
 watch(currentRoomId, async newId => {

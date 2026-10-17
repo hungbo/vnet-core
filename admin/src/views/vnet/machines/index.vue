@@ -488,7 +488,7 @@ onBeforeUnmount(() => {
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.machines.remote.title')" width="110" fixed="right">
           <template #default="{ row }">
-            <MachineRemoteActions :machine="row as any" />
+            <MachineRemoteActions :machine="row as any" :member-id="(row as any).session?.member_id" />
           </template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.common.action')" width="340" fixed="right">

@@ -993,7 +993,9 @@ const local: App.I18n.Schema = {
         wakeConfirm: 'Gửi lệnh bật máy {code} qua mạng LAN? Máy cần bật Wake-on-LAN trong BIOS và card mạng.',
         shutdown: 'Tắt máy',
         restart: 'Khởi động lại',
-        message: 'Tin nhắn',
+        chat: 'Nhắn tin',
+        chatNoMember: 'Máy {code} không có hội viên đang chơi để nhắn tin',
+        message: 'Thông báo',
         screenshot: 'Chụp màn hình',
         remoteDesktop: 'Điều khiển màn hình',
         rdTitle: 'Điều khiển màn hình — {code}',
@@ -1031,7 +1033,7 @@ const local: App.I18n.Schema = {
         killed: 'Đã tắt {n} tiến trình',
         sent: 'Đã gửi lệnh tới {code}',
         offline: 'Máy {code} chưa kết nối — lệnh không tới nơi',
-        messagePrompt: 'Nội dung thông báo gửi tới máy:',
+        messagePrompt: 'Nội dung thông báo hiện trên màn hình máy (khách không trả lời được):',
         messageRequired: 'Nhập nội dung thông báo'
       },
       asset: {

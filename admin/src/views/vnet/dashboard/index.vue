@@ -248,7 +248,10 @@ onBeforeUnmount(() => {
         <ElTableColumn :label="$t('vnetPages.dashboard.actions')" width="280" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
-              <MachineRemoteActions :machine="{ id: row.machine_id, machine_code: row.machine_code }" />
+              <MachineRemoteActions
+                :machine="{ id: row.machine_id, machine_code: row.machine_code }"
+                :member-id="row.member_id"
+              />
               <!-- Phiên khách vãng lai không có hội viên: không có ví để nạp, không có đơn theo tên. -->
               <ElButton size="small" type="success" :disabled="!row.member_id" @click="openTopup(row)">
                 {{ $t('vnetPages.dashboard.topUp') }}

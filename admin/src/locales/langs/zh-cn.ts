@@ -985,7 +985,9 @@ const local: App.I18n.Schema = {
         wakeConfirm: '通过局域网向 {code} 发送开机信号？机器需在 BIOS 和网卡中启用 Wake-on-LAN。',
         shutdown: '关机',
         restart: '重启',
-        message: '消息',
+        chat: '聊天',
+        chatNoMember: '机器 {code} 没有正在上机的会员，无法聊天',
+        message: '通知',
         screenshot: '截图',
         remoteDesktop: '远程桌面',
         rdTitle: '远程桌面 — {code}',
@@ -1023,8 +1025,8 @@ const local: App.I18n.Schema = {
         killed: '已结束 {n} 个进程',
         sent: '已向 {code} 发送指令',
         offline: '机器 {code} 未连接 — 指令未送达',
-        messagePrompt: '要显示在机器上的消息：',
-        messageRequired: '请输入消息内容'
+        messagePrompt: '要显示在机器屏幕上的通知（客人无法回复）：',
+        messageRequired: '请输入通知内容'
       },
       asset: {
         name: '名称',

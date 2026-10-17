@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Nút điều khiển một máy trạm: menu Khác (bật máy qua Wake-on-LAN, điều khiển
-// từ xa, chụp màn hình, tiến trình, nhắn tin, khởi động lại, tắt máy). Chặn ứng dụng
+// từ xa, chụp màn hình, tiến trình, nhắn tin với hội viên, thông báo lên màn hình,
+// khởi động lại, tắt máy). Chặn ứng dụng
 // không nằm ở đây: nó là cài đặt chung cho mọi máy (Cài đặt > Máy trạm),
 // kèm các hộp thoại của chúng. Dùng chung cho trang Máy và bảng "Máy đang hoạt
 // động" ở Bảng điều khiển — hai bản chép là hai chỗ để lệch nhau.
@@ -14,11 +15,13 @@ import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
+import { openChatWithMember } from '@/hooks/chat/chatState';
 import RemoteDesktopModal from './remote-desktop-modal.vue';
 
 defineOptions({ name: 'MachineRemoteActions' });
 
-const props = defineProps<{ machine: { id: string; machine_code: string } }>();
+// memberId: hội viên đang ngồi máy (từ phiên đang mở). Không có thì không nhắn tin được.
+const props = defineProps<{ machine: { id: string; machine_code: string }; memberId?: string | null }>();
 
 const { t: $t } = useI18n();
 const wsStore = useWebSocketStore();
@@ -78,6 +81,7 @@ function handleRemoteCommand(cmd: string) {
   }
   if (cmd === 'screenshot') return handleScreenshot();
   if (cmd === 'processes') return handleProcesses();
+  if (cmd === 'chat') return handleChat();
   if (cmd === 'message') return handleMessage();
   return handlePower(cmd as 'shutdown' | 'restart');
 }
@@ -99,6 +103,22 @@ async function handlePower(action: 'shutdown' | 'restart') {
   await sendRemote(action);
 }
 
+// Nhắn tin: cuộc trò chuyện hai chiều với hội viên trong khung chat của trang quản
+// trị (khách trả lời từ máy trạm). Khác "Thông báo" ngay dưới.
+async function handleChat() {
+  if (!props.memberId) {
+    ElMessage.warning($t('vnetPages.machines.remote.chatNoMember', { code: props.machine.machine_code }));
+    return;
+  }
+  try {
+    await openChatWithMember(props.memberId);
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
+}
+
+// Thông báo: lệnh remote "message" hiện một hộp thông báo trên màn hình máy trạm,
+// một chiều — khách không trả lời được.
 async function handleMessage() {
   try {
     const { value } = await ElMessageBox.prompt(
@@ -242,7 +262,10 @@ onBeforeUnmount(() => {
           </ElDropdownItem>
           <ElDropdownItem command="screenshot">{{ $t('vnetPages.machines.remote.screenshot') }}</ElDropdownItem>
           <ElDropdownItem command="processes">{{ $t('vnetPages.machines.remote.processes') }}</ElDropdownItem>
-          <ElDropdownItem command="message" divided>
+          <ElDropdownItem command="chat" divided :disabled="!memberId">
+            {{ $t('vnetPages.machines.remote.chat') }}
+          </ElDropdownItem>
+          <ElDropdownItem command="message">
             {{ $t('vnetPages.machines.remote.message') }}
           </ElDropdownItem>
           <ElDropdownItem command="restart" divided>
