@@ -16,14 +16,50 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
 import { openChatWithMember } from '@/hooks/chat/chatState';
+import { useAuth } from '@/hooks/business/auth';
 import RemoteDesktopModal from './remote-desktop-modal.vue';
 
 defineOptions({ name: 'MachineRemoteActions' });
 
 // memberId: hội viên đang ngồi máy (từ phiên đang mở). Không có thì không nhắn tin được.
-const props = defineProps<{ machine: { id: string; machine_code: string }; memberId?: string | null }>();
+// extraItems: mục riêng của trang đặt lên đầu menu (trang Máy thêm "Phần cứng");
+// chọn chúng thì component chỉ phát sự kiện command, trang tự xử lý.
+const props = defineProps<{
+  machine: { id: string; machine_code: string };
+  memberId?: string | null;
+  extraItems?: { command: string; label: string }[];
+}>();
+const emit = defineEmits<{ command: [command: string] }>();
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
+
+// Mỗi mục ứng với một API và một quyền của backend; thiếu quyền thì ẩn mục chứ
+// không để nhân viên bấm rồi nhận 403. Mục cùng nhóm đứng liền nhau, giữa các
+// nhóm có vạch ngăn — tính trên các mục CÒN HIỆN, để không có vạch thừa.
+//   machines.remote          POST /machines/:id/wake, /machines/:id/remote/:action
+//   machines.remote_desktop  GET  /machines/:id/remote-desktop
+//   (nhắn tin)               /chat/rooms — mọi nhân viên
+const menuItems = computed(() => {
+  const remote = hasAuth('machines.remote');
+  const items = [
+    ...(props.extraItems || []).map(x => ({ ...x, group: 'page', show: true })),
+    { command: 'wake', label: $t('vnetPages.machines.remote.wake'), group: 'power-on', show: remote },
+    {
+      command: 'remote-desktop',
+      label: $t('vnetPages.machines.remote.remoteDesktop'),
+      group: 'view',
+      show: hasAuth('machines.remote_desktop')
+    },
+    { command: 'screenshot', label: $t('vnetPages.machines.remote.screenshot'), group: 'view', show: remote },
+    { command: 'processes', label: $t('vnetPages.machines.remote.processes'), group: 'view', show: remote },
+    { command: 'chat', label: $t('vnetPages.machines.remote.chat'), group: 'talk', show: true },
+    { command: 'message', label: $t('vnetPages.machines.remote.message'), group: 'talk', show: remote },
+    { command: 'restart', label: $t('vnetPages.machines.remote.restart'), group: 'power', show: remote },
+    { command: 'shutdown', label: $t('vnetPages.machines.remote.shutdown'), group: 'power', show: remote }
+  ].filter(x => x.show);
+  return items.map((x, i) => ({ ...x, divided: i > 0 && items[i - 1].group !== x.group }));
+});
 const wsStore = useWebSocketStore();
 
 async function sendRemote(action: string, payload?: Record<string, unknown>) {
@@ -74,6 +110,10 @@ async function handleWake() {
 }
 
 function handleRemoteCommand(cmd: string) {
+  if (props.extraItems?.some(x => x.command === cmd)) {
+    emit('command', cmd);
+    return undefined;
+  }
   if (cmd === 'wake') return handleWake();
   if (cmd === 'remote-desktop') {
     rdVisible.value = true;
@@ -256,23 +296,14 @@ onBeforeUnmount(() => {
       <ElButton size="small">{{ $t('vnetPages.machines.remote.more') }}</ElButton>
       <template #dropdown>
         <ElDropdownMenu>
-          <ElDropdownItem command="wake">{{ $t('vnetPages.machines.remote.wake') }}</ElDropdownItem>
-          <ElDropdownItem command="remote-desktop" divided>
-            {{ $t('vnetPages.machines.remote.remoteDesktop') }}
-          </ElDropdownItem>
-          <ElDropdownItem command="screenshot">{{ $t('vnetPages.machines.remote.screenshot') }}</ElDropdownItem>
-          <ElDropdownItem command="processes">{{ $t('vnetPages.machines.remote.processes') }}</ElDropdownItem>
-          <ElDropdownItem command="chat" divided :disabled="!memberId">
-            {{ $t('vnetPages.machines.remote.chat') }}
-          </ElDropdownItem>
-          <ElDropdownItem command="message">
-            {{ $t('vnetPages.machines.remote.message') }}
-          </ElDropdownItem>
-          <ElDropdownItem command="restart" divided>
-            {{ $t('vnetPages.machines.remote.restart') }}
-          </ElDropdownItem>
-          <ElDropdownItem command="shutdown">
-            {{ $t('vnetPages.machines.remote.shutdown') }}
+          <ElDropdownItem
+            v-for="item in menuItems"
+            :key="item.command"
+            :command="item.command"
+            :divided="item.divided"
+            :disabled="item.command === 'chat' && !memberId"
+          >
+            {{ item.label }}
           </ElDropdownItem>
         </ElDropdownMenu>
       </template>

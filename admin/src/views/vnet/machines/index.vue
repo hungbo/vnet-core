@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
@@ -10,12 +10,16 @@ import { useWebSocketStore } from '@/store/modules/ws';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
 import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 import MachineRemoteActions from './modules/machine-remote-actions.vue';
 import MachineNoteCell from './modules/machine-note-cell.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
+// "Phần cứng" nằm trong menu Khác của dòng, cùng các lệnh điều khiển máy.
+const hardwareItem = computed(() => [{ command: 'hardware', label: $t('vnetPages.machines.hardware') }]);
 const router = useRouter();
 const wsStore = useWebSocketStore();
 
@@ -212,6 +216,8 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
         h(MachineNoteCell, {
           machineId: row.id,
           note: row.note,
+          // Lưu ghi chú là PUT /machines/:id — cần quyền sửa máy.
+          readonly: !hasAuth('machines.update'),
           onSaved: (note: string) => {
             row.note = note;
           }
@@ -487,10 +493,13 @@ onBeforeUnmount(() => {
           </ElCheckbox>
         </div>
         <div style="display: flex; gap: 8px; align-items: center">
-          <ElButton @click="openBatch">{{ $t('vnetPages.machines.batch.open') }}</ElButton>
+          <ElButton v-if="hasAuth('machines.create')" @click="openBatch">
+            {{ $t('vnetPages.machines.batch.open') }}
+          </ElButton>
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-add="hasAuth('machines.create')"
             :show-delete="false"
             @add="openCreate"
             @refresh="getData"
@@ -502,20 +511,26 @@ onBeforeUnmount(() => {
            điều khiển từ xa đang mở của một dòng nhảy sang máy khác khi thứ tự đổi. -->
       <ElTable v-loading="loading" :data="data" row-key="id" border stripe style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
-        <ElTableColumn :label="$t('vnetPages.machines.remote.title')" width="110" fixed="right">
+        <!--
+          Một cột thao tác: Sửa, Khác (phần cứng + điều khiển máy), Xoá. Nút nào
+          thiếu quyền của API tương ứng thì không hiện.
+        -->
+        <ElTableColumn :label="$t('vnetPages.common.action')" width="220" fixed="right">
           <template #default="{ row }">
-            <MachineRemoteActions :machine="row as any" :member-id="(row as any).session?.member_id" />
-          </template>
-        </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.common.action')" width="340" fixed="right">
-          <template #default="{ row }">
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" @click="openHardware(row)">
-              {{ $t('vnetPages.machines.hardware') }}
-            </ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
-              {{ $t('vnetPages.common.delete') }}
-            </ElButton>
+            <div class="machine-actions">
+              <ElButton v-if="hasAuth('machines.update')" size="small" @click="openEdit(row)">
+                {{ $t('vnetPages.common.edit') }}
+              </ElButton>
+              <MachineRemoteActions
+                :machine="row as any"
+                :member-id="(row as any).session?.member_id"
+                :extra-items="hardwareItem"
+                @command="(cmd: string) => cmd === 'hardware' && openHardware(row)"
+              />
+              <ElButton v-if="hasAuth('machines.delete')" size="small" type="danger" @click="handleDelete(row)">
+                {{ $t('vnetPages.common.delete') }}
+              </ElButton>
+            </div>
           </template>
         </ElTableColumn>
       </ElTable>
@@ -687,3 +702,16 @@ onBeforeUnmount(() => {
     </ElDialog>
   </div>
 </template>
+
+<style scoped>
+.machine-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.machine-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+</style>

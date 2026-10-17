@@ -13,7 +13,8 @@ import client from '@/api/client';
 
 defineOptions({ name: 'MachineNoteCell' });
 
-const props = defineProps<{ machineId: string; note?: string | null }>();
+// readonly: nhân viên không có quyền sửa máy chỉ xem được ghi chú.
+const props = defineProps<{ machineId: string; note?: string | null; readonly?: boolean }>();
 const emit = defineEmits<{ saved: [note: string] }>();
 
 const { t: $t } = useI18n();
@@ -24,7 +25,7 @@ const draft = ref('');
 const inputRef = ref<any>(null);
 
 async function startEdit() {
-  if (editing.value) return;
+  if (editing.value || props.readonly) return;
   draft.value = props.note || '';
   editing.value = true;
   await nextTick();
@@ -81,9 +82,9 @@ async function save() {
     @keydown.esc="cancel"
     @blur="save"
   />
-  <div v-else class="machine-note" @click="startEdit">
+  <div v-else class="machine-note" :class="{ 'is-readonly': readonly }" @click="startEdit">
     <span v-if="note">{{ note }}</span>
-    <span v-else class="machine-note-empty">{{ $t('vnetPages.machines.noteAdd') }}</span>
+    <span v-else-if="!readonly" class="machine-note-empty">{{ $t('vnetPages.machines.noteAdd') }}</span>
   </div>
 </template>
 
@@ -98,9 +99,13 @@ async function save() {
   cursor: text;
 }
 
-.machine-note:hover {
+.machine-note:hover:not(.is-readonly) {
   border-color: var(--el-border-color);
   background: var(--el-fill-color-light);
+}
+
+.machine-note.is-readonly {
+  cursor: default;
 }
 
 .machine-note-empty {

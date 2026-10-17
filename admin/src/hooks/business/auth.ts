@@ -8,11 +8,17 @@ export function useAuth() {
       return false;
     }
 
-    if (typeof codes === 'string') {
-      return authStore.userInfo.permissions.includes(codes);
+    const perms = authStore.userInfo.permissions || [];
+    // "*" là siêu quyền, giống middleware.PermissionRequired bên backend.
+    if (perms.includes('*')) {
+      return true;
     }
 
-    return codes.some(code => authStore.userInfo.permissions.includes(code));
+    if (typeof codes === 'string') {
+      return perms.includes(codes);
+    }
+
+    return codes.some(code => perms.includes(code));
   }
 
   return {
