@@ -952,8 +952,8 @@ func (s *OrderService) settleOrder(tx *gorm.DB, order *model.Order, method, refe
 		"completed_at":   &now,
 	}
 	// updated_by is a uuid column: an empty string is not a null uuid and
-	// PostgreSQL rejects it outright. Pay has no acting user, so the column is
-	// simply left untouched there.
+	// PostgreSQL rejects it outright. No acting user means the column is left
+	// untouched.
 	if updatedBy != "" {
 		updates["updated_by"] = updatedBy
 	}
@@ -1581,7 +1581,9 @@ func priceSplitHalf(tx *gorm.DB, items []model.OrderItem, original *model.Order)
 	return total, applied.Discount, &applied.PromotionID
 }
 
-func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
+// Pay thu tiền một đơn. actorID là nhân viên bấm thanh toán: ghi vào updated_by
+// (cột "Người thực hiện" của trang Đơn hàng) và vào bút toán kho.
+func (s *OrderService) Pay(id string, req PayRequest, actorID string) (*OrderResponse, error) {
 	switch req.PaymentMethod {
 	case "", PaymentMethodBalance:
 	default:
@@ -1654,9 +1656,7 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 	var khoDaDoi []string
 	if order.Status == "pending" {
 		var err error
-		// Pay không nhận người thực hiện (settleOrder ngay dưới cũng truyền ""),
-		// nên bút toán kho ở nhánh này chưa có tên nhân viên.
-		khoDaDoi, err = s.deductStockForOrder(tx, order.ID, order.OrderCode, "")
+		khoDaDoi, err = s.deductStockForOrder(tx, order.ID, order.OrderCode, actorID)
 		if err != nil {
 			tx.Rollback()
 			return nil, err
@@ -1664,7 +1664,7 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 	}
 
 	now := time.Now()
-	if err := s.settleOrder(tx, &order, req.PaymentMethod, req.ReferenceCode, "", now); err != nil {
+	if err := s.settleOrder(tx, &order, req.PaymentMethod, req.ReferenceCode, actorID, now); err != nil {
 		tx.Rollback()
 		return nil, err
 	}
@@ -1685,6 +1685,7 @@ func (s *OrderService) Pay(id string, req PayRequest) (*OrderResponse, error) {
 		Action:     "pay",
 		EntityType: "order",
 		EntityID:   id,
+		UserID:     optionalUUID(actorID),
 		Metadata: map[string]interface{}{
 			"order_code":     order.OrderCode,
 			"amount":         order.FinalAmount,
@@ -1836,13 +1837,16 @@ func (s *OrderService) batchLoadUserNames(ids []string) map[string]string {
 	if len(ids) == 0 {
 		return result
 	}
-	var users []struct {
-		ID       string
-		FullName string
-	}
-	s.db.Model(&model.User{}).Where("id IN ?", ids).Find(&users)
+	// Như ShiftService.userNames: nhân viên đã bị xoá vẫn phải hiện tên trên đơn cũ
+	// (Unscoped), và tài khoản không điền họ tên thì hiện tên đăng nhập thay vì "-".
+	var users []struct{ ID, Username, FullName string }
+	s.db.Unscoped().Model(&model.User{}).Select("id, username, full_name").Where("id IN ?", ids).Find(&users)
 	for _, u := range users {
-		result[u.ID] = u.FullName
+		if u.FullName != "" {
+			result[u.ID] = u.FullName
+		} else {
+			result[u.ID] = u.Username
+		}
 	}
 	return result
 }

@@ -219,7 +219,7 @@ func TestOrderService_Pay_RejectsAmountMismatch(t *testing.T) {
 			AddRow("o1", "ORD-1", "confirmed", int64(500000)))
 	mock.ExpectRollback()
 
-	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "cash", Amount: 1})
+	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "cash", Amount: 1}, "user-1")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "không khớp")
@@ -255,15 +255,17 @@ func TestOrderService_Pay_FromBalanceDeductsMember(t *testing.T) {
 
 	mock.ExpectQuery(`INSERT INTO "payments"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("pay-1"))
-	mock.ExpectExec(`UPDATE "orders" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	// Nhân viên bấm thanh toán là người thực hiện của đơn.
+	mock.ExpectExec(`UPDATE "orders" SET "completed_at"=\$1,"payment_method"=\$2,"status"=\$3,"updated_by"=\$4`).
+		WithArgs(anyTime{}, "balance", "completed", "11111111-1111-1111-1111-111111111111", "o1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	mock.ExpectQuery(`SELECT \* FROM "order_items"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery(`SELECT \* FROM "payments"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
-
-	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "balance", Amount: 50000})
+	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "balance", Amount: 50000}, "11111111-1111-1111-1111-111111111111")
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -284,7 +286,7 @@ func TestOrderService_Pay_FromBalanceRejectsInsufficientFunds(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem-1", int64(100)))
 	mock.ExpectRollback()
 
-	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "balance", Amount: 50000})
+	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "balance", Amount: 50000}, "user-1")
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "số dư không đủ")
@@ -851,4 +853,21 @@ func TestChiaGiamGiaKhiTach(t *testing.T) {
 	// Đơn gốc không giảm thì hai nửa cũng không.
 	con, moi = chiaGiamGiaKhiTach(0, 100000, 5000, 100000, 5000)
 	assert.Equal(t, int64(0), con+moi)
+}
+
+// Cột "Người thực hiện": tài khoản không điền họ tên hiện tên đăng nhập, và tìm cả
+// nhân viên đã bị xoá (không lọc deleted_at) để đơn cũ không mất tên.
+func TestOrderService_BatchLoadUserNames_FallbackUsername(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	mock.ExpectQuery(`SELECT id, username, full_name FROM "users" WHERE id IN \(\$1,\$2\)$`).
+		WithArgs("u1", "u2").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name"}).
+			AddRow("u1", "admin", "Admin").
+			AddRow("u2", "thungan", ""))
+
+	names := svc.batchLoadUserNames([]string{"u1", "u2"})
+	assert.Equal(t, map[string]string{"u1": "Admin", "u2": "thungan"}, names)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

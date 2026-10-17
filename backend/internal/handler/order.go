@@ -270,7 +270,7 @@ func (h *OrderHandler) Pay(c *gin.Context) {
 		handleValidationError(c, err)
 		return
 	}
-	result, err := h.svc.Pay(id, req)
+	result, err := h.svc.Pay(id, req, middleware.GetUserID(c))
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
