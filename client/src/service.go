@@ -38,6 +38,9 @@ func runAgent(ctx context.Context) {
 	// Việc đầu tiên: đọc trước tệp giao diện sắp cần, trong vài giây trước khi
 	// Windows tự đăng nhập và dịch vụ bật giao diện (prefetch.go).
 	go runBootPrefetch(ctx)
+	// Trước lần ngủ đầu tiên của Lightning Boot: thức dậy thẳng vào màn khoá VNET
+	// chứ không qua màn khoá Windows (wakelock.go).
+	go tatKhoaKhiThuc()
 
 	cfg := LoadConfig()
 	log.Printf("[agent] máy %s → %s", cfg.MachineCode, cfg.ServerURL)
