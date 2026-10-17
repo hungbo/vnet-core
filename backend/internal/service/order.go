@@ -773,8 +773,7 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 		BalanceAfter:    balanceAfter,
 		PaymentMethod:   locked.PaymentMethod,
 		Description:     "Nạp tiền qua đơn hàng " + locked.OrderCode,
-		// Rỗng thì NULL: PostgreSQL từ chối "" cho cột uuid, và đường Thanh
-		// toán không biết ai bấm.
+		// Rỗng thì NULL: PostgreSQL từ chối "" cho cột uuid.
 		CreatedBy: optionalUUID(updatedBy),
 	}
 	if e := tx.Create(&transaction).Error; e != nil {
@@ -1640,7 +1639,9 @@ func (s *OrderService) Pay(id string, req PayRequest, actorID string) (*OrderRes
 				return nil, err
 			}
 		}
-		if err := s.processTopupOrder(&order, ""); err != nil {
+		// Người thu tiền đơn nạp cũng là "Người thực hiện", và dòng nạp trong sổ
+		// ví ghi tên họ — giống đơn bán hàng bên dưới.
+		if err := s.processTopupOrder(&order, actorID); err != nil {
 			return nil, err
 		}
 		var done model.Order

@@ -271,6 +271,46 @@ func TestOrderService_Pay_FromBalanceDeductsMember(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Đơn NẠP TIỀN trả qua nút Thanh toán cũng phải ghi người thu tiền: vào cột
+// "Người thực hiện" của đơn và vào dòng nạp trong sổ ví. Bản cũ truyền "" nên
+// cả hai luôn trống, dù đơn bán hàng đã ghi được.
+func TestOrderService_Pay_TopupGhiNguoiThucHien(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+	const nhanVien = "11111111-1111-1111-1111-111111111111"
+	cot := []string{"id", "order_code", "status", "order_type", "member_id", "final_amount", "payment_method"}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows(cot).AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(30000), "cash"))
+	mock.ExpectRollback()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows(cot).AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(30000), "cash"))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem-1", int64(0)))
+	mock.ExpectQuery(`INSERT INTO "member_transactions" \(.*"created_by"\)`).
+		WithArgs("mem-1", "topup", int64(30000), int64(0), int64(30000), int64(0), int64(0), "cash", nil, "Nạp tiền qua đơn hàng ORD-1", nhanVien).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("tx-1"))
+	mock.ExpectExec(`UPDATE "members" SET "balance"=\$1`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "orders" SET "completed_at"=\$1,"status"=\$2,"updated_by"=\$3 WHERE \(id = \$4 AND status = \$5\)`).
+		WithArgs(anyTime{}, "completed", nhanVien, "o1", "pending").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1`).
+		WillReturnRows(sqlmock.NewRows(cot).AddRow("o1", "ORD-1", "completed", "topup", "mem-1", int64(30000), "cash"))
+	mock.ExpectQuery(`SELECT \* FROM "order_items"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "cash", Amount: 30000}, nhanVien)
+
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 // A balance payment must fail rather than complete for free.
 func TestOrderService_Pay_FromBalanceRejectsInsufficientFunds(t *testing.T) {
 	db, mock := newMockDB(t)
