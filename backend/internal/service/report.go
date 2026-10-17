@@ -514,10 +514,16 @@ func (s *ReportService) ListTransactions(params *TransactionListParams) ([]Trans
 			member_transactions.balance_before, member_transactions.balance_after,
 			member_transactions.bonus_before, member_transactions.bonus_after,
 			member_transactions.payment_method, member_transactions.description,
-			member_transactions.created_by, COALESCE(users.full_name, '') as created_by_name,
+			member_transactions.created_by,
+			COALESCE(NULLIF(users.full_name, ''), users.username, NULLIF(nguoi_hv.full_name, ''), nguoi_hv.username, '') as created_by_name,
 			TO_CHAR(member_transactions.created_at, 'YYYY-MM-DD HH24:MI:SS') as created_at`).
 		Joins("LEFT JOIN members ON members.id = member_transactions.member_id").
-		Joins("LEFT JOIN users ON users.id = member_transactions.created_by::uuid")
+		// Người thực hiện: nhân viên chưa khai họ tên thì lấy tên đăng nhập — bản
+		// cũ trả chuỗi rỗng và trang Giao dịch in nguyên mã uuid. Thao tác do
+		// chính hội viên làm ở máy trạm (mua gói, nạp qua đơn) có created_by là mã
+		// HỘI VIÊN, nên tra cả bảng members.
+		Joins("LEFT JOIN users ON users.id = member_transactions.created_by::uuid").
+		Joins("LEFT JOIN members nguoi_hv ON nguoi_hv.id = member_transactions.created_by::uuid")
 
 	query = locKhoangNgay(query, "member_transactions.created_at", params.DateFrom, params.DateTo)
 	if params.TransactionType != "" {
