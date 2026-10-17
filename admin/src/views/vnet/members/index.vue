@@ -851,11 +851,7 @@ onBeforeUnmount(() => {
                 <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
               </ElTableColumn>
               <!-- Mô tả thay cho reference_id: mã UUID của đơn/phiên không ai đọc được. -->
-              <ElTableColumn
-                prop="description"
-                :label="$t('vnetPages.transactions.description')"
-                min-width="200"
-              />
+              <ElTableColumn prop="description" :label="$t('vnetPages.transactions.description')" min-width="200" />
               <ElTableColumn :label="$t('vnetPages.members.createdAt')" width="140">
                 <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
               </ElTableColumn>
