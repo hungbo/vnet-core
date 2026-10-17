@@ -763,7 +763,13 @@ onBeforeUnmount(() => {
       @success="getData"
     />
 
-    <ElDialog v-model="detailVisible" :title="$t('vnetPages.members.detail')" width="800px" top="5vh" destroy-on-close>
+    <ElDialog
+      v-model="detailVisible"
+      :title="$t('vnetPages.members.detail')"
+      width="min(1000px, 96vw)"
+      top="5vh"
+      destroy-on-close
+    >
       <ElCard v-loading="detailLoading" shadow="never" style="border: none">
         <ElTabs v-model="detailTab">
           <ElTabPane :label="$t('vnetPages.members.detail')" name="info">
@@ -832,26 +838,25 @@ onBeforeUnmount(() => {
           </ElTabPane>
           <ElTabPane :label="$t('vnetPages.members.transactions')" name="transactions">
             <ElTable v-loading="detailTxLoading" :data="detailTxList" border stripe class="w-full">
-              <ElTableColumn :label="$t('vnetPages.members.type')" width="115">
+              <ElTableColumn :label="$t('vnetPages.members.type')" width="150">
                 <template #default="{ row }">{{ txTypeLabel(row.transaction_type) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.members.amount')" width="95" align="right">
+              <ElTableColumn :label="$t('vnetPages.members.amount')" width="110" align="right">
                 <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.transactions.balanceAfter')" width="95" align="right">
+              <ElTableColumn :label="$t('vnetPages.transactions.balanceAfter')" width="110" align="right">
                 <template #default="{ row }">{{ formatAmount(row.balance_after) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.members.method')" width="95">
+              <ElTableColumn :label="$t('vnetPages.members.method')" width="140">
                 <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
               </ElTableColumn>
               <!-- Mô tả thay cho reference_id: mã UUID của đơn/phiên không ai đọc được. -->
               <ElTableColumn
                 prop="description"
                 :label="$t('vnetPages.transactions.description')"
-                min-width="140"
-                show-overflow-tooltip
+                min-width="200"
               />
-              <ElTableColumn :label="$t('vnetPages.members.createdAt')" width="125">
+              <ElTableColumn :label="$t('vnetPages.members.createdAt')" width="140">
                 <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
               </ElTableColumn>
             </ElTable>
@@ -868,22 +873,22 @@ onBeforeUnmount(() => {
           </ElTabPane>
           <ElTabPane :label="$t('vnetPages.members.sessions')" name="sessions">
             <ElTable v-loading="detailSesLoading" :data="detailSessions" border stripe class="w-full">
-              <ElTableColumn :label="$t('vnetPages.sessions.machineCode')" width="100">
+              <ElTableColumn :label="$t('vnetPages.sessions.machineCode')" width="110">
                 <template #default="{ row }">{{ row.machine_code || '-' }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.startTime')" width="130">
+              <ElTableColumn :label="$t('vnetPages.sessions.startTime')" width="150">
                 <template #default="{ row }">{{ formatDate(row.started_at) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.endTime')" width="130">
+              <ElTableColumn :label="$t('vnetPages.sessions.endTime')" width="150">
                 <template #default="{ row }">
                   {{ row.ended_at ? formatDate(row.ended_at) : $t('vnetPages.sessions.running') }}
                 </template>
               </ElTableColumn>
               <!-- Phiên đang chơi chưa có duration_minutes: tính từ giờ bắt đầu tới lúc mở hộp. -->
-              <ElTableColumn :label="$t('vnetPages.sessions.duration')" width="100">
+              <ElTableColumn :label="$t('vnetPages.sessions.duration')" width="110">
                 <template #default="{ row }">{{ formatPlayed(sessionMinutes(row)) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.cost')" width="100" align="right">
+              <ElTableColumn :label="$t('vnetPages.sessions.cost')" width="120" align="right">
                 <template #default="{ row }">
                   {{ typeof row.total_cost === 'number' ? formatAmount(row.total_cost) : '-' }}
                 </template>
@@ -909,29 +914,29 @@ onBeforeUnmount(() => {
           </ElTabPane>
           <ElTabPane :label="$t('vnetPages.members.orders')" name="orders">
             <ElTable v-loading="detailOrdLoading" :data="detailOrders" border stripe class="w-full">
-              <ElTableColumn prop="order_code" :label="$t('vnetPages.orders.orderCode')" width="100" />
-              <ElTableColumn :label="$t('vnetPages.orders.products')" min-width="145" show-overflow-tooltip>
+              <ElTableColumn prop="order_code" :label="$t('vnetPages.orders.orderCode')" width="110" />
+              <ElTableColumn :label="$t('vnetPages.orders.products')" min-width="200">
                 <template #default="{ row }">{{ orderItemsSummary(row) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.finalAmount')" width="90">
+              <ElTableColumn :label="$t('vnetPages.orders.finalAmount')" width="110">
                 <template #default="{ row }">{{ formatAmount(row.final_amount) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.paymentMethod')" width="95">
+              <ElTableColumn :label="$t('vnetPages.orders.paymentMethod')" width="140">
                 <template #default="{ row }">
                   {{ row.payment_method ? paymentLabel(row.payment_method) : '-' }}
                 </template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.status')" width="110">
+              <ElTableColumn :label="$t('vnetPages.orders.status')" width="120">
                 <template #default="{ row }">
                   <ElTag :type="ORDER_STATUS_TAG[row.status] || 'info'" size="small">
                     {{ $t(`vnetPages.orders.statusLabels.${row.status}`) }}
                   </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.machineCode')" width="70">
+              <ElTableColumn :label="$t('vnetPages.orders.machineCode')" width="90">
                 <template #default="{ row }">{{ row.machine_code || '-' }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.createdAt')" width="125">
+              <ElTableColumn :label="$t('vnetPages.orders.createdAt')" width="140">
                 <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
               </ElTableColumn>
             </ElTable>
