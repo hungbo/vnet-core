@@ -683,6 +683,29 @@ func TestMachineService_Update_NhomRongGhiNull(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Ghi chú sửa thẳng trên bảng: khoảng trắng hai đầu bị cắt, và "" là xoá ghi
+// chú (không phải "không đổi" — đó là khi bỏ khoá note khỏi JSON).
+func TestMachineService_Update_GhiChu(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMachineService(db, nil, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status"}).AddRow("m1", "M-001", "offline"))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "machines" SET "note"=\$1`).
+		WithArgs("hỏng phím, chờ linh kiện", anyTime{}, "m1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	note := "  hỏng phím, chờ linh kiện \n"
+	_, err := svc.Update("m1", &UpdateMachineRequest{Note: &note})
+
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestMachineService_nhomRongThanhNil(t *testing.T) {
 	rong := ""
 	trang := "   "

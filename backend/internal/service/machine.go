@@ -86,6 +86,9 @@ type UpdateMachineRequest struct {
 	//
 	// Con trỏ vì đây là bản vá từng phần: bỏ trống nghĩa là không đổi.
 	IsActive *bool `json:"is_active"`
+	// Ghi chú nội bộ. Con trỏ để phân biệt "không gửi" (giữ nguyên) với ""
+	// (xoá ghi chú). Khớp độ dài cột varchar(255).
+	Note *string `json:"note" binding:"omitempty,max=255"`
 }
 
 type HeartbeatRequest struct {
@@ -507,6 +510,9 @@ func (s *MachineService) Update(id string, req *UpdateMachineRequest) (*model.Ma
 	}
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
+	}
+	if req.Note != nil {
+		updates["note"] = strings.TrimSpace(*req.Note)
 	}
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()

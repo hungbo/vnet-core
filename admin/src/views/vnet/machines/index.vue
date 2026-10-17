@@ -13,6 +13,7 @@ import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 import MachineRemoteActions from './modules/machine-remote-actions.vue';
+import MachineNoteCell from './modules/machine-note-cell.vue';
 
 const { t: $t } = useI18n();
 const router = useRouter();
@@ -200,6 +201,21 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
         row.is_active === false
           ? h(ElTag, { type: 'info', size: 'small' }, () => $t('vnetPages.machines.suspended'))
           : h(ElTag, { type: statusType(row.status), size: 'small' }, () => statusLabel(row.status))
+    },
+    {
+      prop: 'note',
+      label: $t('vnetPages.machines.noteCol'),
+      minWidth: 200,
+      // Đặt ngay sau trạng thái để thấy mà không phải cuộn ngang. Nhấn để sửa tại
+      // chỗ; onSaved cập nhật dòng ngay, không đợi tải lại bảng.
+      formatter: (row: any) =>
+        h(MachineNoteCell, {
+          machineId: row.id,
+          note: row.note,
+          onSaved: (note: string) => {
+            row.note = note;
+          }
+        })
     },
     {
       prop: 'warnings',

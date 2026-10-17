@@ -49,6 +49,9 @@ type Machine struct {
 	// Mật khẩu TightVNC trên máy trạm, máy trạm nhận qua phản hồi nhịp tim.
 	// json:"-": chỉ trả riêng qua GET /machines/:id/remote-desktop.
 	VNCPassword string `gorm:"type:varchar(8)" json:"-"`
+	// Ghi chú nội bộ của nhân viên ("hỏng phím, chờ linh kiện"), sửa thẳng trên
+	// bảng ở trang Máy và Bảng điều khiển. GetByCode không trả cột này cho máy trạm.
+	Note      string         `gorm:"type:varchar(255)" json:"note"`
 	IsActive  bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt          time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
 	UpdatedAt          time.Time      `gorm:"default:now()" json:"updated_at,omitempty"`

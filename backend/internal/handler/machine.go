@@ -290,6 +290,9 @@ func (h *MachineHandler) GetByCode(c *gin.Context) {
 		response.NotFound(c, "Machine not found")
 		return
 	}
+	// Route này mở cho mọi tài khoản đã đăng nhập (máy trạm của khách gọi nó),
+	// còn ghi chú là của nhân viên.
+	machine.Note = ""
 	response.Success(c, machine)
 }
 

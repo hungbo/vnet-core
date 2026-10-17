@@ -7,6 +7,7 @@ import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import MachineRemoteActions from '../machines/modules/machine-remote-actions.vue';
+import MachineNoteCell from '../machines/modules/machine-note-cell.vue';
 import MemberTopupDialog from '../members/modules/member-topup-dialog.vue';
 
 const { t: $t } = useI18n();
@@ -153,11 +154,16 @@ async function refreshStats() {
   stats.value[2].value = activeSessions.value.length;
 
   const playing = new Set(activeSessions.value.map(r => r.machine_id));
+  // Ghi chú nằm ở máy chứ không ở phiên, nên tra từ danh sách máy vừa tải.
+  const noteOf = new Map(machineList.map(m => [m.id, m.note || '']));
   const available = machineList
     .filter(m => m.status === 'available' && !playing.has(m.id))
-    .map(m => ({ machine_id: m.id, machine_code: m.machine_code, status: 'available' }))
+    .map(m => ({ machine_id: m.id, machine_code: m.machine_code, status: 'available', note: m.note || '' }))
     .sort((a, b) => String(a.machine_code).localeCompare(String(b.machine_code)));
-  activeMachines.value = [...activeSessions.value.map(r => ({ ...r, status: 'in_use' })), ...available];
+  activeMachines.value = [
+    ...activeSessions.value.map(r => ({ ...r, status: 'in_use', note: noteOf.get(r.machine_id) || '' })),
+    ...available
+  ];
 
   const rows: any[] = Array.isArray(revenue) ? revenue : revenue?.items || [];
   stats.value[3].value = formatMoney(rows.reduce((sum, r) => sum + (r.revenue || 0), 0));
@@ -243,6 +249,11 @@ onBeforeUnmount(() => {
         <ElTableColumn :label="$t('vnetPages.dashboard.remaining')" min-width="120">
           <template #default="{ row }">
             {{ row.status === 'in_use' ? formatRemainingHMS(row.affordable_until, now) : '-' }}
+          </template>
+        </ElTableColumn>
+        <ElTableColumn :label="$t('vnetPages.machines.noteCol')" min-width="220">
+          <template #default="{ row }">
+            <MachineNoteCell :machine-id="row.machine_id" :note="row.note" @saved="note => (row.note = note)" />
           </template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.dashboard.actions')" width="280" fixed="right">

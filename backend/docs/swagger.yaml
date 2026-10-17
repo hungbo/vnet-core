@@ -118,6 +118,11 @@ definitions:
         type: string
       machine_code:
         type: string
+      note:
+        description: |-
+          Ghi chú nội bộ của nhân viên ("hỏng phím, chờ linh kiện"), sửa thẳng trên
+          bảng ở trang Máy và Bảng điều khiển. GetByCode không trả cột này cho máy trạm.
+        type: string
       os_info:
         type: string
       peripherals:
@@ -2427,6 +2432,12 @@ definitions:
 
           Con trỏ vì đây là bản vá từng phần: bỏ trống nghĩa là không đổi.
         type: boolean
+      note:
+        description: |-
+          Ghi chú nội bộ. Con trỏ để phân biệt "không gửi" (giữ nguyên) với ""
+          (xoá ghi chú). Khớp độ dài cột varchar(255).
+        maxLength: 255
+        type: string
       os_info:
         type: string
       ram_gb:

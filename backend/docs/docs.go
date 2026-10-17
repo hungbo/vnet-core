@@ -11912,6 +11912,10 @@ const docTemplate = `{
                 "machine_code": {
                     "type": "string"
                 },
+                "note": {
+                    "description": "Ghi chú nội bộ của nhân viên (\"hỏng phím, chờ linh kiện\"), sửa thẳng trên\nbảng ở trang Máy và Bảng điều khiển. GetByCode không trả cột này cho máy trạm.",
+                    "type": "string"
+                },
                 "os_info": {
                     "type": "string"
                 },
@@ -15200,6 +15204,11 @@ const docTemplate = `{
                 "is_active": {
                     "description": "IsActive là công tắc tạm ngừng máy, và là ĐƯỜNG THAY CHO VIỆC XOÁ.\n\nMáy đã có phiên chơi, đơn hàng hay lịch đặt thì không xoá được nữa (xem\nDelete bên dưới): lịch sử phải giữ lại. Không có công tắc này thì quản trị\nviên muốn ngừng một máy hỏng chỉ còn cách xoá — đúng thao tác nguy hiểm\nnhất trong service này.\n\nStartSession lọc \"is_active = true\" (session.go), nên đặt false là chặn\nmở phiên mới ngay lập tức. List KHÔNG lọc cột này, nên máy đã tắt vẫn hiện\ntrên trang quản trị để bật lại được.\n\nCon trỏ vì đây là bản vá từng phần: bỏ trống nghĩa là không đổi.",
                     "type": "boolean"
+                },
+                "note": {
+                    "description": "Ghi chú nội bộ. Con trỏ để phân biệt \"không gửi\" (giữ nguyên) với \"\"\n(xoá ghi chú). Khớp độ dài cột varchar(255).",
+                    "type": "string",
+                    "maxLength": 255
                 },
                 "os_info": {
                     "type": "string"
