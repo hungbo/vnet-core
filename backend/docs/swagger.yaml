@@ -448,6 +448,8 @@ definitions:
         type: string
       total_spent:
         type: integer
+      total_topup:
+        type: integer
       visit_count:
         type: integer
     type: object
@@ -5232,8 +5234,17 @@ paths:
     get:
       consumes:
       - application/json
-      description: Get monthly revenue report
+      description: Get monthly revenue report. date_from/date_to take precedence over
+        year/month.
       parameters:
+      - description: Start date
+        in: query
+        name: date_from
+        type: string
+      - description: End date
+        in: query
+        name: date_to
+        type: string
       - description: Year
         in: query
         name: year

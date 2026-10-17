@@ -39,10 +39,12 @@ func (h *ReportHandler) DailyRevenue(c *gin.Context) {
 }
 
 // @Summary Monthly revenue report
-// @Description Get monthly revenue report
+// @Description Get monthly revenue report. date_from/date_to take precedence over year/month.
 // @Tags Reports
 // @Accept json
 // @Produce json
+// @Param date_from query string false "Start date"
+// @Param date_to query string false "End date"
 // @Param year query int false "Year"
 // @Param month query int false "Month"
 // @Success 200 {object} response.Response{data=[]service.MonthlyRevenueRow}
@@ -50,9 +52,11 @@ func (h *ReportHandler) DailyRevenue(c *gin.Context) {
 // @Router /api/reports/monthly-revenue [get]
 // @Security BearerAuth
 func (h *ReportHandler) MonthlyRevenue(c *gin.Context) {
-	year, _ := strconv.Atoi(c.Query("year"))
-	month, _ := strconv.Atoi(c.Query("month"))
-	results, err := h.svc.MonthlyRevenue(year, month)
+	dateFrom, dateTo := c.Query("date_from"), c.Query("date_to")
+	if dateFrom == "" && dateTo == "" {
+		dateFrom, dateTo = service.MonthRange(parseIntSafe(c.Query("year")), parseIntSafe(c.Query("month")))
+	}
+	results, err := h.svc.MonthlyRevenue(dateFrom, dateTo)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch monthly revenue", err)
 		return
@@ -170,11 +174,10 @@ func (h *ReportHandler) PromotionUsage(c *gin.Context) {
 	response.Success(c, results)
 }
 
+// Không gửi limit là lấy hết. Trang Báo cáo không phân trang, nên mặc định 20
+// cũ cắt im lặng: quán 30 máy chỉ thấy 20 máy, và chỉ 20 hội viên hiện ra.
 func parseReportParams(c *gin.Context) service.ReportParams {
 	limit, _ := strconv.Atoi(c.Query("limit"))
-	if limit <= 0 {
-		limit = 20
-	}
 	return service.ReportParams{
 		DateFrom: c.Query("date_from"),
 		DateTo:   c.Query("date_to"),

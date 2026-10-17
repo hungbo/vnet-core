@@ -1137,6 +1137,7 @@ declare namespace App {
           byMember: string;
           memberCode: string;
           totalSpent: string;
+          totalTopup: string;
           visitCount: string;
           byMachine: string;
           machineName: string;

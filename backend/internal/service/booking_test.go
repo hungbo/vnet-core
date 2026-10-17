@@ -633,7 +633,7 @@ func TestBookingService_NoShow_MatCocKhongDungVi(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Doanh thu ngày chỉ đếm tiền vào quầy (topup, refund, combo tiền mặt): dòng
+// Doanh thu ngày chỉ đếm tiền vào quầy (topup, refund, combo trả tiền): dòng
 // booking_deposit / deposit_refund không nằm trong bộ lọc, nên cọc mất do
 // không đến được tính đúng MỘT lần — lúc khách nạp tiền vào ví.
 func TestBookingService_TienMatCocKhongDemHaiLanTrongDoanhThu(t *testing.T) {
@@ -642,8 +642,8 @@ func TestBookingService_TienMatCocKhongDemHaiLanTrongDoanhThu(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT .* FROM "orders"`).
 		WillReturnRows(sqlmock.NewRows([]string{"date", "total_orders", "revenue", "discount"}))
-	mock.ExpectQuery(`SELECT .* FROM "member_transactions" WHERE \(\(transaction_type IN \('topup', 'refund'\) OR \(transaction_type = 'combo_purchase' AND payment_method = 'cash'\)\)`).
-		WillReturnRows(sqlmock.NewRows([]string{"date", "amount", "count"}).AddRow("2026-10-04", int64(100000), 1))
+	mock.ExpectQuery(`SELECT .* FROM "member_transactions" WHERE \(\(transaction_type IN \('topup', 'refund'\) OR \(transaction_type = 'combo_purchase' AND payment_method NOT IN `).
+		WillReturnRows(sqlmock.NewRows([]string{"ky", "revenue"}).AddRow("2026-10-04", int64(100000)))
 
 	rows, err := svc.DailyRevenue("2026-10-04", "2026-10-04")
 	require.NoError(t, err)

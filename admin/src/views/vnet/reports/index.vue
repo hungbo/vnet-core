@@ -19,12 +19,10 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
   api: () => {
     const params: any = {};
     const dr: any = dateRange.value;
-    if (activeTab.value === 'monthly-revenue') {
-      if (dr) {
-        params.year = dr[0].split('-')[0];
-        params.month = dr[0].split('-')[1];
-      }
-    } else if (dr) {
+    // Mọi tab, kể cả "Doanh thu tháng", gửi đúng khoảng ngày đã chọn. Bản cũ
+    // đổi khoảng ngày thành năm/tháng của NGÀY ĐẦU, nên chọn 01/09 → 17/10 chỉ
+    // ra mỗi tháng 9.
+    if (dr) {
       params.date_from = dr[0];
       params.date_to = dr[1];
     }
@@ -59,7 +57,7 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
             prop: 'month',
             label: $t('vnetPages.reports.month'),
             width: 120,
-            formatter: (row: any) => row.month
+            formatter: (row: any) => dayjs(`${row.month}-01`).format('MM/YYYY')
           },
           {
             prop: 'revenue',
@@ -83,15 +81,23 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
             minWidth: 150
           },
           {
+            // Tiền giờ + đơn hàng + gói cước, trả bằng gì cũng tính. Tiền nạp là
+            // cột riêng bên cạnh, không còn cộng vào đây.
             prop: 'total_spent',
             label: $t('vnetPages.reports.totalSpent'),
             minWidth: 150,
-            formatter: (row: any) => formatPrice(row.total_spent || row.revenue)
+            formatter: (row: any) => formatPrice(row.total_spent)
+          },
+          {
+            prop: 'total_topup',
+            label: $t('vnetPages.reports.totalTopup'),
+            minWidth: 150,
+            formatter: (row: any) => formatPrice(row.total_topup)
           },
           {
             prop: 'visit_count',
             label: $t('vnetPages.reports.visitCount'),
-            width: 80
+            width: 110
           }
         ];
       case 'by-machine':

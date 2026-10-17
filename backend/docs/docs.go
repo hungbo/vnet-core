@@ -4095,7 +4095,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Get monthly revenue report",
+                "description": "Get monthly revenue report. date_from/date_to take precedence over year/month.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4107,6 +4107,18 @@ const docTemplate = `{
                 ],
                 "summary": "Monthly revenue report",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date",
+                        "name": "date_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date",
+                        "name": "date_to",
+                        "in": "query"
+                    },
                     {
                         "type": "integer",
                         "description": "Year",
@@ -12346,6 +12358,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "total_spent": {
+                    "type": "integer"
+                },
+                "total_topup": {
                     "type": "integer"
                 },
                 "visit_count": {
