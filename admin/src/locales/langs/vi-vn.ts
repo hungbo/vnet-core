@@ -1319,6 +1319,7 @@ const local: App.I18n.Schema = {
       unitPrice: 'Đơn giá',
       subtotal: 'Thành tiền',
       createOrder: 'Tạo đơn hàng',
+      memberPlaceholder: 'Khách vãng lai — gõ tên, SĐT hoặc tài khoản để chọn hội viên',
       selectProduct: 'Chọn sản phẩm',
       options: 'Tuỳ chọn',
       machineCode: 'Máy',

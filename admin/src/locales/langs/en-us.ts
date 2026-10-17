@@ -1319,6 +1319,7 @@ const local: App.I18n.Schema = {
       unitPrice: 'Unit Price',
       subtotal: 'Subtotal',
       createOrder: 'Create Order',
+      memberPlaceholder: 'Walk-in guest — type name, phone or username to pick a member',
       selectProduct: 'Select Product',
       options: 'Options',
       machineCode: 'Machine',

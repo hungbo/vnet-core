@@ -343,8 +343,29 @@ const createSaving = ref(false);
 const createFormRef = ref<any>(null);
 const allProducts = ref<any[]>([]);
 
-const createForm = ref<any>({ note: '', items: [] });
+const createForm = ref<any>({ member_id: '', note: '', items: [] });
 const createRules = {};
+const createMembers = ref<any[]>([]);
+const createMemberLoading = ref(false);
+
+// Hội viên nhiều nên không tải hết một lần: gõ tên/SĐT/tài khoản để tìm.
+async function searchCreateMembers(query: string) {
+  if (!query) {
+    createMembers.value = [];
+    return;
+  }
+  createMemberLoading.value = true;
+  try {
+    const res: any = await client.get('/members', {
+      params: { page: 1, page_size: 20, search: query }
+    });
+    createMembers.value = res.items || [];
+  } catch {
+    createMembers.value = [];
+  } finally {
+    createMemberLoading.value = false;
+  }
+}
 
 function newOrderItem() {
   return {
@@ -390,7 +411,8 @@ const computeTotal = computed(() => {
 });
 
 async function openCreateDialog() {
-  createForm.value = { note: '', items: [newOrderItem()] };
+  createForm.value = { member_id: '', note: '', items: [newOrderItem()] };
+  createMembers.value = [];
   try {
     const res: any = await client.get('/products', {
       params: { page_size: 1000, is_retail: true }
@@ -416,7 +438,12 @@ async function handleCreate() {
         note: ''
       };
     });
-    await client.post('/orders', { note: createForm.value.note, items });
+    // member_id rỗng = khách vãng lai, backend bỏ trống cột này.
+    await client.post('/orders', {
+      member_id: createForm.value.member_id || '',
+      note: createForm.value.note,
+      items
+    });
     ElMessage.success($t('vnetPages.orders.messages.createSuccess'));
     createVisible.value = false;
     await fetchData();
@@ -901,6 +928,25 @@ watch(
 
     <ElDialog v-model="createVisible" :title="$t('vnetPages.orders.createOrder')" width="700px">
       <ElForm ref="createFormRef" :model="createForm" :rules="createRules" :label-width="100">
+        <ElFormItem :label="$t('vnetPages.orders.member')" prop="member_id">
+          <ElSelect
+            v-model="createForm.member_id"
+            filterable
+            remote
+            clearable
+            :remote-method="searchCreateMembers"
+            :loading="createMemberLoading"
+            :placeholder="$t('vnetPages.orders.memberPlaceholder')"
+            class="w-full"
+          >
+            <ElOption
+              v-for="m in createMembers"
+              :key="m.id"
+              :label="`${m.full_name || m.username}${m.phone ? ` — ${m.phone}` : ''}`"
+              :value="m.id"
+            />
+          </ElSelect>
+        </ElFormItem>
         <ElFormItem :label="$t('vnetPages.orders.note')" prop="note">
           <ElInput v-model="createForm.note" />
         </ElFormItem>

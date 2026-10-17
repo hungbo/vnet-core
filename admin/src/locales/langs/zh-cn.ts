@@ -1306,6 +1306,7 @@ const local: App.I18n.Schema = {
       unitPrice: '单价',
       subtotal: '小计',
       createOrder: '创建订单',
+      memberPlaceholder: '散客 — 输入姓名、手机号或账号选择会员',
       selectProduct: '选择商品',
       options: '选项',
       machineCode: '机器',
