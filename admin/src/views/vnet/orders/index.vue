@@ -8,11 +8,23 @@ import { useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
+import { coTheHuy, coTheThanhToan, tongTien, useOrderBatch } from '@/hooks/business/order-batch';
+import { useAuth } from '@/hooks/business/auth';
 import { formatPrice } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
 const { enabledMethods, paymentLabel } = usePaymentMethods();
+// Mỗi nút ứng với một API và một quyền của backend; thiếu quyền thì không hiện
+// nút: duyệt/xác nhận/huỷ (orders.status, POST /orders/:id/status), thanh toán
+// (orders.pay), sửa (orders.update), tách (orders.split), in (orders.print),
+// xoá (orders.delete), tạo đơn ở quầy (orders.create).
+const { hasAuth } = useAuth();
+// Menu "Khác" chỉ hiện khi dòng đó còn ít nhất một mục được phép.
+function hasMore(row: any) {
+  const dangXuLy = row.status !== 'completed' && row.status !== 'cancelled';
+  return hasAuth('orders.print') || (dangXuLy && hasAuth(['orders.update', 'orders.split']));
+}
 
 const search = ref('');
 const filterStatus = ref(null);
@@ -577,6 +589,64 @@ async function submitSplit() {
 
 const { checkedRowKeys, onBatchDeleted } = useTableOperate(data, 'id', getData);
 
+// --- Thanh toán / huỷ nhiều đơn ----------------------------------------------
+// Các nút chỉ đếm đơn còn xử lý được: đơn đã thanh toán hay đã huỷ lẫn trong
+// vùng chọn bị bỏ qua, còn tổng tiền là của mọi đơn đang chọn.
+const tableRef = ref<any>(null);
+const batch = useOrderBatch();
+const selectedOrders = computed(() => {
+  const ids = new Set(checkedRowKeys.value);
+  return data.value.filter((r: any) => ids.has(r.id));
+});
+const batchPayable = computed(() => selectedOrders.value.filter(coTheThanhToan));
+const batchCancellable = computed(() => selectedOrders.value.filter(coTheHuy));
+const batchBusy = ref(false);
+const batchPayVisible = ref(false);
+const batchPayForm = ref({ payment_method: 'cash', reference_code: '' });
+
+function openBatchPay() {
+  batchPayForm.value = { payment_method: 'cash', reference_code: '' };
+  batchPayVisible.value = true;
+}
+
+async function afterBatch() {
+  // Bỏ chọn để bảng tải lại theo thời gian thực như bình thường (đang tạm dừng
+  // trong lúc có dòng được chọn).
+  tableRef.value?.clearSelection();
+  await fetchData();
+}
+
+async function submitBatchPay() {
+  batchBusy.value = true;
+  try {
+    await batch.thanhToan(batchPayable.value, batchPayForm.value);
+    batchPayVisible.value = false;
+    await afterBatch();
+  } finally {
+    batchBusy.value = false;
+  }
+}
+
+async function handleBatchCancel() {
+  const list = batchCancellable.value;
+  try {
+    await ElMessageBox.confirm(
+      $t('vnetPages.orders.batchCancelConfirm', { count: list.length, total: formatPrice(tongTien(list)) }),
+      $t('vnetPages.common.confirm'),
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  batchBusy.value = true;
+  try {
+    await batch.huy(list);
+    await afterBatch();
+  } finally {
+    batchBusy.value = false;
+  }
+}
+
 async function handleBatchDelete() {
   try {
     await client.delete('/orders/batch-delete', {
@@ -639,6 +709,8 @@ watch(
             v-model:columns="columnChecks"
             :loading="loading"
             :disabled-delete="checkedRowKeys.length === 0"
+            :show-add="hasAuth('orders.create')"
+            :show-delete="hasAuth('orders.delete')"
             @add="openCreateDialog"
             @delete="handleBatchDelete"
             @refresh="getData"
@@ -678,7 +750,38 @@ watch(
           </TableHeaderOperation>
         </div>
       </template>
+      <div v-if="selectedOrders.length" class="mb-12px flex flex-wrap items-center gap-12px">
+        <span>
+          {{
+            $t('vnetPages.orders.selectedSummary', {
+              count: selectedOrders.length,
+              total: formatPrice(tongTien(selectedOrders))
+            })
+          }}
+        </span>
+        <ElButton
+          v-if="hasAuth('orders.pay')"
+          size="small"
+          type="success"
+          :disabled="!batchPayable.length || batchBusy"
+          @click="openBatchPay"
+        >
+          {{ $t('vnetPages.orders.batchPay', { count: batchPayable.length }) }}
+        </ElButton>
+        <ElButton
+          v-if="hasAuth('orders.status')"
+          size="small"
+          type="danger"
+          plain
+          :loading="batchBusy"
+          :disabled="!batchCancellable.length"
+          @click="handleBatchCancel"
+        >
+          {{ $t('vnetPages.orders.batchCancel', { count: batchCancellable.length }) }}
+        </ElButton>
+      </div>
       <ElTable
+        ref="tableRef"
         v-loading="loading"
         :data="data"
         style="width: 100%"
@@ -694,7 +797,7 @@ watch(
           <template #default="{ row }">
             <div class="order-actions">
               <template v-if="row.order_type === 'topup'">
-                <template v-if="row.status === 'pending'">
+                <template v-if="row.status === 'pending' && hasAuth('orders.status')">
                   <ElButton
                     size="small"
                     type="success"
@@ -710,14 +813,24 @@ watch(
                 </template>
               </template>
               <template v-else>
-                <ElButton v-if="row.status === 'pending'" size="small" type="primary" @click="handleConfirm(row)">
+                <ElButton
+                  v-if="row.status === 'pending' && hasAuth('orders.status')"
+                  size="small"
+                  type="primary"
+                  @click="handleConfirm(row)"
+                >
                   {{ $t('vnetPages.orders.confirm') }}
                 </ElButton>
-                <ElButton v-if="row.status === 'confirmed'" size="small" type="success" @click="handleComplete(row)">
+                <ElButton
+                  v-if="row.status === 'confirmed' && hasAuth('orders.pay')"
+                  size="small"
+                  type="success"
+                  @click="handleComplete(row)"
+                >
                   {{ $t('vnetPages.orders.pay') }}
                 </ElButton>
                 <ElButton
-                  v-if="row.status !== 'completed' && row.status !== 'cancelled'"
+                  v-if="row.status !== 'completed' && row.status !== 'cancelled' && hasAuth('orders.status')"
                   size="small"
                   type="danger"
                   plain
@@ -725,24 +838,34 @@ watch(
                 >
                   {{ $t('vnetPages.orders.cancel') }}
                 </ElButton>
-                <ElDropdown trigger="click" @command="(cmd: string) => onMoreCommand(cmd, row)">
+                <ElDropdown v-if="hasMore(row)" trigger="click" @command="(cmd: string) => onMoreCommand(cmd, row)">
                   <ElButton size="small" :loading="printBusy.startsWith(row.id)">
                     {{ $t('vnetPages.orders.more') }}
                   </ElButton>
                   <template #dropdown>
                     <ElDropdownMenu>
                       <template v-if="row.status !== 'completed' && row.status !== 'cancelled'">
-                        <ElDropdownItem command="edit">{{ $t('vnetPages.orders.editOrder') }}</ElDropdownItem>
-                        <ElDropdownItem command="split">{{ $t('vnetPages.orders.splitOrder') }}</ElDropdownItem>
+                        <ElDropdownItem v-if="hasAuth('orders.update')" command="edit">
+                          {{ $t('vnetPages.orders.editOrder') }}
+                        </ElDropdownItem>
+                        <ElDropdownItem v-if="hasAuth('orders.split')" command="split">
+                          {{ $t('vnetPages.orders.splitOrder') }}
+                        </ElDropdownItem>
                       </template>
-                      <ElDropdownItem
-                        command="preview"
-                        :divided="row.status !== 'completed' && row.status !== 'cancelled'"
-                      >
-                        {{ $t('vnetPages.orders.preview') }}
-                      </ElDropdownItem>
-                      <ElDropdownItem command="receipt">{{ $t('vnetPages.orders.print') }}</ElDropdownItem>
-                      <ElDropdownItem command="stations">{{ $t('vnetPages.orders.printStations') }}</ElDropdownItem>
+                      <template v-if="hasAuth('orders.print')">
+                        <ElDropdownItem
+                          command="preview"
+                          :divided="
+                            row.status !== 'completed' &&
+                            row.status !== 'cancelled' &&
+                            hasAuth(['orders.update', 'orders.split'])
+                          "
+                        >
+                          {{ $t('vnetPages.orders.preview') }}
+                        </ElDropdownItem>
+                        <ElDropdownItem command="receipt">{{ $t('vnetPages.orders.print') }}</ElDropdownItem>
+                        <ElDropdownItem command="stations">{{ $t('vnetPages.orders.printStations') }}</ElDropdownItem>
+                      </template>
                     </ElDropdownMenu>
                   </template>
                 </ElDropdown>
@@ -906,7 +1029,7 @@ watch(
                 :model-value="row.status || 'pending'"
                 size="small"
                 :loading="itemStatusBusy === row.id"
-                :disabled="detail.status === 'cancelled'"
+                :disabled="detail.status === 'cancelled' || !hasAuth('orders.status')"
                 style="width: 130px"
                 @change="(v: string) => setItemStatus(row, v)"
               >
@@ -1023,6 +1146,38 @@ watch(
       <template #footer>
         <ElButton @click="payDialogVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
         <ElButton type="primary" :loading="paying" @click="submitPayment">
+          {{ $t('vnetPages.orders.pay') }}
+        </ElButton>
+      </template>
+    </ElDialog>
+    <ElDialog v-model="batchPayVisible" :title="$t('vnetPages.orders.batchPayTitle')" width="420px">
+      <ElForm label-width="130px">
+        <ElFormItem :label="$t('vnetPages.orders.batchOrderCount')">{{ batchPayable.length }}</ElFormItem>
+        <ElFormItem :label="$t('vnetPages.orders.payAmount')">
+          <strong>{{ formatPrice(tongTien(batchPayable)) }}</strong>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.orders.payMethod')">
+          <ElSelect v-model="batchPayForm.payment_method" class="w-full">
+            <ElOption v-for="m in enabledMethods" :key="m.code" :label="m.name" :value="m.code" />
+            <ElOption :label="$t('vnetPages.orders.payBalance')" value="balance" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem
+          v-if="batchPayForm.payment_method !== 'cash' && batchPayForm.payment_method !== 'balance'"
+          :label="$t('vnetPages.orders.payReference')"
+        >
+          <ElInput v-model="batchPayForm.reference_code" />
+        </ElFormItem>
+      </ElForm>
+      <ElAlert
+        v-if="selectedOrders.length > batchPayable.length"
+        type="info"
+        :closable="false"
+        :title="$t('vnetPages.orders.batchSkipped', { count: selectedOrders.length - batchPayable.length })"
+      />
+      <template #footer>
+        <ElButton @click="batchPayVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="batchBusy" @click="submitBatchPay">
           {{ $t('vnetPages.orders.pay') }}
         </ElButton>
       </template>

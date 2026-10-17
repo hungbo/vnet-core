@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { ElMessageBox } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
+import { coTheHuy, coTheXacNhan, tongTien, useOrderBatch } from '@/hooks/business/order-batch';
 import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
+import { formatPrice } from '@/utils/money';
 import MachineRemoteActions from '../machines/modules/machine-remote-actions.vue';
 import MachineNoteCell from '../machines/modules/machine-note-cell.vue';
 import MemberTopupDialog from '../members/modules/member-topup-dialog.vue';
 
 const { t: $t } = useI18n();
+// Nút thiếu quyền của API tương ứng thì ẩn: nạp tiền (members.topup), sửa ghi
+// chú máy (machines.update), xác nhận/huỷ đơn (orders.status).
+const { hasAuth } = useAuth();
 
 const stats = ref([
   {
@@ -64,9 +71,53 @@ const ordersLoading = ref(false);
 const ordersRow = ref<any>(null);
 const orders = ref<any[]>([]);
 
+// Chọn nhiều đơn để xác nhận hay huỷ một lần; tổng tiền ở chân hộp.
+const ordersTableRef = ref<any>(null);
+const ordersSelected = ref<any[]>([]);
+const ordersBusy = ref(false);
+const ordersBatch = useOrderBatch();
+const selectedConfirmable = computed(() => ordersSelected.value.filter(coTheXacNhan));
+const selectedCancellable = computed(() => ordersSelected.value.filter(coTheHuy));
+
+async function afterOrdersBatch() {
+  ordersTableRef.value?.clearSelection();
+  await loadOrders();
+}
+
+async function batchConfirmOrders() {
+  ordersBusy.value = true;
+  try {
+    await ordersBatch.xacNhan(selectedConfirmable.value);
+    await afterOrdersBatch();
+  } finally {
+    ordersBusy.value = false;
+  }
+}
+
+async function batchCancelOrders() {
+  const list = selectedCancellable.value;
+  try {
+    await ElMessageBox.confirm(
+      $t('vnetPages.orders.batchCancelConfirm', { count: list.length, total: formatPrice(tongTien(list)) }),
+      $t('vnetPages.common.confirm'),
+      { type: 'warning' }
+    );
+  } catch {
+    return;
+  }
+  ordersBusy.value = true;
+  try {
+    await ordersBatch.huy(list);
+    await afterOrdersBatch();
+  } finally {
+    ordersBusy.value = false;
+  }
+}
+
 async function openOrders(row: any) {
   ordersRow.value = row;
   orders.value = [];
+  ordersSelected.value = [];
   ordersVisible.value = true;
   await loadOrders();
 }
@@ -131,7 +182,9 @@ async function fetchAllMachines(): Promise<{ items: any[]; total: number } | nul
 async function refreshStats() {
   // Cả bốn thẻ đều lấy số thật. Trước đây thẻ hội viên và doanh thu là số 0
   // cứng, còn thẻ "máy online" đếm toàn bộ máy kể cả máy đang tắt.
-  const today = new Date().toISOString().slice(0, 10);
+  // Ngày theo giờ máy (giờ Việt Nam). toISOString() là ngày UTC: từ 0h tới 7h
+  // sáng nó còn là hôm qua, nên ca đêm thấy "Tiền thu hôm nay" của ngày trước.
+  const today = dayjs().format('YYYY-MM-DD');
 
   const [members, machines, sessions, revenue] = await Promise.all([
     (client.get('/members', { params: { page_size: 1 } }) as Promise<any>).catch(() => null),
@@ -183,9 +236,16 @@ useRealtimeRefresh(['members', 'machines', 'sessions', 'orders', 'combos'], refr
 });
 
 // Hộp "Đơn đang xử lý" của một khách: đơn mới, đổi trạng thái, thanh toán.
-useRealtimeRefresh(['orders'], () => ordersVisible.value && loadOrders(), {
-  events: ['order:new', 'order:updated']
+// Đang tích chọn thì hoãn: thay dữ liệu bảng là mất hết ô đã tích.
+const { resume: resumeOrders } = useRealtimeRefresh(['orders'], () => ordersVisible.value && loadOrders(), {
+  events: ['order:new', 'order:updated'],
+  paused: () => ordersSelected.value.length > 0
 });
+
+function onOrdersSelection(rows: any[]) {
+  ordersSelected.value = rows;
+  if (!rows.length) resumeOrders();
+}
 
 onMounted(async () => {
   tick = setInterval(() => {
@@ -253,7 +313,12 @@ onBeforeUnmount(() => {
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.machines.noteCol')" min-width="220">
           <template #default="{ row }">
-            <MachineNoteCell :machine-id="row.machine_id" :note="row.note" @saved="note => (row.note = note)" />
+            <MachineNoteCell
+              :machine-id="row.machine_id"
+              :note="row.note"
+              :readonly="!hasAuth('machines.update')"
+              @saved="note => (row.note = note)"
+            />
           </template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.dashboard.actions')" width="280" fixed="right">
@@ -264,7 +329,13 @@ onBeforeUnmount(() => {
                 :member-id="row.member_id"
               />
               <!-- Phiên khách vãng lai không có hội viên: không có ví để nạp, không có đơn theo tên. -->
-              <ElButton size="small" type="success" :disabled="!row.member_id" @click="openTopup(row)">
+              <ElButton
+                v-if="hasAuth('members.topup')"
+                size="small"
+                type="success"
+                :disabled="!row.member_id"
+                @click="openTopup(row)"
+              >
                 {{ $t('vnetPages.dashboard.topUp') }}
               </ElButton>
               <ElButton size="small" :disabled="!row.member_id" @click="openOrders(row)">
@@ -291,9 +362,17 @@ onBeforeUnmount(() => {
           code: ordersRow?.machine_code || ''
         })
       "
-      width="640px"
+      width="720px"
     >
-      <ElTable v-loading="ordersLoading" :data="orders" :empty-text="$t('vnetPages.dashboard.noOrders')">
+      <ElTable
+        ref="ordersTableRef"
+        v-loading="ordersLoading"
+        :data="orders"
+        row-key="id"
+        :empty-text="$t('vnetPages.dashboard.noOrders')"
+        @selection-change="onOrdersSelection"
+      >
+        <ElTableColumn type="selection" width="40" />
         <ElTableColumn prop="order_code" :label="$t('vnetPages.orders.orderCode')" width="120" />
         <ElTableColumn :label="$t('vnetPages.dashboard.orderTime')" width="110">
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
@@ -315,13 +394,61 @@ onBeforeUnmount(() => {
         </ElTableColumn>
       </ElTable>
       <template #footer>
-        <ElButton @click="goOrders">{{ $t('vnetPages.dashboard.goOrders') }}</ElButton>
+        <div class="orders-footer">
+          <span class="orders-total">
+            {{
+              ordersSelected.length
+                ? $t('vnetPages.orders.selectedSummary', {
+                    count: ordersSelected.length,
+                    total: formatPrice(tongTien(ordersSelected))
+                  })
+                : $t('vnetPages.orders.listTotal', { count: orders.length, total: formatPrice(tongTien(orders)) })
+            }}
+          </span>
+          <ElButton
+            v-if="ordersSelected.length && hasAuth('orders.status')"
+            type="primary"
+            :loading="ordersBusy"
+            :disabled="!selectedConfirmable.length"
+            @click="batchConfirmOrders"
+          >
+            {{ $t('vnetPages.orders.batchConfirm', { count: selectedConfirmable.length }) }}
+          </ElButton>
+          <ElButton
+            v-if="ordersSelected.length && hasAuth('orders.status')"
+            type="danger"
+            plain
+            :loading="ordersBusy"
+            :disabled="!selectedCancellable.length"
+            @click="batchCancelOrders"
+          >
+            {{ $t('vnetPages.orders.batchCancel', { count: selectedCancellable.length }) }}
+          </ElButton>
+          <ElButton @click="goOrders">{{ $t('vnetPages.dashboard.goOrders') }}</ElButton>
+        </div>
       </template>
     </ElDialog>
   </div>
 </template>
 
 <style scoped>
+.orders-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.orders-footer :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.orders-total {
+  margin-right: auto;
+  font-weight: 600;
+}
+
 .row-actions {
   display: flex;
   align-items: center;
