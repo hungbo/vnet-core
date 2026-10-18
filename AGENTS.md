@@ -47,6 +47,7 @@
 | Build server | `./scripts/` | `bash build-server.sh` |
 | Build client | `./scripts/` | `bash build-client.sh` |
 | Build server installer (Windows) | repo root | `bash scripts/build-server-windows.sh 1.2.0` → `dist/vnet-server-setup-1.2.0.exe` (needs `brew install makensis`) |
+| Release | repo root | push tag `server-X.Y.Z` / `client-X.Y.Z` → GitHub Actions builds the installers and posts a Pre-release; try it with a `ci/*` branch first. See `docs/PHAT-HANH.md` |
 | Lint (admin) | `admin/` | `pnpm lint` |
 | Typecheck (admin) | `admin/` | `pnpm typecheck` |
 | Regenerate routes | `admin/` | `pnpm gen-route` (after adding `views/vnet/{feature}/index.vue`) |
