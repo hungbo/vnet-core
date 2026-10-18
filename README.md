@@ -5,6 +5,9 @@ bán hàng, báo cáo doanh thu và hỗ trợ khách hàng qua chat real-time.
 
 > **Phiên bản:** 0.1.0-dev | **License:** AGPL-3.0
 
+> **Mới bắt đầu?** Dựng máy chủ bằng Docker, cài một máy trạm và thử một phiên khách
+> trong khoảng 30 phút: [docs/BAT-DAU-NHANH.md](./docs/BAT-DAU-NHANH.md).
+>
 > **Hướng dẫn sử dụng** — triển khai, cài máy trạm và mọi chức năng, viết cho người
 > dùng chứ không cho lập trình viên: [docs/HUONG-DAN.md](./docs/HUONG-DAN.md).
 

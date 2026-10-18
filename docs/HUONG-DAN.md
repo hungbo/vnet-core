@@ -8,6 +8,8 @@ Tài liệu này dành cho ba người khác nhau:
 
 Mọi câu trong tài liệu này viết ra từ mã nguồn tại thời điểm cập nhật, không chép lại tài liệu cũ. Chỗ nào hệ thống làm khác với điều người ta thường tưởng, tài liệu nói thẳng ra.
 
+Mới bắt đầu và chỉ muốn chạy thử? Đọc [BAT-DAU-NHANH.md](./BAT-DAU-NHANH.md) trước — hai trang, từ máy chủ tới một phiên khách đầu tiên.
+
 ---
 
 ## Mục lục
@@ -15,12 +17,15 @@ Mọi câu trong tài liệu này viết ra từ mã nguồn tại thời điể
 **Triển khai**
 - [0. Hệ thống gồm những gì](#0-hệ-thống-gồm-những-gì)
 - [1. Dựng máy chủ](#1-dựng-máy-chủ)
+  - [1.7. Bật cập nhật game (tuỳ chọn)](#17-bật-cập-nhật-game-tuỳ-chọn)
 - [2. Cài máy trạm lên PC khách](#2-cài-máy-trạm-lên-pc-khách)
 - [3. Máy trạm dưới mắt khách](#3-máy-trạm-dưới-mắt-khách)
 
 **Sử dụng**
 - [A. Việc thường ngày](#a-việc-thường-ngày)
 - [B. Tra cứu từng màn hình](#b-tra-cứu-từng-màn-hình)
+  - [Điều khiển máy từ xa (nút Khác của trang Máy)](#điều-khiển-máy-từ-xa-nút-khác)
+  - [Cập nhật game](#cập-nhật-game)
 
 **Quản trị**
 - [C. Phân quyền](#c-phân-quyền)
@@ -268,6 +273,68 @@ Khi `GIN_MODE=release`, máy chủ tự kiểm ba điều và **thoát ngay** n�
 
 Đổi `APP_PORT` thì **phải sửa `ALLOWED_ORIGINS` cho khớp**, nếu không trình duyệt sẽ bị chặn khi gọi API.
 
+## 1.7. Bật cập nhật game (tuỳ chọn)
+
+Tính năng này mặc định **tắt**. Chưa bật thì máy chủ không mở cổng BitTorrent, không ghi vào ổ đĩa nào, và trang **Hệ thống → Cập nhật game** chỉ hiện dòng *"Máy chủ này chưa bật cập nhật game"*. Cách dùng trang đó nằm ở [Cập nhật game](#cập-nhật-game).
+
+Nó sinh ra cho phòng máy **diskless dùng Cloud Update**: game nằm trên một ổ riêng của máy chủ (Game Disk), máy trạm thấy ổ đó với một chữ ổ khác (mặc định `D:`). VNET chỉ cần ghi vào thư mục game trên ổ ấy; máy trạm chạy game thẳng từ đó.
+
+Hai vai trò, chọn bằng biến `GAME_ROLE`:
+
+| Vai trò | Làm gì | Đặt ở đâu |
+|---|---|---|
+| `master` | Giữ **bản gốc** của từng game. Khi thư mục một game đứng yên đủ lâu, tự đóng gói ("publish") thành một bản có số phiên bản và phát cho các quán | Một máy duy nhất — nơi launcher (Riot, Garena...) tự cập nhật game |
+| `cafe` | Hỏi master có bản mới không, rồi tải **chỉ những phần đã đổi** về ổ game của quán | Máy chủ của từng quán |
+
+Một quán bình thường chỉ cần vai trò `cafe`; địa chỉ master và khoá do bên giữ master đưa cho bạn.
+
+| Biến | Master | Quán | Ý nghĩa |
+|---|---|---|---|
+| `GAME_ROLE` | `master` | `cafe` | Để trống là tắt |
+| `GAME_ROOT` | bắt buộc | bắt buộc | Đường dẫn **tuyệt đối** tới thư mục chứa game *trên máy chủ này*, mỗi game một thư mục con trùng tên game. Ví dụ `D:\Games` |
+| `GAME_CATALOG_KEY` | bắt buộc | bắt buộc | Chuỗi ít nhất 16 ký tự. **Master và mọi quán phải dùng cùng một chuỗi** |
+| `GAME_PUBLIC_URL` | bắt buộc | — | Địa chỉ master mà các quán gọi tới, ví dụ `http://<địa chỉ master>:20800` |
+| `GAME_UPSTREAM_URL` | — | bắt buộc | Chính là địa chỉ master ở dòng trên |
+| `GAME_STABLE_FOR` | `10m` | — | Thư mục game phải đứng yên bấy lâu mới được publish |
+| `GAME_POLL_INTERVAL` | `5m` | `5m` | Bao lâu máy chủ làm một vòng: master quét thư mục, quán hỏi master |
+| `GAME_STALL_TIMEOUT` | — | `10m` | Một lượt tải không thêm được mảnh dữ liệu đúng nào trong bấy lâu thì bị coi là treo |
+| `GAME_LISTEN_PORT` | `19999` | `19999` | Cổng của bộ tải BitTorrent bên trong máy chủ |
+| `GAME_DATA_DIR` | `GAME_ROOT\.vnet-gameupdate` | như master | Trạng thái riêng của bộ tải, không chứa game |
+
+Cấu hình sai thì máy chủ **từ chối khởi động** với dòng `Refusing to start:`, ví dụ `GAME_UPSTREAM_URL is required when GAME_ROLE=cafe`, `GAME_ROOT must be an absolute path when GAME_ROLE is set`, `GAME_CATALOG_KEY must be at least 16 characters when GAME_ROLE is set`.
+
+**Cách đặt biến**
+
+- **Docker:** tạo tệp `docker-compose.override.yml` cạnh `docker-compose.yml` (Compose tự đọc tệp này), rồi chạy `docker compose up -d`.
+
+  ```yaml
+  services:
+    app:
+      environment:
+        GAME_ROLE: cafe
+        GAME_ROOT: /games
+        GAME_UPSTREAM_URL: http://<địa chỉ master>:20800
+        GAME_CATALOG_KEY: <chuỗi dùng chung với master>
+      volumes:
+        - /duong/dan/tren/may/chu:/games
+  ```
+
+  `GAME_ROOT` ở đây là đường dẫn **trong container**; thư mục thật phải được gắn vào và ghi được. Địa chỉ master phải gọi được *từ trong container* — `localhost` ở đó là chính container.
+- **Máy chủ Windows (bộ cài `vnet-server-setup`):** thêm vào cuối tệp `C:\VNET\data\config.env`, mỗi dòng một biến, **không có dấu nháy**, rồi khởi động lại dịch vụ `VNETServer`.
+
+  ```
+  GAME_ROLE=cafe
+  GAME_ROOT=D:\Games
+  GAME_UPSTREAM_URL=http://<địa chỉ master>:20800
+  GAME_CATALOG_KEY=<chuỗi dùng chung với master>
+  ```
+
+  Nhật ký mà có dòng `CẢNH BÁO: dịch vụ thiếu TORRENT_STORAGE_DEFAULT_FILE_IO=classic` thì chạy lại bộ cài `vnet-server-setup`: thiếu biến này, tệp game đã phát bị khoá và quán không xoá được tệp thừa.
+
+Bật xong, mở **Hệ thống → Cập nhật game**: góc trên trái hiện thẻ **Máy master** hoặc **Máy chủ quán**, và nhật ký máy chủ có dòng `[game] bật vai trò cafe`.
+
+> **Đã chạy thử khi viết mục này** (hai máy chủ chạy Docker, một master một quán): thêm game, publish, quán tự tải, game có bản mới nằm ngoài khung giờ rồi **Tải ngay** — thư mục game hai bên giống hệt nhau từng tệp. **Chưa chạy thử:** cách đặt biến trên máy chủ Windows (viết theo mã nguồn bộ cài), và việc máy trạm Cloud Update đọc đúng thư mục game sau khi khởi động lại.
+
 ---
 
 # 2. Cài máy trạm lên PC khách
@@ -480,7 +547,7 @@ Máy chưa được thêm vào hệ thống hoặc chưa xếp nhóm thì khách
 
 Đăng nhập ngoại tuyến cố ý **chỉ chấp nhận tài khoản nhân viên**. Cho phép hội viên đăng nhập ngoại tuyến nghĩa là khách chỉ cần rút dây mạng là tự mở được máy.
 
-## 3.2. Sáu ô chức năng
+## 3.2. Các ô chức năng
 
 Sau khi đăng nhập, khách thấy màn hình chính với các ô:
 
@@ -489,11 +556,16 @@ Sau khi đăng nhập, khách thấy màn hình chính với các ô:
 | **Nạp tiền** | Chỉ hội viên | Gửi yêu cầu nạp lên quầy, số tiền chọn từ danh sách mệnh giá cấu hình ở **Cài đặt → Nạp tiền** |
 | **Giờ chơi** | Chỉ nhân viên | Hiện dòng "Phiên quản trị — không tính giờ" |
 | **Đồ ăn** | Mọi người trừ nhân viên | Xem thực đơn, đặt món. Đơn nhảy thẳng lên trang **Đơn hàng** |
+| **Game** | Mọi người | Mở menu game của quán, xem bên dưới |
 | **Hỗ trợ** | Mọi người | Nhắn tin với quầy |
 | **Điểm danh** | Chỉ hội viên | Chỉ hiện khi bật **Cài đặt → Tính năng → Cho phép điểm danh** |
 | **Đánh giá** | Mọi người trừ nhân viên | Chỉ hiện khi bật **Cài đặt → Tính năng → Cho phép đánh giá dịch vụ** |
 
 Ngoài ra trên màn hình chính luôn có: **đồng hồ phiên chơi** đếm ngược tới lúc hết tiền, **số dư** (cả tiền thật lẫn điểm thưởng), và **chuông thông báo**.
+
+**Menu Game.** Ô **Game** mở một cửa sổ liệt kê các game đang **Bật** ở trang [Cập nhật game](#cập-nhật-game) và có tệp chạy. Mỗi game là một ô có nhãn trạng thái: **Sẵn sàng**, **Đang cập nhật xx%**, **Chờ cập nhật** hoặc **Lỗi**. **Chỉ game Sẵn sàng mới bấm Chơi được** — đang cập nhật mà cho chạy thì game báo thiếu tệp, hoặc tệ hơn là chạy bản hỏng. Cửa sổ có ô **Tìm game** (tìm không dấu, theo nhóm hoặc theo chữ cái đầu, ví dụ `lmht`), nút lọc theo nhóm khi quán có từ hai nhóm game trở lên, và nút làm mới.
+
+Game chạy thẳng từ ổ game mà máy trạm nhìn thấy, theo đường dẫn `<thư mục game trên máy trạm>\<tên thư mục game>\<tệp chạy>`. Máy trạm chỉ nhận tên game từ máy chủ rồi tự dựng đường dẫn, và từ chối đường dẫn có `..`, đường dẫn tuyệt đối hay UNC. Không mở được game thì khách thấy câu *"vui lòng báo nhân viên"* và lỗi tự gửi về trang **Nhật ký lỗi**. Mỗi lần bấm **Chơi** mở được game được đếm vào cột **Lượt chơi** của trang Cập nhật game.
 
 ## 3.3. Khi máy khởi động lại giữa phiên
 
@@ -649,18 +721,22 @@ Cùng cách đó cho mọi lý do phiên kết thúc: hết gói, giới nghiêm
 
 ## A.8. Khách báo lỗi máy
 
-1. Vào **Quản lý → Máy**, tìm máy, mở tab **Điều khiển**.
+1. Vào **Quản lý → Máy**, tìm máy, bấm **Khác** ở cuối dòng. (Máy đang có khách cũng có nút này ở bảng **Máy đang hoạt động** trên Bảng điều khiển.)
 2. Chọn việc:
 
-| Nút | Việc |
+| Mục trong menu | Việc |
 |---|---|
-| **Tin nhắn** | Hiện một dòng chữ lên màn hình khách |
 | **Chụp màn hình** | Xem khách đang gặp gì |
-| **Xem ứng dụng** | Danh sách tiến trình đang chạy kèm mức RAM |
-| **Tắt ứng dụng** | Tắt một tiến trình đang treo |
-| **Khoá** / **Mở khoá** | Khoá màn hình, kèm lý do khách đọc được |
-| **Chặn ứng dụng** / **Bỏ chặn** | Cấm một ứng dụng chạy trên máy đó. Gõ tên tiến trình, ví dụ `chrome.exe`. Dịch vụ nền tắt nó trong vòng hai giây mỗi lần nó được mở, kể cả sau khi máy khởi động lại. Không chặn được tiến trình hệ thống (`explorer`, `svchost`...) và chính máy trạm |
+| **Điều khiển màn hình** | Xem hẳn màn hình máy ngay trong trình duyệt, và nếu cần thì tự bấm chuột, gõ phím sửa hộ khách |
+| **Xem ứng dụng** | Danh sách ứng dụng đang chạy kèm mức RAM. Bấm **Tắt** ở một dòng để đóng ứng dụng đang treo |
+| **Nhắn tin** | Trò chuyện hai chiều với hội viên đang ngồi máy |
+| **Thông báo** | Hiện một dòng chữ lên màn hình máy, khách không trả lời được |
 | **Khởi động lại** / **Tắt máy** | **Kết thúc phiên chơi** |
+| **Bật máy (Wake-on-LAN)** | Bật một máy đang tắt từ xa |
+
+Điều kiện chạy được, cách dùng từng mục và lỗi thường gặp: [Điều khiển máy từ xa](#điều-khiển-máy-từ-xa-nút-khác).
+
+**Không còn nút Khoá/Mở khoá**, và **chặn ứng dụng không còn là nút của từng máy**: danh sách ứng dụng bị cấm nằm ở **Cài đặt → Máy trạm → Chặn ứng dụng** và áp cho **mọi** máy.
 
 **Máy chưa kết nối thì lệnh không tới nơi** và hệ thống báo rõ — không im lặng nuốt.
 
@@ -777,7 +853,7 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 
 **Để làm gì.** Danh sách PC. Theo dõi trạng thái, xem phần cứng, điều khiển từ xa.
 
-**Thao tác chính.** Thêm · **Tạo hàng loạt** · Sửa · Xoá · bốn tab: **Thông tin**, **Phiên**, **Tài sản**, **Điều khiển**.
+**Thao tác chính.** Thêm · **Tạo hàng loạt** · Sửa · Xoá · nút **Khác** ở cuối mỗi dòng (xem số đo phần cứng và điều khiển máy từ xa — chi tiết ở [Điều khiển máy từ xa](#điều-khiển-máy-từ-xa-nút-khác)). Phiên và tài sản của máy nằm ở hai trang riêng: **Phiên** và **Tài sản máy**.
 
 **Điều dễ nhầm.**
 - **Chỉ có ba trạng thái**: Ngoại tuyến → Sẵn sàng → Đang sử dụng. Không có trạng thái "bảo trì".
@@ -785,9 +861,49 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 - **Muốn tạm ngừng một máy thì tắt công tắc Đang hoạt động, đừng xoá.** Máy tạm ngừng vẫn hiện trong danh sách để bật lại; máy đã xoá thì mất lịch sử.
 - Máy còn phiên chơi, đơn hàng hoặc lịch đặt thì không xoá được.
 - Lệnh điều khiển cần máy đang kết nối. Máy chưa nối thì hệ thống báo "chưa kết nối — lệnh không tới nơi", không im lặng.
-- **Mã máy phải trùng khớp với mã ghi trong cấu hình máy trạm**, nếu không nhịp tim không khớp vào đâu cả. Vì lý do này, dựng quán mới thì dùng **Tạo hàng loạt** thay vì gõ tay từng cái — xem [mục 2.2](#22-khai-máy-trong-hệ-thống-trước).
+- **Mã máy phải trùng khớp với mã ghi trong cấu hình máy trạm**, nếu không nhịp tim không khớp vào đâu cả. Vì lý do này, dựng quán mới thì dùng **Tạo hàng loạt** thay vì gõ tay từng cái — xem [mục 2.2](#22-mã-máy-là-tên-máy-windows-không-phải-khai).
 - **Tạo hàng loạt là toàn bộ hoặc không có gì.** Vướng một mã thì không máy nào được tạo, và hệ thống báo trước khi bạn bấm Tạo.
 - **Máy đã xoá vẫn giữ mã của nó.** Tạo lại đúng mã đó sẽ bị chặn, dù danh sách không hiện máy nào mang mã ấy — thêm một lý do để tắt hoạt động thay vì xoá.
+
+### Điều khiển máy từ xa (nút Khác)
+
+**Để làm gì.** Nhìn và điều khiển một máy trạm từ trang quản trị mà không phải đi tới máy: bật máy đang tắt, xem màn hình, đóng ứng dụng treo, nhắn khách, khởi động lại, tắt máy.
+
+**Thao tác chính.** Ở **Quản lý → Máy** (và bảng **Máy đang hoạt động** ở Bảng điều khiển), bấm **Khác** ở dòng của máy. Menu chia năm cụm, ngăn bằng vạch; mục nào bạn không có quyền thì ẩn:
+
+| Cụm | Mục | Làm gì | Quyền |
+|---|---|---|---|
+| Trang | **Phần cứng** | Bảng 50 lần máy báo số đo gần nhất: nhiệt độ CPU/GPU, %CPU, %RAM, %ổ đĩa, thời gian bật. *(Chỉ có ở trang Máy)* | `machines.view` |
+| Bật | **Bật máy (Wake-on-LAN)** | Máy chủ phát gói "đánh thức" ra mạng LAN để bật máy đang tắt | `machines.remote` |
+| Xem | **Điều khiển màn hình** | Cửa sổ xem — và nếu muốn, điều khiển — màn hình máy ngay trong trình duyệt | `machines.remote_desktop` |
+| | **Chụp màn hình** | Một ảnh màn hình khách, có nút **Tải ảnh** và **Chụp lại** | `machines.remote` |
+| | **Xem ứng dụng** | Bảng ứng dụng đang chạy (tên, số tiến trình, RAM), có ô tìm và nút **Tắt** | `machines.remote` |
+| Nói | **Nhắn tin** | Khung chat hai chiều với hội viên đang ngồi máy; xám đi khi máy không có hội viên | mọi nhân viên |
+| | **Thông báo** | Hộp thông báo một chiều hiện lên màn hình máy | `machines.remote` |
+| Nguồn | **Khởi động lại** / **Tắt máy** | Có hộp xác nhận. Kết thúc phiên chơi | `machines.remote` |
+
+**Điều dễ nhầm.**
+- **Chỉ có sáu lệnh gửi xuống máy qua WebSocket**: tắt máy, khởi động lại, thông báo, chụp màn hình, xem ứng dụng, tắt ứng dụng. Không có Khoá/Mở khoá, và **cố ý không có lệnh chạy câu lệnh tuỳ ý** — có thì mọi tài khoản nhân viên thành người chạy được mã trên cả phòng máy. Cấm một ứng dụng thì làm ở **Cài đặt → Máy trạm → Chặn ứng dụng**, áp cho mọi máy.
+- **Máy chưa kết nối thì lệnh không tới nơi**: hệ thống báo vàng *"máy trạm chưa kết nối"* thay vì im lặng, và vẫn ghi lần thử đó vào **Nhật ký hoạt động**.
+- **Ai làm việc gì trên máy trạm.** Tắt máy và khởi động lại do **dịch vụ nền** nhận, nên chạy được cả khi chưa ai đăng nhập. Chụp màn hình, xem ứng dụng và thông báo do **giao diện** làm vì cần màn hình của khách; giao diện không chạy thì cửa sổ ảnh chờ mãi *"Đang chờ máy trạm gửi ảnh..."*.
+- **Tắt máy và khởi động lại kết thúc phiên đang chạy** — nhưng chỉ khi lệnh đã tới máy; không tới thì phiên giữ nguyên (xem [A.8](#a8-khách-báo-lỗi-máy)).
+- **Bật máy (Wake-on-LAN):**
+  - Chỉ bật được máy đang **Ngoại tuyến** và **đã từng báo địa chỉ MAC**. Máy đang bật thì báo *"máy đang bật"*; máy chưa từng chạy phần mềm VNET thì báo *"máy chưa báo địa chỉ MAC — cần bật máy và chạy phần mềm VNET ít nhất một lần"*.
+  - Gói phát đi từ **máy chủ VNET**, tới địa chỉ broadcast của mạng con `/24` nơi máy từng báo IP (ví dụ `192.168.5.255`) và tới `255.255.255.255`, cổng 9. Máy chủ phải nằm **cùng mạng LAN** với máy trạm.
+  - **"Đã gửi" chưa có nghĩa là máy đã dậy** — hệ thống chỉ biết gói đã đi ra. Máy phải bật Wake-on-LAN trong BIOS và ở card mạng, và Windows phải tắt Fast Startup. Chờ khoảng 1 phút.
+  - **Chưa kiểm tra:** máy chủ chạy trong Docker thì gói phát từ trong container có ra tới mạng quán hay không (mạng ảo mặc định của Docker có thể giữ nó lại). Bấm báo thành công, BIOS đúng mà máy vẫn không dậy thì nghi ngờ chỗ này trước. Chưa thử với PC thật.
+- **Điều khiển màn hình:**
+  - Trình duyệt hiển thị bằng noVNC; máy chủ làm cầu nối tới **TightVNC** chạy trên máy trạm (cổng 5900). Máy trạm chỉ nhận kết nối từ địa chỉ IP của máy chủ VNET (luật tường lửa do dịch vụ nền tự tạo).
+  - Mật khẩu VNC do máy chủ tự sinh cho từng máy và gửi xuống ở nhịp tim; bạn không phải nhập, cũng không thấy nó.
+  - **TightVNC không nằm trong repo.** Muốn một máy điều khiển màn hình được, tải `tightvnc.msi` (bản 64-bit, từ tightvnc.com) đặt vào `installer\tightvnc.msi` **trước khi** build bộ cài máy trạm (hoặc đặt cạnh `vnet-client.exe` trên máy). Dịch vụ nền tự cài nó khi nhận mật khẩu VNC. Không có tệp thì bộ cài vẫn build, chỉ là máy đó không điều khiển màn hình được — `service.log` ghi *"chưa có TightVNC và không thấy tightvnc.msi cạnh vnet-client.exe"*.
+  - Cửa sổ **mở ở chế độ Chỉ xem** để khỏi lỡ tay bấm vào máy khách. Nút **Chỉ xem** đang sáng là đang chỉ xem; bấm một lần nữa để bật chuột và bàn phím. Còn có **Ctrl+Alt+Del**, **Toàn màn hình** và **Kết nối lại**.
+  - Cần quyền riêng `machines.remote_desktop`. Vai trò nhân viên mặc định **không** có quyền này; quản lý và chủ thì có.
+  - Máy phải đang bật và có IP. Lỗi hay gặp: *"máy trạm chưa kết nối"* (máy ngoại tuyến); *"không nối được VNC trên máy MAY01 (192.168.5.11): máy trạm chưa cài TightVNC hoặc tường lửa chặn"*; *"VNC từ chối mật khẩu — chờ nhịp tim kế tiếp rồi thử lại"* (máy vừa đổi mật khẩu VNC, thường tự hết sau 15 giây).
+  - Mỗi lần mở và đóng cửa sổ đều ghi vào **Nhật ký hoạt động** kèm tên người mở (`remote_desktop_start`, `remote_desktop_stop`). Khi không để chế độ Chỉ xem, thao tác của bạn diễn ra trên chính máy khách đang ngồi.
+- **Chụp màn hình** không lưu ảnh trên máy chủ: ảnh đi thẳng từ máy trạm tới trình duyệt của bạn, đóng cửa sổ là mất; muốn giữ thì bấm **Tải ảnh**. Bấm vào ảnh để phóng to (lăn chuột để zoom, kéo để di chuyển).
+- **Xem ứng dụng** gộp các tiến trình cùng tên thành một dòng. **Tắt** có hộp xác nhận và đóng **mọi** tiến trình mang tên đó. Tiến trình hệ thống và chính phần mềm VNET nằm trong danh sách cấm tắt: bấm **Tắt** không có tác dụng và trang không báo gì.
+- **Nhắn tin khác Thông báo.** **Nhắn tin** là cuộc trò chuyện hai chiều, khách trả lời được từ ô **Hỗ trợ** trên máy. **Thông báo** chỉ hiện một hộp chữ lên màn hình, khách không trả lời được.
+- Mọi lệnh đều ghi vào **Nhật ký hoạt động** với tên `remote_*` (`remote_wake`, `remote_restart`, `remote_screenshot`...), kể cả lệnh thất bại.
 
 ### Nhóm máy
 
@@ -1017,10 +1133,13 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 | **Hóa đơn** | Tiêu đề, chân trang, mã số thuế in trên hoá đơn |
 | **Nạp tiền** | **Mệnh giá nạp** — danh sách số tiền hiện trên máy khách |
 | **Tính năng** | Bật/tắt **Cho phép điểm danh** và **Cho phép đánh giá dịch vụ** |
-| **Máy trạm** | Máy trạm làm gì khi phần mềm bị tắt (khởi động lại hay tắt máy), mất kết nối bao lâu thì khoá, bao lâu thì khởi động lại, và **tài khoản quản trị máy trạm** cho cả quán (để trống mật khẩu là giữ nguyên). Máy trạm nhận giá trị mới trong khoảng 15 giây |
+| **Máy trạm** | Máy trạm làm gì khi phần mềm bị tắt (khởi động lại hay tắt máy), mất kết nối bao lâu thì khoá, bao lâu thì khởi động lại, **không ai đăng nhập bao lâu thì tắt máy hoặc cho ngủ chờ**, **Chặn ứng dụng**, **Ẩn lối tắt trên desktop**, **Metadata Riot** (máy diskless chơi Liên Minh) và **tài khoản quản trị máy trạm** cho cả quán (để trống mật khẩu là giữ nguyên). Máy trạm nhận giá trị mới trong khoảng 15 giây |
 
 **Điều dễ nhầm.**
 - **Nợ tối đa** là thứ quyết định khách nợ được bao nhiêu trước khi bị chặn mở máy.
+- **Máy ở màn hình khoá mà không ai đăng nhập quá 5 phút thì tự tắt** — đó là mặc định của tab **Máy trạm**. Đang thử máy trạm mà thấy máy tự tắt thì đây là lý do; đặt `0` ở ô *Không ai đăng nhập bao lâu thì tắt máy (phút)* để không bao giờ tắt.
+- **Chặn ứng dụng** áp cho **mọi** máy, không phải từng máy. Mỗi dòng một tên tiến trình, không cần đuôi `.exe` (xem tên ở mục **Xem ứng dụng** của máy — [Điều khiển máy từ xa](#điều-khiển-máy-từ-xa-nút-khác)). Dịch vụ nền tắt tiến trình trùng tên mỗi vài giây; danh sách được máy trạm giữ lại nên vẫn áp sau khi khởi động lại và cả khi mất mạng. Tiến trình hệ thống của Windows và chính phần mềm VNET không chặn được. Xoá một dòng là bỏ chặn.
+- **Ẩn lối tắt trên desktop**: ghi tên lối tắt không có đuôi (ví dụ `Game Menu, Teamfight Tactics`), cách nhau bằng dấu phẩy; máy trạm tự xoá các lối tắt đó khỏi desktop của mọi tài khoản Windows. Lối tắt VNET không bao giờ bị xoá. Để trống là tắt.
 - Tắt một tính năng thì nút biến mất trên máy khách **và** máy chủ cũng từ chối nếu ai đó gọi thẳng — không phải chỉ ẩn đi.
 - Cần quyền **Sửa cài đặt**.
 
@@ -1058,6 +1177,50 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 - **Tệp công bố là chính tệp `vnet-client-<kiến trúc>.exe`**, không phải bộ cài. Nền tảng ghi `windows-amd64` hoặc `windows-arm64` cho đúng máy.
 - **Ô Băm SHA-256 bắt buộc đúng.** Máy trạm tải xong sẽ kiểm băm, lệch thì xoá tệp và không cài. Chuỗi này in ra ở cuối lệnh `scripts/build-client.sh`.
 - **Bản đang phát hành phải tắt trước khi xoá.**
+- **Đây là cập nhật phần mềm VNET trên máy trạm, không phải game.** Game cập nhật ở trang [Cập nhật game](#cập-nhật-game) ngay dưới.
+
+### Cập nhật game
+
+**Để làm gì.** Giữ game trên ổ game của quán luôn đúng bản mới nhất mà không phải đi cài lại từng máy: **máy master** phát hành, **máy chủ quán** tự kéo về. Đây cũng là danh sách quyết định game nào hiện trong menu **Game** của máy trạm. Phải bật bằng biến môi trường trước — xem [1.7](#17-bật-cập-nhật-game-tuỳ-chọn); chưa bật thì trang chỉ hiện một dòng hướng dẫn và bảng rỗng.
+
+**Thao tác chính.** Phần đầu trang có thẻ vai trò (**Máy master** hoặc **Máy chủ quán**), thư mục game trên máy chủ, ô **Thư mục game trên máy trạm** (kèm **Lưu**), và riêng ở quán có thêm ô **Khung giờ tự cập nhật** (kèm **Lưu**). Bảng game gồm các cột Game, Nhóm, Phiên bản, Dung lượng, Lượt chơi, Trạng thái, **Tự cập nhật**, **Bật**, **Ưu tiên**, Cập nhật lúc, Thao tác.
+
+| Việc | Ở master | Ở quán | Quyền |
+|---|---|---|---|
+| Xem trang | ✓ | ✓ | `games.view` |
+| **Thêm game** | ✓ | — | `games.create` |
+| **Sửa** (tên hiển thị, nhóm, tệp chạy, tham số, icon, mục menu) | ✓ | — *(do master quyết)* | `games.update` |
+| **Publish ngay** | ✓ | — | `games.update` |
+| **Tải ngay** | — | ✓ | `games.update` |
+| Công tắc **Tự cập nhật** và **Bật**, ô **Ưu tiên** | ✓ | ✓ | `games.update` |
+| **Xoá** (bỏ khỏi danh mục) | ✓ | — | `games.delete` |
+
+Vai trò nhân viên mặc định chỉ có `games.view`; quản lý và chủ có đủ.
+
+**Ở master**, theo thứ tự:
+1. Đặt game vào thư mục game của máy chủ — mỗi game một thư mục con — và để launcher chính hãng tự cập nhật nó ở đó.
+2. Bấm **Thêm game**, điền: **Tên thư mục** (đúng tên thư mục con), **Tên hiển thị** (để trống là lấy tên thư mục), **Nhóm** (ví dụ `Online`), **Tệp chạy** (đường dẫn *tương đối* trong thư mục game, ví dụ `Riot Client/RiotClientServices.exe`), **Tham số chạy**, **Icon** (tệp lấy hình cho menu, `.exe` hoặc `.ico`; để trống là lấy từ tệp chạy) và **Ưu tiên**. Thư mục có nhiều chương trình (LibreOffice → Word, Excel) thì dùng **Mục trên menu** thay cho tệp chạy: mỗi mục một tên và một tệp chạy.
+3. Game mới thêm hiện **Chưa có** cho tới lần publish đầu. Lần đó chạy khi thư mục đứng yên đủ lâu (mặc định 10 phút), hoặc bấm **Publish ngay**. Trạng thái qua **Đang băm** rồi **Sẵn sàng**, cột Phiên bản thành `1` và Dung lượng hiện ra.
+4. Launcher vá game thì thư mục đổi; đứng yên đủ lâu là master tự publish bản kế tiếp (`2`, `3`...), hoặc bấm **Publish ngay** nếu chắc game đã cập nhật xong.
+
+**Ở quán**, mọi việc tự chạy:
+1. Cứ mỗi vòng (mặc định 5 phút) máy chủ quán hỏi master. Thấy game mới thì nó hiện trong bảng, rồi được tải về nếu **Tự cập nhật** đang bật và giờ hiện tại nằm trong **Khung giờ tự cập nhật** (để trống là lúc nào cũng được, định dạng `02:00-08:00`, vắt qua nửa đêm được).
+2. Master có bản mới hơn bản đang nằm trên ổ thì cột **Phiên bản** hiện `1 → 2` (số mới màu cam). Chỉ phần dữ liệu đã đổi mới được tải.
+3. Muốn tải ngay, bấm **Tải ngay**: trạng thái sang **Chờ tải**, **Đang tải** (kèm thanh phần trăm), rồi **Sẵn sàng**.
+
+**Điều dễ nhầm.**
+- **Tên thư mục là khoá nối master với các quán**, nên không đổi được sau khi thêm. Chỉ chữ, số, khoảng trắng và `. _ ( ) + -`, tối đa 100 ký tự, không kết thúc bằng dấu chấm, không trùng tên thiết bị Windows (`CON`, `NUL`, `COM1`...). Thư mục phải có sẵn, không thì báo *"không thấy thư mục ..."*.
+- **Có hai đường dẫn khác nhau.** **Thư mục game** (thẻ phía trên) là đường dẫn trên *máy chủ này*. **Thư mục game trên máy trạm** là đường dẫn ổ game như *máy trạm nhìn thấy* — chữ ổ Cloud Update gán, mặc định `D:\Games`. Menu Game của máy trạm ghép đường dẫn này với tên game và tệp chạy. Gõ sai (không dạng `D:\Games`) thì máy chủ báo lỗi ngay lúc lưu; để trống là về mặc định; `e:/Games/` được chuẩn hoá thành `e:\Games`.
+- **Khung giờ gõ sai cú pháp thì coi như không giới hạn**, không báo lỗi — một ô gõ nhầm không được làm quán đứng im không bao giờ cập nhật. Xem lại ô sau khi **Lưu**: phải đúng dạng `02:00-08:00`.
+- **Máy trạm diskless chỉ thấy bản mới sau khi khởi động lại.** Cloud Update cố định ổ game lúc máy boot, nên máy đang chạy vẫn đọc bản cũ; dùng **Khung giờ tự cập nhật** để việc ghi diễn ra lúc quán vắng rồi khởi động lại máy. **Tải ngay** không bị khung giờ giới hạn. Hệ thống **chưa kiểm tra** có máy đang chơi đúng game đó hay không trước khi ghi đè.
+- **Publish chạy nền.** Băm một game hàng chục GB mất vài phút; bấm xong trạng thái là **Đang băm** và trang tự làm mới. Bấm lại trong lúc đó không làm gì thêm.
+- **Master chỉ phát game đang Bật và đã publish.** Tắt **Bật** ở master là game biến khỏi danh mục các quán nhận được; game đã nằm sẵn ở quán thì giữ nguyên, không bị xoá. Ở quán, tắt **Bật** là ẩn game khỏi menu Game của máy trạm.
+- **Ở quán, sửa tên hiển thị, nhóm, tệp chạy là vô ích** — những thứ đó đến từ master và bị ghi đè ở vòng sau. Nút **Sửa** chỉ có ở master.
+- **Xoá chỉ bỏ game khỏi danh mục**, tệp trên ổ đĩa giữ nguyên.
+- **Mỗi lần chỉ tải một game**, game **Ưu tiên** số lớn tải trước. Một game tải treo (không có thêm dữ liệu đúng trong 10 phút) bị đánh dấu **Lỗi** để nhường game khác, rồi tự thử lại sau 5 phút, 10, 20... tối đa 1 giờ một lần. Master publish bản mới thì lượt tải bản cũ bị huỷ và tính lại từ đầu. Game tắt **Tự cập nhật** mà lỗi thì dòng lỗi dặn *"Bấm Tải ngay để thử lại"*.
+- Trạng thái **Lỗi** luôn kèm nguyên nhân bằng tiếng Việt ngay dưới nhãn. Ở master, lỗi hay gặp là *"không đọc được thư mục"* hoặc lần publish hỏng; ở quán là *"Tải bị treo"* hoặc không gọi được master. Quán không gọi được master thì lỗi chỉ nằm trong nhật ký máy chủ (`[game] đọc catalog của master: ...`), trang vẫn hiện nguyên trạng thái cũ.
+- Cột **Lượt chơi** đếm số lần khách bấm **Chơi** mở được game trên menu của máy trạm (client từ bản 1.0.19); nhân viên mở game cũng được đếm.
+- Game dùng launcher riêng như Liên Minh (Riot) cần thêm việc ngoài thư mục game: trạng thái cài đặt Riot nằm ở `C:\ProgramData\Riot Games`. Xem ô **Metadata Riot** ở **Cài đặt → Máy trạm**, và ô **Icon** khi tệp chạy chỉ là launcher chung.
 
 ### Sao lưu
 
@@ -1085,6 +1248,10 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 ---
 
 # C. Phân quyền
+
+> **Cập nhật:** hai bảng dưới đây là bản rút gọn ban đầu và **đã cũ**. Hệ thống hiện gác từng API bằng một mã riêng — khoảng 140 mã dạng `nhóm.việc` như `machines.remote` hay `games.update`, danh mục đầy đủ ở `backend/internal/authz/catalog.go` — và ba vai trò có sẵn được cấp theo đó: **staff** có nhiều quyền vận hành hơn bảng ghi, **manager** có mọi thứ trừ `*` và nhóm back-office (Sao lưu, Nhật ký, Thông báo hàng loạt, tài khoản và vai trò). Xem và sửa quyền thật ở **Quản lý hệ thống → Quản lý vai trò**.
+>
+> Hai tính năng mới: **điều khiển máy từ xa** — `machines.remote` (nhân viên, quản lý, chủ) và `machines.remote_desktop` (**chỉ quản lý và chủ**); **cập nhật game** — `games.view` (cả nhân viên), còn thêm/sửa/xoá là `games.create`, `games.update`, `games.delete` (chỉ quản lý và chủ).
 
 ## Ba vai trò có sẵn
 
@@ -1194,6 +1361,44 @@ Máy chỉ cần im 45 giây là bị đánh ngoại tuyến, nên mạng chập
 Máy trạm không giữ kết nối tới máy chủ. Thường là dịch vụ nền đã bị tắt. Bấm **Bật** dịch vụ trong `services.msc` — người dùng thường cũng bật được, không cần tài khoản quản trị.
 
 Lưu ý: **lệnh không tới nơi thì phiên chơi giữ nguyên**. Hệ thống không kết phiên khi chưa chắc khách đã rời máy.
+
+### Bật máy (Wake-on-LAN) báo thành công mà máy không dậy
+
+Hệ thống chỉ biết gói "đánh thức" đã phát ra khỏi máy chủ, không biết máy có nhận được không. Kiểm lần lượt:
+
+1. **BIOS và card mạng** của máy trạm đã bật Wake-on-LAN chưa, và Windows đã tắt Fast Startup chưa. Thiếu một trong ba thì gói tới nơi cũng không có máy nào thức.
+2. **Máy chủ có cùng mạng LAN với máy trạm không.** Gói chỉ đi trong mạng con `/24` của IP máy từng báo (và tới `255.255.255.255`); khác mạng con hoặc phải qua router thì không tới.
+3. **Máy chủ chạy trong Docker?** Gói phát từ trong container có thể không ra tới mạng quán. Chưa kiểm tra.
+4. Báo *"máy chưa báo địa chỉ MAC"* thì máy chưa từng chạy phần mềm VNET: bật tay một lần cho nó báo địa chỉ MAC.
+
+### Điều khiển màn hình không mở được
+
+Lỗi hiện màu đỏ ở đầu cửa sổ. Theo câu báo:
+
+| Câu báo | Nguyên nhân | Sửa |
+|---|---|---|
+| *máy trạm chưa kết nối* | Máy đang ngoại tuyến | Xem [Máy hiện Ngoại tuyến](#máy-hiện-ngoại-tuyến) |
+| *máy chưa báo địa chỉ IP, chưa thể điều khiển từ xa* | Máy chưa gửi IP ở nhịp tim nào | Chờ một nhịp tim (15 giây) sau khi máy lên |
+| *không nối được VNC trên máy ...: máy trạm chưa cài TightVNC hoặc tường lửa chặn* | Bộ cài máy trạm được build mà **không có `tightvnc.msi`**, hoặc dịch vụ nền chưa cấu hình xong TightVNC, hoặc một tường lửa khác chặn cổng 5900 | Mở `service.log` của máy ([2.6c](#26c-nhật-ký-máy-trạm)), tìm dòng `[VNC]`. Dòng *chưa có TightVNC và không thấy tightvnc.msi cạnh vnet-client.exe* nghĩa là thiếu tệp — xem [Điều khiển máy từ xa](#điều-khiển-máy-từ-xa-nút-khác) |
+| *VNC từ chối mật khẩu — chờ nhịp tim kế tiếp rồi thử lại* | Máy vừa nhận mật khẩu VNC mới | Chờ khoảng 15 giây rồi bấm **Kết nối lại** |
+
+Không thấy mục **Điều khiển màn hình** trong menu **Khác** là do tài khoản chưa có quyền `machines.remote_desktop` (vai trò nhân viên mặc định không có).
+
+### Chụp màn hình hoặc Xem ứng dụng chờ mãi không ra
+
+Lệnh đã tới máy nhưng không có gì trả về. Hai lệnh này (cùng **Thông báo**) do **giao diện** máy trạm làm, không phải dịch vụ nền: giao diện không chạy hoặc đang treo thì không có ảnh. Mở `%LOCALAPPDATA%\VNET\logs\ui.log` trên máy đó ([2.6c](#26c-nhật-ký-máy-trạm)), tìm dòng `[remote] chụp màn hình thất bại` hoặc `[remote] gửi ảnh lên thất bại`. Giao diện bị tắt thì dịch vụ nền tự bật lại.
+
+### Game kẹt ở Lỗi, Chờ tải, hoặc quán không thấy bản mới
+
+| Thấy | Nguyên nhân hay gặp | Sửa |
+|---|---|---|
+| Trang chỉ hiện *"Máy chủ này chưa bật cập nhật game"* | Chưa đặt `GAME_ROLE`, hoặc chưa khởi động lại máy chủ sau khi sửa cấu hình | [1.7](#17-bật-cập-nhật-game-tuỳ-chọn) |
+| Máy chủ không lên, nhật ký có `Refusing to start: GAME_...` | Thiếu hoặc sai một biến `GAME_*` bắt buộc | Bảng biến ở [1.7](#17-bật-cập-nhật-game-tuỳ-chọn) |
+| Quán không thấy game mới, bản vẫn cũ, **trang không báo lỗi gì** | Quán không gọi được master, hoặc hai bên khác `GAME_CATALOG_KEY`. Chỉ nhật ký máy chủ có dòng `[game] đọc catalog của master: ...` | Từ máy chủ quán mở `<GAME_UPSTREAM_URL>/api/health` trong trình duyệt; so lại khoá hai bên |
+| Cột Phiên bản hiện `1 → 2` mà đứng im | Giờ hiện tại nằm ngoài **Khung giờ tự cập nhật**, hoặc công tắc **Tự cập nhật** của game đang tắt | Bấm **Tải ngay**, hoặc sửa khung giờ |
+| Lỗi *"Tải bị treo: ... không có thêm dữ liệu nào đúng hash"* | Master không phản hồi, hoặc master đổi tệp sau khi publish nên không mảnh nào khớp | Chờ máy tự thử lại (5, 10, 20 phút...) hoặc bấm **Tải ngay**. Bên master bấm **Publish ngay** để chốt lại bản. Đường truyền chậm hơn khoảng 7 kB/s thì tăng `GAME_STALL_TIMEOUT` |
+| Ở master, game mới thêm vẫn **Chưa có** | Thư mục chưa đứng yên đủ `GAME_STABLE_FOR` | Bấm **Publish ngay** |
+| Khách bấm **Chơi** báo không tìm thấy tệp chạy trên ổ game | Ô **Thư mục game trên máy trạm** sai chữ ổ, tệp chạy sai đường dẫn, hoặc máy diskless chưa khởi động lại sau lần cập nhật | So ô đó với chữ ổ game mà máy trạm thật sự thấy; khởi động lại máy |
 
 ### Đang dùng thì bị đá ra trang đăng nhập
 
