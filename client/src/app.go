@@ -106,6 +106,9 @@ type App struct {
 	// gõ cửa tới TRƯỚC lúc đó — panelKhoiDongXong hiện nó sau.
 	panelSan     bool
 	panelChoHien bool
+	// Thông báo quầy gửi tới đang chờ khách bấm "Đã hiểu" (notice.go). Chỉ cửa sổ phụ dùng.
+	noticeMu sync.Mutex
+	notices  []Notice
 	// thoat: cửa sổ phụ đang tắt thật (hết phiên). Bấm X thì chỉ ẩn.
 	thoat atomic.Bool
 	// prewarmRetry: số lần liên tiếp cửa sổ dựng sẵn chết lúc khởi động.
@@ -945,6 +948,7 @@ var panelTitles = map[string]string{
 	"attendance": "VNET · Điểm danh",
 	"feedback":   "VNET · Đánh giá",
 	"games":      "VNET · Game",
+	noticeMode:   "VNET · Thông báo",
 }
 
 // moMenuGameTuLoiTat: khách bấm lối tắt "Menu Game" trên desktop (gameshortcuts.go).
@@ -983,7 +987,7 @@ func (a *App) switchPanel(mode string) {
 	// Đo lại màn hình mỗi lần hiện: cửa sổ này dựng sẵn ẩn từ lúc khách đăng nhập và
 	// chỉ được căn lúc đó, nên khách đổi độ phân giải rồi mở Gọi món sẽ thấy nó nằm
 	// nguyên chỗ cũ — nửa dưới (nút thanh toán) tràn ra ngoài màn hình nhỏ hơn.
-	canhGiuaManHinh(a.ctx, 640, 480)
+	a.canhGiuaPanel(a.ctx, mode)
 	a.ShowWindow()
 }
 
@@ -1005,6 +1009,12 @@ func (a *App) panelKhoiDongXong() {
 // HidePanel ẩn cửa sổ phụ thay vì tắt, để lần mở sau hiện ngay.
 func (a *App) HidePanel() {
 	if a.windowMode != "" && a.ctx != nil {
+		// Hộp thông báo nổi trên mọi thứ tới khi khách đóng nó (ShowWindow): đóng bằng X
+		// cũng phải trả nó về như cũ, và thông báo đã bị gạt đi thì không hiện lại lần sau.
+		if a.panelModeNow() == noticeMode {
+			a.clearNotices()
+			wailsruntime.WindowSetAlwaysOnTop(a.ctx, false)
+		}
 		wailsruntime.WindowHide(a.ctx)
 	}
 }
@@ -1035,7 +1045,9 @@ func (a *App) ShowWindow() {
 	wailsruntime.WindowSetAlwaysOnTop(a.ctx, true)
 	go func() {
 		time.Sleep(1200 * time.Millisecond)
-		if a.ctx != nil && a.windowMode != "" {
+		// Hộp thông báo thì giữ nổi tới khi khách bấm "Đã hiểu": thông báo quầy gửi lúc
+		// khách đang chơi game mà chìm xuống sau game là khách không bao giờ thấy.
+		if a.ctx != nil && a.windowMode != "" && a.panelModeNow() != noticeMode {
 			wailsruntime.WindowSetAlwaysOnTop(a.ctx, false)
 		}
 	}()
@@ -1092,13 +1104,18 @@ func (a *App) OpenWindow(mode string) error {
 	default:
 		return fmt.Errorf("cửa sổ %q không hợp lệ", mode)
 	}
+	return a.spawnWindow(mode)
+}
 
+// spawnWindow chạy (hoặc gõ cửa) cửa sổ phụ. extra là tham số kèm theo lần gõ cửa — hiện
+// chỉ có --notice của hộp thông báo (notice.go).
+func (a *App) spawnWindow(mode string, extra ...string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
 
-	cmd := exec.Command(exe, "--window", mode)
+	cmd := exec.Command(exe, append([]string{"--window", mode}, extra...)...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
@@ -1659,7 +1676,7 @@ func (a *App) registerRemoteHandlers(c *WSClient) {
 		if body == "" {
 			return
 		}
-		a.locker.ShowMessage(title, body)
+		a.hienThongBao(title, body)
 	})
 
 	// Ba lệnh giám sát chạy Ở GIAO DIỆN, không ở dịch vụ nền: chụp màn hình cần

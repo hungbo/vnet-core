@@ -50,6 +50,8 @@ func main() {
 	// cửa thanh đang chạy, thanh đọc cờ trong SecondInstanceData. Khai báo để Parse
 	// không từ chối nó.
 	flag.String("open", "", "mở màn hình trên thanh điều khiển đang chạy: games")
+	// Nội dung thông báo của quầy cho --window notice (notice.go): base64 của một Notice.
+	thongBao := flag.String("notice", "", "nội dung hộp thông báo, đi kèm --window notice")
 	flag.Parse()
 
 	// Lệnh cài/gỡ/đặt tài khoản chạy tay trên console: để nhật ký ra màn hình như cũ.
@@ -86,7 +88,7 @@ func main() {
 	}
 
 	if *windowMode != "" {
-		runChildWindow(*windowMode)
+		runChildWindow(*windowMode, *thongBao)
 		return
 	}
 
@@ -373,7 +375,10 @@ func centeredGeometry(screenW, screenH, minW, minH int) (w, h, x, y int) {
 // SingleInstanceLock làm hai việc cùng lúc: chặn mở hai cửa sổ thực đơn, và cho
 // tiến trình khác "gõ cửa" để đánh thức cửa sổ đang chạy. Đó chính là cơ chế
 // hiện cửa sổ hỗ trợ lên trên khi có tin nhắn tới — không phải viết IPC riêng.
-func runChildWindow(mode string) {
+//
+// thongBao là nội dung --notice của lần chạy này (chỉ có khi mode là "notice"): cửa sổ
+// phụ chưa chạy thì chính lần khởi động đầu mang thông báo tới.
+func runChildWindow(mode, thongBao string) {
 	app := NewApp()
 	// Mọi màn hình phụ chạy chung MỘT tiến trình (xem App.panelMode). Lần đầu
 	// được gọi là "prewarm": dựng ẩn ngay khi khách đăng nhập, chờ sẵn.
@@ -386,6 +391,15 @@ func runChildWindow(mode string) {
 		hidden = true
 	} else {
 		app.panelMode = mode
+	}
+	if mode == noticeMode {
+		// Dựng ẩn, tới OnStartup mới căn cỡ hộp nhỏ rồi hiện lên và đặt nổi (panelChoHien →
+		// switchPanel): hiện luôn cỡ 960×680 thì khách thấy một cửa sổ to nháy rồi co lại.
+		hidden = true
+		app.panelChoHien = true
+		if n, ok := decodeNotice(thongBao); ok {
+			app.addNotice(n)
+		}
 	}
 
 	err := wails.Run(&options.App{
@@ -404,19 +418,26 @@ func runChildWindow(mode string) {
 			// đang chạy đổi sang đúng màn hình và hiện lên.
 			OnSecondInstanceLaunch: func(d options.SecondInstanceData) {
 				if m := windowArg(d.Args); m != "" && m != "prewarm" {
+					if m == noticeMode {
+						// Xếp thông báo vào hàng TRƯỚC khi đổi màn hình: màn hình thông
+						// báo đọc hàng chờ ngay lúc dựng.
+						if n, ok := decodeNotice(noticeArgOf(d.Args)); ok {
+							app.addNotice(n)
+						}
+					}
 					app.switchPanel(m)
 				}
 			},
 		},
 		OnStartup: func(ctx context.Context) {
 			app.Startup(ctx)
-			canhGiuaManHinh(ctx, 640, 480)
+			app.canhGiuaPanel(ctx, app.panelModeNow())
 			app.panelKhoiDongXong()
 		},
 		// Xem ghi chú ở runDock: OnStartup đua với WindowCenter của Wails, nên
 		// lần đặt vị trí ăn thua là lần này.
 		OnDomReady: func(ctx context.Context) {
-			canhGiuaManHinh(ctx, 640, 480)
+			app.canhGiuaPanel(ctx, app.panelModeNow())
 		},
 		// Bấm X chỉ ẩn: tắt hẳn là lần mở sau phải dựng lại từ đầu. Hết phiên
 		// thì thanh chính giết tiến trình, hoặc Logout đặt cờ thoát.

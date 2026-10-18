@@ -16,6 +16,8 @@ export function CreateRoom(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function CurrentLogin():Promise<string>;
 
+export function DismissNotices(arg1:number):Promise<string>;
+
 export function GameIcon(arg1:string):Promise<string>;
 
 export function GetAttendanceStatus():Promise<string>;
@@ -37,6 +39,8 @@ export function GetMyOrders():Promise<string>;
 export function GetMemberInfo():Promise<string>;
 
 export function GetMenu(arg1:string):Promise<string>;
+
+export function GetNotices():Promise<string>;
 
 export function GetNotifications():Promise<string>;
 

@@ -47,6 +47,13 @@ const DEV_GAMES = [
 
 let nguoiDangDangNhap = { id: 'dev', username: 'khach', full_name: 'Khách Thử', role: 'member' }
 
+// Hàng chờ hộp thông báo của quầy (notice.go) — cùng luật với Go: trả mới nhất trước, và
+// "Đã hiểu" chỉ gạt những cái có `at` tới mốc khách đã đọc. Xem hộp ở ?window=notice;
+// bắn thêm một thông báo lúc hộp đang mở bằng __vnetNotice('nội dung') trong Console.
+let devNotices = [
+	{ title: 'Thông báo', body: 'Quầy sẽ bảo trì máy chủ lúc 03:00 sáng mai, khoảng 15 phút. Bạn nhớ lưu game trước nhé.', at: Date.now() - 120000 },
+]
+
 // Màn hình & chuột giả cho trang Cài đặt. Đủ độ phân giải có nhiều mức Hz (lọc Hz theo
 // độ phân giải) và một độ phân giải chỉ có một mức. Sắp như Go trả: rộng, cao, Hz giảm dần.
 const DEV_DISPLAY_MODES = [
@@ -80,6 +87,11 @@ export function installDevWailsStub() {
 	window.__vnetEmit = (event: string, data: unknown) => {
 		(handlers[event] || []).forEach(fn => fn(data))
 		return (handlers[event] || []).length
+	}
+
+	window.__vnetNotice = (body: string, title = 'Thông báo') => {
+		devNotices.push({ title, body, at: Date.now() })
+		window.__vnetEmit('vnet:panel:mode', 'notice')
 	}
 
 	window.runtime = {
@@ -188,6 +200,11 @@ export function installDevWailsStub() {
 					return ok(undefined)
 				},
 				ShowWindow: () => ok(undefined),
+				GetNotices: () => ok(JSON.stringify([...devNotices].reverse())),
+				DismissNotices: (upTo: number) => {
+					devNotices = devNotices.filter(n => n.at > upTo)
+					return ok(JSON.stringify([...devNotices].reverse()))
+				},
 				// Nút thu nhỏ của DockTitleBar. Ngoài Wails không có cửa sổ nào để thu nhỏ:
 				// chỉ ghi log để thấy nút đã được nối dây.
 				MinimiseDock: () => { console.info('[dev-stub] MinimiseDock'); return ok(undefined) },
