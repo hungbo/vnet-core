@@ -1,0 +1,138 @@
+package response
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+type Response struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}
+
+type PaginatedData struct {
+	Items    interface{} `json:"items"`
+	Total    int64       `json:"total"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"page_size"`
+}
+
+func Success(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusOK, Response{
+		Code:    0,
+		Message: "success",
+		Data:    data,
+	})
+}
+
+func SuccessWithMessage(c *gin.Context, message string, data interface{}) {
+	c.JSON(http.StatusOK, Response{
+		Code:    0,
+		Message: message,
+		Data:    data,
+	})
+}
+
+func Created(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusCreated, Response{
+		Code:    0,
+		Message: "created",
+		Data:    data,
+	})
+}
+
+func Paginated(c *gin.Context, items interface{}, total int64, page, pageSize int) {
+	c.JSON(http.StatusOK, Response{
+		Code:    0,
+		Message: "success",
+		Data: PaginatedData{
+			Items:    items,
+			Total:    total,
+			Page:     page,
+			PageSize: pageSize,
+		},
+	})
+}
+
+func Error(c *gin.Context, httpCode int, message string) {
+	c.JSON(httpCode, Response{
+		Code:    httpCode,
+		Message: message,
+		Data:    nil,
+	})
+}
+
+func BadRequest(c *gin.Context, message string) {
+	Error(c, http.StatusBadRequest, message)
+}
+
+func Unauthorized(c *gin.Context, message string) {
+	Error(c, http.StatusUnauthorized, message)
+}
+
+func Forbidden(c *gin.Context, message string) {
+	Error(c, http.StatusForbidden, message)
+}
+
+// TokenExpired returns 401 with code 9999, matching admin's VITE_SERVICE_EXPIRED_TOKEN_CODES
+func TokenExpired(c *gin.Context) {
+	c.JSON(http.StatusUnauthorized, Response{
+		Code:    9999,
+		Message: "Token expired",
+		Data:    nil,
+	})
+}
+
+// ForceLogout returns 401 with code 8888, matching admin's VITE_SERVICE_LOGOUT_CODES
+func ForceLogout(c *gin.Context) {
+	c.JSON(http.StatusUnauthorized, Response{
+		Code:    8888,
+		Message: "Session expired, please login again",
+		Data:    nil,
+	})
+}
+
+// SessionExpired returns 401 with code 7777, matching admin's VITE_SERVICE_MODAL_LOGOUT_CODES
+func SessionExpired(c *gin.Context) {
+	c.JSON(http.StatusUnauthorized, Response{
+		Code:    7777,
+		Message: "Session expired",
+		Data:    nil,
+	})
+}
+
+func NotFound(c *gin.Context, message string) {
+	Error(c, http.StatusNotFound, message)
+}
+
+// Conflict: yêu cầu hợp lệ nhưng trạng thái dữ liệu không cho phép — điển hình
+// là xoá một bản ghi còn dữ liệu phụ thuộc.
+//
+// Tách khỏi 400 để giao diện phân biệt được "người dùng gõ sai" với "không được
+// phép lúc này": cái đầu cần sửa ô nhập, cái sau cần một thao tác khác hẳn (vô
+// hiệu hoá thay vì xoá).
+func Conflict(c *gin.Context, message string) {
+	Error(c, http.StatusConflict, message)
+}
+
+// RequestIDKey: khoá trong gin.Context nơi middleware.RequestID cất mã của yêu
+// cầu đang xử lý.
+const RequestIDKey = "request_id"
+
+// InternalError trả 500 với câu thân thiện; err là lỗi gốc và KHÔNG gửi cho
+// client — nó được gắn vào c.Errors để middleware.Logger ghi vào nhật ký.
+//
+// Trước đây phần lớn handler chỉ trả "Failed to fetch ..." và bỏ err, nên log
+// chỉ còn "500 /api/..." mà không ai biết vì sao. Mã yêu cầu được nối vào câu
+// báo lỗi để người dùng đọc lại cho dev, và dev tìm đúng dòng log đó.
+func InternalError(c *gin.Context, message string, err error) {
+	if err != nil {
+		_ = c.Error(err)
+	}
+	if id := c.GetString(RequestIDKey); id != "" {
+		message += " (mã lỗi: " + id + ")"
+	}
+	Error(c, http.StatusInternalServerError, message)
+}

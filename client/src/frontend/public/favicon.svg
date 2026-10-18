@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="VNET">
+  <defs>
+    <linearGradient id="vnet-m" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4C7DFF"/>
+      <stop offset="1" stop-color="#7B5CFF"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#0D1017"/>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="none" stroke="url(#vnet-m)" stroke-width="10"/>
+  <path transform="translate(24 0) skewX(-12)" fill="url(#vnet-m)"
+        d="M48 56 H96 L128 158 L160 56 H208 L152 204 H104 Z"/>
+</svg>

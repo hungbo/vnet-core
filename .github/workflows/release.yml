@@ -1,112 +1,241 @@
 name: Release
 
+# Đẩy tag `server-X.Y.Z` hoặc `client-X.Y.Z`  → dựng bộ cài rồi đăng lên GitHub Release (Pre-release).
+# Đẩy nhánh `ci/**`                          → dựng thử, KHÔNG tạo Release; tệp nằm ở mục Artifacts của lần chạy.
+#
+# Tag chỉ chạy workflow nằm TRONG commit mà nó trỏ tới: tag cắt trên commit trước khi có tệp này sẽ không kích hoạt gì.
+# Quy trình đầy đủ và cách làm lại khi lỗi: docs/PHAT-HANH.md
+
 on:
   push:
     tags:
-      - 'v*'
+      - 'server-*'
+      - 'client-*'
+    branches:
+      - 'ci/**'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  # Đọc loại và số phiên bản từ tên tag, một chỗ duy nhất cho mọi job bên dưới.
+  meta:
+    name: Đọc tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      kind: ${{ steps.v.outputs.kind }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          set -euo pipefail
+          ref="$GITHUB_REF_NAME"
+          case "$GITHUB_REF_TYPE:$ref" in
+            tag:server-*) kind=server; version=${ref#server-} ;;
+            tag:client-*) kind=client; version=${ref#client-} ;;
+            *)            kind=ci;     version=0.0.0-ci ;;
+          esac
+          if [ "$kind" != ci ] && ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '$ref' phải có dạng server-X.Y.Z hoặc client-X.Y.Z"
+            exit 1
+          fi
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # ------------------------------------------------------------------ server
   server:
-    name: Build Server (Linux)
+    name: Bộ cài máy chủ (Windows)
+    needs: meta
+    if: needs.meta.outputs.kind != 'client'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      # `pnpm install` chạy script prepare của simple-git-hooks, nó đẻ ra admin/.git.
+      SKIP_INSTALL_SIMPLE_GIT_HOOKS: '1'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: '1.22'
-      - uses: actions/setup-node@v4
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      # Cùng bản chính với máy phát triển: pnpm-workspace.yaml dùng khoá allowBuilds của pnpm 11.
+      - uses: pnpm/action-setup@v6
         with:
-          node-version: '20'
+          version: 11.22.0
 
-      - name: Build Admin UI
-        run: |
-          cd admin
-          npm ci
-          npm run build
-          mkdir -p ../backend/cmd/server/embed
-          cp -r dist/* ../backend/cmd/server/embed/
-
-      - name: Build Server (embed admin)
-        run: |
-          cd backend
-          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" -o vnet-server ./cmd/server
-
-      - name: Generate checksum
-        run: cd backend && sha256sum vnet-server > vnet-server.sha256
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/setup-node@v7
         with:
-          name: server
-          path: |
-            backend/vnet-server
-            backend/vnet-server.sha256
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: admin/pnpm-lock.yaml
 
+      - name: Cài makensis
+        run: sudo apt-get update && sudo apt-get install -y nsis
+
+      # PostgreSQL portable ~320 MB. Script tự kiểm SHA-256 nên cache hỏng cũng không lọt qua.
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/vnet-build
+          key: vnet-build-${{ hashFiles('scripts/build-server-windows.sh') }}
+
+      - name: Dựng bộ cài
+        env:
+          VNET_BUILD_CACHE: ${{ runner.temp }}/vnet-build
+        run: bash scripts/build-server-windows.sh "$VERSION"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server-setup
+          path: dist/vnet-server-setup-*.exe
+          if-no-files-found: error
+          retention-days: 3
+
+  # ------------------------------------------------------------------ client
+  # Hai tệp .exe thô: biên dịch chéo được trên Linux. Bộ cài Inno Setup thì chỉ chạy trên Windows (job sau).
   client:
-    name: Build Client + Agent (Windows)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.22'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Build Agent
-        run: |
-          cd agent
-          go build -ldflags="-s -w -H windowsgui" -o vnet-agent.exe ./main.go
-
-      - name: Setup Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-      - name: Build Client
-        run: |
-          cd client
-          wails build -platform windows/amd64
-
-      - name: Pack
-        run: |
-          mkdir dist
-          copy client\build\bin\VNET.exe dist\
-          copy agent\vnet-agent.exe dist\
-          cd dist
-          echo @echo off > install.bat
-          echo title Cai dat VNET Agent >> install.bat
-          echo echo Cai dat VNET Agent... >> install.bat
-          echo start /wait vnet-agent.exe --install >> install.bat
-          echo echo Hoan tat! >> install.bat
-          echo pause >> install.bat
-
-      - name: Create ZIP
-        run: |
-          cd dist
-          tar -a -c -f ../vnet-client-windows-${{ github.ref_name }}.zip *
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: client
-          path: vnet-client-windows-*.zip
-
-  release:
-    name: Create Release
-    needs: [server, client]
+    name: Máy khách (exe)
+    needs: meta
+    if: needs.meta.outputs.kind != 'server'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
+      - uses: actions/checkout@v7
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - uses: actions/setup-go@v7
         with:
-          files: |
-            vnet-server*
-            vnet-client-windows-*.zip
-          generate_release_notes: true
+          go-version-file: client/go.mod
+          cache-dependency-path: client/go.sum
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/src/frontend/package-lock.json
+
+      # Không truyền tham số thứ hai: script mặc định dựng cả amd64 lẫn arm64.
+      - name: Dựng vnet-client-{amd64,arm64}.exe
+        run: bash scripts/build-client.sh "$VERSION"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client-exe
+          path: client/dist/*.exe
+          if-no-files-found: error
+          retention-days: 3
+
+  client-installer:
+    name: Bộ cài máy khách (Windows)
+    needs: [meta, client]
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: client-exe
+          path: client/dist
+
+      # tightvnc.msi bị .gitignore, mà vnet-client.iss bỏ qua nó nếu thiếu (skipifsourcedoesntexist)
+      # — thiếu thì bộ cài vẫn build, chỉ là máy trạm âm thầm không remote desktop được.
+      # Đổi bản: sửa cả URL lẫn SHA-256.
+      - name: Tải TightVNC
+        shell: pwsh
+        run: |
+          $url = 'https://www.tightvnc.com/download/2.8.89/tightvnc-2.8.89-gpl-setup-64bit.msi'
+          $sha = 'dff8d7e40a81e0b86ba1d9d5cc0d4f22d08354c50c9cbdc0825bbb6ccfb1073c'
+          Invoke-WebRequest -Uri $url -OutFile installer\tightvnc.msi
+          $got = (Get-FileHash installer\tightvnc.msi -Algorithm SHA256).Hash
+          if ($got -ne $sha) { throw "SHA-256 của tightvnc.msi không khớp: $got" }
+
+      - name: Dựng bộ cài (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "Không thấy Inno Setup tại $iscc" }
+          & $iscc "/DVersion=$env:VERSION" '/DSourceExe=..\client\dist\vnet-client-amd64.exe' installer\vnet-client.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc thoát với mã $LASTEXITCODE" }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: client-setup
+          path: dist/vnet-client-setup-*.exe
+          if-no-files-found: error
+          retention-days: 3
+
+  # ----------------------------------------------------------------- release
+  # Ghi chú Release nằm ở .github/release-notes/ để sửa chữ không phải đụng vào quy trình.
+  release-server:
+    name: Đăng Release máy chủ
+    needs: [meta, server]
+    if: needs.meta.outputs.kind == 'server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/release-notes
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: server-setup
+          path: out
+
+      - name: Tạo Release
+        run: |
+          set -euo pipefail
+          (cd out && sha256sum "vnet-server-setup-$VERSION.exe" > SHA256SUMS.txt)
+          sed -e "s/@VERSION@/$VERSION/g" -e "s#@REPO@#$GH_REPO#g" \
+              -e '/@SHA256SUMS@/{r out/SHA256SUMS.txt' -e d -e '}' \
+              .github/release-notes/server.md > notes.md
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --verify-tag --prerelease \
+            --title "VNET Server $VERSION" --notes-file notes.md
+
+  release-client:
+    name: Đăng Release máy khách
+    needs: [meta, client, client-installer]
+    if: needs.meta.outputs.kind == 'client'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/release-notes
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: client-*
+          merge-multiple: true
+          path: out
+
+      - name: Tạo Release
+        run: |
+          set -euo pipefail
+          (cd out && sha256sum "vnet-client-setup-$VERSION.exe" vnet-client-amd64.exe vnet-client-arm64.exe > SHA256SUMS.txt)
+          sed -e "s/@VERSION@/$VERSION/g" -e "s#@REPO@#$GH_REPO#g" \
+              -e '/@SHA256SUMS@/{r out/SHA256SUMS.txt' -e d -e '}' \
+              .github/release-notes/client.md > notes.md
+          gh release create "$GITHUB_REF_NAME" out/* \
+            --verify-tag --prerelease \
+            --title "VNET Client $VERSION" --notes-file notes.md

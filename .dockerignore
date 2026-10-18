@@ -1,0 +1,45 @@
+# Keep the build context small and reproducible. Everything the image needs is
+# rebuilt inside the Dockerfile, so local build output is excluded — stale
+# artifacts leaking into the image would be worse than a slightly longer build.
+
+.git
+.github
+.gitnexus
+.claude
+
+# Rebuilt inside the image.
+**/node_modules
+admin/dist
+client/src/frontend/dist
+backend/cmd/server/embed/*
+!backend/cmd/server/embed/index.html
+backend/vnet-server
+backend/tmp
+
+# The desktop client is built and shipped separately.
+client
+
+# Runtime data belongs in volumes, never baked into the image.
+backend/uploads
+
+# Local secrets must not reach the image; the compose file passes configuration
+# through the environment instead.
+.env
+backend/.env
+
+# NOT ignored, despite the rules above: admin/.env and admin/.env.prod are
+# build-time Vite configuration with no secrets, and the admin cannot be built
+# without them.
+!admin/.env
+!admin/.env.prod
+!admin/.env.test
+
+# Editor and OS noise.
+.DS_Store
+.idea
+.vscode
+*.swp
+
+# Documentation does not affect the build.
+*.md
+!README.md

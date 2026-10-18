@@ -1,0 +1,11 @@
+{
+	"name": "VNET Client",
+	"assetdir": "frontend/dist",
+	"frontend:install": "npm install",
+	"frontend:build": "npm run build",
+	"outputfilename": "vnet-client",
+	"author": {
+		"name": "VNET",
+		"email": "dev@vnet.net"
+	}
+}

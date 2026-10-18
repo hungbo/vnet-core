@@ -1,0 +1,1077 @@
+package service
+
+import (
+	"math"
+	"testing"
+	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/vnet/core/internal/hub"
+	"github.com/vnet/core/internal/model"
+	"github.com/vnet/core/pkg/pagination"
+	"github.com/vnet/core/pkg/utils"
+	"gorm.io/gorm"
+)
+
+func TestSessionService_GetSession_Found(t *testing.T) {
+	db, mock := newMockDB(t)
+	wsHub := hub.New(nil)
+	svc := NewSessionService(db, wsHub, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 ORDER BY "machine_sessions"."id" LIMIT \$2`).
+		WithArgs("s1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "member_id", "is_active", "started_at", "created_at"}).
+			AddRow("s1", "m1", "mem1", true, testNow, testNow))
+
+	// Unscoped: máy bị xoá mềm mà khách còn ngồi thì phiên vẫn chạy, nên truy vấn
+	// KHÔNG được lọc theo deleted_at.
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 ORDER BY "machines"\."id" LIMIT \$2`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}).AddRow("m1", "M-001"))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2`).
+		WithArgs("mem1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name"}).AddRow("mem1", "Test Member"))
+
+	result, err := svc.GetSession("s1")
+	require.NoError(t, err)
+	assert.Equal(t, "m1", result.MachineID)
+	assert.Equal(t, "M-001", result.MachineCode)
+	assert.Equal(t, "Test Member", result.MemberName)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSessionService_GetSession_NotFound(t *testing.T) {
+	db, mock := newMockDB(t)
+	wsHub := hub.New(nil)
+	svc := NewSessionService(db, wsHub, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 ORDER BY "machine_sessions"."id" LIMIT \$2`).
+		WithArgs("nonexistent", 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	_, err := svc.GetSession("nonexistent")
+	assert.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSessionService_GetActiveSessions(t *testing.T) {
+	db, mock := newMockDB(t)
+	wsHub := hub.New(nil)
+	svc := NewSessionService(db, wsHub, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE is_active = \$1`).
+		WithArgs(true).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "member_id", "is_active", "started_at", "created_at"}).
+			AddRow("s1", "m1", "mem1", true, testNow, testNow))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 ORDER BY "machines"\."id" LIMIT \$2`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}).AddRow("m1", "M-001"))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2`).
+		WithArgs("mem1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name"}).AddRow("mem1", "Test Member"))
+
+	result, err := svc.GetActiveSessions()
+	require.NoError(t, err)
+	assert.Len(t, result, 1)
+	assert.Equal(t, "M-001", result[0].MachineCode)
+	// Phiên đang chạy phải có số phút đã chơi; cột duration_minutes chỉ được ghi
+	// lúc trả máy nên trước đây trường này luôn null.
+	require.NotNil(t, result[0].DurationMinutes)
+	assert.GreaterOrEqual(t, *result[0].DurationMinutes, 0)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSessionService_StartSession_WithCombo(t *testing.T) {
+	db, mock := newMockDB(t)
+	wsHub := hub.New(nil)
+	svc := NewSessionService(db, wsHub, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\) AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$3`).
+		WithArgs("m1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE \(id = \$1 AND is_active = \$2\) AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$3`).
+		WithArgs("mem1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name", "is_active"}).
+			AddRow("mem1", "Test Member", true))
+
+	// Đổi từ Count sang First: thông báo "đang chơi máy nào" cần dòng phiên,
+	// không chỉ đếm. Không có dòng nào = hội viên chưa chơi máy nào.
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WithArgs("mem1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectBegin()
+	// Mọi kiểm tra ở trên chạy ngoài transaction. StartSession khoá hội viên rồi
+	// tới máy (đúng thứ tự EndSessionAt dùng) và kiểm lại trong transaction, nếu
+	// không hai lệnh mở phiên song song đều lọt.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_active"}).AddRow("mem1", true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
+	// Chốt chặn máy bận đếm phiên đang chạy thay vì tin cột status — status bị
+	// tác vụ nền mark-offline ghi đè nên không còn đáng tin.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE machine_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	// Chốt giữ máy cho lịch đặt: không có lịch nào đang giữ máy này.
+	mock.ExpectQuery(`SELECT \* FROM "machine_bookings" WHERE .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectExec(`UPDATE "machines" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectQuery(`SELECT \* FROM "combo_purchases" WHERE id = \$1 ORDER BY "combo_purchases"."id" LIMIT \$2`).
+		WithArgs("cp1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "combo_id", "member_id", "activated", "remaining_minutes", "created_at"}).
+			AddRow("cp1", "c1", "mem1", true, 120, testNow))
+
+	mock.ExpectQuery(`SELECT \* FROM "combos" WHERE id = \$1 AND "combos"\."deleted_at" IS NULL ORDER BY "combos"\."id" LIMIT \$2`).
+		WithArgs("c1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "type", "total_minutes", "slot_end", "created_at"}).
+			AddRow("c1", "Prepaid 2h", "prepaid", 120, "", testNow))
+
+	mock.ExpectQuery(`INSERT INTO "machine_sessions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("s1"))
+
+	// Gắn phiên vào gói phải chạy SAU khi phiên đã có ID. Lệnh này trước đây
+	// nằm ngay sau chỗ đọc gói, tức trước INSERT, nên ghi current_session_id =
+	// "" vào cột uuid: PostgreSQL từ chối, transaction hỏng, và người dùng nhận
+	// "current transaction is aborted (SQLSTATE 25P02)" — mở phiên bằng gói trả
+	// trước không bao giờ thành công.
+	mock.ExpectExec(`UPDATE "combo_purchases" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Mở máy ghi lại lần ghé gần nhất của hội viên.
+	mock.ExpectExec(`UPDATE "members" SET "last_visit_at"`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	result, err := svc.StartSession(&StartRequest{
+		MachineID:       "m1",
+		MemberID:        "mem1",
+		ComboPurchaseID: "cp1",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "s1", result.ID)
+	assert.Equal(t, "M-001", result.MachineCode)
+	assert.Equal(t, "prepaid", result.ComboType)
+	assert.NotNil(t, result.RemainingMinutes)
+	assert.Equal(t, 120, *result.RemainingMinutes)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSessionService_StartSession_ComboNotFound(t *testing.T) {
+	db, mock := newMockDB(t)
+	wsHub := hub.New(nil)
+	svc := NewSessionService(db, wsHub, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\) AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$3`).
+		WithArgs("m1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE \(id = \$1 AND is_active = \$2\) AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$3`).
+		WithArgs("mem1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name", "is_active"}).
+			AddRow("mem1", "Test Member", true))
+
+	// Đổi từ Count sang First: thông báo "đang chơi máy nào" cần dòng phiên,
+	// không chỉ đếm. Không có dòng nào = hội viên chưa chơi máy nào.
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WithArgs("mem1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectBegin()
+	// Mọi kiểm tra ở trên chạy ngoài transaction. StartSession khoá hội viên rồi
+	// tới máy (đúng thứ tự EndSessionAt dùng) và kiểm lại trong transaction, nếu
+	// không hai lệnh mở phiên song song đều lọt.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_active"}).AddRow("mem1", true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
+	// Chốt chặn máy bận đếm phiên đang chạy thay vì tin cột status — status bị
+	// tác vụ nền mark-offline ghi đè nên không còn đáng tin.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE machine_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	// Chốt giữ máy cho lịch đặt: không có lịch nào đang giữ máy này.
+	mock.ExpectQuery(`SELECT \* FROM "machine_bookings" WHERE .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectExec(`UPDATE "machines" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectQuery(`SELECT \* FROM "combo_purchases" WHERE id = \$1 ORDER BY "combo_purchases"."id" LIMIT \$2`).
+		WithArgs("nonexistent", 1).
+		WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectRollback()
+
+	_, err := svc.StartSession(&StartRequest{
+		MachineID:       "m1",
+		MemberID:        "mem1",
+		ComboPurchaseID: "nonexistent",
+	})
+	assert.EqualError(t, err, "không tìm thấy lượt mua gói cước")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSessionService_StartSession_ComboNotActivated(t *testing.T) {
+	db, mock := newMockDB(t)
+	wsHub := hub.New(nil)
+	svc := NewSessionService(db, wsHub, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\) AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$3`).
+		WithArgs("m1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE \(id = \$1 AND is_active = \$2\) AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$3`).
+		WithArgs("mem1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name", "is_active"}).
+			AddRow("mem1", "Test Member", true))
+
+	// Đổi từ Count sang First: thông báo "đang chơi máy nào" cần dòng phiên,
+	// không chỉ đếm. Không có dòng nào = hội viên chưa chơi máy nào.
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WithArgs("mem1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectBegin()
+	// Mọi kiểm tra ở trên chạy ngoài transaction. StartSession khoá hội viên rồi
+	// tới máy (đúng thứ tự EndSessionAt dùng) và kiểm lại trong transaction, nếu
+	// không hai lệnh mở phiên song song đều lọt.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_active"}).AddRow("mem1", true))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "M-001", "available", true))
+	// Chốt chặn máy bận đếm phiên đang chạy thay vì tin cột status — status bị
+	// tác vụ nền mark-offline ghi đè nên không còn đáng tin.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE machine_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	// Chốt giữ máy cho lịch đặt: không có lịch nào đang giữ máy này.
+	mock.ExpectQuery(`SELECT \* FROM "machine_bookings" WHERE .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectExec(`UPDATE "machines" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectQuery(`SELECT \* FROM "combo_purchases" WHERE id = \$1 ORDER BY "combo_purchases"."id" LIMIT \$2`).
+		WithArgs("cp1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "combo_id", "activated"}).
+			AddRow("cp1", "c1", false))
+	mock.ExpectRollback()
+
+	_, err := svc.StartSession(&StartRequest{
+		MachineID:       "m1",
+		MemberID:        "mem1",
+		ComboPurchaseID: "cp1",
+	})
+	assert.EqualError(t, err, "gói cước này chưa được kích hoạt")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSessionService_EndSession_WithCombo(t *testing.T) {
+	db, mock := newMockDB(t)
+	wsHub := hub.New(nil)
+	svc := NewSessionService(db, wsHub, NewAuditService(db))
+
+	// Load session (with ComboID set & RemainingMinutes)
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 ORDER BY "machine_sessions"."id" LIMIT \$3`).
+		WithArgs("s1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "member_id", "combo_id", "remaining_minutes", "is_active", "started_at", "created_at"}).
+			AddRow("s1", "m1", "mem1", "cp1", 120, true, testNow, testNow))
+
+	// Load machine
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "group_id", "status"}).
+			AddRow("m1", "M-001", nil, "in_use"))
+
+	// Số phút phải trả tiền nay tính từ ảnh chụp trên chính dòng phiên, nên
+	// không còn transaction chỉ để khoá combo_purchases rồi commit ngay — khoá
+	// đó nhả trước khi trừ đồng nào, không bảo vệ được gì.
+
+	// CalculateCost: load machine
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "group_id", "status"}).
+			AddRow("m1", "M-001", nil, "in_use"))
+
+	// Một transaction duy nhất cho toàn bộ phần ghi.
+	mock.ExpectBegin()
+
+	// Khoá phiên rồi đọc lại: bản đọc ở đầu hàm nằm ngoài transaction, nên hai
+	// lệnh trả máy song song đều thấy is_active=true và trừ tiền hai lần.
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 ORDER BY "machine_sessions"\."id" LIMIT \$3 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "charged_amount"}).AddRow("s1", int64(0)))
+
+	// Load member (snapshot GroupID)
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2`).
+		WithArgs("mem1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name", "balance", "group_id"}).
+			AddRow("mem1", "Test Member", int64(50000), nil))
+
+	// Trừ tiền chạy TRƯỚC khi lưu phiên: nó đặt charged_amount.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("mem1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name", "balance", "group_id"}).
+			AddRow("mem1", "Test Member", int64(50000), nil))
+
+	// SAVE member (balance deducted = 50000 - 0 = 50000)
+	mock.ExpectExec(`UPDATE "members" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Tiền phiên bằng 0 nên KHÔNG tạo dòng giao dịch 0₫ làm rác sổ; chỉ tra xem
+	// đã có dòng nào cho phiên này chưa.
+	mock.ExpectQuery(`SELECT \* FROM "member_transactions" WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	// SAVE session (ended)
+	mock.ExpectExec(`UPDATE "machine_sessions" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// SAVE machine (status=available)
+	mock.ExpectExec(`UPDATE "machines" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// SELECT purchase (deduct remaining_minutes)
+	mock.ExpectQuery(`SELECT \* FROM "combo_purchases" WHERE id = \$1 ORDER BY "combo_purchases"."id" LIMIT \$2`).
+		WithArgs("cp1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "combo_id", "remaining_minutes", "created_at"}).
+			AddRow("cp1", "c1", 120, testNow))
+
+	// UPDATE purchase (remaining_minutes = 120 - 0 = 120)
+	mock.ExpectExec(`UPDATE "combo_purchases" SET`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectCommit()
+
+	result, err := svc.EndSession("s1")
+	require.NoError(t, err)
+	assert.Equal(t, "s1", result.SessionID)
+	assert.Equal(t, "M-001", result.MachineCode)
+	assert.Equal(t, int64(0), result.TotalCost)
+	assert.Equal(t, int64(50000), result.BalanceBefore)
+	assert.Equal(t, int64(50000), result.BalanceAfter)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// The whole billing engine used to output zero because the only price field
+// could not be saved through the API and the tier table was never migrated.
+func TestSessionService_CalculateCost_UsesGroupRate(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups" WHERE id = \$1 AND "machine_groups"\."deleted_at" IS NULL ORDER BY "machine_groups"\."id" LIMIT \$2`).
+		WithArgs("g1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "VIP", int64(20000)))
+	// No member: tier lookup is skipped, time-of-day rate is consulted.
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	got, err := svc.CalculateCost("m1", "", mocThu(), 90)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(20000), got.PricePerHour)
+	assert.Equal(t, int64(30000), got.FinalCost) // 90 min at 20k/h
+	assert.Equal(t, int64(0), got.DiscountAmount)
+}
+
+// A member tier discount has to reach the bill; it never did.
+func TestSessionService_CalculateCost_AppliesMemberDiscount(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "Standard", int64(10000)))
+	mock.ExpectQuery(`SELECT \* FROM "members"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", "mg-gold"))
+	// No tier-specific rate, no time-based rate: fall through to the base rate.
+	mock.ExpectQuery(`SELECT \* FROM "machine_prices"`).WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectQuery(`SELECT \* FROM "member_groups"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "discount_percent"}).AddRow("mg-gold", 10.0))
+
+	got, err := svc.CalculateCost("m1", "mem-1", mocThu(), 60)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(10000), got.GrossCost)
+	assert.Equal(t, 10.0, got.DiscountPercent)
+	assert.Equal(t, int64(1000), got.DiscountAmount)
+	assert.Equal(t, int64(9000), got.FinalCost)
+}
+
+// A tier rate beats the group base rate.
+func TestSessionService_CalculateCost_MemberTierRateWins(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "Standard", int64(10000)))
+	mock.ExpectQuery(`SELECT \* FROM "members"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", "mg-vip"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_prices"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "price_per_hour"}).AddRow("mp1", int64(6000)))
+	mock.ExpectQuery(`SELECT \* FROM "member_groups"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "discount_percent"}).AddRow("mg-vip", 0.0))
+
+	got, err := svc.CalculateCost("m1", "mem-1", mocThu(), 60)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(6000), got.PricePerHour)
+	assert.Equal(t, int64(6000), got.FinalCost)
+}
+
+// Ending a session used to roll back when the member could not pay, leaving the
+// machine stuck on "in use" forever.
+func TestSessionService_EndSession_ShortBalanceLeavesDebtNotDeadlock(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	startedAt := time.Now().Add(-60 * time.Minute)
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 ORDER BY "machine_sessions"\."id" LIMIT \$3`).
+		WithArgs("s1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "member_id", "started_at", "is_active"}).
+			AddRow("s1", "m1", "mem-1", startedAt, true))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$2`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "group_id"}).AddRow("m1", "PC-01", "g1"))
+
+	// Cost lookup: 10k/hour, no tier or time override, no discount.
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "Std", int64(10000)))
+	mock.ExpectQuery(`SELECT \* FROM "members"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", nil))
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectBegin()
+
+	// Khoá phiên rồi đọc lại trong transaction (xem EndSessionAt).
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 ORDER BY "machine_sessions"\."id" LIMIT \$3 FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "charged_amount"}).AddRow("s1", int64(0)))
+
+	// Ảnh chụp nhóm hội viên lên dòng phiên.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", nil))
+
+	// 2000 bonus + 1000 balance against a 10000 fee -> 7000 of debt.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2 FOR UPDATE`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "bonus_balance"}).
+			AddRow("mem-1", int64(1000), int64(2000)))
+	mock.ExpectExec(`UPDATE "members" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	// Chưa có dòng session_fee nào cho phiên này → tạo mới.
+	mock.ExpectQuery(`SELECT \* FROM "member_transactions" WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`INSERT INTO "member_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("tx-1"))
+
+	mock.ExpectExec(`UPDATE "machine_sessions" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "machines" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	res, err := svc.EndSession("s1")
+
+	require.NoError(t, err, "ending a session must never be blocked by a short balance")
+	assert.Equal(t, int64(2000), res.BonusUsed)
+	assert.Equal(t, int64(7000), res.AmountUnpaid)
+	assert.Equal(t, int64(-7000), res.BalanceAfter)
+}
+
+// The debt is settled by refusing the next session, not by blocking the exit.
+// Đang chơi một máy mà mở máy khác thì bị chặn, và thông báo phải NÊU TÊN máy
+// đang chơi — bằng tiếng Việt, vì nó hiện thẳng lên màn hình khoá của khách.
+func TestSessionService_StartSession_DangChoiMayKhacThiChan(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\)`).
+		WithArgs("m2", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow("m2", "available"))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE \(id = \$1 AND is_active = \$2\)`).
+		WithArgs("mem1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem1", int64(50000)))
+	// Đã có phiên đang chạy trên máy M1 (mã "PC-05").
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WithArgs("mem1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "machine_code", "is_active"}).
+			AddRow("sess-old", "m1", "PC-05", true))
+
+	_, err := svc.StartSession(&StartRequest{MachineID: "m2", MemberID: "mem1"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PC-05", "thông báo phải nêu tên máy đang chơi")
+	assert.Contains(t, err.Error(), "trả máy")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSessionService_StartSession_RefusesMemberInDebt(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\) AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$3`).
+		WithArgs("m1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow("m1", "available"))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE \(id = \$1 AND is_active = \$2\) AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$3`).
+		WithArgs("mem-1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem-1", int64(-7000)))
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	// Trần nợ đọc từ nhóm cài đặt "limits"; nhóm rỗng ⇒ trần 0 ⇒ nợ nào cũng chặn.
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).
+		WithArgs("limits").
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
+
+	_, err := svc.StartSession(&StartRequest{MachineID: "m1", MemberID: "mem-1"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "vượt trần nợ")
+}
+
+// Trần nợ khác 0: khách nợ trong hạn vẫn mở được máy, quá hạn thì bị chặn.
+func TestSessionService_StartSession_AllowsDebtWithinMaxDebt(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\) AND "machines"\."deleted_at" IS NULL ORDER BY "machines"\."id" LIMIT \$3`).
+		WithArgs("m1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow("m1", "available"))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE \(id = \$1 AND is_active = \$2\) AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$3`).
+		WithArgs("mem-1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem-1", int64(-7000)))
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).
+		WithArgs("limits").
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}).
+			AddRow("limits", "max_debt", "10000"))
+
+	// Nợ 7.000 dưới trần 10.000 nên qua được chốt chặn nợ; dừng ở chốt kế tiếp
+	// (số dư 0 và không có gói) chứ không phải vì nợ.
+	_, err := svc.StartSession(&StartRequest{MachineID: "m1", MemberID: "mem-1"})
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "trần nợ")
+}
+
+// billableMinutes quyết định khách phải trả tiền bao nhiêu phút. Gói khung giờ
+// từng bị tính tiền LẦN HAI theo giá lẻ vì loại gói này có TotalMinutes = 0 nên
+// RemainingMinutes = 0 và phép trừ không che được gì.
+func TestBillableMinutes(t *testing.T) {
+	prepaid := 60
+	zero := 0
+	comboID := "cp1"
+
+	cases := []struct {
+		name    string
+		session model.MachineSession
+		elapsed int
+		want    int
+	}{
+		{"không gói: trả tiền toàn bộ", model.MachineSession{}, 90, 90},
+		{"gói trả trước phủ hết", model.MachineSession{ComboID: &comboID, RemainingMinutes: &prepaid}, 45, 0},
+		{"gói trả trước phủ một phần", model.MachineSession{ComboID: &comboID, RemainingMinutes: &prepaid}, 90, 30},
+		{
+			"gói khung giờ: không trả thêm đồng nào",
+			model.MachineSession{ComboID: &comboID, ComboType: "fixed_slot", RemainingMinutes: &zero},
+			300, 0,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assert.Equal(t, c.want, billableMinutes(&c.session, c.elapsed))
+		})
+	}
+}
+
+// Tính tiền theo phút là phép TÍCH LUỸ TỚI ĐÍCH. Hai tính chất phải giữ, nếu
+// không là trừ sai tiền của khách:
+//
+//   - Idempotent: gọi lại trên cùng số phút thì lần hai trừ 0₫.
+//   - Không lệch do làm tròn: trừ dần 60 lượt phải bằng ĐÚNG một lượt tính trọn
+//     60 phút. math.Ceil áp lên tổng, cộng dồn từng phút thì lệch tới +60₫/giờ.
+func TestChargeAccrualIsIdempotentAndMatchesSingleCharge(t *testing.T) {
+	const pricePerHour = int64(10000)
+
+	// cost mô phỏng đúng phép tính của CalculateCost: làm tròn lên trên TỔNG.
+	cost := func(minutes int) int64 {
+		if minutes <= 0 {
+			return 0
+		}
+		return int64(math.Ceil(float64(minutes) * float64(pricePerHour) / 60.0))
+	}
+
+	charged := int64(0)
+	total := int64(0)
+	for m := 1; m <= 60; m++ {
+		target := cost(m)
+		delta := target - charged
+		if delta < 0 {
+			delta = 0
+		}
+		total += delta
+		charged = target
+
+		// Gọi lại ngay trên cùng số phút: không được trừ thêm đồng nào.
+		again := cost(m) - charged
+		if again < 0 {
+			again = 0
+		}
+		assert.Equal(t, int64(0), again, "phút %d: lượt tính lặp lại phải trừ 0₫", m)
+	}
+
+	assert.Equal(t, cost(60), total,
+		"tổng trừ dần phải khớp từng đồng với một lượt tính trọn phiên")
+	assert.Equal(t, pricePerHour, total, "một giờ ở giá %d₫ phải thu đúng %d₫", pricePerHour, pricePerHour)
+}
+
+// Máy đã có phiên đang chạy thì không được mở phiên thứ hai, KỂ CẢ khi cột
+// status không còn là "in_use".
+//
+// Chốt chặn cũ chỉ so `machine.Status == "in_use"`. Nhưng status là cột bị tác
+// vụ nền machines:mark-offline ghi đè: máy ngừng gửi nhịp tim quá hạn thì bị
+// đặt về "offline" ngay cả khi khách đang ngồi chơi. Sau đó quầy mở được phiên
+// thứ hai trên đúng máy đó — hai người bị tính tiền cho một chỗ ngồi. Dựng lại
+// được trên hệ thống thật: PC-03 có 1 phiên, tác vụ nền đặt nó offline sau 3
+// giây, lệnh mở phiên tiếp theo chạy lọt và bảng có 2 phiên cùng máy.
+func TestSessionService_StartSession_ChanPhienTrungMayDuStatusKhongPhaiInUse(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	// status = "offline" — đúng cảnh tác vụ nền vừa ghi đè.
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE \(id = \$1 AND is_active = \$2\)`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "PC-03", "offline", true))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE \(id = \$1 AND is_active = \$2\)`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name", "is_active", "balance"}).
+			AddRow("mem2", "Trần Thị Bích", true, 100000))
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "is_active", "balance"}).AddRow("mem2", true, 100000))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status", "is_active"}).
+			AddRow("m1", "PC-03", "offline", true))
+	// Đây là chốt chặn mới: đếm phiên đang chạy TRÊN MÁY, không tin cột status.
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" WHERE machine_id = \$1 AND is_active = \$2`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectRollback()
+
+	_, err := svc.StartSession(&StartRequest{MachineID: "m1", MemberID: "mem2"})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "PC-03")
+	assert.Contains(t, err.Error(), "đang có người chơi")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Máy chưa gán nhóm không tra ra giá nào: phiên vẫn mở được (có quán cố ý để
+// máy miễn phí) nhưng phản hồi phải nói rõ, nếu không quầy chỉ phát hiện lúc
+// cuối tháng thấy doanh thu hụt.
+func TestSessionService_CalculateCost_MayChuaGanNhomBaoKhongCoGia(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", nil))
+
+	got, err := svc.CalculateCost("m1", "", mocThu(), 90)
+
+	require.NoError(t, err)
+	assert.True(t, got.NoPricing)
+	assert.Equal(t, int64(0), got.PricePerHour)
+	assert.Equal(t, int64(0), got.FinalCost)
+}
+
+// Máy có nhóm và có giá thì cờ phải tắt — nếu không mọi phiên bình thường đều
+// hiện cảnh báo và người trực sẽ quen mắt bỏ qua.
+func TestSessionService_CalculateCost_CoGiaThiKhongCanhBao(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups" WHERE id = \$1`).
+		WithArgs("g1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "Thường", int64(10000)))
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).
+		WillReturnError(gorm.ErrRecordNotFound)
+
+	got, err := svc.CalculateCost("m1", "", mocThu(), 60)
+
+	require.NoError(t, err)
+	assert.False(t, got.NoPricing)
+	assert.Equal(t, int64(10000), got.FinalCost)
+}
+
+// mocThu là mốc bắt đầu cố định cho các phép thử tính tiền: thứ Hai 10:00 giờ
+// Việt Nam, nằm giữa ngày nên không vướng ranh giới khung giờ nào.
+func mocThu() time.Time {
+	return time.Date(2026, 9, 14, 10, 0, 0, 0, utils.VietnamLocation())
+}
+
+// Phiên vắt qua mốc đổi giá phải tính TỪNG ĐOẠN theo giá của đoạn đó.
+//
+// Bản cũ tra một đơn giá tại thời điểm tính tiền rồi nhân với toàn bộ số phút,
+// nên khách ngồi từ 20:00 tới 23:00 bị thu giá cao điểm cho cả ba tiếng. Dựng
+// lại trên hệ thống thật: 2 phút bị thu 2.667₫ thay vì 1.668₫.
+func TestSessionService_CalculateCost_VatQuaMocDoiGiaThiTinhTungDoan(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WithArgs("g1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "VIP", int64(10000)))
+	// Cao điểm 22:00–02:00 thứ Hai, giá gấp bốn.
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_group_id", "day_of_week", "start_time", "end_time", "price_per_hour", "is_active"}).
+			AddRow("t1", "g1", 1, "22:00:00", "02:00:00", int64(40000), true))
+
+	// Bắt đầu 21:00 thứ Hai, chơi 120 phút: 60 phút giá thường + 60 phút cao điểm.
+	batDau := time.Date(2026, 9, 14, 21, 0, 0, 0, utils.VietnamLocation())
+	got, err := svc.CalculateCost("m1", "", batDau, 120)
+
+	require.NoError(t, err)
+	// 60 phút × 10.000 + 60 phút × 40.000 = 50.000₫.
+	// Bản cũ cho ra 120 phút × 40.000/60 = 80.000₫.
+	assert.Equal(t, int64(50000), got.FinalCost)
+	// Đơn giá hiển thị là giá ĐANG áp dụng ở cuối khoảng (23:00 → cao điểm).
+	assert.Equal(t, int64(40000), got.PricePerHour)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Phiên không vắt qua mốc nào phải ra đúng con số như trước khi sửa.
+func TestSessionService_CalculateCost_KhongVatMocThiGiuNguyenKetQua(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WithArgs("g1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "VIP", int64(20000)))
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	got, err := svc.CalculateCost("m1", "", mocThu(), 90)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(30000), got.FinalCost) // 90 phút × 20.000/h
+	assert.Equal(t, int64(20000), got.PricePerHour)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Khung giờ vắt qua nửa đêm: phần sau 00:00 rơi sang THỨ KHÁC. Lọc sẵn theo thứ
+// ở SQL thì phần đó mất giá cao điểm của nó.
+func TestSessionService_CalculateCost_KhungVatNuaDem(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WithArgs("g1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "VIP", int64(10000)))
+	// Cao điểm khai cho CẢ hai thứ, đúng cách quán phải khai để phủ qua đêm.
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_group_id", "day_of_week", "start_time", "end_time", "price_per_hour", "is_active"}).
+			AddRow("t1", "g1", 1, "22:00:00", "02:00:00", int64(40000), true).
+			AddRow("t2", "g1", 2, "22:00:00", "02:00:00", int64(40000), true))
+
+	// 23:30 thứ Hai + 60 phút → 30 phút thứ Hai, 30 phút thứ Ba, cùng cao điểm.
+	batDau := time.Date(2026, 9, 14, 23, 30, 0, 0, utils.VietnamLocation())
+	got, err := svc.CalculateCost("m1", "", batDau, 60)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(40000), got.FinalCost)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Máy tắt giữa phiên: phiên chốt lùi về nhịp tim cuối (2 phút = 2.000₫) nhưng
+// các lượt trừ mỗi phút trong quãng chờ phát hiện đã thu 4.000₫. Phần dư phải
+// được hoàn vào ví và dòng session_fee phải khớp tiền của phiên.
+//
+// Tìm ra khi kiểm trên máy Windows thật: phiên ghi 2.000₫ mà ví bị trừ 4.000₫.
+func TestSessionService_EndSessionAt_ChotLuiThiHoanTienThuDu(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	startedAt := time.Now().Add(-5 * time.Minute)
+	endAt := startedAt.Add(2 * time.Minute) // nhịp tim cuối
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2`).
+		WithArgs("s1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "member_id", "started_at", "is_active"}).
+			AddRow("s1", "m1", "mem-1", startedAt, true))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "group_id"}).AddRow("m1", "PC-01", "g1"))
+
+	// 60.000₫/giờ = 1.000₫/phút.
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "Std", int64(60000)))
+	mock.ExpectQuery(`SELECT \* FROM "members"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", nil))
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectBegin()
+	// Đã thu 4.000₫ dọc đường.
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "charged_amount"}).AddRow("s1", int64(4000)))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2$`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", nil))
+
+	// chargeSessionTo: target 2.000 < đã thu 4.000 → không thu thêm.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "bonus_balance", "total_spent"}).
+			AddRow("mem-1", int64(10000), int64(0), int64(4000)))
+	mock.ExpectExec(`UPDATE "members" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT \* FROM "member_transactions" WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "amount"}).AddRow("tx-1", int64(-4000)))
+
+	// Hoàn 2.000₫.
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "bonus_balance", "total_spent"}).
+			AddRow("mem-1", int64(10000), int64(0), int64(4000)))
+	mock.ExpectExec(`UPDATE "members" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT \* FROM "member_transactions" WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "amount"}).AddRow("tx-1", int64(-4000)))
+	mock.ExpectExec(`UPDATE "member_transactions" SET "amount"=\$1,"balance_after"=\$2,"bonus_after"=\$3`).
+		WithArgs(int64(-2000), int64(12000), int64(0), "tx-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	mock.ExpectExec(`UPDATE "machine_sessions" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "machines" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	res, err := svc.EndSessionAt("s1", endAt)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2000), res.TotalCost)
+	assert.Equal(t, int64(12000), res.BalanceAfter, "phần thu dư 2.000₫ phải về lại ví")
+}
+
+// Trừ ví nào hoàn ví đó. Phần thu dư là những lượt trừ cuối nên hoàn từ cuối
+// ngược lên; phần không rõ nguồn (phiên mở trước khi ghi nguồn) về số dư chính.
+func TestTachHoanTien(t *testing.T) {
+	cases := []struct {
+		ten              string
+		runs             []model.ChargeRun
+		hoan             int64
+		wantBonus, wantM int64
+		wantRuns         []model.ChargeRun
+	}{
+		{
+			ten:       "điểm thưởng hết giữa phiên: phút cuối trừ số dư chính",
+			runs:      []model.ChargeRun{{Bonus: true, Amount: 3000}, {Amount: 200}},
+			hoan:      300,
+			wantBonus: 100, wantM: 200,
+			wantRuns: []model.ChargeRun{{Bonus: true, Amount: 2900}},
+		},
+		{
+			ten:       "nạp điểm thưởng giữa phiên: phút cuối trừ điểm thưởng",
+			runs:      []model.ChargeRun{{Amount: 5000}, {Bonus: true, Amount: 300}},
+			hoan:      300,
+			wantBonus: 300,
+			wantRuns:  []model.ChargeRun{{Amount: 5000}},
+		},
+		{
+			ten:   "phiên cũ chưa ghi nguồn: về số dư chính",
+			hoan:  2000,
+			wantM: 2000,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.ten, func(t *testing.T) {
+			s := &model.MachineSession{ChargeSources: c.runs}
+			bonus, chinh := tachHoanTien(s, c.hoan)
+			assert.Equal(t, c.wantBonus, bonus)
+			assert.Equal(t, c.wantM, chinh)
+			assert.Equal(t, c.wantRuns, s.ChargeSources)
+		})
+	}
+}
+
+func TestGhiNguonTru_GopDoanCungVi(t *testing.T) {
+	s := &model.MachineSession{}
+	ghiNguonTru(s, true, 100)
+	ghiNguonTru(s, true, 100)
+	ghiNguonTru(s, false, 0)
+	ghiNguonTru(s, false, 50)
+	ghiNguonTru(s, true, 30)
+	assert.Equal(t, []model.ChargeRun{{Bonus: true, Amount: 200}, {Amount: 50}, {Bonus: true, Amount: 30}}, s.ChargeSources)
+}
+
+// Như TestSessionService_EndSessionAt_ChotLuiThiHoanTienThuDu nhưng 4.000₫ đã
+// thu đều trừ bằng điểm thưởng: 2.000₫ thu dư phải về điểm thưởng, số dư chính
+// đứng yên. Trước đây nó vào số dư chính — điểm thưởng thành tiền thật.
+func TestSessionService_EndSessionAt_HoanVeDungViDaTru(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	startedAt := time.Now().Add(-5 * time.Minute)
+	endAt := startedAt.Add(2 * time.Minute)
+
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2`).
+		WithArgs("s1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "member_id", "started_at", "is_active"}).
+			AddRow("s1", "m1", "mem-1", startedAt, true))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "group_id"}).AddRow("m1", "PC-01", "g1"))
+
+	mock.ExpectQuery(`SELECT \* FROM "machines"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("m1", "g1"))
+	mock.ExpectQuery(`SELECT \* FROM "machine_groups"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price_per_hour"}).AddRow("g1", "Std", int64(60000)))
+	mock.ExpectQuery(`SELECT \* FROM "members"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", nil))
+	mock.ExpectQuery(`SELECT \* FROM "time_based_pricings"`).WillReturnError(gorm.ErrRecordNotFound)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 AND is_active = \$2 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "charged_amount", "charge_sources"}).
+			AddRow("s1", int64(4000), `[{"bonus":true,"amount":4000}]`))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2$`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "group_id"}).AddRow("mem-1", nil))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "bonus_balance", "total_spent"}).
+			AddRow("mem-1", int64(10000), int64(6000), int64(4000)))
+	mock.ExpectExec(`UPDATE "members" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT \* FROM "member_transactions" WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "amount"}).AddRow("tx-1", int64(-4000)))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WithArgs("mem-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "bonus_balance", "total_spent"}).
+			AddRow("mem-1", int64(10000), int64(6000), int64(4000)))
+	mock.ExpectExec(`UPDATE "members" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT \* FROM "member_transactions" WHERE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "amount"}).AddRow("tx-1", int64(-4000)))
+	mock.ExpectExec(`UPDATE "member_transactions" SET "amount"=\$1,"balance_after"=\$2,"bonus_after"=\$3`).
+		WithArgs(int64(-2000), int64(10000), int64(8000), "tx-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Phần điểm thưởng còn lại sau khi hoàn được lưu xuống dòng phiên.
+	mock.ExpectExec(`UPDATE "machine_sessions" SET .*"charge_sources"=`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "machines" SET`).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	res, err := svc.EndSessionAt("s1", endAt)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2000), res.TotalCost)
+	assert.Equal(t, int64(10000), res.BalanceAfter, "số dư chính không được tăng")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Trang Phiên lọc theo trạng thái, mã máy và hội viên. Lọc máy không kèm
+// deleted_at: phiên của máy đã xoá vẫn phải tra được.
+func TestSessionService_ListSessions_Filters(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+
+	where := `WHERE is_active = \$1 AND machine_id IN \(SELECT id FROM machines WHERE machine_code ILIKE \$2\) ` +
+		`AND \(member_id IN \(SELECT id FROM members WHERE unaccent\(username\) ILIKE unaccent\(\$3\) OR unaccent\(full_name\) ILIKE unaccent\(\$4\) OR phone ILIKE \$5\)\)`
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "machine_sessions" ` + where).
+		WithArgs(false, "%PC-01%", "%kane%", "%kane%", "%kane%").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT \* FROM "machine_sessions" ` + where + ` ORDER BY started_at desc LIMIT \$6`).
+		WithArgs(false, "%PC-01%", "%kane%", "%kane%", "%kane%", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "member_id", "is_active", "started_at", "created_at"}).
+			AddRow("s1", "m1", "mem1", false, testNow, testNow))
+	mock.ExpectQuery(`SELECT \* FROM "machines" WHERE id = \$1 ORDER BY "machines"\."id" LIMIT \$2`).
+		WithArgs("m1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}).AddRow("m1", "PC-01"))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 AND "members"\."deleted_at" IS NULL ORDER BY "members"\."id" LIMIT \$2`).
+		WithArgs("mem1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username", "full_name"}).AddRow("mem1", "kane", ""))
+
+	items, total, err := svc.ListSessions(
+		SessionListFilter{Status: "ended", Machine: " PC-01 ", Member: "kane"},
+		pagination.Params{Page: 1, PageSize: 20, Sort: pagination.DefaultSort, Order: "desc"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	assert.Equal(t, "PC-01", items[0].MachineCode)
+	assert.Equal(t, "kane", items[0].MemberName)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Xoá phiên: chỉ phiên đã kết thúc. Phiên đang chạy còn tính tiền, xoá nó là
+// khách chơi không mất tiền và máy kẹt ở "đang dùng".
+func TestSessionService_DeleteSession(t *testing.T) {
+	t.Run("phiên đã kết thúc", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+		mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1 ORDER BY "machine_sessions"\."id" LIMIT \$2`).
+			WithArgs("s1", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "is_active", "started_at"}).
+				AddRow("s1", "m1", false, testNow))
+		mock.ExpectBegin()
+		mock.ExpectExec(`DELETE FROM "machine_sessions" WHERE "machine_sessions"\."id" = \$1`).
+			WithArgs("s1").
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectCommit()
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("audit-1", time.Now()))
+		mock.ExpectCommit()
+
+		require.NoError(t, svc.DeleteSession("s1"))
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("phiên đang chạy bị chặn", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		svc := NewSessionService(db, hub.New(nil), NewAuditService(db))
+		mock.ExpectQuery(`SELECT \* FROM "machine_sessions" WHERE id = \$1`).
+			WithArgs("s1", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "is_active", "started_at"}).
+				AddRow("s1", "m1", true, testNow))
+
+		assert.ErrorIs(t, svc.DeleteSession("s1"), ErrPhienDangChay)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}

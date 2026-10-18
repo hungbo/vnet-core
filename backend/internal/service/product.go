@@ -1,0 +1,578 @@
+package service
+
+import (
+	"errors"
+	"math"
+	"time"
+
+	"github.com/vnet/core/internal/hub"
+	"github.com/vnet/core/internal/model"
+	"github.com/vnet/core/pkg/pagination"
+	"gorm.io/gorm"
+)
+
+type ProductService struct {
+	db    *gorm.DB
+	audit *AuditService
+	hub   *hub.Hub
+}
+
+func NewProductService(db *gorm.DB, audit *AuditService) *ProductService {
+	return &ProductService{db: db, audit: audit}
+}
+
+// WithHub nối hub WebSocket vào để tạo và sửa sản phẩm báo tồn kho đổi ngay lúc nó
+// đổi. Không nối thì mọi thứ vẫn chạy đúng, chỉ là thực đơn trên máy trạm và
+// bảng sản phẩm trên trang quản trị giữ số cũ tới khi tự tải lại.
+func (s *ProductService) WithHub(h *hub.Hub) *ProductService {
+	s.hub = h
+	return s
+}
+
+type ProductOptionResponse struct {
+	ID             string  `json:"id"`
+	GroupID        string  `json:"group_id"`
+	Name           string  `json:"name"`
+	CurrentPrice   int64   `json:"current_price"`
+	IngredientID   *string `json:"ingredient_id"`
+	IngredientName string  `json:"ingredient_name"`
+	Quantity       float64 `json:"quantity"`
+	SortOrder      int     `json:"sort_order"`
+}
+
+type ProductResponse struct {
+	ID           string                      `json:"id"`
+	CategoryID   *string                     `json:"category_id"`
+	Name         string                      `json:"name"`
+	Description  string                      `json:"description"`
+	Price        int64                       `json:"price"`
+	ImageURL     string                      `json:"image_url"`
+	SupplierID   *string                     `json:"supplier_id"`
+	SupplierName string                      `json:"supplier_name"`
+	UnitID       *string                     `json:"unit_id"`
+	MinStock     float64                     `json:"min_stock"`
+	IsRetail     bool                        `json:"is_retail"`
+	IsActive     bool                        `json:"is_active"`
+	HasStock     bool                        `json:"has_stock"`
+	CurrentStock float64                     `json:"current_stock"`
+	SortOrder    int                         `json:"sort_order"`
+	CreatedAt    string                      `json:"created_at"`
+	Options      []ProductOptionResponse     `json:"options,omitempty"`
+	Ingredients  []ProductIngredientResponse `json:"ingredients,omitempty"`
+}
+
+type ProductOptionItem struct {
+	GroupID      string  `json:"group_id"`
+	Name         string  `json:"name" binding:"required"`
+	IngredientID *string `json:"ingredient_id"`
+	Quantity     float64 `json:"quantity"`
+	SortOrder    int     `json:"sort_order"`
+}
+
+type CreateProductRequest struct {
+	CategoryID   *string             `json:"category_id"`
+	Name         string              `json:"name" binding:"required,max=200"`
+	Description  string              `json:"description"`
+	Price        int64               `json:"price" binding:"min=0"`
+	ImageURL     string              `json:"image_url"`
+	SupplierID   *string             `json:"supplier_id"`
+	UnitID       *string             `json:"unit_id"`
+	MinStock     float64             `json:"min_stock"`
+	IsRetail     *bool               `json:"is_retail"`
+	IsActive     *bool               `json:"is_active"`
+	HasStock     bool                `json:"has_stock"`
+	CurrentStock float64             `json:"current_stock"`
+	SortOrder    int                 `json:"sort_order"`
+	Options      []ProductOptionItem `json:"options"`
+}
+
+type UpdateProductRequest struct {
+	CategoryID  *string `json:"category_id"`
+	Name        *string `json:"name" binding:"omitempty,max=200"`
+	Description *string `json:"description"`
+	// omitempty là bắt buộc với con trỏ: thiếu nó thì validator coi nil là vi
+	// phạm min=0, nên MỌI lần cập nhật một phần không kèm giá đều bị chặn bằng
+	// câu "Giá tối thiểu là 0" — sửa mỗi nhà cung cấp của sản phẩm cũng hỏng.
+	// Cả repo đang dùng khuôn `omitempty,min=...`, đây là chỗ duy nhất lệch.
+	Price        *int64              `json:"price" binding:"omitempty,min=0"`
+	ImageURL     *string             `json:"image_url"`
+	SupplierID   *string             `json:"supplier_id"`
+	UnitID       *string             `json:"unit_id"`
+	MinStock     *float64            `json:"min_stock"`
+	IsRetail     *bool               `json:"is_retail"`
+	IsActive     *bool               `json:"is_active"`
+	HasStock     *bool               `json:"has_stock"`
+	CurrentStock *float64            `json:"current_stock"`
+	SortOrder    *int                `json:"sort_order"`
+	Options      []ProductOptionItem `json:"options"`
+}
+
+func (s *ProductService) List(isRetail, isActive *bool, categoryID, supplierID, search string, page int, pageSize int) (*pagination.Result, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+
+	query := s.db
+	if isRetail != nil {
+		query = query.Where("is_retail = ?", *isRetail)
+	}
+	if isActive != nil {
+		query = query.Where("is_active = ?", *isActive)
+	}
+	// Tham số category_id có trong tài liệu Swagger và thực đơn máy trạm vẫn gửi
+	// lên, nhưng trước đây không ai đọc: mọi thẻ danh mục đều trả về nguyên cả
+	// thực đơn, nên nhìn qua tưởng là "quán chưa xếp món vào nhóm".
+	if categoryID != "" {
+		query = query.Where("category_id = ?", categoryID)
+	}
+	if supplierID != "" {
+		query = query.Where("supplier_id = ?", supplierID)
+	}
+	if search != "" {
+		query = query.Where("unaccent(name) ILIKE unaccent(?) OR unaccent(description) ILIKE unaccent(?)", "%"+search+"%", "%"+search+"%")
+	}
+
+	var total int64
+	query.Model(&model.Product{}).Count(&total)
+
+	var products []model.Product
+	if err := query.Order("sort_order asc, name asc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&products).Error; err != nil {
+		return nil, err
+	}
+
+	responses := make([]ProductResponse, len(products))
+	for i, p := range products {
+		responses[i] = productToResponse(s.db, p)
+		responses[i].Options = s.loadOptions(p.ID)
+		ingredients, stock := s.loadProductStock(p)
+		responses[i].Ingredients = ingredients
+		if p.HasStock {
+			responses[i].CurrentStock = stock
+		}
+	}
+
+	return pagination.NewResult(responses, total, &pagination.Params{Page: page, PageSize: pageSize}), nil
+}
+
+func (s *ProductService) GetByID(id string) (*ProductResponse, error) {
+	var product model.Product
+	if err := s.db.Where("id = ?", id).First(&product).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("không tìm thấy sản phẩm")
+		}
+		return nil, err
+	}
+
+	result := productToResponse(s.db, product)
+	result.Options = s.loadOptions(product.ID)
+	ingredients, stock := s.loadProductStock(product)
+	result.Ingredients = ingredients
+	if product.HasStock {
+		result.CurrentStock = stock
+	}
+	return &result, nil
+}
+
+// danhMucTonTai chắc chắn mã danh mục có thật trước khi gắn vào sản phẩm.
+//
+// Cột category_id KHÔNG có khoá ngoại, nên một mã sai chính tả vẫn ghi được và
+// sản phẩm sau đó hiện "Đã xoá" ở cột danh mục — không ai biết gõ nhầm ở đâu.
+func (s *ProductService) danhMucTonTai(id *string) error {
+	if id == nil || *id == "" {
+		return nil
+	}
+	var n int64
+	if err := s.db.Model(&model.Category{}).Where("id = ?", *id).Count(&n).Error; err != nil {
+		return err
+	}
+	if n == 0 {
+		return errors.New("không tìm thấy danh mục")
+	}
+	return nil
+}
+
+func (s *ProductService) Create(req *CreateProductRequest) (*ProductResponse, error) {
+	active := true
+	if req.IsActive != nil {
+		active = *req.IsActive
+	}
+	isRetail := true
+	if req.IsRetail != nil {
+		isRetail = *req.IsRetail
+	}
+
+	danhMuc := uuidRongThanhNil(req.CategoryID)
+	if err := s.danhMucTonTai(danhMuc); err != nil {
+		return nil, err
+	}
+
+	product := model.Product{
+		// Ô chọn danh mục bị bỏ trống gửi xuống "" — cột uuid không nhận.
+		CategoryID:   danhMuc,
+		Name:         req.Name,
+		Description:  req.Description,
+		Price:        req.Price,
+		ImageURL:     req.ImageURL,
+		SupplierID:   uuidRongThanhNil(req.SupplierID),
+		UnitID:       req.UnitID,
+		MinStock:     req.MinStock,
+		IsRetail:     isRetail,
+		IsActive:     active,
+		HasStock:     req.HasStock,
+		CurrentStock: req.CurrentStock,
+		SortOrder:    req.SortOrder,
+	}
+
+	// Cột is_active có `default:true`: GORM thay false bằng default khi INSERT,
+	// nên "tạo ở trạng thái ngưng bán" luôn ra đang bán. Ghi lại false ngay
+	// trong cùng giao dịch (cùng cách với promotion.go).
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&product).Error; err != nil {
+			return err
+		}
+		if !active {
+			if err := tx.Model(&product).Update("is_active", false).Error; err != nil {
+				return err
+			}
+			product.IsActive = false
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	s.audit.Log(&LogAuditRequest{
+		Action:     "create",
+		EntityType: "product",
+		EntityID:   product.ID,
+		UserID:     nil,
+		Metadata:   map[string]interface{}{"name": product.Name},
+		IPAddress:  "",
+	})
+
+	if len(req.Options) > 0 {
+		defaultGroup := s.getOrCreateDefaultOptionGroup()
+		for _, opt := range req.Options {
+			qty := opt.Quantity
+			if qty <= 0 {
+				qty = 1
+			}
+			option := model.ProductOption{
+				GroupID:      defaultGroup.ID,
+				ProductID:    product.ID,
+				Name:         opt.Name,
+				IngredientID: opt.IngredientID,
+				Quantity:     qty,
+				SortOrder:    opt.SortOrder,
+			}
+			if err := s.db.Create(&option).Error; err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	result := productToResponse(s.db, product)
+	result.Options = s.loadOptions(product.ID)
+	ingredients, stock := s.loadProductStock(product)
+	result.Ingredients = ingredients
+	if product.HasStock {
+		result.CurrentStock = stock
+	}
+	return &result, nil
+}
+
+func (s *ProductService) Update(id string, req *UpdateProductRequest) (*ProductResponse, error) {
+	var product model.Product
+	if err := s.db.Where("id = ?", id).First(&product).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("không tìm thấy sản phẩm")
+		}
+		return nil, err
+	}
+
+	updates := map[string]interface{}{}
+	if req.CategoryID != nil {
+		// Bỏ danh mục của một sản phẩm là thao tác hợp lệ: ghi NULL, không ghi "".
+		c := uuidRongThanhNil(req.CategoryID)
+		if err := s.danhMucTonTai(c); err != nil {
+			return nil, err
+		}
+		if c == nil {
+			updates["category_id"] = nil
+		} else {
+			updates["category_id"] = *c
+		}
+	}
+	if req.Name != nil {
+		updates["name"] = *req.Name
+	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+	if req.Price != nil {
+		updates["price"] = *req.Price
+	}
+	if req.ImageURL != nil {
+		updates["image_url"] = *req.ImageURL
+	}
+	if req.SupplierID != nil {
+		// Bỏ chọn nhà cung cấp gửi "" — ghi NULL, cột uuid không nhận "".
+		if sup := uuidRongThanhNil(req.SupplierID); sup == nil {
+			updates["supplier_id"] = nil
+		} else {
+			updates["supplier_id"] = *sup
+		}
+	}
+	if req.UnitID != nil {
+		updates["unit_id"] = *req.UnitID
+	}
+	if req.MinStock != nil {
+		updates["min_stock"] = *req.MinStock
+	}
+	if req.IsRetail != nil {
+		updates["is_retail"] = *req.IsRetail
+	}
+	if req.IsActive != nil {
+		updates["is_active"] = *req.IsActive
+	}
+	if req.HasStock != nil {
+		updates["has_stock"] = *req.HasStock
+	}
+	if req.CurrentStock != nil {
+		updates["current_stock"] = *req.CurrentStock
+	}
+	if req.SortOrder != nil {
+		updates["sort_order"] = *req.SortOrder
+	}
+
+	if len(updates) > 0 {
+		if err := s.db.Model(&product).Updates(updates).Error; err != nil {
+			return nil, err
+		}
+		// Sửa sản phẩm có thể đổi thẳng tồn kho, hoặc đổi has_stock — cả hai đều
+		// làm con số trên thực đơn khác đi.
+		_, doiTon := updates["current_stock"]
+		_, doiCo := updates["has_stock"]
+		if doiTon || doiCo {
+			phatTonKhoDoi(s.hub, id)
+		}
+	}
+
+	s.audit.Log(&LogAuditRequest{
+		Action:     "update",
+		EntityType: "product",
+		EntityID:   id,
+		UserID:     nil,
+		Metadata:   updates,
+		IPAddress:  "",
+	})
+
+	if req.Options != nil {
+		s.db.Where("product_id = ?", id).Delete(&model.ProductOption{})
+		defaultGroup := s.getOrCreateDefaultOptionGroup()
+		for _, opt := range req.Options {
+			qty := opt.Quantity
+			if qty <= 0 {
+				qty = 1
+			}
+			option := model.ProductOption{
+				GroupID:      defaultGroup.ID,
+				ProductID:    id,
+				Name:         opt.Name,
+				IngredientID: opt.IngredientID,
+				Quantity:     qty,
+				SortOrder:    opt.SortOrder,
+			}
+			if err := s.db.Create(&option).Error; err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	s.db.First(&product, "id = ?", id)
+	result := productToResponse(s.db, product)
+	result.Options = s.loadOptions(product.ID)
+	ingredients, stock := s.loadProductStock(product)
+	result.Ingredients = ingredients
+	if product.HasStock {
+		result.CurrentStock = stock
+	}
+	return &result, nil
+}
+
+// Delete xoá một sản phẩm.
+//
+// order_items khai OnDelete:RESTRICT trong model — nhưng tag đó GORM không đọc
+// (đặt trên trường ID vô hướng), và sản phẩm xoá mềm nên kể cả có khoá ngoại
+// thật thì ON DELETE cũng không chạy. Ý định "chặn" của tác giả model phải được
+// thực hiện ở đây.
+//
+// ingredient_id là chiều NGƯỢC: sản phẩm này đang được dùng làm nguyên liệu cho
+// sản phẩm khác. Xoá nó là làm hỏng công thức của món khác.
+func (s *ProductService) Delete(id string) error {
+	var product model.Product
+	if err := s.db.Where("id = ?", id).First(&product).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("không tìm thấy sản phẩm")
+		}
+		return err
+	}
+
+	if err := kiemTraPhuThuoc(s.db, id, []phuThuoc{
+		{Bang: &model.OrderItem{}, Cot: "product_id", Nhan: "dòng đơn hàng"},
+		{Bang: &model.StockTransaction{}, Cot: "product_id", Nhan: "phiếu kho"},
+		{Bang: &model.InventoryCount{}, Cot: "product_id", Nhan: "dòng kiểm kê"},
+		{Bang: &model.ProductIngredient{}, Cot: "ingredient_id", Nhan: "công thức của sản phẩm khác đang dùng món này làm nguyên liệu"},
+	}, "hãy tắt bán (bỏ đang bán) thay vì xoá"); err != nil {
+		return err
+	}
+
+	now := time.Now()
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Con SỞ HỮU của chính sản phẩm này: công thức của nó, tuỳ chọn của nó,
+		// ánh xạ máy in của nó. Không có sản phẩm thì chúng vô nghĩa.
+		if err := tx.Where("product_id = ?", id).Delete(&model.ProductIngredient{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("product_id = ?", id).Delete(&model.ProductOption{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("product_id = ?", id).Delete(&model.ProductPrinterMapping{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&product).Update("deleted_at", &now).Error
+	}); err != nil {
+		return err
+	}
+
+	s.audit.Log(&LogAuditRequest{
+		Action:     "delete",
+		EntityType: "product",
+		EntityID:   product.ID,
+		UserID:     nil,
+		Metadata:   map[string]interface{}{"name": product.Name},
+		IPAddress:  "",
+	})
+	return nil
+}
+
+func (s *ProductService) loadProductStock(product model.Product) ([]ProductIngredientResponse, float64) {
+	var pms []model.ProductIngredient
+	s.db.Where("product_id = ?", product.ID).Find(&pms)
+
+	if len(pms) > 0 {
+		responses := make([]ProductIngredientResponse, len(pms))
+		for i, pm := range pms {
+			responses[i] = productIngredientToResponse(s.db, pm)
+		}
+
+		if !product.HasStock {
+			return responses, 0
+		}
+
+		minStock := math.MaxFloat64
+		for _, pm := range pms {
+			var ingredient model.Product
+			if err := s.db.Where("id = ?", pm.IngredientID).First(&ingredient).Error; err == nil {
+				materialStock := ingredient.CurrentStock / pm.Quantity
+				if materialStock < minStock {
+					minStock = materialStock
+				}
+			}
+		}
+		return responses, minStock
+	}
+
+	if product.HasStock {
+		return nil, product.CurrentStock
+	}
+	return nil, 0
+}
+
+func (s *ProductService) getOrCreateDefaultOptionGroup() model.ProductOptionGroup {
+	var group model.ProductOptionGroup
+	s.db.Where("name = ?", "_default").FirstOrCreate(&group, model.ProductOptionGroup{
+		Name: "_default",
+	})
+	return group
+}
+
+func (s *ProductService) loadOptions(productID string) []ProductOptionResponse {
+	var options []model.ProductOption
+	s.db.Where("product_id = ?", productID).Order("sort_order asc").Find(&options)
+
+	var ingredientIDs []string
+	for _, o := range options {
+		if o.IngredientID != nil {
+			ingredientIDs = append(ingredientIDs, *o.IngredientID)
+		}
+	}
+
+	ingredientPrices := make(map[string]int64)
+	ingredientNames := make(map[string]string)
+	if len(ingredientIDs) > 0 {
+		var ingredients []model.Product
+		s.db.Select("id, name, price").Where("id IN ?", ingredientIDs).Find(&ingredients)
+		for _, ing := range ingredients {
+			ingredientPrices[ing.ID] = ing.Price
+			ingredientNames[ing.ID] = ing.Name
+		}
+	}
+
+	resp := make([]ProductOptionResponse, len(options))
+	for i, o := range options {
+		price := int64(0)
+		name := ""
+		if o.IngredientID != nil {
+			if p, ok := ingredientPrices[*o.IngredientID]; ok && p > 0 {
+				price = p
+			}
+			name = ingredientNames[*o.IngredientID]
+		}
+		resp[i] = ProductOptionResponse{
+			ID:             o.ID,
+			GroupID:        o.GroupID,
+			Name:           o.Name,
+			CurrentPrice:   price,
+			IngredientID:   o.IngredientID,
+			IngredientName: name,
+			Quantity:       o.Quantity,
+			SortOrder:      o.SortOrder,
+		}
+	}
+
+	return resp
+}
+
+func productToResponse(db *gorm.DB, p model.Product) ProductResponse {
+	supplierName := ""
+	if p.SupplierID != nil {
+		var supplier model.Supplier
+		if err := db.Where("id = ?", *p.SupplierID).First(&supplier).Error; err == nil {
+			supplierName = supplier.Name
+		}
+	}
+
+	return ProductResponse{
+		ID:           p.ID,
+		CategoryID:   p.CategoryID,
+		Name:         p.Name,
+		Description:  p.Description,
+		Price:        p.Price,
+		ImageURL:     p.ImageURL,
+		SupplierID:   p.SupplierID,
+		SupplierName: supplierName,
+		UnitID:       p.UnitID,
+		MinStock:     p.MinStock,
+		IsRetail:     p.IsRetail,
+		IsActive:     p.IsActive,
+		HasStock:     p.HasStock,
+		CurrentStock: p.CurrentStock,
+		SortOrder:    p.SortOrder,
+		CreatedAt:    p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	}
+}

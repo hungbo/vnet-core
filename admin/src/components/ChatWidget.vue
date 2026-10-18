@@ -1,0 +1,312 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { ElButton, ElDialog, ElForm, ElFormItem, ElInputNumber, ElMessage, ElOption, ElSelect } from 'element-plus';
+import { register } from 'vue-advanced-chat';
+import client from '@/api/client';
+import { useAuthStore } from '@/store/modules/auth';
+import { useWebSocketStore } from '@/store/modules/ws';
+import { useChatRooms } from '@/hooks/chat/useChatRooms';
+import { useChatWs } from '@/hooks/chat/useChatWs';
+import { chatRequestedRoomId, isChatOpen } from '@/hooks/chat/chatState';
+register();
+
+const authStore = useAuthStore();
+const wsStore = useWebSocketStore();
+const currentUserId = computed(() => authStore.userInfo?.id || '');
+
+// ── UI state ──
+const posX = ref((window.innerWidth - window.innerWidth * 0.6) / 2);
+const posY = ref(100);
+const isDragging = ref(false);
+const dragOffset = { x: 0, y: 0 };
+
+const messages = ref<any[]>([]);
+const currentRoomId = ref('');
+const messagesLoaded = ref(true);
+const chatRef = ref<any>(null);
+
+// ── Composables ──
+const convs = useChatRooms(messages, currentRoomId, messagesLoaded);
+const {
+  rooms,
+  showNewRoomDialog,
+  roomForm,
+  users,
+  saving,
+  fetchRooms,
+  onFetchMessages,
+  fetchMembers,
+  handleCreateRoom,
+  deleteRoom,
+  deleteAllRooms
+} = convs;
+const {
+  wsChatHandler,
+  wsStatusHandler,
+  wsRoomDeleted,
+  wsRoomsCleared,
+  wsRoomNew,
+  wsRoomRead,
+  sortMessages,
+  mapMessage
+} = useChatWs(currentRoomId, messages, rooms, fetchRooms);
+// ── vue-advanced-chat config ──
+const autoScroll = {
+  send: { new: true, newAfterScrollUp: false },
+  receive: { new: true, newAfterScrollUp: true }
+};
+const chatStyles = {
+  general: { color: '#333', borderStyle: '1px solid #e4e7ed' },
+  footer: { background: '#fff' }
+};
+
+// Chữ mặc định của vue-advanced-chat là tiếng Anh ("No messages", "Type message").
+const textMessages = {
+  ROOMS_EMPTY: 'Chưa có cuộc trò chuyện',
+  ROOM_EMPTY: 'Chọn một cuộc trò chuyện',
+  NEW_MESSAGES: 'Tin nhắn mới',
+  MESSAGE_DELETED: 'Tin nhắn đã bị xoá',
+  MESSAGES_EMPTY: 'Chưa có tin nhắn',
+  CONVERSATION_STARTED: 'Bắt đầu trò chuyện:',
+  TYPE_MESSAGE: 'Nhập tin nhắn',
+  SEARCH: 'Tìm',
+  IS_ONLINE: 'đang trực tuyến',
+  LAST_SEEN: 'truy cập lần cuối ',
+  IS_TYPING: 'đang nhập...',
+  CANCEL_SELECT_MESSAGE: 'Huỷ'
+};
+
+// ── Room actions ──
+const roomActions = [{ name: 'deleteRoom', title: 'Xoá' }];
+function onRoomAction($event: any) {
+  const raw = $event?.detail ?? $event;
+  const payload = Array.isArray(raw) ? raw[0] : raw;
+  if (payload.action?.name === 'deleteRoom') deleteRoom(payload.roomId);
+}
+
+// ── Send message ──
+async function onSendMessage($event: any) {
+  const raw = $event?.detail ?? $event;
+  const payload = Array.isArray(raw) ? raw[0] : raw;
+  const { roomId, content } = payload;
+  if (!content || !roomId) return;
+  try {
+    const postRes: any = await client.post('/chat/messages', {
+      room_id: roomId,
+      message: content,
+      sender_type: 'admin',
+      sender_id: currentUserId.value
+    });
+    // Máy chủ phát tin qua WebSocket TRƯỚC khi trả lời lệnh gửi này, nên
+    // wsChatHandler thường đã chèn tin vào rồi. Không kiểm trùng ở đây thì
+    // tin của quầy hiện hai lần.
+    if (postRes?.id && !messages.value.some((m: any) => m._id === postRes.id)) {
+      messages.value = sortMessages([
+        ...messages.value,
+        {
+          _id: postRes.id,
+          content,
+          senderId: currentUserId.value,
+          username: authStore.userInfo?.username ? `admin - ${authStore.userInfo.username}` : 'Admin',
+          date: new Date().toLocaleDateString('vi-VN'),
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          createdAt: new Date().toISOString(),
+          saved: true,
+          distributed: false,
+          seen: false,
+          disableActions: true,
+          messageType: 'text',
+          senderType: 'admin'
+        }
+      ]);
+    }
+  } catch {
+    ElMessage.error('Gửi tin nhắn thất bại');
+  }
+}
+
+// ── Drag ──
+function startDrag(e: MouseEvent) {
+  isDragging.value = true;
+  dragOffset.x = e.clientX - posX.value;
+  dragOffset.y = e.clientY - posY.value;
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('mouseup', stopDrag);
+}
+function onDrag(e: MouseEvent) {
+  if (!isDragging.value) return;
+  posX.value = e.clientX - dragOffset.x;
+  posY.value = Math.max(0, e.clientY - dragOffset.y);
+}
+function stopDrag() {
+  isDragging.value = false;
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', stopDrag);
+}
+
+onMounted(() => {
+  fetchRooms();
+  wsStore.on('chat:message', wsChatHandler);
+  wsStore.on('message:status:updated', wsStatusHandler);
+  wsStore.on('room:read', wsRoomRead);
+  wsStore.on('room:deleted', wsRoomDeleted);
+  wsStore.on('rooms:cleared', wsRoomsCleared);
+  wsStore.on('room:new', wsRoomNew);
+});
+
+onBeforeUnmount(() => {
+  wsStore.off('chat:message', wsChatHandler);
+  wsStore.off('message:status:updated', wsStatusHandler);
+  wsStore.off('room:read', wsRoomRead);
+  wsStore.off('room:deleted', wsRoomDeleted);
+  wsStore.off('rooms:cleared', wsRoomsCleared);
+  wsStore.off('room:new', wsRoomNew);
+});
+
+// Nút "Nhắn tin" ở trang Máy/Bảng điều khiển yêu cầu một phòng cụ thể
+// (openChatWithMember). Lấy yêu cầu đúng một lần rồi xoá.
+function pickRequestedRoom() {
+  const want = chatRequestedRoomId.value;
+  if (!want) return false;
+  chatRequestedRoomId.value = '';
+  if (!rooms.value.some((r: any) => r.roomId === want)) return false;
+  currentRoomId.value = want;
+  return true;
+}
+
+watch(isChatOpen, async open => {
+  if (open) {
+    await fetchRooms();
+    if (!pickRequestedRoom() && rooms.value.length > 0 && !currentRoomId.value) {
+      currentRoomId.value = rooms.value[0].roomId;
+    }
+  } else {
+    currentRoomId.value = '';
+  }
+});
+
+// Khung chat đang mở sẵn mà nhân viên bấm "Nhắn tin" cho máy khác: chuyển phòng.
+watch(chatRequestedRoomId, async id => {
+  if (!id || !isChatOpen.value) return;
+  await fetchRooms();
+  pickRequestedRoom();
+});
+
+watch(currentRoomId, async newId => {
+  if (!newId) return;
+  try {
+    // Chỉ báo cho máy chủ. Máy chủ phát lại room:read cho MỌI thiết bị đang mở
+    // — kể cả thiết bị này — và handler wsRoomRead mới là chỗ tắt con số. Tự
+    // trừ ở đây rồi lại nhận sự kiện là trừ hai lần cho cùng một hành động.
+    await client.put(`/chat/rooms/${newId}/read`);
+    fetchRooms();
+  } catch {
+    // ignore
+  }
+});
+
+// The dialog was unreachable: nothing ever set showNewRoomDialog, and the
+// recipient list was never loaded, so staff could only reply to conversations
+// a customer had already opened.
+async function openNewRoom() {
+  await fetchMembers();
+  showNewRoomDialog.value = true;
+}
+</script>
+
+<template>
+  <!-- Chat panel -->
+  <div v-if="isChatOpen" class="chat-panel" :style="{ left: posX + 'px', top: posY + 'px' }">
+    <div class="chat-panel-handle" @mousedown="startDrag">
+      <span>Chat hỗ trợ</span>
+      <div>
+        <ElButton size="small" text title="Tạo hội thoại mới" @click.stop="openNewRoom">＋</ElButton>
+        <ElButton size="small" text title="Xoá tất cả hội thoại" @click.stop="deleteAllRooms">🗑</ElButton>
+        <ElButton size="small" text @click.stop="isChatOpen = false">─</ElButton>
+      </div>
+    </div>
+    <vue-advanced-chat
+      ref="chatRef"
+      :current-user-id="currentUserId"
+      :rooms="JSON.stringify(rooms)"
+      :messages="JSON.stringify(messages)"
+      :messages-loaded="messagesLoaded"
+      rooms-loaded
+      :room-actions="JSON.stringify(roomActions)"
+      :show-add-room="false"
+      :show-search="false"
+      :show-files="false"
+      :show-audio="false"
+      :show-emojis="false"
+      :show-reaction-emojis="false"
+      :show-new-messages-divider="false"
+      :auto-scroll="JSON.stringify(autoScroll)"
+      :username-options="JSON.stringify({ minUsers: 1, currentUser: true })"
+      :styles="JSON.stringify(chatStyles)"
+      :text-messages="JSON.stringify(textMessages)"
+      height="100%"
+      :room-id="currentRoomId"
+      @send-message="onSendMessage"
+      @fetch-messages="onFetchMessages"
+      @room-action-handler="onRoomAction"
+    />
+  </div>
+
+  <!-- Dialog tạo hội thoại -->
+  <ElDialog v-model="showNewRoomDialog" title="Tạo phòng mới" width="350px" :close-on-click-modal="false">
+    <ElForm label-width="100px">
+      <ElFormItem label="Người nhận" prop="participant_id">
+        <ElSelect v-model="roomForm.participant_id" filterable placeholder="Chọn người nhận" style="width: 100%">
+          <ElOption v-for="u in users" :key="u.id" :label="u.username || u.full_name" :value="u.id" />
+        </ElSelect>
+      </ElFormItem>
+    </ElForm>
+    <template #footer>
+      <ElButton @click="showNewRoomDialog = false">Huỷ</ElButton>
+      <ElButton type="primary" :loading="saving" @click="handleCreateRoom">Tạo</ElButton>
+    </template>
+  </ElDialog>
+</template>
+
+<style scoped>
+.chat-panel {
+  position: fixed;
+  z-index: 2000;
+  width: 60vw;
+  height: 80vh;
+  max-height: calc(100vh - 80px);
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-panel-handle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #f5f7fa;
+  cursor: grab;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 1px solid #e4e7ed;
+  flex-shrink: 0;
+}
+
+.chat-panel-handle:active {
+  cursor: grabbing;
+}
+
+.chat-panel-handle :deep(.el-button) {
+  cursor: pointer !important;
+}
+
+.chat-panel :deep(vue-advanced-chat) {
+  flex: 1;
+  min-height: 0;
+}
+</style>

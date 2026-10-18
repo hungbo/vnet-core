@@ -1,0 +1,189 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { EventsOn } from '../../wailsjs/runtime/runtime'
+
+declare const window: any
+const api = () => window.go?.main?.App
+
+function mapMessage(raw: any, userId: string) {
+  return {
+    _id: raw.id,
+    content: raw.message,
+    senderId: raw.sender_type === 'member' ? userId : '0',
+    username: raw.sender_type === 'member' ? 'Tôi' : 'Admin',
+    createdAt: raw.created_at,
+    date: raw.created_at ? new Date(raw.created_at).toLocaleDateString('vi-VN') : '',
+    timestamp: raw.created_at ? new Date(raw.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '',
+    saved: true,
+    distributed: raw.status === 'delivered' || raw.status === 'read',
+    seen: raw.status === 'read',
+  }
+}
+
+function sortMessages(msgs: any[]) {
+  return msgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+}
+
+export const useChatStore = defineStore('chat', () => {
+  const roomId = ref('')
+  const messages = ref<any[]>([])
+  const screenshotting = ref(false)
+  const messageText = ref('')
+  const userId = ref('')
+
+  function initWsHandlers(uid: string) {
+    userId.value = uid
+    EventsOn('vnet:chat:message', (data: string) => {
+      try {
+        const msg = JSON.parse(data)
+        if (msg.sender_type !== 'member') markDelivered(msg)
+        appendMessage(msg)
+      } catch {}
+    })
+    EventsOn('vnet:message:status:updated', (data: string) => {
+      try {
+        const parsed = JSON.parse(data)
+        updateMessageStatus(parsed.id, parsed.status)
+      } catch {}
+    })
+    EventsOn('vnet:room:read', (data: string) => {
+      try {
+        const parsed = JSON.parse(data)
+        if (parsed.room_id === roomId.value) {
+          messages.value.forEach(m => {
+            m.distributed = true
+            m.seen = true
+          })
+        }
+      } catch {}
+    })
+    // Staff can open a conversation from their side; without this the client
+    // kept waiting on a room it had not been told about.
+    EventsOn('vnet:room:new', () => {
+      loadSupportConv()
+    })
+    // A room removed by staff must not stay on screen with stale messages.
+    EventsOn('vnet:room:deleted', (data: string) => {
+      try {
+        const parsed = JSON.parse(data)
+        if (parsed.room_id === roomId.value || parsed.id === roomId.value) {
+          roomId.value = ''
+          messages.value = []
+        }
+      } catch {}
+    })
+  }
+
+  async function loadSupportConv(uid?: string) {
+    if (uid) userId.value = uid
+    try {
+      const data = await api().GetRooms()
+      const list = data ? JSON.parse(data) : []
+      if (list.length > 0) {
+        roomId.value = list[0].id
+      } else {
+        const uid = userId.value || ''
+        const created = await api().CreateRoom('Hỗ trợ', uid, 'member')
+        const parsed = JSON.parse(created)
+        roomId.value = parsed.id || parsed
+      }
+      await loadMessages()
+    } catch (e) {
+      console.error('loadSupportConv error:', e)
+    }
+  }
+
+  async function loadMessages() {
+    if (!roomId.value) return
+    try {
+      const data = await api().GetRoomMessages(roomId.value)
+      const parsed = data ? JSON.parse(data) : []
+      const items = Array.isArray(parsed) ? parsed : []
+      messages.value = sortMessages(items.map(m => mapMessage(m, userId.value)))
+    } catch { messages.value = [] }
+  }
+
+  function appendMessage(raw: any) {
+    // Tin của một phòng khác phòng đang giữ: máy chủ chỉ gửi tin cho người
+    // trong phòng, nên đây là phòng MỚI của chính khách này — quầy vừa xoá hết
+    // phòng cũ rồi mở phòng khác. Bản cũ bỏ qua im lặng, nên sau một lần quầy
+    // "Xoá tất cả" thì khách không bao giờ thấy tin nào nữa. Chuyển sang phòng
+    // đó và tải lại cả cuộc trò chuyện (đã gồm tin này).
+    if (raw.room_id && raw.room_id !== roomId.value) {
+      roomId.value = raw.room_id
+      loadMessages()
+      return
+    }
+    if (!messages.value.some(m => m._id === raw.id)) {
+      messages.value = sortMessages([...messages.value, mapMessage(raw, userId.value)])
+    }
+  }
+
+  async function sendMessage() {
+    if (!messageText.value.trim() || !roomId.value) return
+    try {
+      const raw = await api().SendRoomMessage(roomId.value, messageText.value)
+      if (raw) {
+        const msg = JSON.parse(raw)
+        appendMessage(msg)
+      }
+      messageText.value = ''
+    } catch (e) {
+      ElMessage.error(String(e))
+    }
+  }
+
+  async function sendScreenshot() {
+    if (!roomId.value) return
+    screenshotting.value = true
+    try {
+      const imgData = await api().TakeScreenshot()
+      if (!imgData) {
+        ElMessage.warning('Chụp màn hình không khả dụng trên nền tảng này')
+        return
+      }
+      await api().SendScreenshotMessage(roomId.value, imgData)
+    } catch (e) {
+      ElMessage.error(String(e))
+    } finally {
+      screenshotting.value = false
+    }
+  }
+
+  function updateMessageStatus(id: string, status: string) {
+    const msg = messages.value.find(m => m._id === id)
+    if (msg) msg.distributed = status === 'delivered' || status === 'read'
+    if (msg) msg.seen = status === 'read'
+  }
+
+  async function markDelivered(msg: any) {
+    if (msg.status === 'sent') {
+      try { await api().MarkMessageDelivered(msg.id) } catch {}
+    }
+  }
+
+  async function markRead(msg: any) {
+    if (msg.status !== 'read') {
+      try { await api().MarkMessageRead(msg.id) } catch {}
+    }
+  }
+
+  async function markRoomRead() {
+    if (!roomId.value) return
+    try { await api().MarkRoomMessagesRead(roomId.value) } catch {}
+  }
+
+  function clearAll() {
+    roomId.value = ''
+    messages.value = []
+  }
+
+  return {
+    roomId, messages, screenshotting, messageText,
+    initWsHandlers,
+    loadSupportConv, loadMessages, appendMessage, sendMessage, sendScreenshot,
+    updateMessageStatus, markDelivered, markRead, markRoomRead,
+    clearAll,
+  }
+})

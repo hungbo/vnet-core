@@ -1,0 +1,167 @@
+<script setup lang="tsx">
+import { ref, watch } from 'vue';
+import { fetchBatchDeleteRole, fetchDeleteRole, fetchGetRoleList } from '@/service/api';
+import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
+import { $t } from '@/locales';
+import RoleOperateDrawer from './modules/role-operate-drawer.vue';
+import RoleSearch from './modules/role-search.vue';
+
+const searchParams = ref(getInitSearchParams());
+
+function getInitSearchParams(): Api.SystemManage.RoleSearchParams {
+  return {
+    current: 1,
+    size: 10,
+    roleName: undefined
+  };
+}
+
+const { columns, columnChecks, data, loading, getData, getDataByPage, mobilePagination } = useUIPaginatedTable({
+  paginationProps: {
+    currentPage: searchParams.value.current,
+    pageSize: searchParams.value.size
+  },
+  api: () => fetchGetRoleList(searchParams.value),
+  transform: response => defaultTransform(response),
+  onPaginationParamsChange: params => {
+    searchParams.value.current = params.currentPage;
+    searchParams.value.size = params.pageSize;
+  },
+  columns: () => [
+    { prop: 'selection', type: 'selection', width: 48 },
+    { prop: 'index', type: 'index', label: $t('common.index'), width: 64 },
+    { prop: 'roleName', label: $t('page.manage.role.roleName'), minWidth: 120 },
+    { prop: 'roleDesc', label: $t('page.manage.role.roleDesc'), minWidth: 120 },
+    {
+      prop: 'operate',
+      label: $t('common.operate'),
+      width: 130,
+      formatter: row => (
+        <div class="flex-center">
+          <ElButton type="primary" plain size="small" onClick={() => edit(row.id as unknown as string)}>
+            {$t('common.edit')}
+          </ElButton>
+          <ElPopconfirm title={$t('common.confirmDelete')} onConfirm={() => handleDelete(row.id as unknown as string)}>
+            {{
+              reference: () => (
+                <ElButton type="danger" plain size="small">
+                  {$t('common.delete')}
+                </ElButton>
+              )
+            }}
+          </ElPopconfirm>
+        </div>
+      )
+    }
+  ]
+});
+
+const {
+  drawerVisible,
+  operateType,
+  editingData,
+  handleAdd,
+  handleEdit,
+  checkedRowKeys,
+  onBatchDeleted,
+  onDeleted
+  // closeDrawer
+} = useTableOperate(data, 'id', getData);
+
+// Vai trò chỉ đổi qua /systemManage/*. Như trang Người dùng: đang tick chọn dòng
+// thì hoãn, vì nạp lại bảng xoá mất lựa chọn.
+const { resume } = useRealtimeRefresh(['systemManage'], getData, {
+  paused: () => checkedRowKeys.value.length > 0
+});
+
+watch(
+  () => checkedRowKeys.value.length,
+  n => {
+    if (!n) resume();
+  }
+);
+
+async function handleBatchDelete() {
+  if (!checkedRowKeys.value.length) return;
+  const { error } = await fetchBatchDeleteRole(checkedRowKeys.value.map(String));
+  if (error) return;
+  onBatchDeleted();
+}
+
+async function handleDelete(id: string) {
+  const { error } = await fetchDeleteRole(String(id));
+  // Backend từ chối xoá vai trò còn người dùng — báo lỗi đã hiện sẵn ở tầng
+  // request, ở đây chỉ cần không giả vờ là đã xoá.
+  if (error) return;
+  onDeleted();
+}
+
+function resetSearchParams() {
+  searchParams.value = getInitSearchParams();
+  // Giống trang Người dùng: chỉ xoá tham số mà không nạp lại thì bảng vẫn giữ
+  // nguyên kết quả đã lọc trong khi ô tìm đã trắng.
+  getDataByPage();
+}
+
+function edit(id: string) {
+  handleEdit(id);
+}
+</script>
+
+<template>
+  <div class="min-h-500px flex-col-stretch gap-16px overflow-hidden lt-sm:overflow-auto">
+    <RoleSearch v-model:model="searchParams" @reset="resetSearchParams" @search="getDataByPage" />
+    <ElCard class="card-wrapper sm:flex-1-hidden">
+      <template #header>
+        <div class="flex items-center justify-between">
+          <p>{{ $t('page.manage.role.title') }}</p>
+          <TableHeaderOperation
+            v-model:columns="columnChecks"
+            :disabled-delete="checkedRowKeys.length === 0"
+            :loading="loading"
+            @add="handleAdd"
+            @delete="handleBatchDelete"
+            @refresh="getData"
+          />
+        </div>
+      </template>
+      <div class="h-[calc(100%-52px)]">
+        <ElTable
+          v-loading="loading"
+          height="100%"
+          border
+          class="sm:h-full"
+          :data="data"
+          row-key="id"
+          @selection-change="checkedRowKeys = $event.map((r: any) => r.id)"
+        >
+          <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
+        </ElTable>
+        <div class="mt-20px flex justify-end">
+          <ElPagination
+            v-if="mobilePagination.total"
+            layout="total,prev,pager,next,sizes"
+            v-bind="mobilePagination"
+            @current-change="mobilePagination['current-change']"
+            @size-change="mobilePagination['size-change']"
+          />
+        </div>
+      </div>
+      <RoleOperateDrawer
+        v-model:visible="drawerVisible"
+        :operate-type="operateType"
+        :row-data="editingData"
+        @submitted="getDataByPage"
+      />
+    </ElCard>
+  </div>
+</template>
+
+<style lang="scss" scoped>
+:deep(.el-card) {
+  .ht50 {
+    height: calc(100% - 50px);
+  }
+}
+</style>
