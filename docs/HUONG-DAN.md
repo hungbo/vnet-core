@@ -17,6 +17,7 @@ Mới bắt đầu và chỉ muốn chạy thử? Đọc [BAT-DAU-NHANH.md](./BA
 **Triển khai**
 - [0. Hệ thống gồm những gì](#0-hệ-thống-gồm-những-gì)
 - [1. Dựng máy chủ](#1-dựng-máy-chủ)
+  - [1.2. Docker](#12-cách-1--docker) · [1.2a. Bộ cài Windows](#12a-cách-2--bộ-cài-windows-không-cần-docker) · [1.3. Tệp thực thi](#13-cách-3--tệp-thực-thi-tự-build)
   - [1.7. Bật cập nhật game (tuỳ chọn)](#17-bật-cập-nhật-game-tuỳ-chọn)
 - [2. Cài máy trạm lên PC khách](#2-cài-máy-trạm-lên-pc-khách)
 - [3. Máy trạm dưới mắt khách](#3-máy-trạm-dưới-mắt-khách)
@@ -84,18 +85,27 @@ Máy im lặng quá **45 giây** (lỡ 3 nhịp) thì hệ thống đánh dấu 
 
 # 1. Dựng máy chủ
 
-Hai đường. Docker là đường nên đi.
+Ba đường. Chọn theo máy chủ bạn có:
+
+| Máy chủ của bạn | Đường nên đi | Mục |
+|---|---|---|
+| **Windows** — Windows Server 2016 trở lên, hoặc Windows 10/11 64-bit | **Bộ cài Windows** `vnet-server-setup-<phiên bản>.exe`: một tệp gồm máy chủ chạy như dịch vụ Windows, PostgreSQL đi kèm và mọi bước cấu hình. Không cần Docker, không cần cài PostgreSQL. Đây là đường duy nhất cho **Windows Server 2019**, nơi không chạy được container Linux | [1.2a](#12a-cách-2--bộ-cài-windows-không-cần-docker) |
+| Linux, macOS, hoặc máy đã có Docker | **Docker** | [1.2](#12-cách-1--docker) |
+| Muốn tự lo PostgreSQL và dịch vụ | **Tệp thực thi** tự build | [1.3](#13-cách-3--tệp-thực-thi-tự-build) |
+
+Dù đi đường nào, các mục [1.4 biến môi trường](#14-biến-môi-trường), [1.5 ba luật từ chối khởi động](#15-ba-luật-khiến-máy-chủ-từ-chối-khởi-động) và [1.6 cổng](#16-cổng-và-mạng) đều áp dụng. Máy trạm trỏ về `http://<IP máy chủ>:20800`.
 
 ## 1.1. Cần gì trước
 
 | Thứ | Bản |
 |---|---|
-| PostgreSQL | 15 trở lên (Docker dùng 16) |
-| Docker + Docker Compose | bản nào cũng được, miễn có `docker compose` |
+| PostgreSQL | 15 trở lên. Docker dùng 16; **bộ cài Windows kèm sẵn PostgreSQL 16**, không cần cài thêm |
+| Docker + Docker Compose | Chỉ cho đường Docker. Bản nào cũng được, miễn có `docker compose` |
+| Windows 64-bit + quyền quản trị | Chỉ cho bộ cài Windows |
 
-Nếu tự biên dịch thay vì dùng Docker thì cần thêm **Go 1.25+**, **Node 20.19+**, **pnpm 8.6+**.
+Nếu tự biên dịch (đường Docker hay tệp thực thi) thì cần thêm **Go 1.25+**, **Node 20.19+**, **pnpm 8.6+**. Tạo bộ cài Windows cần thêm `makensis`, `curl`, `unzip` (xem [1.2a](#12a-cách-2--bộ-cài-windows-không-cần-docker)).
 
-## 1.2. Cách 1 — Docker (khuyến nghị)
+## 1.2. Cách 1 — Docker
 
 ### Bước 1: điền cấu hình
 
@@ -157,7 +167,7 @@ Mở `http://<địa chỉ máy chủ>:20800`.
 | `manager` | Quản lý |
 | `staff` | Nhân viên |
 
-> **Đổi cả ba mật khẩu ngay sau khi đăng nhập lần đầu.** Mật khẩu này công khai trong mã nguồn. Vào **góc trên phải → Trung tâm người dùng → Đổi mật khẩu**.
+> **Đổi cả ba mật khẩu ngay sau khi đăng nhập lần đầu.** Mật khẩu này công khai trong mã nguồn, nên lần đăng nhập đầu của mỗi tài khoản hiện hộp **Bắt buộc đổi mật khẩu** — không đóng được, mật khẩu mới ít nhất 8 ký tự. Sau này đổi lại ở **tên tài khoản góc trên phải → Đổi mật khẩu**.
 
 ### Vận hành hằng ngày
 
@@ -170,7 +180,74 @@ docker compose down -v            # dừng và XOÁ SẠCH database
 
 `down -v` xoá cả ổ đĩa chứa database. Không có bước hỏi lại.
 
-## 1.3. Cách 2 — Tệp thực thi
+## 1.2a. Cách 2 — Bộ cài Windows (không cần Docker)
+
+Một tệp `vnet-server-setup-<phiên bản>.exe` (khoảng 64 MB) cài trọn máy chủ lên Windows 64-bit: `vnet-server.exe` (API cùng trang quản trị nhúng sẵn) chạy như **dịch vụ Windows**, PostgreSQL 16 bản portable đi kèm (có `pg_dump` và `pg_restore` cho sao lưu), `vnet-migrate.exe`, `vnet-seed.exe`, và bộ thư viện Visual C++ mà PostgreSQL cần. Bật máy lên là chạy, không ai phải đăng nhập Windows.
+
+### Bước 1: lấy bộ cài
+
+Có hai cách:
+
+- **Tải về** từ mục **Releases** của repo GitHub, khi đã có bản phát hành.
+- **Tự build** trên Mac hoặc Linux — không cần máy Windows, vì bộ cài làm bằng NSIS. Cần Go 1.25+, **pnpm 10** (`npm install -g pnpm@10`), `makensis` (`brew install makensis`), `curl` và `unzip`. Với pnpm 11, lần build đầu — khi `admin/node_modules` chưa có — dừng ở bước cài thư viện với lỗi `ERR_PNPM_IGNORED_BUILDS`. Chạy:
+
+  ```bash
+  cd core
+  bash scripts/build-server-windows.sh 1.2.0
+  ```
+
+  Tham số duy nhất là số hiệu phiên bản (bỏ trống thì thành `dev`). Lần đầu lệnh tải PostgreSQL (~320 MB, kiểm băm SHA-256, lưu ở `~/.cache/vnet-build`), rồi dựng trang quản trị, biên dịch ba tệp `.exe` cho Windows và đóng gói. Kết quả là `dist/vnet-server-setup-1.2.0.exe`; cuối lệnh in SHA-256 của tệp để bạn đối chiếu sau khi chép sang máy chủ.
+
+Chép tệp sang máy chủ Windows.
+
+### Bước 2: chạy bộ cài
+
+Bấm đúp tệp; Windows hỏi quyền quản trị vì bộ cài cần. Các trang: **Welcome** → chọn thư mục → cài → **Finish**. Thư mục mặc định là **`C:\VNET`** (ổ C gốc, không phải Program Files, để bạn dễ tìm dữ liệu và bản sao lưu và đường dẫn không có khoảng trắng).
+
+Ô chi tiết khi cài hiện từng việc bộ cài làm, bằng chữ **không dấu** — cố ý, vì Windows hiển thị chữ có dấu ở đó thành rác:
+
+1. Dừng dịch vụ cũ nếu có, rồi chép tệp.
+2. Cài Visual C++ Runtime.
+3. Tạo `data\config.env` với mật khẩu database và `JWT_SECRET` **ngẫu nhiên**, cổng 20800.
+4. Khởi tạo PostgreSQL trong `data\pgdata`, ở cổng riêng **25432**, **chỉ nghe trên chính máy này**.
+5. Đăng ký hai dịch vụ Windows tự chạy khi bật máy: **VNETPostgres** và **VNETServer** (phụ thuộc Postgres; chết thì Windows tự bật lại sau 10 giây).
+6. Dựng bảng và sửa schema (`vnet-migrate`).
+7. Tạo ba tài khoản `admin`, `manager`, `staff`, **mỗi tài khoản một mật khẩu ngẫu nhiên** — chỉ ở lần cài đầu.
+8. Mở cổng TCP 20800 trong tường lửa Windows (luật `VNET-Server`, mọi profile mạng).
+
+Dòng cuối ghi địa chỉ cho máy trạm, dạng `Xong. Dia chi cho may tram: http://192.168.x.x:20800` — chép lại, mọi máy trạm cần nó. Cài thất bại thì hiện hộp thoại trỏ tới `C:\VNET\logs\install.log` (xem [D.3](#bộ-cài-máy-chủ-windows-báo-lỗi-hoặc-máy-chủ-không-lên)).
+
+Cài xong có lối tắt **VNET Quản lý** trên Desktop (mở `http://localhost:20800`) và thư mục **VNET Server** trong Start Menu: *VNET Quản lý*, *Thư mục dữ liệu*, *Nhật ký*, *Gỡ cài đặt*.
+
+### Bước 3: đăng nhập và đổi mật khẩu
+
+Mở **`C:\VNET\data\initial-admin-password.txt`** (chỉ tài khoản quản trị Windows mở được), có ba dòng dạng `admin : <mật khẩu>`. Mỗi tài khoản **một mật khẩu khác nhau**, và không có `admin123` ở đâu cả: giao `staff` cho thu ngân mà chung mật khẩu thì cũng là giao luôn chìa khoá `admin`.
+
+Đăng nhập tại `http://localhost:20800` (hoặc `http://<IP máy chủ>:20800` từ máy khác). Khác đường Docker, trang **không** ép đổi mật khẩu vì mật khẩu này không phải mật khẩu mặc định công khai — nhưng vẫn nên đổi ngay: **bấm tên tài khoản ở góc trên phải → Đổi mật khẩu**, rồi **xoá tệp mật khẩu**, vì nó nằm trên đĩa dưới dạng chữ thường.
+
+### Vận hành hằng ngày
+
+| Việc | Cách làm |
+|---|---|
+| Xem nhật ký | `C:\VNET\logs\server.log` — xoay vòng ở 20 MB, giữ một bản cũ `server.log.1`; quán 50 máy ra cỡ 30 MB mỗi ngày. Nhật ký cài đặt: `logs\install.log`. Nhật ký PostgreSQL: `data\pgdata\log` |
+| Dừng, chạy lại máy chủ | `services.msc` → **VNET Server**, hoặc PowerShell quản trị: `Restart-Service VNETServer` |
+| Sửa cấu hình | Sửa `C:\VNET\data\config.env`, mỗi dòng `TÊN=giá trị`, **không dấu nháy**, rồi khởi động lại **VNET Server**. Biến nào đặt được: [1.4](#14-biến-môi-trường). **Đừng đổi `DB_PASSWORD` và `DB_PORT`** — database đã tạo theo hai giá trị này. Đổi `SERVER_PORT` thì chạy lại bộ cài để mở cổng tường lửa mới |
+| Sao lưu | Trang **Hệ thống → Sao lưu** gọi `pg_dump` đi kèm bộ cài; tệp nằm ở `C:\VNET\data\backups`. Chép ra ổ khác hoặc máy khác — cùng ổ với dữ liệu thì ổ hỏng là mất cả hai. Xem thêm [D.2](#d2-sao-lưu) |
+| Nâng cấp | Tải hoặc build bộ cài **phiên bản mới**, chạy lại như lần đầu. Dữ liệu, `config.env`, mật khẩu và tài khoản được **giữ nguyên**; bộ cài chỉ thay tệp chương trình, bật lại dịch vụ và sửa schema. **Sao lưu trước.** Máy chủ ngừng phục vụ trong lúc cài; máy chủ tắt quá 5 phút thì máy trạm đang có khách khởi động lại ([2.6](#26-vì-sao-dịch-vụ-khó-tắt)), nên làm lúc quán vắng |
+| Gỡ | **Settings → Apps → VNET Server**, hoặc *Gỡ cài đặt* trong Start Menu. Bộ cài dừng và xoá hai dịch vụ, xoá luật tường lửa, rồi **hỏi có xoá luôn dữ liệu của quán không — mặc định là Không**. Chọn Không thì `C:\VNET\data` còn nguyên và lần cài lại sau dùng tiếp dữ liệu cũ. Gỡ im lặng (`/S`) cũng giữ dữ liệu |
+
+### Điều dễ nhầm
+
+- **Thư mục `C:\VNET` được khoá quyền.** Người dùng Windows thường chỉ đọc và chạy được; `data\` chỉ cho SYSTEM và Administrators. Nhờ vậy một khách có tài khoản Windows trên máy chủ cũng không đọc được `config.env` (mật khẩu database, `JWT_SECRET`).
+- **PostgreSQL đi kèm chạy ở cổng 25432, chỉ trên máy này.** Nó không đụng một PostgreSQL khác đã có sẵn, và máy khác trong mạng quán không nối được vào database.
+- **Đổi bản chính của PostgreSQL thì bộ cài từ chối cài đè** (thông báo *"Database tao bang PostgreSQL 16, bo cai mang PostgreSQL 17..."*): database cũ phải được `pg_upgrade` trước. Đổi bản vá thì an toàn.
+- **`UPLOAD_DIR` và `BACKUP_DIR` do dịch vụ tự đặt** là `data\uploads` và `data\backups`; đặt chúng trong `config.env` không có tác dụng.
+- **Chạy lại bộ cài sau một lần cài hỏng được.** Nó kiểm database thật chứ không tin dấu vết lần trước: chưa có database thì tạo, bảng người dùng còn trống thì mới tạo tài khoản và sinh mật khẩu.
+- **Đã chạy trong dịch vụ, không có cửa sổ lệnh.** Mọi dòng nhật ký, kể cả lý do máy chủ từ chối khởi động (`Refusing to start:` — xem [1.5](#15-ba-luật-khiến-máy-chủ-từ-chối-khởi-động)), nằm trong `logs\server.log`.
+
+> **Đã kiểm khi viết mục này:** cấu trúc bộ cài (mở bộ cài bản 1.1.15 bằng 7-Zip: ba tệp `.exe`, `pgsql\` có `pg_dump`/`pg_restore`/`psql`/`pg_ctl`, `setup\vc_redist.x64.exe` và `setup\vnet-server-install.ps1`), lệnh build trên macOS, và cơ chế mật khẩu ngẫu nhiên từng tài khoản (`SEED_PASSWORD_<TÊN>`, đăng nhập đúng, không bị ép đổi). **Đọc từ mã, chưa chạy thật trên Windows:** toàn bộ phần chạy bộ cài, tạo dịch vụ và luật tường lửa, thư mục `C:\VNET`, sao lưu bằng `pg_dump`, nâng cấp và gỡ cài đặt.
+
+## 1.3. Cách 3 — Tệp thực thi tự build
 
 ```bash
 cd core
@@ -200,7 +277,7 @@ go run ./cmd/seed
 
 ## 1.4. Biến môi trường
 
-Máy chủ **không tự đọc tệp `.env`**. Các tệp `.env` trong repo chỉ để tham khảo hoặc để Docker Compose đọc; chạy tay thì phải `export` hoặc truyền qua trình quản lý dịch vụ.
+Máy chủ **không tự đọc tệp `.env`**. Các tệp `.env` trong repo chỉ để tham khảo hoặc để Docker Compose đọc; chạy tay thì phải `export` hoặc truyền qua trình quản lý dịch vụ. Ngoại lệ là bản cài bằng bộ cài Windows ([1.2a](#12a-cách-2--bộ-cài-windows-không-cần-docker)): dịch vụ tự đọc `C:\VNET\data\config.env`, mỗi dòng `TÊN=giá trị`.
 
 ### Máy chủ
 
@@ -269,6 +346,8 @@ Khi `GIN_MODE=release`, máy chủ tự kiểm ba điều và **thoát ngay** n�
 |---|---|
 | Máy chủ (giao diện + API) | `8080`, đổi bằng `SERVER_PORT` hoặc `APP_PORT` trong Docker |
 | PostgreSQL | `5432` — trong Docker **không** mở ra ngoài |
+| Máy chủ cài bằng bộ cài Windows | `20800` (`SERVER_PORT` trong `data\config.env`); bộ cài tự mở cổng này trong tường lửa Windows |
+| PostgreSQL của bộ cài Windows | `25432`, chỉ nghe trên chính máy chủ — không đụng PostgreSQL khác trên máy |
 | Trang quản trị khi phát triển | `20900` |
 
 Đổi `APP_PORT` thì **phải sửa `ALLOWED_ORIGINS` cho khớp**, nếu không trình duyệt sẽ bị chặn khi gọi API.
@@ -1319,7 +1398,7 @@ Một việc lỗi không làm chết máy chủ và không chặn các việc k
 
 ## D.2. Sao lưu
 
-Hệ thống gọi `pg_dump` chạy nền. Tệp lưu trong thư mục `BACKUP_DIR`, mặc định là `backups` cạnh nơi chạy máy chủ.
+Hệ thống gọi `pg_dump` chạy nền. Tệp lưu trong thư mục `BACKUP_DIR`, mặc định là `backups` cạnh nơi chạy máy chủ. Với bộ cài Windows, dịch vụ tự đặt nó là `C:\VNET\data\backups` và đã kèm sẵn `pg_dump`/`pg_restore` — không cài gì thêm, nhưng vẫn nên chép tệp ra ổ khác.
 
 > **Cảnh báo cho ai chạy bằng Docker.** Thư mục sao lưu **không được gắn ổ đĩa ngoài**. Tệp sao lưu nằm trong lớp ghi tạm của container và **mất sạch khi container bị dựng lại** — mà `docker compose up --build` thì dựng lại container. Chép tệp ra ngoài ngay sau khi tạo:
 >
@@ -1335,7 +1414,7 @@ Nên: sao lưu trước mỗi lần nâng cấp, và đặt lịch sao lưu đ�
 
 ### Máy chủ không khởi động
 
-Xem nhật ký: `docker compose logs app`.
+Xem nhật ký: `docker compose logs app` (bộ cài Windows: `C:\VNET\logs\server.log`; xem thêm [mục sự cố riêng của bộ cài Windows](#bộ-cài-máy-chủ-windows-báo-lỗi-hoặc-máy-chủ-không-lên) ngay dưới).
 
 | Dòng thấy trong nhật ký | Nguyên nhân | Sửa |
 |---|---|---|
@@ -1345,6 +1424,20 @@ Xem nhật ký: `docker compose logs app`.
 | `Refusing to start: ALLOWED_ORIGINS must not contain "*"` | Dùng `*` | Liệt kê từng địa chỉ |
 | Compose báo thiếu biến | Thiếu một trong `DB_PASSWORD`, `JWT_SECRET`, `ALLOWED_ORIGINS` | Điền vào `.env` |
 
+### Bộ cài máy chủ Windows báo lỗi, hoặc máy chủ không lên
+
+Chỉ cho đường [1.2a](#12a-cách-2--bộ-cài-windows-không-cần-docker). Nhật ký cài đặt ở `C:\VNET\logs\install.log`, nhật ký máy chủ ở `C:\VNET\logs\server.log`. Dòng báo lỗi của bộ cài bắt đầu bằng `LOI:` (không dấu):
+
+| Thấy | Nguyên nhân | Sửa |
+|---|---|---|
+| Hộp thoại *"Cài Visual C++ Runtime thất bại (mã N)"* | `setup\vc_redist.x64.exe` không cài được; mã `N` là mã thoát của nó | Khởi động lại máy chủ rồi chạy lại bộ cài; còn lỗi thì tra mã `N` của Microsoft |
+| `LOI: PostgreSQL khong len sau 30 giay` | PostgreSQL không bật kịp trong 30 giây (máy chậm, antivirus quét ổ, cổng 25432 bị chiếm...) | Xem `C:\VNET\data\pgdata\log` (chính thông báo chỉ chỗ này); chạy lại bộ cài |
+| `LOI: VNET Server khong tra loi sau 60 giay` kèm vài dòng cuối `server.log` | Máy chủ không lên. Hay gặp: cổng 20800 bị chương trình khác chiếm, hoặc `config.env` sai luật ở [1.5](#15-ba-luật-khiến-máy-chủ-từ-chối-khởi-động) | Đọc dòng `Refusing to start:` trong `server.log`; đổi `SERVER_PORT` trong `config.env` rồi chạy lại bộ cài |
+| `LOI: Database tao bang PostgreSQL X, bo cai mang PostgreSQL Y` | Bộ cài mới mang bản chính PostgreSQL khác với database đang có | Cài bộ cài cùng bản chính, hoặc `pg_upgrade` database trước |
+| `LOI: Khong khoa duoc quyen thu muc ...` | Bộ cài không đặt được quyền cho thư mục cài (`icacls` báo lỗi) | Chạy bộ cài bằng tài khoản quản trị rồi thử lại; xem `install.log` để biết thư mục nào |
+| Cài xong, máy khác trong mạng không mở được `http://<IP>:20800` nhưng máy chủ tự mở được | Luật tường lửa `VNET-Server` bị tắt hoặc xoá, hoặc phần mềm tường lửa khác chặn | Chạy lại bộ cài — nó tạo lại luật mỗi lần; kiểm tường lửa của antivirus |
+| Sau khi bật máy chủ, trang không mở trong vài phút đầu | Dịch vụ **VNET Server** phải chờ **VNETPostgres** lên; nếu database chưa sẵn sàng máy chủ tự thoát và Windows bật lại sau 10 giây | Chờ một lúc; vẫn không lên thì xem `server.log` |
+
 ### Máy hiện Ngoại tuyến
 
 Đi lần lượt:
@@ -1352,7 +1445,7 @@ Xem nhật ký: `docker compose logs app`.
 1. **Dịch vụ có chạy không?** Trên máy đó mở `services.msc`, tìm **VNET Client Agent**. Không thấy thì chạy `vnet-client.exe --install-service`.
 2. **Mã máy có khớp không?** So mã trong `config.json` cạnh tệp `.exe` với mã ở trang **Máy**. Sai một ký tự là nhịp tim không khớp vào đâu cả.
 3. **Địa chỉ máy chủ đúng chưa?** Trên máy đó mở trình duyệt vào `http://<địa chỉ máy chủ>:20800/api/health`. Không ra gì thì là chuyện mạng hoặc tường lửa.
-4. **Máy chủ có thấy nhịp tim không?** `docker compose logs -f app` rồi xem có dòng nào nhắc mã máy đó.
+4. **Máy chủ có thấy nhịp tim không?** `docker compose logs -f app` (bộ cài Windows: mở `C:\VNET\logs\server.log`) rồi xem có dòng nào nhắc mã máy đó.
 
 Máy chỉ cần im 45 giây là bị đánh ngoại tuyến, nên mạng chập chờn cũng đủ gây ra.
 
