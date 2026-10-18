@@ -277,8 +277,17 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 		},
 	}
 
+	// Router đòi client.admin NGOÀI mã riêng cho bốn nhóm API này. Menu phải đòi
+	// đúng như vậy, không thì vai trò chỉ có backups.view thấy mục Sao lưu rồi
+	// mở ra bị 403.
+	coCongBackOffice := hasPerm("client.admin")
+	trangBackOffice := map[string]bool{"vnet_audit": true, "vnet_notifications": true, "vnet_backups": true}
+
 	var filteredVnetChildren []RouteItem
 	for _, r := range allVnetRoutes {
+		if trangBackOffice[r.Name] && !coCongBackOffice {
+			continue
+		}
 		if hasPerm(r.Meta.RequiredPermission) {
 			r.Meta.RequiredPermission = ""
 			filteredVnetChildren = append(filteredVnetChildren, r)
@@ -295,9 +304,9 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 
 	routes := []RouteItem{vnetRoute}
 
-	// Nhóm "Quản lý hệ thống" theo quyền xem tài khoản nhân viên, không còn dựa
-	// vào client.admin (mã đó nay chỉ để máy trạm nhận diện, không gác API nào).
-	if hasPerm("system.users.view") {
+	// Nhóm "Quản lý hệ thống": /systemManage đòi client.admin cộng mã riêng, nên
+	// menu cũng đòi cả hai.
+	if coCongBackOffice && hasPerm("system.users.view") {
 		routes = append(routes, RouteItem{
 			Name:      "system",
 			Path:      "/system",

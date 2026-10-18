@@ -98,3 +98,26 @@ func TestVaiTroMacDinhKhongVuotRanh(t *testing.T) {
 		assert.False(t, staff[c], "nhân viên quầy không được có %q", c)
 	}
 }
+
+// upload.file gác ảnh sản phẩm, ảnh giấy tờ hội viên, ảnh tài sản máy: việc hằng
+// ngày của quản lý và quầy. Xếp nó vào nhóm back-office thì cả hai vai trò mặc
+// định đều bị 403 khi tải ảnh.
+func TestUploadFileKhongThuocBackOfficeVaCapChoQuanLyLanNhanVien(t *testing.T) {
+	module := ""
+	for _, p := range Catalog {
+		if p.Code == "upload.file" {
+			module = p.Module
+		}
+	}
+	require.NotEmpty(t, module, "danh mục thiếu upload.file")
+	assert.False(t, BackOfficeModules[module], "upload.file không được nằm trong nhóm back-office %q", module)
+	assert.Contains(t, ManagerCodes(), "upload.file")
+	assert.Contains(t, StaffCodes(), "upload.file")
+}
+
+// client.admin là cổng vào back-office (router đòi nó cộng mã riêng): quản lý và
+// nhân viên không được giữ.
+func TestClientAdminChiDanhChoChu(t *testing.T) {
+	assert.NotContains(t, ManagerCodes(), "client.admin")
+	assert.NotContains(t, StaffCodes(), "client.admin")
+}

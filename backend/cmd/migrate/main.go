@@ -166,6 +166,17 @@ var migrations = []migration{
 	// đã tạo ra hai ca mở, cùng tính một khoản tiền mặt hai lần. Chỉ mục duy nhất
 	// trên hằng số (true), lọc status = 'open', cho phép tối đa một dòng như vậy.
 	{name: "unique_single_open_shift", sql: `CREATE UNIQUE INDEX IF NOT EXISTS uniq_shift_open ON shifts ((true)) WHERE status = 'open'`},
+
+	// upload.file chuyển từ nhóm back-office `system` sang nhóm `files`.
+	// dongBoQuyen chỉ THÊM mã còn thiếu nên dòng cũ vẫn mang module `system`:
+	// màn hình Phân quyền xếp nó cạnh quản lý tài khoản. Hệ thống mới không cần
+	// bước này (dongBoQuyen tạo mã với module đúng), nên bảng chưa có thì bỏ qua.
+	{name: "move_upload_file_to_files_module", sql: `
+		DO $$ BEGIN
+			IF to_regclass('permissions') IS NOT NULL THEN
+				UPDATE permissions SET module = 'files' WHERE code = 'upload.file';
+			END IF;
+		END $$`},
 }
 
 func main() {
@@ -234,7 +245,29 @@ func dongBoQuyen(db *gorm.DB) {
 		log.Printf("OK   cấp toàn bộ %d quyền cho vai trò %s", len(tatCa), r.Name)
 	}
 
-	// 3. Cấp mặc định cho hai vai trò sẵn có — đúng một lần.
+	// 3. upload.file nay nằm trong ManagerCodes/StaffCodes (trước đó thuộc nhóm
+	// back-office nên cả hai vai trò đều thiếu, và thêm ảnh sản phẩm, ảnh giấy
+	// tờ hội viên, ảnh tài sản máy đều bị 403). Hệ thống đã chạy qua mốc v2 từ
+	// lâu nên không nhận được qua bước 4; cấp bù đúng một lần, chỉ THÊM.
+	const mốcTảiTệp = "grant_upload_file_v1"
+	var đãTảiTệp int64
+	db.Table("schema_migrations").Where("name = ?", mốcTảiTệp).Count(&đãTảiTệp)
+	if đãTảiTệp == 0 {
+		kq := db.Exec(`INSERT INTO role_permissions (role_id, permission_id)
+			SELECT r.id, p.id FROM roles r, permissions p
+			WHERE r.name IN ('manager', 'staff') AND p.code = ?
+			ON CONFLICT DO NOTHING`, "upload.file")
+		if kq.Error != nil {
+			log.Printf("FAIL %s: %v", mốcTảiTệp, kq.Error)
+		} else {
+			db.Exec("INSERT INTO schema_migrations (name) VALUES (?)", mốcTảiTệp)
+			log.Printf("OK   %s: cấp upload.file cho %d vai trò", mốcTảiTệp, kq.RowsAffected)
+		}
+	} else {
+		log.Printf("SKIP %s (already applied)", mốcTảiTệp)
+	}
+
+	// 4. Cấp mặc định cho hai vai trò sẵn có — đúng một lần.
 	const mốc = "grant_default_permissions_v2"
 	var đã int64
 	db.Table("schema_migrations").Where("name = ?", mốc).Count(&đã)

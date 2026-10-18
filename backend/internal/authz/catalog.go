@@ -167,7 +167,7 @@ var Catalog = []Permission{
 	{"settings.edit", "Sửa cài đặt", "settings"},
 
 	{"chat.moderate", "Quản trị phòng chat", "chat"},
-	{"upload.file", "Tải tệp lên", "system"},
+	{"upload.file", "Tải tệp lên", "files"},
 
 	{"audit.view", "Xem nhật ký hoạt động", "backoffice"},
 	{"errors.view", "Xem nhật ký lỗi", "backoffice"},
@@ -193,8 +193,11 @@ var Catalog = []Permission{
 	{"system.roles.permissions", "Phân quyền cho vai trò", "system"},
 	{"system.menus.view", "Xem cây menu", "system"},
 
-	// Giữ lại mã cũ: máy trạm Wails dùng nó để nhận diện kết nối quản trị, và
-	// vài bản cài đã cấp nó cho vai trò riêng. Không còn gác API nào.
+	// Cổng vào back-office. Bốn nhóm API — /audit-logs, /backups,
+	// /admin/notifications, /systemManage — đòi mã này CỘNG mã riêng của từng
+	// API (backups.view…), và menu của chúng cũng đòi cả hai (xem
+	// service.RouteService). Chỉ chủ (qua "*") có sẵn; manager và staff cố ý
+	// không có. Vai trò tự tạo muốn dùng back-office phải được tick cả hai.
 	{"client.admin", "Máy khách quản trị", "client"},
 }
 
@@ -248,6 +251,7 @@ func StaffCodes() []string {
 		"shifts.view", "shifts.open", "shifts.close", "shifts.handover",
 		"transactions.view",
 		"settings.view",
+		"upload.file",
 	}
 }
 

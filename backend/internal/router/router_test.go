@@ -247,6 +247,37 @@ func TestStaffWithoutClientAdminIsRejectedByAdminOnlyRoutes(t *testing.T) {
 	}
 }
 
+// Bốn nhóm back-office đòi client.admin CỘNG mã riêng: mã riêng một mình là
+// chưa đủ. Menu (service.RouteService) đòi y như vậy; hai bên lệch thì vai trò
+// chỉ có backups.view thấy mục Sao lưu rồi mở ra bị 403.
+func TestBackOfficeNeedsClientAdminAsWellAsOwnCode(t *testing.T) {
+	r, jwtManager := newTestRouter(t)
+
+	routes := []struct{ path, own string }{
+		{"/api/backups", "backups.view"},
+		{"/api/audit-logs", "audit.view"},
+		{"/api/admin/notifications", "notifications.view"},
+		{"/api/systemManage/getUserList", "system.users.view"},
+	}
+	for _, tc := range routes {
+		t.Run(tc.path, func(t *testing.T) {
+			ownOnly, err := jwtManager.GenerateAccessToken("u1", "custom", "custom", "r1", jwt.KindStaff, []string{tc.own})
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusForbidden, do(r, "GET", tc.path, ownOnly).Code, "thiếu client.admin")
+
+			gateOnly, err := jwtManager.GenerateAccessToken("u1", "custom", "custom", "r1", jwt.KindStaff, []string{"client.admin"})
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusForbidden, do(r, "GET", tc.path, gateOnly).Code, "thiếu %s", tc.own)
+
+			both, err := jwtManager.GenerateAccessToken("u1", "custom", "custom", "r1", jwt.KindStaff, []string{"client.admin", tc.own})
+			require.NoError(t, err)
+			// Qua cổng quyền rồi mới tới handler; DB giả có thể làm nó lỗi 500
+			// nhưng không được là 403.
+			assert.NotEqual(t, http.StatusForbidden, do(r, "GET", tc.path, both).Code)
+		})
+	}
+}
+
 func TestUnauthenticatedRequestsAreRejected(t *testing.T) {
 	r, _ := newTestRouter(t)
 
