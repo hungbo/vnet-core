@@ -1203,14 +1203,15 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 
 ### Cài đặt
 
-**Để làm gì.** Cấu hình toàn quán. Sáu tab.
+**Để làm gì.** Cấu hình toàn quán. Bảy tab; **mỗi tab lưu riêng** — nút **Lưu** chỉ lưu tab đang mở, và chuyển tab khi chưa lưu thì những gì vừa gõ ở tab cũ mất.
 
 | Tab | Gồm |
 |---|---|
-| **Chung** | Tên cửa hàng, địa chỉ, SĐT, email, múi giờ |
+| **Chung** | Tên cửa hàng, địa chỉ, số điện thoại |
 | **Giới hạn** | Giới hạn đặt chỗ mỗi ngày và mỗi hội viên, thời gian huỷ trước, **Nợ tối đa**, **Tiền tối thiểu mỗi lần đăng nhập** |
 | **Hóa đơn** | Tiêu đề, chân trang, mã số thuế in trên hoá đơn |
 | **Nạp tiền** | **Mệnh giá nạp** — danh sách số tiền hiện trên máy khách |
+| **Thanh toán** | **Phương thức thanh toán** quán nhận — danh sách hiện ở mọi chỗ thu tiền (thanh toán đơn, nạp tiền, mua gói). Mặc định có **Tiền mặt**, **Chuyển khoản**, **Ví điện tử**; thêm bằng **Thêm phương thức**, bật/tắt ở cột **Đang dùng** |
 | **Tính năng** | Bật/tắt **Cho phép điểm danh** và **Cho phép đánh giá dịch vụ** |
 | **Máy trạm** | Máy trạm làm gì khi phần mềm bị tắt (khởi động lại hay tắt máy), mất kết nối bao lâu thì khoá, bao lâu thì khởi động lại, **không ai đăng nhập bao lâu thì tắt máy hoặc cho ngủ chờ**, **Chặn ứng dụng**, **Ẩn lối tắt trên desktop**, **Metadata Riot** (máy diskless chơi Liên Minh) và **tài khoản quản trị máy trạm** cho cả quán (để trống mật khẩu là giữ nguyên). Máy trạm nhận giá trị mới trong khoảng 15 giây |
 
@@ -1219,8 +1220,11 @@ Form hội viên có ô **Ngày sinh** (dùng để xác định vị thành ni�
 - **Máy ở màn hình khoá mà không ai đăng nhập quá 5 phút thì tự tắt** — đó là mặc định của tab **Máy trạm**. Đang thử máy trạm mà thấy máy tự tắt thì đây là lý do; đặt `0` ở ô *Không ai đăng nhập bao lâu thì tắt máy (phút)* để không bao giờ tắt.
 - **Chặn ứng dụng** áp cho **mọi** máy, không phải từng máy. Mỗi dòng một tên tiến trình, không cần đuôi `.exe` (xem tên ở mục **Xem ứng dụng** của máy — [Điều khiển máy từ xa](#điều-khiển-máy-từ-xa-nút-khác)). Dịch vụ nền tắt tiến trình trùng tên mỗi vài giây; danh sách được máy trạm giữ lại nên vẫn áp sau khi khởi động lại và cả khi mất mạng. Tiến trình hệ thống của Windows và chính phần mềm VNET không chặn được. Xoá một dòng là bỏ chặn.
 - **Ẩn lối tắt trên desktop**: ghi tên lối tắt không có đuôi (ví dụ `Game Menu, Teamfight Tactics`), cách nhau bằng dấu phẩy; máy trạm tự xoá các lối tắt đó khỏi desktop của mọi tài khoản Windows. Lối tắt VNET không bao giờ bị xoá. Để trống là tắt.
+- **Thanh toán — Tiền mặt luôn bật.** Công tắc của dòng này xám và không tắt được, vì đối soát két cuối ca đếm theo tiền mặt.
+- **Thanh toán — mã tự sinh khi lưu** từ tên, bỏ dấu, chữ thường, nối bằng dấu gạch dưới (**Quẹt thẻ POS** thành `quet_the_pos`), tối đa 20 ký tự, và không đổi được sau đó. Mấy mã `balance`, `bonus_balance`, `gift_card`, `topup_card` dành riêng cho hệ thống nên không đặt được.
+- **Thanh toán — chỉ xoá được dòng chưa lưu.** Dòng đã lưu có thể đã nằm trong lịch sử giao dịch; muốn ngừng dùng thì tắt ở cột **Đang dùng**. Phương thức đã tắt biến mất khỏi các ô chọn **và** máy chủ từ chối nếu ai gửi lên (lỗi *phương thức thanh toán "…" đang tắt*); lịch sử cũ vẫn hiện đúng tên.
 - Tắt một tính năng thì nút biến mất trên máy khách **và** máy chủ cũng từ chối nếu ai đó gọi thẳng — không phải chỉ ẩn đi.
-- Cần quyền **Sửa cài đặt**.
+- Mở trang cần quyền **Xem cài đặt** (`settings.view`), nhân viên mặc định có; **Lưu** cần **Sửa cài đặt** (`settings.edit`), chỉ quản lý và chủ có. Nhân viên mở được trang và vẫn thấy nút **Lưu**, nhưng bấm sẽ nhận lỗi `Insufficient permissions`.
 
 ### Máy in
 
@@ -1328,51 +1332,112 @@ Vai trò nhân viên mặc định chỉ có `games.view`; quản lý và chủ 
 
 # C. Phân quyền
 
-> **Cập nhật:** hai bảng dưới đây là bản rút gọn ban đầu và **đã cũ**. Hệ thống hiện gác từng API bằng một mã riêng — khoảng 140 mã dạng `nhóm.việc` như `machines.remote` hay `games.update`, danh mục đầy đủ ở `backend/internal/authz/catalog.go` — và ba vai trò có sẵn được cấp theo đó: **staff** có nhiều quyền vận hành hơn bảng ghi, **manager** có mọi thứ trừ `*` và nhóm back-office (Sao lưu, Nhật ký, Thông báo hàng loạt, tài khoản và vai trò). Xem và sửa quyền thật ở **Quản lý hệ thống → Quản lý vai trò**.
->
-> Hai tính năng mới: **điều khiển máy từ xa** — `machines.remote` (nhân viên, quản lý, chủ) và `machines.remote_desktop` (**chỉ quản lý và chủ**); **cập nhật game** — `games.view` (cả nhân viên), còn thêm/sửa/xoá là `games.create`, `games.update`, `games.delete` (chỉ quản lý và chủ).
+Mỗi API dành cho nhân viên được gác bằng đúng một **mã quyền** dạng `nhóm.việc` — `machines.remote`, `products.update`, `backups.create`… Danh mục có **140 mã**, cộng mã `*` (toàn quyền); nguồn duy nhất là `backend/internal/authz/catalog.go`, cả cài mới lẫn nâng cấp đều lấy danh mục từ đó. Một **vai trò** là một tập mã. Một tài khoản có thể mang **nhiều vai trò** và được hợp các mã của chúng.
+
+Menu cũng lọc theo mã: trang nào vai trò không có mã `….view` tương ứng thì không hiện. Nhưng ẩn menu chưa phải là chặn — đọc [Điều dễ nhầm](#điều-dễ-nhầm-khi-phân-quyền) trước khi tin vào nó.
+
+## Nơi xem và sửa quyền
+
+Ở nhóm menu **Quản lý hệ thống** — nhóm này chỉ hiện với ai có `system.users.view`, mặc định là chủ:
+
+- **Quản lý người dùng** — tạo tài khoản nhân viên, chọn vai trò (chọn được nhiều), đổi trạng thái.
+- **Quản lý vai trò** — bấm **Sửa** ở dòng vai trò, rồi **Phân quyền**. Hộp thoại là một cây: mỗi nhánh là một *nhóm* mang tên kỹ thuật (`machines`, `backoffice`… xếp theo chữ cái), mỗi ô là *Tên (mã)*. Tick nhánh cha là tick cả nhóm.
+- **Quản lý menu** — chỉ để xem; cây menu viết cứng trong mã nguồn.
 
 ## Ba vai trò có sẵn
 
-`seed` tạo sẵn ba vai trò. Quản lý người dùng và vai trò ở **Quản lý hệ thống** (menu này chỉ hiện với ai có quyền `client.admin`).
+`seed` tạo ba vai trò và ba tài khoản trùng tên (`admin` mang vai trò `owner`).
 
-| Vai trò | Được gì |
-|---|---|
-| **owner** — Chủ | Toàn quyền, không giới hạn |
-| **manager** — Quản lý | Tất cả **trừ** `*` và `client.admin` |
-| **staff** — Nhân viên | Chỉ `members.view`, `machines.view`, `orders.view`, `client.admin` |
+| Vai trò | Mã | Ý định |
+|---|---|---|
+| **owner** — Chủ | `*` và cả 140 mã | Toàn quyền. `*` bỏ qua mọi lần kiểm |
+| **manager** — Quản lý | 116 mã: tất cả **trừ** `*`, `client.admin`, nhóm `system` và nhóm `backoffice` | Lo toàn bộ việc kinh doanh hằng ngày — giá, khuyến mãi, sản phẩm, báo cáo, điều khiển màn hình máy, game, cập nhật máy khách — nhưng không chạm back-office |
+| **staff** — Nhân viên | 51 mã, xem cột *Nhân viên có* ở bảng dưới | **Vận hành** quầy chứ không **cấu hình**: xem được hầu hết mọi thứ, mở/trả/chuyển máy, nạp tiền, bán gói, nhận đặt chỗ, làm đơn và thu tiền, kiểm kê, mở/đóng/bàn giao ca — nhưng không đổi giá, không sửa khuyến mãi, không xoá dữ liệu nền |
+
+Nhìn từ menu:
+
+- **owner** thấy tất cả.
+- **manager** không thấy **Nhật ký hoạt động**, **Nhật ký lỗi**, **Thông báo**, **Sao lưu**, và cả nhóm **Quản lý hệ thống**.
+- **staff** không thấy thêm **Báo cáo** và **Cập nhật máy khách**. Nhân viên vẫn thấy **Cài đặt**, **Máy in**, **Chặn website**, **Cập nhật game**, nhưng gần như chỉ để xem.
 
 ## Danh sách mã quyền
 
-| Mã | Tên | Kiểm ở đâu |
-|---|---|---|
-| `*` | Toàn quyền | Bỏ qua mọi lần kiểm khác |
-| `members.view` | Xem hội viên | Menu Điểm danh, Giới nghiêm |
-| `members.create` | Tạo hội viên | Nút thêm hội viên |
-| `members.topup` | Nạp tiền | Nạp, hoàn tiền |
-| `machines.view` | Xem máy | Menu Tài sản máy, Chặn website |
-| `orders.view` | Xem đơn hàng | **Chỉ lọc menu** |
-| `orders.create` | Tạo đơn hàng | **Chỉ lọc menu** |
-| `orders.pay` | Thanh toán | **Chỉ lọc menu** |
-| `reports.view` | Xem báo cáo | Menu Báo cáo, Đánh giá dịch vụ, và mọi API báo cáo |
-| `settings.edit` | Sửa cài đặt | Menu Cài đặt, Máy in, Kiểm kê kho |
-| `client.admin` | Admin client | Menu Nhật ký, Thông báo, Sao lưu, Cập nhật máy khách, Quản lý hệ thống |
+Hai cột cuối là cấp mặc định của `seed`. Trong cột *Nhân viên có*, chỗ nhóm chỉ có một tiền tố thì ghi phần sau dấu chấm (`view` là `members.view`, `topup` là `members.topup`…).
 
-## Hai điều bất ngờ, nói trước để khỏi vấp
+| Nhóm (nhánh trong hộp Phân quyền) | Các mã | Nhân viên có | Quản lý có |
+|---|---|---|---|
+| **Hội viên** (`members`) | `members.view` · `members.create` · `members.update` · `members.delete` · `members.topup` · `members.refund` · `members.reset_password` · `members.refresh_tiers` | `view`, `create`, `topup` | tất cả |
+| **Nhóm hội viên** (`member_groups`) | `member_groups.view` · `member_groups.create` · `member_groups.update` · `member_groups.delete` | `view` | tất cả |
+| **Máy** (`machines`) | `machines.view` · `machines.create` · `machines.update` · `machines.delete` · `machines.remote` · `machines.remote_desktop` | `view`, `remote` | tất cả |
+| **Nhóm máy** (`machine_groups`) | `machine_groups.view` · `machine_groups.create` · `machine_groups.update` · `machine_groups.delete` | `view` | tất cả |
+| **Tài sản máy** (`machine_assets`) | `machine_assets.view` · `machine_assets.create` · `machine_assets.update` · `machine_assets.delete` | `view` | tất cả |
+| **Bảng giá giờ chơi** (`pricing`) | `pricing.view` · `pricing.create` · `pricing.update` · `pricing.delete` | `view` | tất cả |
+| **Phiên chơi** (`sessions`) | `sessions.view` · `sessions.start` · `sessions.end` · `sessions.switch` · `sessions.delete` | `view`, `start`, `end`, `switch` | tất cả |
+| **Gói dịch vụ** (`combos`) | `combos.view` · `combos.create` · `combos.update` · `combos.delete` · `combos.sell` | `view`, `sell` | tất cả |
+| **Đặt chỗ** (`bookings`) | `bookings.view` · `bookings.create` · `bookings.update` · `bookings.delete` · `bookings.checkin` | `view`, `create`, `update`, `checkin` | tất cả |
+| **Khuyến mãi** (`promotions`) | `promotions.view` · `promotions.create` · `promotions.update` · `promotions.delete` | `view` | tất cả |
+| **Vòng quay may mắn (trang Khuyến mãi)** (`lucky_spin`) | `lucky_spin.view` · `lucky_spin.create` · `lucky_spin.update` · `lucky_spin.delete` · `lucky_spin.spin` | `view`, `spin` | tất cả |
+| **Giới nghiêm** (`curfew`) | `curfew.view` · `curfew.create` · `curfew.update` · `curfew.delete` · `curfew.override` | `view` | tất cả |
+| **Danh mục** (`categories`) | `categories.view` · `categories.create` · `categories.update` · `categories.delete` | `view` | tất cả |
+| **Sản phẩm** (`products`) | `products.view` · `products.create` · `products.update` · `products.delete` · `products.ingredients` | `view` | tất cả |
+| **Đơn hàng** (`orders`) | `orders.view` · `orders.create` · `orders.update` · `orders.delete` · `orders.status` · `orders.split` · `orders.pay` · `orders.print` | `view`, `create`, `update`, `status`, `split`, `pay`, `print` | tất cả |
+| **Cập nhật game** (`games`) | `games.view` · `games.create` · `games.update` · `games.delete` | `view` | tất cả |
+| **Cập nhật máy khách** (`app_updates`) | `app_updates.view` · `app_updates.create` · `app_updates.update` · `app_updates.delete` | — | tất cả |
+| **Chặn website** (`website_rules`) | `website_rules.view` · `website_rules.create` · `website_rules.update` · `website_rules.delete` | `view` | tất cả |
+| **Đánh giá dịch vụ** (`feedback`) | `feedback.view` | tất cả | tất cả |
+| **Điểm danh** (`attendance`) | `attendance.view` | tất cả | tất cả |
+| **Kho: kiểm kê, sổ kho, đơn vị tính** (`inventory`) | `inventory_counts.view` · `inventory_counts.open` · `inventory_counts.count` · `inventory_counts.commit` · `inventory_counts.cancel` · `stock.view` · `stock.create` · `units.view` | `inventory_counts.view`, `inventory_counts.open`, `inventory_counts.count`, `stock.view`, `stock.create`, `units.view` | tất cả |
+| **Máy in** (`printers`) | `printers.view` · `printers.create` · `printers.update` · `printers.delete` · `printers.test` | `view`, `test` | tất cả |
+| **Nhà cung cấp** (`suppliers`) | `suppliers.view` · `suppliers.create` · `suppliers.update` · `suppliers.delete` | `view` | tất cả |
+| **Ca làm việc** (`shifts`) | `shifts.view` · `shifts.open` · `shifts.close` · `shifts.handover` | tất cả | tất cả |
+| **Giao dịch và báo cáo** (`reports`) | `transactions.view` · `reports.view` | `transactions.view` | tất cả |
+| **Cài đặt** (`settings`) | `settings.view` · `settings.edit` | `view` | tất cả |
+| **Phòng chat** (`chat`) | `chat.moderate` | — | tất cả |
+| **Tải tệp, tài khoản và vai trò, menu** (`system`) | `upload.file` · `system.users.view` · `system.users.create` · `system.users.update` · `system.users.delete` · `system.roles.view` · `system.roles.create` · `system.roles.update` · `system.roles.delete` · `system.roles.permissions` · `system.menus.view` | — | — |
+| **Nhật ký, sao lưu, thông báo hàng loạt** (`backoffice`) | `audit.view` · `errors.view` · `errors.resolve` · `backups.view` · `backups.create` · `backups.restore` · `backups.delete` · `notifications.view` · `notifications.create` · `notifications.update` · `notifications.delete` · `notifications.dispatch` | — | — |
+| **Mã cũ của máy trạm** (`client`) | `client.admin` | — | — |
 
-**1. Nhân viên thường thấy trang Sao lưu, còn Quản lý thì không.**
+Mã khó đoán từ tên:
 
-`client.admin` được cấp cho `staff` nhưng bị loại khỏi `manager`. Nghĩa là tài khoản `staff` vào được **Sao lưu**, **Nhật ký hoạt động**, **Thông báo**, **Cập nhật máy khách** và **Quản lý hệ thống**, còn `manager` thì không.
+- `machines.remote` — các mục **Bật máy**, **Chụp màn hình**, **Xem ứng dụng**, **Thông báo**, **Khởi động lại**, **Tắt máy** trong menu **Khác** của trang Máy. `machines.remote_desktop` riêng cho **Điều khiển màn hình** — xem [Điều khiển máy từ xa](#điều-khiển-máy-từ-xa-nút-khác).
+- `games.update` — **Sửa**, **Publish ngay**, **Tải ngay**, công tắc **Tự cập nhật**/**Bật** và ô **Ưu tiên** của trang [Cập nhật game](#cập-nhật-game).
+- `products.update` — gồm cả **đổi giá**. `products.ingredients` — sửa định lượng nguyên liệu của một món.
+- `orders.status` — xác nhận, duyệt, huỷ đơn và đổi trạng thái từng món; `orders.update` — sửa đơn; `orders.print` — in hoá đơn và phiếu chế biến.
+- `members.refresh_tiers` — nút xếp lại hạng hội viên; `members.reset_password` — đặt lại mật khẩu hội viên.
+- `sessions.switch` — chuyển phiên sang máy khác; `combos.sell` — bán gói cho hội viên; `bookings.checkin` — nhận khách đặt chỗ; `lucky_spin.spin` — quay thưởng hộ khách; `curfew.override` — miễn trừ giới nghiêm.
+- `inventory_counts.commit` / `inventory_counts.cancel` — chốt / huỷ phiếu kiểm kê. Nhân viên mặc định chỉ mở phiếu và ghi số đếm.
+- `transactions.view` — trang **Giao dịch**; `reports.view` — trang **Báo cáo**.
+- `chat.moderate` — xoá phòng chat.
+- `upload.file` — tải tệp lên: ảnh sản phẩm, ảnh giấy tờ và giấy đồng ý của phụ huynh ở hồ sơ hội viên, ảnh kiểm tra ở trang Tài sản máy.
+- `client.admin` — mã giữ cổng back-office, xem điều dễ nhầm số 1 bên dưới.
 
-Nếu đó không phải điều bạn muốn — và với phần lớn quán thì không — hãy sửa lại quyền của hai vai trò này ngay sau khi cài, ở **Quản lý hệ thống → Quản lý vai trò**.
+## Điều dễ nhầm khi phân quyền
 
-**2. Ba mã quyền về đơn hàng hiện chỉ dùng để ẩn hiện menu.**
+**1. Trang back-office đòi hai mã, không phải một.** Sao lưu, Nhật ký hoạt động, Thông báo (soạn và gửi) và ba trang của Quản lý hệ thống: API của chúng kiểm **cả** `client.admin` **lẫn** mã riêng (`backups.view`, `audit.view`, `notifications.view`, `system.users.view`…). Chủ qua hết nhờ `*`. Với vai trò tự tạo thì khác: chỉ tick `backups.view` là menu **Sao lưu** hiện ra nhưng mở trang thì báo `Insufficient permissions` — phải tick thêm `client.admin` (nhánh `client`). Riêng **Nhật ký lỗi** (`errors.view`) không đòi `client.admin`.
 
-`orders.view`, `orders.create`, `orders.pay` **không** được kiểm ở tầng API. Mọi tài khoản nhân viên gọi thẳng API đơn hàng đều qua được, bất kể có mã quyền đó hay không. Bỏ ba mã này khỏi một vai trò chỉ làm menu ẩn đi, không thật sự chặn.
+**2. Cổng back-office mặc định chỉ mở cho chủ.** Quản lý và nhân viên không có `client.admin` (quản lý cũng không có các mã nhóm `system` và `backoffice`), nên không vào được Sao lưu, Nhật ký hoạt động, Nhật ký lỗi, Thông báo và Quản lý hệ thống. Muốn giao việc này cho một người, tạo vai trò riêng với `client.admin` cộng các mã cần dùng, đừng nới quyền của `staff` hay `manager`. Cẩn thận nhất với `system.roles.permissions`: người có mã này cùng `client.admin` tự tick được `*` cho vai trò của chính mình (đã thử).
+
+**3. Quản lý và nhân viên mặc định không tải được ảnh lên.** `upload.file` nằm trong nhóm `system` nên cả hai vai trò đều không có; thêm ảnh sản phẩm, ảnh giấy tờ hội viên hay ảnh tài sản máy sẽ bị từ chối cho tới khi bạn tick mã này.
+
+**4. Ẩn menu và ẩn nút không phải là chặn.** Máy chủ mới là nơi chặn: thiếu mã thì API trả 403 và trang hiện thông báo đỏ `Insufficient permissions`. Nút thì chỉ ẩn theo quyền ở **Máy**, **Bảng điều khiển** và **Đơn hàng**; ở các trang khác (Sản phẩm, Khuyến mãi, Cài đặt…) nhân viên vẫn thấy nút **Thêm**, **Sửa**, **Lưu** và bấm vào sẽ nhận lỗi đó. Ví dụ: nhân viên mở được **Cài đặt** (`settings.view`), nhưng **Lưu** bị từ chối vì thiếu `settings.edit`.
+
+**5. Ba mã chỉ che menu hoặc nút, không chặn API.** Danh sách sản phẩm và danh mục (`GET /api/products`, `/api/categories`) mở cho mọi tài khoản đã đăng nhập vì máy trạm dựng thực đơn từ đó, nên `categories.view` chỉ ẩn hiện mục **Danh mục**, còn `products.view` chỉ gác danh sách nguyên liệu của món. `orders.create` chỉ ẩn hiện nút **Thêm** ở trang Đơn hàng: API tạo đơn là cửa chung của khách và nhân viên, không kiểm mã. Mọi mã còn lại, kể cả `orders.view`, `orders.pay`, `orders.status`, đều được máy chủ kiểm.
+
+**6. Đổi quyền chưa có hiệu lực ngay.** Quyền được ghi vào thẻ đăng nhập lúc cấp. Lưu xong ở hộp **Phân quyền**, người đang đăng nhập vẫn giữ quyền cũ cho tới khi thẻ được làm mới (hết hạn mặc định sau 24 giờ, đổi bằng `JWT_ACCESS_TTL`) hoặc họ đăng nhập lại. Muốn có hiệu lực ngay, bảo họ **đăng xuất rồi đăng nhập lại**.
+
+**7. Chạy lại `seed` đặt lại quyền của cả ba vai trò về mặc định.** Mọi chỉnh sửa trong **Phân quyền** của `owner`, `manager`, `staff` mất — kể cả khi bạn chạy lại chỉ để thêm thực đơn mẫu bằng `seed -menu`, vì lệnh đó cũng chạy phần chính. Vai trò tự tạo không bị đụng. `migrate` thì chạy lại được: nó chỉ thêm mã mới vào danh mục, cấp mặc định cho `manager` và `staff` đúng một lần, và không gỡ gì ai đã tự cấp. Bộ cài Windows khi nâng cấp chỉ chạy `migrate`, không chạy `seed`.
 
 ## Hội viên khác nhân viên
 
-Khách đăng nhập từ máy trạm nhận một loại thẻ đăng nhập riêng. Mọi trang quản trị đều từ chối loại thẻ đó, kể cả khi ai đó tìm cách gắn thêm quyền vào. Khách chỉ đọc được dữ liệu của chính mình.
+Khách đăng nhập từ máy trạm nhận một loại thẻ riêng, không phải thẻ nhân viên. Mọi API quản trị đều từ chối thẻ đó với `403 Staff access required`. Khách chỉ đọc được dữ liệu của chính mình (hồ sơ, giao dịch, phiên chơi, đơn), cộng những thứ máy trạm cần để vẽ màn hình: thực đơn, danh mục, mệnh giá nạp và các phương thức thanh toán.
+
+> **Đã kiểm khi viết mục này** trên bản Docker dựng từ chính commit, đăng nhập `admin`, `manager`, `staff`:
+> - gọi cả 196 route có mã quyền bằng từng tài khoản rồi so với danh mục — khớp hết, trừ ba route game (`DELETE /api/games/:id`, `POST /api/games/:id/publish`, `POST /api/games/:id/sync`) bị từ chối vì vai trò **master / quán** của máy chủ chứ không vì mã quyền;
+> - menu của ba tài khoản qua `GET /api/route/getUserRoutes`; hộp **Phân quyền** và nút **Lưu** của nhân viên trên giao diện thật;
+> - vai trò thử có riêng `backups.view`, rồi thêm `client.admin`; thẻ cũ sau khi đổi quyền, và sau khi làm mới thẻ; tài khoản mang hai vai trò nhận hợp các mã; vai trò có `system.roles.permissions` tự tick `*`;
+> - chạy lại `seed` và `migrate` sau khi gỡ một mã khỏi `manager`; `POST /api/upload` bằng ba tài khoản; thẻ hội viên gọi cả 196 route trên (đều 403).
+>
+> **Đọc từ mã, chưa chạy:** bộ cài Windows nâng cấp chỉ chạy `migrate` (`installer/vnet-server-install.ps1`).
 
 ---
 

@@ -203,27 +203,40 @@ bố bản cập nhật, nếu không máy trạm sẽ từ chối tải.
 
 ### Máy trạm
 
-Máy trạm **không** cấu hình trong `.env` của máy chủ. Mỗi máy có khoá riêng, cấp
-ở trang **Máy → Cấp khoá** — khoá chỉ hiện đúng một lần.
+Máy trạm **không** cấu hình trong `.env` của máy chủ và **không có khoá riêng**:
+mỗi máy tự nhận mình bằng **tên máy Windows** (đó là mã máy) và địa chỉ máy chủ
+ghi trong `config.json` cạnh tệp thực thi. Máy chủ gặp mã chưa có thì **tự thêm
+máy mới**; máy đó chưa có nhóm nên chưa ai đăng nhập được cho tới khi nhân viên
+xếp nhóm ở **Quản lý → Máy**. Chi tiết:
+[Hướng dẫn, mục 2](./docs/HUONG-DAN.md#2-cài-máy-trạm-lên-pc-khách).
 
 **Cách thường dùng: chạy bộ cài.** `vnet-client-setup-<phiên bản>.exe` hỏi ba
-thông tin dưới đây, ghi ra `config.json` cạnh tệp thực thi, rồi đăng ký dịch vụ
-nền khởi động cùng Windows.
+thông tin — địa chỉ máy chủ, tài khoản quản trị máy trạm và mật khẩu của nó —
+rồi ghi `config.json` (mật khẩu chỉ lưu dạng băm) và đăng ký dịch vụ nền khởi
+động cùng Windows.
 
-**Bản chạy tay (portable)** vẫn dùng biến môi trường như trước:
+**Cài tay:** chép `vnet-client-amd64.exe` vào một thư mục, tạo `config.json`
+cạnh nó:
+
+```json
+{ "server_url": "http://<địa chỉ máy chủ>:20800" }
+```
+
+rồi mở Command Prompt bằng quyền quản trị và chạy:
 
 ```
-VNET_SERVER_URL=http://<địa chỉ máy chủ>:20800
-VNET_MACHINE_CODE=PC-01
-VNET_AGENT_TOKEN=<khoá cấp cho PC-01>
+vnet-client.exe --set-admin-user admin --set-admin-pass "<mật khẩu>"
+vnet-client.exe --install-service
 ```
 
-Biến môi trường **ghi đè** `config.json`, tiện khi thử tay. Nhưng dịch vụ Windows
-chạy ở session 0 và không thừa hưởng biến môi trường của người đăng nhập, nên
-bản cài đặt bắt buộc dùng tệp.
+Cấu hình luôn nằm trong tệp, không phải biến môi trường: dịch vụ Windows chạy ở
+session 0 và không thừa hưởng biến môi trường của người đăng nhập.
+`VNET_SERVER_URL`, `VNET_MACHINE_CODE`, `VNET_GUARD` chỉ còn tác dụng ở bản tự
+build không gắn số phiên bản (`dev`); bản phát hành bỏ qua chúng.
 
-Thiếu khoá thì máy chủ trả 401 cho heartbeat, máy hiện ngoại tuyến, và tiến trình
-nền không giữ được WebSocket — nghĩa là không tắt/khoá được máy đó từ xa.
+Máy chủ không cấp và không đòi khoá nào: nhịp tim và các đường `by-code` khác
+nhận diện máy chỉ bằng mã máy trong URL, nên máy trạm và máy chủ phải ở trong
+một mạng LAN tin cậy.
 
 Ba tiến trình sau khi cài:
 
