@@ -764,6 +764,15 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 		return errors.New("không tìm thấy hội viên")
 	}
 
+	// Nút "Duyệt" ở trang Đơn hàng không chọn phương thức: khách đưa tiền ở
+	// quầy nên mặc định là tiền mặt, như settleOrder của đơn bán hàng. Để trống
+	// thì trang Ca làm việc (chỉ cộng tiền nạp "cash") hụt đúng khoản này lúc
+	// chốt két.
+	method := locked.PaymentMethod
+	if method == "" {
+		method = PaymentMethodCash
+	}
+
 	balanceAfter := member.Balance + locked.FinalAmount
 	transaction := model.MemberTransaction{
 		MemberID:        member.ID,
@@ -771,7 +780,7 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 		Amount:          locked.FinalAmount,
 		BalanceBefore:   member.Balance,
 		BalanceAfter:    balanceAfter,
-		PaymentMethod:   locked.PaymentMethod,
+		PaymentMethod:   method,
 		Description:     "Nạp tiền qua đơn hàng " + locked.OrderCode,
 		// Rỗng thì NULL: PostgreSQL từ chối "" cho cột uuid.
 		CreatedBy: optionalUUID(updatedBy),
@@ -793,9 +802,10 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 	res := tx.Model(&model.Order{}).
 		Where("id = ? AND status = ?", locked.ID, "pending").
 		Updates(map[string]interface{}{
-			"status":       "completed",
-			"updated_by":   optionalUUID(updatedBy),
-			"completed_at": &now,
+			"status":         "completed",
+			"payment_method": method,
+			"updated_by":     optionalUUID(updatedBy),
+			"completed_at":   &now,
 		})
 	if res.Error != nil {
 		tx.Rollback()

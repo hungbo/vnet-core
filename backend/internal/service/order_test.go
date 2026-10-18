@@ -7,6 +7,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
 )
@@ -295,8 +296,8 @@ func TestOrderService_Pay_TopupGhiNguoiThucHien(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("tx-1"))
 	mock.ExpectExec(`UPDATE "members" SET "balance"=\$1`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec(`UPDATE "orders" SET "completed_at"=\$1,"status"=\$2,"updated_by"=\$3 WHERE \(id = \$4 AND status = \$5\)`).
-		WithArgs(anyTime{}, "completed", nhanVien, "o1", "pending").
+	mock.ExpectExec(`UPDATE "orders" SET "completed_at"=\$1,"payment_method"=\$2,"status"=\$3,"updated_by"=\$4 WHERE \(id = \$5 AND status = \$6\)`).
+		WithArgs(anyTime{}, "cash", "completed", nhanVien, "o1", "pending").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
@@ -306,6 +307,36 @@ func TestOrderService_Pay_TopupGhiNguoiThucHien(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "cash", Amount: 30000}, nhanVien)
+
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Nút "Duyệt" đơn nạp ở trang Đơn hàng không gửi phương thức. Đơn và dòng nạp
+// phải ghi "cash", không thì trang Ca làm việc (chỉ cộng tiền nạp tiền mặt) hụt
+// khoản này lúc chốt két.
+func TestOrderService_processTopupOrder_ThieuPhuongThucLaTienMat(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+	const nhanVien = "11111111-1111-1111-1111-111111111111"
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type", "member_id", "final_amount", "payment_method"}).
+			AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(10000), ""))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem-1", int64(0)))
+	mock.ExpectQuery(`INSERT INTO "member_transactions"`).
+		WithArgs("mem-1", "topup", int64(10000), int64(0), int64(10000), int64(0), int64(0), "cash", nil, "Nạp tiền qua đơn hàng ORD-1", nhanVien).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("tx-1"))
+	mock.ExpectExec(`UPDATE "members" SET "balance"=\$1`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "orders" SET "completed_at"=\$1,"payment_method"=\$2,"status"=\$3,"updated_by"=\$4`).
+		WithArgs(anyTime{}, "cash", "completed", nhanVien, "o1", "pending").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	err := svc.processTopupOrder(&model.Order{ID: "o1"}, nhanVien)
 
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
