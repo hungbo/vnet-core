@@ -17,13 +17,18 @@
 		-->
 		<template v-if="!childReady || windowMode === 'blank'" />
 		<!--
-			Chỉ giữ nguyên Đồ ăn (giỏ hàng chọn dở) và Hỗ trợ (cuộc trò chuyện).
-			Nạp tiền, Điểm danh, Đánh giá là biểu mẫu một lần: dựng MỚI mỗi lần
-			mở (khoá theo lanMo), nếu không màn hình Nạp tiền kẹt ở "Đã gửi yêu
-			cầu" và khách không gửi được yêu cầu thứ hai. Game cũng dựng mới để
-			mỗi lần mở là một danh sách vừa tải.
+			Chỉ giữ nguyên Đồ ăn (giỏ hàng chọn dở). Nạp tiền, Điểm danh, Đánh giá
+			là biểu mẫu một lần: dựng MỚI mỗi lần mở (khoá theo lanMo), nếu không
+			màn hình Nạp tiền kẹt ở "Đã gửi yêu cầu" và khách không gửi được yêu
+			cầu thứ hai. Game cũng dựng mới để mỗi lần mở là một danh sách vừa tải.
+
+			Hỗ trợ cũng dựng mới, KHÔNG giữ: KeepAlive tháo cây DOM của nó khi
+			khách sang Game, và <vue-advanced-chat> dỡ phần ruột lúc bị tháo mà
+			không dựng lại khi gắn về — quay lại Hỗ trợ (hay tin tới kéo cửa sổ
+			lên) chỉ thấy khung trống. Cuộc trò chuyện nằm ở chat.store và được
+			tải lại từ máy chủ lúc dựng, nên không mất tin nào.
 		-->
-		<KeepAlive v-else :include="['ServiceMenu', 'ChatWidget']">
+		<KeepAlive v-else :include="['ServiceMenu']">
 			<ServiceMenu v-if="windowMode === 'order'" key="order" standalone />
 			<TopupDialog v-else-if="windowMode === 'topup'" :key="'topup' + lanMo" standalone />
 			<AttendanceDialog v-else-if="windowMode === 'attendance'" :key="'attendance' + lanMo" standalone />
