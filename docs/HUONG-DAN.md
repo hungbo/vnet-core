@@ -1334,11 +1334,11 @@ Vai trò nhân viên mặc định chỉ có `games.view`; quản lý và chủ 
 
 Mỗi API dành cho nhân viên được gác bằng đúng một **mã quyền** dạng `nhóm.việc` — `machines.remote`, `products.update`, `backups.create`… Danh mục có **140 mã**, cộng mã `*` (toàn quyền); nguồn duy nhất là `backend/internal/authz/catalog.go`, cả cài mới lẫn nâng cấp đều lấy danh mục từ đó. Một **vai trò** là một tập mã. Một tài khoản có thể mang **nhiều vai trò** và được hợp các mã của chúng.
 
-Menu cũng lọc theo mã: trang nào vai trò không có mã `….view` tương ứng thì không hiện. Nhưng ẩn menu chưa phải là chặn — đọc [Điều dễ nhầm](#điều-dễ-nhầm-khi-phân-quyền) trước khi tin vào nó.
+Menu cũng lọc theo mã: trang nào vai trò không có mã `….view` tương ứng thì không hiện (riêng Sao lưu, Nhật ký hoạt động, Thông báo và Quản lý hệ thống còn đòi thêm `client.admin`). Nhưng ẩn menu chưa phải là chặn — đọc [Điều dễ nhầm](#điều-dễ-nhầm-khi-phân-quyền) trước khi tin vào nó.
 
 ## Nơi xem và sửa quyền
 
-Ở nhóm menu **Quản lý hệ thống** — nhóm này chỉ hiện với ai có `system.users.view`, mặc định là chủ:
+Ở nhóm menu **Quản lý hệ thống** — nhóm này chỉ hiện với ai có cả `client.admin` lẫn `system.users.view`, mặc định là chủ:
 
 - **Quản lý người dùng** — tạo tài khoản nhân viên, chọn vai trò (chọn được nhiều), đổi trạng thái.
 - **Quản lý vai trò** — bấm **Sửa** ở dòng vai trò, rồi **Phân quyền**. Hộp thoại là một cây: mỗi nhánh là một *nhóm* mang tên kỹ thuật (`machines`, `backoffice`… xếp theo chữ cái), mỗi ô là *Tên (mã)*. Tick nhánh cha là tick cả nhóm.
@@ -1351,8 +1351,8 @@ Menu cũng lọc theo mã: trang nào vai trò không có mã `….view` tương
 | Vai trò | Mã | Ý định |
 |---|---|---|
 | **owner** — Chủ | `*` và cả 140 mã | Toàn quyền. `*` bỏ qua mọi lần kiểm |
-| **manager** — Quản lý | 116 mã: tất cả **trừ** `*`, `client.admin`, nhóm `system` và nhóm `backoffice` | Lo toàn bộ việc kinh doanh hằng ngày — giá, khuyến mãi, sản phẩm, báo cáo, điều khiển màn hình máy, game, cập nhật máy khách — nhưng không chạm back-office |
-| **staff** — Nhân viên | 51 mã, xem cột *Nhân viên có* ở bảng dưới | **Vận hành** quầy chứ không **cấu hình**: xem được hầu hết mọi thứ, mở/trả/chuyển máy, nạp tiền, bán gói, nhận đặt chỗ, làm đơn và thu tiền, kiểm kê, mở/đóng/bàn giao ca — nhưng không đổi giá, không sửa khuyến mãi, không xoá dữ liệu nền |
+| **manager** — Quản lý | 117 mã: tất cả **trừ** `*`, `client.admin`, nhóm `system` và nhóm `backoffice` | Lo toàn bộ việc kinh doanh hằng ngày — giá, khuyến mãi, sản phẩm, báo cáo, điều khiển màn hình máy, game, cập nhật máy khách — nhưng không chạm back-office |
+| **staff** — Nhân viên | 52 mã, xem cột *Nhân viên có* ở bảng dưới | **Vận hành** quầy chứ không **cấu hình**: xem được hầu hết mọi thứ, mở/trả/chuyển máy, nạp tiền, bán gói, nhận đặt chỗ, làm đơn và thu tiền, kiểm kê, mở/đóng/bàn giao ca — nhưng không đổi giá, không sửa khuyến mãi, không xoá dữ liệu nền |
 
 Nhìn từ menu:
 
@@ -1393,9 +1393,10 @@ Hai cột cuối là cấp mặc định của `seed`. Trong cột *Nhân viên 
 | **Giao dịch và báo cáo** (`reports`) | `transactions.view` · `reports.view` | `transactions.view` | tất cả |
 | **Cài đặt** (`settings`) | `settings.view` · `settings.edit` | `view` | tất cả |
 | **Phòng chat** (`chat`) | `chat.moderate` | — | tất cả |
-| **Tải tệp, tài khoản và vai trò, menu** (`system`) | `upload.file` · `system.users.view` · `system.users.create` · `system.users.update` · `system.users.delete` · `system.roles.view` · `system.roles.create` · `system.roles.update` · `system.roles.delete` · `system.roles.permissions` · `system.menus.view` | — | — |
+| **Tải tệp** (`files`) | `upload.file` | tất cả | tất cả |
+| **Tài khoản và vai trò, menu** (`system`) | `system.users.view` · `system.users.create` · `system.users.update` · `system.users.delete` · `system.roles.view` · `system.roles.create` · `system.roles.update` · `system.roles.delete` · `system.roles.permissions` · `system.menus.view` | — | — |
 | **Nhật ký, sao lưu, thông báo hàng loạt** (`backoffice`) | `audit.view` · `errors.view` · `errors.resolve` · `backups.view` · `backups.create` · `backups.restore` · `backups.delete` · `notifications.view` · `notifications.create` · `notifications.update` · `notifications.delete` · `notifications.dispatch` | — | — |
-| **Mã cũ của máy trạm** (`client`) | `client.admin` | — | — |
+| **Cổng back-office** (`client`) | `client.admin` | — | — |
 
 Mã khó đoán từ tên:
 
@@ -1408,16 +1409,16 @@ Mã khó đoán từ tên:
 - `inventory_counts.commit` / `inventory_counts.cancel` — chốt / huỷ phiếu kiểm kê. Nhân viên mặc định chỉ mở phiếu và ghi số đếm.
 - `transactions.view` — trang **Giao dịch**; `reports.view` — trang **Báo cáo**.
 - `chat.moderate` — xoá phòng chat.
-- `upload.file` — tải tệp lên: ảnh sản phẩm, ảnh giấy tờ và giấy đồng ý của phụ huynh ở hồ sơ hội viên, ảnh kiểm tra ở trang Tài sản máy.
-- `client.admin` — mã giữ cổng back-office, xem điều dễ nhầm số 1 bên dưới.
+- `upload.file` — tải ảnh lên (jpg, png, gif, webp): ảnh sản phẩm, ảnh giấy tờ và giấy đồng ý của phụ huynh ở hồ sơ hội viên, ảnh kiểm tra ở trang Tài sản máy. Quản lý và nhân viên có sẵn.
+- `client.admin` — cổng vào back-office: Sao lưu, Nhật ký hoạt động, Thông báo và Quản lý hệ thống đòi mã này cộng mã riêng của từng trang, xem điều dễ nhầm số 1 bên dưới.
 
 ## Điều dễ nhầm khi phân quyền
 
-**1. Trang back-office đòi hai mã, không phải một.** Sao lưu, Nhật ký hoạt động, Thông báo (soạn và gửi) và ba trang của Quản lý hệ thống: API của chúng kiểm **cả** `client.admin` **lẫn** mã riêng (`backups.view`, `audit.view`, `notifications.view`, `system.users.view`…). Chủ qua hết nhờ `*`. Với vai trò tự tạo thì khác: chỉ tick `backups.view` là menu **Sao lưu** hiện ra nhưng mở trang thì báo `Insufficient permissions` — phải tick thêm `client.admin` (nhánh `client`). Riêng **Nhật ký lỗi** (`errors.view`) không đòi `client.admin`.
+**1. Trang back-office đòi hai mã, không phải một.** Sao lưu, Nhật ký hoạt động, Thông báo (soạn và gửi) và Quản lý hệ thống: API của chúng kiểm **cả** `client.admin` **lẫn** mã riêng (`backups.view`, `audit.view`, `notifications.view`, `system.users.view`…), và menu cũng đòi cả hai. Chủ qua hết nhờ `*`. Vai trò tự tạo phải tick **cả hai** (`client.admin` ở nhánh `client`): chỉ có mã riêng, hay chỉ có `client.admin`, thì menu không hiện và gọi API bị `Insufficient permissions`. Nhóm **Quản lý hệ thống** hiện cả ba trang Người dùng, Vai trò, Menu khi có `system.users.view`; trang Vai trò và Menu vẫn cần thêm `system.roles.view` và `system.menus.view` mới mở được. Riêng **Nhật ký lỗi** (`errors.view`) không đòi `client.admin`.
 
 **2. Cổng back-office mặc định chỉ mở cho chủ.** Quản lý và nhân viên không có `client.admin` (quản lý cũng không có các mã nhóm `system` và `backoffice`), nên không vào được Sao lưu, Nhật ký hoạt động, Nhật ký lỗi, Thông báo và Quản lý hệ thống. Muốn giao việc này cho một người, tạo vai trò riêng với `client.admin` cộng các mã cần dùng, đừng nới quyền của `staff` hay `manager`. Cẩn thận nhất với `system.roles.permissions`: người có mã này cùng `client.admin` tự tick được `*` cho vai trò của chính mình (đã thử).
 
-**3. Quản lý và nhân viên mặc định không tải được ảnh lên.** `upload.file` nằm trong nhóm `system` nên cả hai vai trò đều không có; thêm ảnh sản phẩm, ảnh giấy tờ hội viên hay ảnh tài sản máy sẽ bị từ chối cho tới khi bạn tick mã này.
+**3. Tải ảnh lên cần `upload.file`.** Quản lý và nhân viên có sẵn mã này (nhóm `files`). Vai trò tự tạo thì không: thêm ảnh sản phẩm, ảnh giấy tờ hội viên hay ảnh tài sản máy sẽ bị từ chối `Insufficient permissions` cho tới khi bạn tick nhánh `files`. Máy chủ nâng cấp từ bản cũ — nơi `upload.file` còn nằm trong nhóm `system` nên `manager` và `staff` chưa có — được `migrate` cấp bù đúng một lần; ai đã tự cấp thì giữ nguyên.
 
 **4. Ẩn menu và ẩn nút không phải là chặn.** Máy chủ mới là nơi chặn: thiếu mã thì API trả 403 và trang hiện thông báo đỏ `Insufficient permissions`. Nút thì chỉ ẩn theo quyền ở **Máy**, **Bảng điều khiển** và **Đơn hàng**; ở các trang khác (Sản phẩm, Khuyến mãi, Cài đặt…) nhân viên vẫn thấy nút **Thêm**, **Sửa**, **Lưu** và bấm vào sẽ nhận lỗi đó. Ví dụ: nhân viên mở được **Cài đặt** (`settings.view`), nhưng **Lưu** bị từ chối vì thiếu `settings.edit`.
 
@@ -1431,11 +1432,16 @@ Mã khó đoán từ tên:
 
 Khách đăng nhập từ máy trạm nhận một loại thẻ riêng, không phải thẻ nhân viên. Mọi API quản trị đều từ chối thẻ đó với `403 Staff access required`. Khách chỉ đọc được dữ liệu của chính mình (hồ sơ, giao dịch, phiên chơi, đơn), cộng những thứ máy trạm cần để vẽ màn hình: thực đơn, danh mục, mệnh giá nạp và các phương thức thanh toán.
 
-> **Đã kiểm khi viết mục này** trên bản Docker dựng từ chính commit, đăng nhập `admin`, `manager`, `staff`:
+> **Đã kiểm khi viết mục này**, đợt đầu trên bản Docker dựng trước khi sửa `client.admin` và `upload.file`, đăng nhập `admin`, `manager`, `staff`:
 > - gọi cả 196 route có mã quyền bằng từng tài khoản rồi so với danh mục — khớp hết, trừ ba route game (`DELETE /api/games/:id`, `POST /api/games/:id/publish`, `POST /api/games/:id/sync`) bị từ chối vì vai trò **master / quán** của máy chủ chứ không vì mã quyền;
 > - menu của ba tài khoản qua `GET /api/route/getUserRoutes`; hộp **Phân quyền** và nút **Lưu** của nhân viên trên giao diện thật;
-> - vai trò thử có riêng `backups.view`, rồi thêm `client.admin`; thẻ cũ sau khi đổi quyền, và sau khi làm mới thẻ; tài khoản mang hai vai trò nhận hợp các mã; vai trò có `system.roles.permissions` tự tick `*`;
-> - chạy lại `seed` và `migrate` sau khi gỡ một mã khỏi `manager`; `POST /api/upload` bằng ba tài khoản; thẻ hội viên gọi cả 196 route trên (đều 403).
+> - thẻ cũ sau khi đổi quyền, và sau khi làm mới thẻ; tài khoản mang hai vai trò nhận hợp các mã; vai trò có `system.roles.permissions` cùng `client.admin` tự tick `*`;
+> - chạy lại `seed` và `migrate` sau khi gỡ một mã khỏi `manager`; thẻ hội viên gọi cả 196 route trên (đều 403).
+>
+> Các mục 1 và 3 viết lại sau khi sửa hai mã đó, kiểm riêng trên bản Docker dựng lại, chỉ bằng API (không chạy lại cả 196 route; `POST /api/upload` là route duy nhất gác bằng `upload.file`):
+> - `POST /api/upload`: `admin`, `manager`, `staff` đều 200; vai trò thử chỉ có `members.view` bị 403;
+> - vai trò thử chỉ có `backups.view`: menu không có **Sao lưu**, `GET /api/backups` 403; thêm `client.admin` thì menu hiện và API 200; chỉ có `client.admin` thì không hiện và 403. Với Nhật ký hoạt động, Thông báo và nhóm Quản lý hệ thống: chỉ có mã riêng thì ẩn menu và 403, thêm `client.admin` thì hiện và 200; **Nhật ký lỗi** hiện và gọi được chỉ với `errors.view`;
+> - nâng cấp, **mô phỏng bằng SQL** (kéo `upload.file` về nhóm `system`, gỡ nó khỏi `manager` và `staff`, xoá hai mốc `move_upload_file_to_files_module` và `grant_upload_file_v1`, cho một vai trò tự tạo `upload.file`): sau `migrate`, mã nằm ở nhóm `files`, `manager` và `staff` có lại mã, vai trò tự tạo không đổi; chạy `migrate` lần hai thì bỏ qua cả hai mốc. Chưa thử trên một bản cài thật được nâng cấp.
 >
 > **Đọc từ mã, chưa chạy:** bộ cài Windows nâng cấp chỉ chạy `migrate` (`installer/vnet-server-install.ps1`).
 
