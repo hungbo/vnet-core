@@ -8,27 +8,35 @@
 		<!--
 			Chờ khôi phục đăng nhập xong mới dựng: component con chạy onMounted
 			TRƯỚC onMounted của App, nên dựng sớm là cửa sổ Nạp tiền hỏi số dư khi
-			chưa có token — và hiện ra không có dòng "Số dư hiện tại".
+			chưa có token — và hiện ra không có dòng "Số dư hiện tại". Hộp thông báo là
+			ngoại lệ: nó chỉ đọc hàng chờ ở Go, không cần token, và không được để
+			khách chờ máy chủ trả lời mới thấy thông báo.
 		-->
 		<!--
 			Một cửa sổ cho mọi màn hình phụ, dựng sẵn ẩn từ lúc đăng nhập. KeepAlive
 			giữ nguyên từng màn hình khi đổi qua lại: giỏ hàng đang chọn dở không
 			mất khi khách mở Hỗ trợ rồi quay lại.
 		-->
-		<template v-if="!childReady || windowMode === 'blank'" />
+		<template v-if="(!childReady && windowMode !== 'notice') || windowMode === 'blank'" />
 		<!--
-			Chỉ giữ nguyên Đồ ăn (giỏ hàng chọn dở) và Hỗ trợ (cuộc trò chuyện).
-			Nạp tiền, Điểm danh, Đánh giá là biểu mẫu một lần: dựng MỚI mỗi lần
-			mở (khoá theo lanMo), nếu không màn hình Nạp tiền kẹt ở "Đã gửi yêu
-			cầu" và khách không gửi được yêu cầu thứ hai. Game cũng dựng mới để
-			mỗi lần mở là một danh sách vừa tải.
+			Chỉ giữ nguyên Đồ ăn (giỏ hàng chọn dở). Nạp tiền, Điểm danh, Đánh giá
+			là biểu mẫu một lần: dựng MỚI mỗi lần mở (khoá theo lanMo), nếu không
+			màn hình Nạp tiền kẹt ở "Đã gửi yêu cầu" và khách không gửi được yêu
+			cầu thứ hai. Game cũng dựng mới để mỗi lần mở là một danh sách vừa tải.
+
+			Hỗ trợ cũng dựng mới, KHÔNG giữ: KeepAlive tháo cây DOM của nó khi
+			khách sang Game, và <vue-advanced-chat> dỡ phần ruột lúc bị tháo mà
+			không dựng lại khi gắn về — quay lại Hỗ trợ (hay tin tới kéo cửa sổ
+			lên) chỉ thấy khung trống. Cuộc trò chuyện nằm ở chat.store và được
+			tải lại từ máy chủ lúc dựng, nên không mất tin nào.
 		-->
-		<KeepAlive v-else :include="['ServiceMenu', 'ChatWidget']">
+		<KeepAlive v-else :include="['ServiceMenu']">
 			<ServiceMenu v-if="windowMode === 'order'" key="order" standalone />
 			<TopupDialog v-else-if="windowMode === 'topup'" :key="'topup' + lanMo" standalone />
 			<AttendanceDialog v-else-if="windowMode === 'attendance'" :key="'attendance' + lanMo" standalone />
 			<FeedbackDialog v-else-if="windowMode === 'feedback'" :key="'feedback' + lanMo" standalone />
 			<GameMenu v-else-if="windowMode === 'games'" :key="'games' + lanMo" />
+			<NoticeDialog v-else-if="windowMode === 'notice'" :key="'notice' + lanMo" />
 			<ChatWidget v-else key="support" fullPage standalone />
 		</KeepAlive>
 	</div>
@@ -80,6 +88,7 @@ import TopupDialog from './views/TopupDialog.vue'
 import AttendanceDialog from './views/AttendanceDialog.vue'
 import FeedbackDialog from './views/FeedbackDialog.vue'
 import GameMenu from './views/GameMenu.vue'
+import NoticeDialog from './views/NoticeDialog.vue'
 import MachineLockOverlay from './components/MachineLockOverlay.vue'
 import DockTitleBar from './components/DockTitleBar.vue'
 

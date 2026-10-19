@@ -30,6 +30,10 @@ export function CurrentLogin() {
   return window['go']['main']['App']['CurrentLogin']();
 }
 
+export function DismissNotices(arg1) {
+  return window['go']['main']['App']['DismissNotices'](arg1);
+}
+
 export function GameIcon(arg1) {
   return window['go']['main']['App']['GameIcon'](arg1);
 }
@@ -72,6 +76,10 @@ export function GetMemberInfo() {
 
 export function GetMenu(arg1) {
   return window['go']['main']['App']['GetMenu'](arg1);
+}
+
+export function GetNotices() {
+  return window['go']['main']['App']['GetNotices']();
 }
 
 export function GetNotifications() {
