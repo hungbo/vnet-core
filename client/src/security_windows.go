@@ -12,7 +12,8 @@ import (
 // securityScript in "khoá|giá trị" cho parseSecurityOutput. Mỗi mục tự nuốt lỗi để mục
 // khác vẫn in ra: máy ảo không có TPM, BIOS legacy không có khoá Secure Boot.
 //
-//   - PEFirmwareType: 1 = BIOS legacy, 2 = UEFI.
+//   - PEFirmwareType: 1 = BIOS legacy, 2 = UEFI. Máy thật ở phòng test (Windows Server 2019) KHÔNG có giá trị này dù khoá
+//     Secure Boot có mặt, nên khi thiếu thì suy từ khoá Secure Boot (chỉ có khi khởi động UEFI), rồi từ bcdedit (winload.efi).
 //   - UEFISecureBootEnabled: khoá chỉ có khi máy khởi động bằng UEFI.
 //   - Win32_Tpm nằm trong không gian tên riêng và chỉ quản trị đọc được — dịch vụ nền
 //     chạy bằng SYSTEM nên đọc được.
@@ -25,8 +26,10 @@ const securityScript = `
 $ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $fw = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' -Name PEFirmwareType).PEFirmwareType
-if ($fw -eq 2) { 'boot|uefi' } elseif ($fw -eq 1) { 'boot|legacy' }
 $sb = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\SecureBoot\State' -Name UEFISecureBootEnabled).UEFISecureBootEnabled
+if ($fw -eq 2) { 'boot|uefi' } elseif ($fw -eq 1) { 'boot|legacy' }
+elseif ($sb -ne $null) { 'boot|uefi' }
+else { $bc = (bcdedit /enum '{current}' 2>$null | Out-String); if ($bc -match 'winload\.efi') { 'boot|uefi' } elseif ($bc -match 'winload\.exe') { 'boot|legacy' } }
 if ($sb -eq 1) { 'secureboot|on' } elseif ($sb -eq 0) { 'secureboot|off' }
 $t = Get-CimInstance -Namespace root\cimv2\Security\MicrosoftTpm -ClassName Win32_Tpm
 if ($t) { 'tpm|' + (($t.SpecVersion -split ',')[0]).Trim() } else { 'tpm|none' }
