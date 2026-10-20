@@ -13,6 +13,7 @@ type Handlers struct {
 	Route             *RouteHandler
 	Member            *MemberHandler
 	Machine           *MachineHandler
+	WindowsKey        *WindowsKeyHandler
 	Session           *SessionHandler
 	Combo             *ComboHandler
 	Booking           *BookingHandler
@@ -64,6 +65,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Route:             NewRouteHandler(service.NewRouteService()),
 		Member:            NewMemberHandler(service.NewMemberService(db, auditSvc).WithHub(wsHub)),
 		Machine:           NewMachineHandler(machineSvc).WithHub(wsHub),
+		WindowsKey:        NewWindowsKeyHandler(service.NewWindowsKeyService(db, auditSvc).WithHub(wsHub)),
 		Session:           NewSessionHandler(sessionSvc),
 		Combo:             NewComboHandler(service.NewComboService(db, auditSvc).WithHub(wsHub)),
 		Booking:           NewBookingHandler(service.NewBookingService(db, auditSvc).WithHub(wsHub)),

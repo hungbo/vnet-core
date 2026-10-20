@@ -29,7 +29,7 @@ func gameError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		response.NotFound(c, "không tìm thấy game")
-	case errors.Is(err, service.ErrGameMasterOnly), errors.Is(err, service.ErrGameCafeOnly), errors.Is(err, service.ErrGameRoleOff):
+	case errors.Is(err, service.ErrGameMasterOnly), errors.Is(err, service.ErrGameCafeOnly), errors.Is(err, service.ErrGameRoleOff), errors.Is(err, service.ErrGameHubEnv), errors.Is(err, service.ErrGameLocalOnMaster):
 		response.Forbidden(c, err.Error())
 	default:
 		response.BadRequest(c, err.Error())
@@ -44,6 +44,43 @@ func gameError(c *gin.Context, err error) {
 // @Router       /api/games/info [get]
 func (h *GameHandler) Info(c *gin.Context) {
 	response.Success(c, h.svc.Info())
+}
+
+// SetHub
+// @Summary      Quán nối Hub (hoặc master) để cập nhật game
+// @Description  Đọc thử catalog bằng key trước khi lưu; đúng thì bật vai quán ngay, không cần khởi động lại. Key trống là giữ key đã lưu (chỉ khi địa chỉ không đổi).
+// @Tags         Games
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  response.Response
+// @Router       /api/games/hub [put]
+func (h *GameHandler) SetHub(c *gin.Context) {
+	var req service.GameHubRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	info, err := h.svc.SetHub(c.Request.Context(), req)
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, info)
+}
+
+// ClearHub
+// @Summary      Ngắt kết nối Hub: xoá địa chỉ và key, game đã tải giữ nguyên
+// @Tags         Games
+// @Produce      json
+// @Success      200  {object}  response.Response
+// @Router       /api/games/hub [delete]
+func (h *GameHandler) ClearHub(c *gin.Context) {
+	info, err := h.svc.ClearHub()
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, info)
 }
 
 // List
@@ -76,6 +113,23 @@ func (h *GameHandler) Menu(c *gin.Context) {
 		return
 	}
 	response.Success(c, menu)
+}
+
+// MenuVersion
+// @Summary      Dấu version của dữ liệu menu game
+// @Description  Chuỗi rẻ để máy trạm hỏi thường xuyên: version không đổi thì không cần kéo lại GET /api/game-menu. Hội viên và nhân viên đều gọi được.
+// @Tags         Games
+// @Produce      json
+// @Success      200  {object}  response.Response
+// @Router       /api/game-menu/version [get]
+// @Security     BearerAuth
+func (h *GameHandler) MenuVersion(c *gin.Context) {
+	v, err := h.svc.MenuVersion()
+	if err != nil {
+		response.InternalError(c, err.Error(), err)
+		return
+	}
+	response.Success(c, gin.H{"version": v})
 }
 
 // Launch
@@ -130,8 +184,61 @@ func (h *GameHandler) Create(c *gin.Context) {
 	response.Created(c, g)
 }
 
+// CreateLocal
+// @Summary      Thêm game cục bộ của quán (không đồng bộ với Hub)
+// @Description  Quán tự tải game rồi khai thư mục GAME_ROOT/<name> và tệp chạy; game lên menu máy trạm, catalog không ghi đè. Không dùng được ở master.
+// @Tags         Games
+// @Accept       json
+// @Produce      json
+// @Success      201  {object}  response.Response
+// @Router       /api/games/local [post]
+func (h *GameHandler) CreateLocal(c *gin.Context) {
+	var req service.CreateGameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	g, err := h.svc.CreateLocal(&req)
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Created(c, g)
+}
+
+// LocalFolders
+// @Summary      Thư mục trong GAME_ROOT chưa là game nào (gợi ý khi thêm game cục bộ)
+// @Tags         Games
+// @Produce      json
+// @Success      200  {object}  response.Response
+// @Router       /api/games/local/folders [get]
+func (h *GameHandler) LocalFolders(c *gin.Context) {
+	folders, err := h.svc.LocalFolders()
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, folders)
+}
+
+// LocalLaunchers
+// @Summary      Tệp chạy (.exe, .bat, .cmd, .lnk) trong một thư mục game (gợi ý khi thêm game cục bộ)
+// @Tags         Games
+// @Produce      json
+// @Param        folder  query  string  true  "Tên thư mục game trong GAME_ROOT"
+// @Success      200  {object}  response.Response
+// @Router       /api/games/local/launchers [get]
+func (h *GameHandler) LocalLaunchers(c *gin.Context) {
+	files, err := h.svc.LocalLaunchers(c.Query("folder"))
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, files)
+}
+
 // Update
-// @Summary      Sửa game: bật/tắt, tự cập nhật, ưu tiên (master sửa được cả tên, launcher)
+// @Summary      Sửa game: bật/tắt, tự cập nhật, ưu tiên (master và game cục bộ sửa được cả tên, launcher)
 // @Tags         Games
 // @Accept       json
 // @Produce      json
@@ -152,8 +259,31 @@ func (h *GameHandler) Update(c *gin.Context) {
 	response.Success(c, g)
 }
 
+// UpdateCustom
+// @Summary      Tuỳ chỉnh riêng của quán trên một game: tên hiển thị, icon, gốc game trên máy trạm, lệnh chạy trước
+// @Description  Catalog không bao giờ ghi đè. Chuỗi rỗng bỏ tuỳ chỉnh đó; run_first thay hẳn lệnh chạy trước của game gốc, reset_run_first quay về game gốc. Không dùng ở master.
+// @Tags         Games
+// @Accept       json
+// @Produce      json
+// @Param        id  path  string  true  "Game ID"
+// @Success      200  {object}  response.Response
+// @Router       /api/games/{id}/custom [put]
+func (h *GameHandler) UpdateCustom(c *gin.Context) {
+	var req service.GameCustomRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	g, err := h.svc.SetCustom(c.Param("id"), &req)
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, g)
+}
+
 // Delete
-// @Summary      Bỏ game khỏi danh mục (chỉ master, tệp trên ổ giữ nguyên)
+// @Summary      Bỏ game khỏi danh mục (master, hoặc game cục bộ ở quán; tệp trên ổ giữ nguyên)
 // @Tags         Games
 // @Param        id  path  string  true  "Game ID"
 // @Success      200  {object}  response.Response
@@ -193,6 +323,111 @@ func (h *GameHandler) Sync(c *gin.Context) {
 		return
 	}
 	response.Success(c, nil)
+}
+
+// HubCatalog
+// @Summary      Danh mục đầy đủ của Hub kèm tình trạng ở quán (chỉ máy chủ quán)
+// @Tags         Games
+// @Produce      json
+// @Success      200  {object}  response.Response{data=service.HubCatalogView}
+// @Router       /api/games/hub-catalog [get]
+func (h *GameHandler) HubCatalog(c *gin.Context) {
+	v, err := h.svc.HubCatalog(c.Request.Context())
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, v)
+}
+
+// SelectHubGames
+// @Summary      Quán chọn thêm, bỏ chọn game hoặc quay về nhận mọi game
+// @Tags         Games
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  response.Response{data=service.HubSelectionResult}
+// @Router       /api/games/hub-selection [put]
+func (h *GameHandler) SelectHubGames(c *gin.Context) {
+	var req service.HubSelectionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	res, err := h.svc.SelectHubGames(c.Request.Context(), req)
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, res)
+}
+
+// BulkSync
+// @Summary      Tải hàng loạt / sửa chữa nhiều game: xếp vào hàng đợi tải ngay
+// @Tags         Games
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  response.Response
+// @Router       /api/games/bulk-sync [post]
+func (h *GameHandler) BulkSync(c *gin.Context) {
+	var req struct {
+		Names []string `json:"names" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	n, err := h.svc.BulkSync(req.Names)
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"queued": n})
+}
+
+// Queue
+// @Summary      Hàng đợi tải game: game đang tải, tốc độ, game đang chờ
+// @Tags         Games
+// @Produce      json
+// @Success      200  {object}  response.Response{data=service.QueueView}
+// @Router       /api/games/queue [get]
+func (h *GameHandler) Queue(c *gin.Context) {
+	v, err := h.svc.Queue(time.Now())
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, v)
+}
+
+// GetLimits
+// @Summary      Trần băng thông tải game của quán (Mbps, 0 là không giới hạn)
+// @Tags         Games
+// @Produce      json
+// @Success      200  {object}  response.Response{data=service.GameLimits}
+// @Router       /api/games/limits [get]
+func (h *GameHandler) GetLimits(c *gin.Context) {
+	response.Success(c, h.svc.Limits())
+}
+
+// SetLimits
+// @Summary      Đặt trần băng thông tải game; áp ngay cho lượt tải đang chạy
+// @Tags         Games
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  response.Response{data=service.GameLimits}
+// @Router       /api/games/limits [put]
+func (h *GameHandler) SetLimits(c *gin.Context) {
+	var req service.GameLimits
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	l, err := h.svc.SetLimits(req)
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, l)
 }
 
 // ------------------------------------------------- dành cho các quán (khoá catalog)

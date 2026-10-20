@@ -12,6 +12,14 @@ const (
 	GameStatusError        = "error"
 )
 
+// Nguồn của một game ở quán. Game "hub" đến từ catalog (master hoặc Hub), được đồng bộ và cập nhật tự động.
+// Game "local" do quán tự tải và tự khai: có trên menu máy trạm nhưng nằm ngoài vòng đồng bộ, catalog không bao giờ
+// ghi đè hay xoá nó, và Hub không biết nó có.
+const (
+	GameOriginHub   = "hub"
+	GameOriginLocal = "local"
+)
+
 // Game là một thư mục game được phân phối. Name trùng tên thư mục con trong
 // GAME_ROOT, và là khoá nối giữa master với các quán.
 //
@@ -36,6 +44,12 @@ type Game struct {
 	AutoUpdate  bool            `gorm:"default:true" json:"auto_update"`
 	// Priority: số lớn tải trước.
 	Priority int `gorm:"default:0" json:"priority"`
+	// RunFirst: lệnh chạy trước khi mở game (catalog của Hub, hoặc do quản trị viên đặt ở master và game cục bộ).
+	RunFirst GameRunSteps `gorm:"type:jsonb" json:"run_first"`
+	// Custom: tuỳ chỉnh riêng của quán, catalog không ghi đè (xem GameCustom).
+	Custom GameCustom `gorm:"type:jsonb" json:"custom"`
+	// Origin: GameOriginHub (mặc định, mọi game có từ trước) hoặc GameOriginLocal.
+	Origin string `gorm:"type:varchar(10);not null;default:'hub'" json:"origin"`
 
 	Version   int    `gorm:"default:0" json:"version"`
 	Infohash  string `gorm:"type:varchar(64)" json:"infohash"`
@@ -45,6 +59,15 @@ type Game struct {
 
 	RemoteVersion  int    `gorm:"default:0" json:"remote_version"`
 	RemoteInfohash string `gorm:"type:varchar(64)" json:"remote_infohash"`
+	// RemoteWebseeds: nơi tải dữ liệu do catalog chỉ định (Hub: máy master khác máy catalog, URL đã ký cho quán này).
+	// Rỗng là suy ra từ địa chỉ upstream như master cũ. Không trả ra API: URL mang token của quán.
+	RemoteWebseeds StringArray `gorm:"type:jsonb" json:"-"`
+	// RemoteTrackers: tracker WebRTC do catalog chỉ định (Hub; URL mang token của quán). Có tracker mà RemoteWebseeds
+	// rỗng nghĩa là master chỉ phát qua P2P, không suy webseed từ địa chỉ upstream. Không trả ra API vì mang token.
+	RemoteTrackers StringArray `gorm:"type:jsonb" json:"-"`
+	// RemoteRelays: địa chỉ relay của Hub đã ký cho quán này (catalog `relay_webseeds`): đường cuối cùng khi P2P và webseed
+	// đều không có dữ liệu. Mang token nên không trả ra API.
+	RemoteRelays StringArray `gorm:"type:jsonb" json:"-"`
 
 	Status   string `gorm:"type:varchar(20);default:'not_installed'" json:"status"`
 	Progress int    `gorm:"default:0" json:"progress"` // phần trăm, 0–100

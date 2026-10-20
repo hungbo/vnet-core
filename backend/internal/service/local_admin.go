@@ -51,9 +51,11 @@ func hashLocalAdminWithSalt(password string, salt []byte) (string, error) {
 
 // isSecretSetting: khoá không bao giờ trả ra qua API đọc cài đặt. GET
 // /settings/:group mở cho mọi tài khoản đã đăng nhập, kể cả hội viên — lộ băm
-// ở đó là cho khách mang về dò mật khẩu mở máy.
+// ở đó là cho khách mang về dò mật khẩu mở máy. Nhóm games cũng vậy với key Hub, địa chỉ Hub
+// và đường dẫn thư mục game trên máy chủ: nhân viên đọc chúng qua GET /api/games/info.
 func isSecretSetting(group, key string) bool {
-	return group == ClientGroup && key == LocalAdminHashKey
+	return (group == ClientGroup && key == LocalAdminHashKey) ||
+		(group == GamesGroup && (key == GameHubKeyKey || key == GameHubURLKey || key == GameRootKey))
 }
 
 // prepareClientSettings biến mật khẩu trần thành băm trước khi lưu nhóm client.

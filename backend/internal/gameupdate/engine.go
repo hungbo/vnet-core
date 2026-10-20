@@ -6,17 +6,22 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	g "github.com/anacrolix/generics"
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/storage"
+	"github.com/pion/webrtc/v4"
+	"golang.org/x/time/rate"
 )
 
 // EngineConfig configures the BitTorrent client shared by every game.
@@ -25,13 +30,26 @@ type EngineConfig struct {
 	DataDir    string
 	ListenPort int // 0 picks a free port
 	NoDHT      bool
+	// WebRTC makes WebRTC (the WebTorrent transport) the only way to reach peers: TCP, uTP, DHT and PEX are off, so
+	// the engine opens no port at all and a peer can only be found through the trackers in Job.Trackers (the Hub's
+	// tracker, which decides who may talk to whom). ListenPort and NoDHT do not matter then.
+	WebRTC bool
+	// ICEServers are STUN/TURN URLs WebRTC uses to cross NAT, e.g. "stun:stun.l.google.com:19302". Only WebRTC.
+	ICEServers []string
 	Logger     *slog.Logger
+	// DownloadBps và UploadBps: trần băng thông của cả engine, byte/giây; 0 là không giới hạn. Đổi lúc đang chạy bằng
+	// SetLimits. Trần tải xuống áp cho cả P2P lẫn webseed và relay (cùng một bộ giới hạn của thư viện).
+	DownloadBps, UploadBps int64
 }
 
 // Engine downloads and seeds game folders. One torrent per game name; installing a new version
 // of a game replaces the torrent for that name.
 type Engine struct {
 	client *torrent.Client
+	// down và up là bộ giới hạn băng thông đưa cho thư viện; thư viện giữ con trỏ nên đổi giá trị tại chỗ là có hiệu lực ngay.
+	down, up *rate.Limiter
+
+	rules countRules // attributes webseed and relay response bytes to the Install that asked for them
 
 	mu     sync.Mutex
 	games  map[string]*game
@@ -41,6 +59,8 @@ type Engine struct {
 type game struct {
 	t    *torrent.Torrent
 	dest string
+	// ws và rl: byte webseed / relay đã nhận trong lượt Install đang chạy (nil khi chưa có lượt nào).
+	ws, rl *atomic.Int64
 	// stop aborts the verification add() runs on this torrent, and added is closed once add() has
 	// stopped touching it: Remove waits for both before dropping the torrent.
 	stop  context.CancelFunc
@@ -64,6 +84,21 @@ type Job struct {
 	Webseeds []string           // BEP19 base URLs, e.g. http://master/seed/
 	Trackers []string
 	Peers    []torrent.PeerInfo // known peers to dial straight away
+	// WebseedDelay turns Webseeds into a fallback. With Trackers and Webseeds both set and WebseedDelay > 0, Install
+	// first relies on the peers the trackers introduce (WebRTC) and attaches the webseeds only once no new piece has
+	// verified for this long; they then stay. 0 attaches them from the start.
+	WebseedDelay time.Duration
+	// OnWebseedFallback runs once, when WebseedDelay expires and the webseeds get attached.
+	OnWebseedFallback func()
+	// Relays are the Hub's relay URLs (HTTP through the master's tunnel): the last resort, for a master nobody can reach
+	// directly. Install attaches them only once no new piece has verified for RelayDelay (counted from the last
+	// verified piece, so set it longer than WebseedDelay). RelayDelay 0 never uses them.
+	Relays     []string
+	RelayDelay time.Duration
+	// OnRelayFallback runs once, when the relays get attached.
+	OnRelayFallback func()
+	// OnTransfer receives, when Install succeeds, how many bytes came over each path.
+	OnTransfer func(Transfer)
 	// Keep lists slash-separated glob patterns (relative to Dest) that cleanup must not delete,
 	// e.g. "config/*.ini" for settings a game writes next to its binaries.
 	Keep []string
@@ -88,16 +123,65 @@ func NewEngine(cfg EngineConfig) (*Engine, error) {
 	tc.ListenPort = cfg.ListenPort
 	tc.NoDHT = cfg.NoDHT
 	tc.Seed = true
-	tc.DisableWebtorrent = true
+	tc.DisableWebtorrent = !cfg.WebRTC
 	tc.NoDefaultPortForwarding = true
+	down, up := newLimiter(cfg.DownloadBps), newLimiter(cfg.UploadBps)
+	tc.DownloadRateLimiter, tc.UploadRateLimiter = down, up
+	if cfg.WebRTC {
+		tc.ListenPort = 0
+		tc.NoDHT, tc.DisablePEX, tc.DisableTCP, tc.DisableUTP = true, true, true, true
+		if len(cfg.ICEServers) > 0 {
+			tc.ICEServerList = []webrtc.ICEServer{{URLs: cfg.ICEServers}}
+		}
+	}
 	if cfg.Logger != nil {
 		tc.Slogger = cfg.Logger
 	}
+	e := &Engine{games: map[string]*game{}, down: down, up: up}
+	tc.WebTransport = countingTransport{inner: http.DefaultTransport, rules: &e.rules}
 	cl, err := torrent.NewClient(tc)
 	if err != nil {
 		return nil, err
 	}
-	return &Engine{client: cl, games: map[string]*game{}}, nil
+	e.client = cl
+	return e, nil
+}
+
+// newLimiter dựng bộ giới hạn băng thông. Luôn có một bộ (kể cả không giới hạn): thư viện không cho đổi bộ giới hạn
+// nil lúc đang chạy.
+func newLimiter(bps int64) *rate.Limiter {
+	l := rate.NewLimiter(rate.Inf, 0)
+	setLimiter(l, bps)
+	return l
+}
+
+// setLimiter đặt trần cho một bộ giới hạn. Burst không nhỏ hơn 1 MiB: nhỏ hơn thì một lần đọc lớn hơn burst sẽ không bao
+// giờ được cấp token và việc tải đứng im.
+func setLimiter(l *rate.Limiter, bps int64) {
+	if bps <= 0 {
+		l.SetLimit(rate.Inf)
+		l.SetBurst(1 << 20)
+		return
+	}
+	l.SetLimit(rate.Limit(bps))
+	l.SetBurst(int(min(max(bps, 1<<20), math.MaxInt32)))
+}
+
+// SetLimits đổi trần băng thông của engine ngay lập tức, kể cả với các lượt tải đang chạy. 0 là không giới hạn.
+func (e *Engine) SetLimits(downBps, upBps int64) {
+	setLimiter(e.down, downBps)
+	setLimiter(e.up, upBps)
+}
+
+// Limits trả về trần băng thông đang áp, byte/giây (0 là không giới hạn).
+func (e *Engine) Limits() (downBps, upBps int64) {
+	lim := func(l *rate.Limiter) int64 {
+		if l.Limit() == rate.Inf {
+			return 0
+		}
+		return int64(l.Limit())
+	}
+	return lim(e.down), lim(e.up)
 }
 
 // newCompletion builds the in-memory piece-completion map of one game's storage. A variable only so
@@ -141,9 +225,35 @@ func (e *Engine) Install(ctx context.Context, job Job) (err error) {
 			e.Remove(job.Name)
 		}
 	}()
+	if err = announce(ctx, t, job); err != nil {
+		return err
+	}
 	t.DownloadAll()
+	ws, rl, stopCount := e.countJob(job)
+	defer stopCount()
+	e.mu.Lock()
+	if gm := e.games[job.Name]; gm != nil {
+		gm.ws, gm.rl = ws, rl
+	}
+	e.mu.Unlock()
+	if job.hasFallback() {
+		fctx, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			attachFallbacksWhenStuck(fctx, t, job)
+		}()
+		// The goroutine must be gone before the failure path above drops the torrent under it.
+		defer func() {
+			stop()
+			<-done
+		}()
+	}
 	if err = waitComplete(ctx, t, job.StallTimeout); err != nil {
 		return err
+	}
+	if job.OnTransfer != nil {
+		job.OnTransfer(transferOf(t, ws, rl))
 	}
 	return removeRedundant(info, job.Dest, job.Keep)
 }
@@ -178,6 +288,11 @@ func waitComplete(ctx context.Context, t *torrent.Torrent, stall time.Duration) 
 	}
 }
 
+// webseedsAreFallback reports whether Install must try the trackers' peers before the webseeds.
+func (j Job) webseedsAreFallback() bool {
+	return j.WebseedDelay > 0 && len(j.Trackers) > 0 && len(j.Webseeds) > 0
+}
+
 // Seed shares a folder that already holds the full version (the master's own copy). Nothing is
 // downloaded or deleted; it fails if the data on disk does not match the torrent.
 func (e *Engine) Seed(ctx context.Context, job Job) error {
@@ -194,6 +309,20 @@ func (e *Engine) Seed(ctx context.Context, job Job) error {
 	if missing := t.BytesMissing(); missing != 0 {
 		return fmt.Errorf("seed %s: %d bytes on disk do not match the torrent", job.Name, missing)
 	}
+	return announce(ctx, t, job)
+}
+
+// announce points t at job.Trackers. It runs only once the data on disk is verified: a tracker told "left > 0" by a
+// finished seed treats it as a downloader and learns the truth only an announce interval later, which would keep
+// every cafe from being introduced to it for minutes after it starts.
+func announce(ctx context.Context, t *torrent.Torrent, job Job) error {
+	if len(job.Trackers) == 0 {
+		return nil
+	}
+	if err := waitHashed(ctx, t); err != nil {
+		return fmt.Errorf("%s: %w", job.Name, err)
+	}
+	t.AddTrackers([][]string{job.Trackers})
 	return nil
 }
 
@@ -238,9 +367,8 @@ func (e *Engine) add(ctx context.Context, job Job) (*torrent.Torrent, error) {
 	}
 	store := newStorage(job.Dest)
 	spec.Storage = store
-	spec.Webseeds = job.Webseeds
-	if len(job.Trackers) > 0 {
-		spec.Trackers = [][]string{job.Trackers}
+	if !job.webseedsAreFallback() {
+		spec.Webseeds = job.Webseeds
 	}
 
 	ctx, stop := context.WithCancel(ctx)
@@ -303,6 +431,9 @@ type Progress struct {
 	Length         int64
 	Complete       bool
 	Peers          int
+	// Received: byte dữ liệu đã nhận qua mạng (P2P, webseed, relay) trong lượt Install đang chạy. Khác BytesCompleted:
+	// việc băm lại tệp đã có trên ổ làm BytesCompleted tăng rất nhanh mà không có byte nào qua mạng. Dùng để đo tốc độ tải.
+	Received int64
 }
 
 func (e *Engine) Progress(name string) (Progress, bool) {
@@ -312,12 +443,16 @@ func (e *Engine) Progress(name string) (Progress, bool) {
 	if gm == nil || gm.t.Info() == nil {
 		return Progress{}, false
 	}
-	return Progress{
+	p := Progress{
 		BytesCompleted: gm.t.BytesCompleted(),
 		Length:         gm.t.Length(),
 		Complete:       gm.t.Complete().Bool(),
 		Peers:          gm.t.Stats().ActivePeers,
-	}, true
+	}
+	if gm.ws != nil {
+		p.Received = transferOf(gm.t, gm.ws, gm.rl).Total()
+	}
+	return p, true
 }
 
 // ListenAddrs lets a peer on the same machine (tests, or the master seeding to itself) dial in.

@@ -433,3 +433,51 @@ func TestInstall_SlowButProgressingIsNotStalled(t *testing.T) {
 	assert.Greater(t, time.Since(start), stall, "the download was meant to outlast the stall timeout")
 	assertSameTree(t, src, job.Dest)
 }
+
+func TestEngine_SetLimits(t *testing.T) {
+	e, err := NewEngine(EngineConfig{DataDir: t.TempDir(), NoDHT: true, DownloadBps: 2 << 20, UploadBps: 1 << 20})
+	require.NoError(t, err)
+	t.Cleanup(e.Close)
+
+	down, up := e.Limits()
+	assert.Equal(t, int64(2<<20), down)
+	assert.Equal(t, int64(1<<20), up)
+
+	e.SetLimits(0, 512<<10)
+	down, up = e.Limits()
+	assert.Zero(t, down, "0 là không giới hạn")
+	assert.Equal(t, int64(512<<10), up)
+
+	// Burst không nhỏ hơn 1 MiB dù trần thấp hơn: nhỏ hơn thì một lần đọc lớn không bao giờ được cấp token.
+	assert.GreaterOrEqual(t, e.up.Burst(), 1<<20)
+}
+
+// Trần tải xuống phải làm chậm việc tải thật (webseed cũng bị giới hạn, không chỉ P2P), và Progress.Received
+// phải đếm byte đi qua mạng.
+func TestInstall_DownloadLimitSlowsWebseed(t *testing.T) {
+	masterRoot := t.TempDir()
+	src := filepath.Join(masterRoot, "Slow")
+	writeFile(t, filepath.Join(src, "data.bin"), randomBytes(t, 2<<20))
+	srv := httptest.NewServer(&countingSeed{root: masterRoot})
+	defer srv.Close()
+
+	e, err := NewEngine(EngineConfig{DataDir: t.TempDir(), NoDHT: true, DownloadBps: 1 << 20})
+	require.NoError(t, err)
+	t.Cleanup(e.Close)
+
+	job := publish(t, src)
+	job.Dest, job.Webseeds = filepath.Join(t.TempDir(), "Slow"), []string{srv.URL + "/"}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	var transfer Transfer
+	job.OnTransfer = func(tr Transfer) { transfer = tr }
+	start := time.Now()
+	require.NoError(t, e.Install(ctx, job))
+	took := time.Since(start)
+
+	assertSameTree(t, src, job.Dest)
+	assert.GreaterOrEqual(t, transfer.Webseed, int64(2<<20))
+	// 2 MiB với trần 1 MiB/s và burst 1 MiB: ít nhất ~1 giây. Không giới hạn thì chỉ vài chục mili giây trên máy này.
+	assert.GreaterOrEqual(t, took, time.Second, "trần tải xuống phải có tác dụng với webseed")
+}

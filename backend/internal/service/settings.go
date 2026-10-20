@@ -98,7 +98,15 @@ func (s *SettingsService) GetByGroup(groupName string) ([]SettingResponse, error
 func (s *SettingsService) Update(groupName string, settings map[string]interface{}) ([]SettingResponse, error) {
 	if groupName == ClientGroup {
 		var err error
+		if err = kiemTraCaiDatMayTramThem(settings); err != nil {
+			return nil, err
+		}
 		if settings, err = prepareClientSettings(settingsGroup(s.db, ClientGroup), settings); err != nil {
+			return nil, err
+		}
+	}
+	if groupName == GeneralGroup {
+		if err := kiemTraLogoMenu(settings); err != nil {
 			return nil, err
 		}
 	}
@@ -259,6 +267,15 @@ type ClientPolicy struct {
 	// là 0, tức là tắt tính năng — không bao giờ tắt máy theo một mặc định
 	// máy chủ không hề biết.
 	IdleShutdownMinutes int64 `json:"idle_shutdown_minutes"`
+	// Hình nền máy trạm (C1): các đường dẫn /uploads/... nối bằng xuống dòng, và số giây giữa hai ảnh khi trình chiếu
+	// (0 là đứng yên ở ảnh đầu). Luôn gửi, kể cả rỗng: rỗng là tắt, máy trạm không đổi hình nền của ai.
+	Wallpapers               string `json:"wallpapers"`
+	WallpaperIntervalSeconds int64  `json:"wallpaper_interval_seconds"`
+	// StartupApps (C2): tệp .exe chạy mỗi khi khách đăng nhập, nối bằng xuống dòng; rỗng là tắt.
+	StartupApps string `json:"startup_apps"`
+	// CloseHotkey (C3): Alt+K trên máy trạm đóng mọi ứng dụng đang hiện cửa sổ, trừ CloseExclude (tên tiến trình, dấu phẩy).
+	CloseHotkey  bool   `json:"close_hotkey"`
+	CloseExclude string `json:"close_exclude"`
 	// IdleAction: hết thời gian trên thì làm gì. "shutdown" là tắt máy. "standby"
 	// dành cho Lightning Boot của Cloud Update: máy chưa ai đăng nhập từ lúc bật thì
 	// cho ngủ chờ, đã có người dùng thì khởi động lại cho sạch rồi mới ngủ. Luôn
@@ -409,6 +426,11 @@ func clientPolicyFrom(m map[string]string) ClientPolicy {
 		p.IdleAction = "standby"
 	}
 	p.BlockedApps = chuanHoaUngDungChan(m[BlockedAppsKey])
+	p.Wallpapers = strings.Join(chuanHoaHinhNen(m[WallpaperURLsKey]), "\n")
+	p.WallpaperIntervalSeconds = khoangTrinhChieu(settingInt(m, WallpaperIntervalKey, 0))
+	p.StartupApps = strings.Join(chuanHoaUngDungKhoiDong(m[StartupAppsKey]), "\n")
+	p.CloseHotkey = settingBool(m, CloseHotkeyKey, false)
+	p.CloseExclude = chuanHoaUngDungChan(m[CloseExcludeKey])
 	p.HiddenShortcuts = chuanHoaLoiTatAn(m[HiddenShortcutsKey])
 	p.RiotMetadataSource = chuanHoaNguonRiot(m[RiotMetadataSourceKey])
 	p.IdleShutdownMinutes = settingInt(m, IdleShutdownKey, defaultIdleShutdownMinutes)

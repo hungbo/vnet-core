@@ -118,6 +118,21 @@ type HeartbeatRequest struct {
 	ExtraNetwork *string `json:"extra_network"`
 	// Thiết bị ngoại vi, máy trạm đọc một lần lúc khởi động. Rỗng = không khai.
 	Peripherals []string `json:"peripherals"`
+	// Boot và bảo mật + chế độ màn hình (client security.go). Rỗng = không khai.
+	BootMode       string `json:"boot_mode"`
+	SecureBoot     string `json:"secure_boot"`
+	TPM            string `json:"tpm"`
+	HVCI           string `json:"hvci"`
+	Virtualization string `json:"virtualization"`
+	BIOSVersion    string `json:"bios_version"`
+	DisplayMode    string `json:"display_mode"`
+	WinLicense     string `json:"win_license"`
+	WinKeyTail     string `json:"win_key_tail"`
+	// Bảng Hoạt động. Con trỏ: nil = máy trạm không khai, giữ nguyên giá trị đang có.
+	ActiveApp  *string `json:"active_app"`
+	NetDownBps *int64  `json:"net_down_bps"`
+	NetUpBps   *int64  `json:"net_up_bps"`
+	PingMS     *int    `json:"ping_ms"`
 	// Mốc thời gian khởi động máy trạm. Chỉ ghi một dòng [boot] vào log máy
 	// chủ khi nó đổi — không lưu DB.
 	BootReport *BootReport `json:"boot_report,omitempty"`
@@ -588,6 +603,7 @@ func truncateRunes(s string, max int) string {
 
 func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 	cpuTemp, gpuTemp := req.CPUTemp, req.GPUTemp
+	req.sanitizeSecurity()
 	var machine model.Machine
 	if err := s.db.Where("id = ?", id).First(&machine).Error; err != nil {
 		return err
@@ -596,9 +612,13 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 	updates := map[string]interface{}{
 		"cpu_temp":       cpuTemp,
 		"gpu_temp":       gpuTemp,
+		"cpu_usage":      req.CPUUsage,
+		"ram_usage":      req.RAMUsage,
+		"disk_usage":     req.DiskUsage,
 		"last_heartbeat": now,
 		"updated_at":     now,
 	}
+	req.addActivity(updates)
 	// Chỉ ghi đè khi gói tin thật sự khai. Trước đây ghi vô điều kiện, mà vòng
 	// giám sát 60 giây gửi gói không có ip/mac — cứ mỗi phút địa chỉ IP và MAC
 	// của máy lại bị xoá trắng rồi nhịp tim sau mới ghi lại. Trên trang Máy nó
@@ -630,6 +650,7 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 	if req.UserIsAdmin != nil {
 		updates["user_is_admin"] = *req.UserIsAdmin
 	}
+	var periph model.StringArray
 	if len(req.Peripherals) > 0 {
 		list := make(model.StringArray, 0, len(req.Peripherals))
 		for _, p := range req.Peripherals {
@@ -639,7 +660,47 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 		}
 		if len(list) > 0 {
 			updates["peripherals"] = list
+			periph = list
 		}
+	}
+	// Boot / bảo mật và chế độ màn hình: chỉ ghi giá trị máy trạm thật sự khai.
+	// doiPhanCung: có giá trị nào KHÁC số đã lưu (kể cả lần đầu khai) — trang Boot và bảo mật
+	// hiện đúng các cột này nên cần tải lại.
+	doiPhanCung := false
+	for col, v := range map[string][2]string{
+		"boot_mode":      {req.BootMode, machine.BootMode},
+		"secure_boot":    {req.SecureBoot, machine.SecureBoot},
+		"tpm":            {req.TPM, machine.TPM},
+		"hvci":           {req.HVCI, machine.HVCI},
+		"virtualization": {req.Virtualization, machine.Virtualization},
+		"bios_version":   {req.BIOSVersion, machine.BIOSVersion},
+		"display_mode":   {req.DisplayMode, machine.DisplayMode},
+	} {
+		if v[0] != "" {
+			updates[col] = v[0]
+			doiPhanCung = doiPhanCung || v[0] != v[1]
+		}
+	}
+	// Bản quyền Windows máy báo: trang Windows Keys hiện nó cạnh key quán đã ghi.
+	doiBanQuyen := false
+	for col, v := range map[string][2]string{
+		"win_license":  {req.WinLicense, machine.WinLicense},
+		"win_key_tail": {req.WinKeyTail, machine.WinKeyTail},
+	} {
+		if v[0] != "" {
+			updates[col] = v[0]
+			doiBanQuyen = doiBanQuyen || v[0] != v[1]
+		}
+	}
+	// Nhật ký thay đổi phần cứng. Lần đo đầu tiên của máy chỉ đặt mốc: trước đó các cột
+	// cpu/gpu/ram có thể là số người nhập tay, khác số đo không có nghĩa là thay linh kiện.
+	var hwChanges []hwChange
+	if machine.HWBaselineAt == nil {
+		if req.CPUName != "" || req.GPUName != "" || req.RAMGB > 0 || req.StorageGB > 0 || len(periph) > 0 {
+			updates["hw_baseline_at"] = now
+		}
+	} else {
+		hwChanges = hwDiff(&machine, req, periph)
 	}
 	mangLaMoi := ""
 	if req.ExtraNetwork != nil {
@@ -674,6 +735,10 @@ func (s *MachineService) Heartbeat(id string, req HeartbeatRequest) error {
 		return err
 	}
 	s.ghiBootReport(machine.MachineCode, req.BootReport)
+	s.ghiThayDoiPhanCung(&machine, hwChanges, doiPhanCung, now)
+	if doiBanQuyen {
+		s.hub.Changed("windows-keys", map[string]interface{}{"id": id, "machine_code": machine.MachineCode})
+	}
 	// Máy vừa có lại tín hiệu (bật máy, thức dậy từ Lightning Boot, cắm lại mạng):
 	// tác vụ hẹn giờ báo "offline" lúc mất tín hiệu, thì lúc có lại cũng phải báo,
 	// không thì trang Máy trạm và Bảng điều khiển hiện "offline" tới khi F5.

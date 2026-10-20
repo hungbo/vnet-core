@@ -32,6 +32,10 @@ type GameConfig struct {
 	// Root: thư mục chứa các game, mỗi game một thư mục con trùng tên game.
 	// Ở quán đây là Game Disk của Cloud Update, ví dụ D:\Games.
 	Root string
+	// RootAllowed: GAME_ROOT_ALLOWED, các thư mục (ngăn bằng ";" trên Windows, ":" trên Linux) mà thư mục game
+	// đặt từ trang Game được phép nằm trong. Trống thì chỉ áp luật chung (không gốc ổ đĩa, không thư mục hệ
+	// thống). Chuỗi chứ không phải slice: GameConfig được so sánh bằng == (GameService.setConf).
+	RootAllowed string
 	// DataDir: trạng thái riêng của engine BitTorrent, không chứa dữ liệu game.
 	// Trống thì dùng GAME_ROOT/.vnet-gameupdate — dịch vụ Windows chạy với thư
 	// mục làm việc là System32, nên một đường dẫn tương đối ở đây là sai chỗ.
@@ -53,7 +57,23 @@ type GameConfig struct {
 	// dữ liệu vẫn chảy nhưng không piece nào khớp. Piece dài tối đa 4 MB nên đường truyền chậm hơn
 	// ~7 kB/s sẽ bị coi là treo oan — khi đó tăng giá trị này.
 	StallTimeout time.Duration
+	// WebRTC: GAME_WEBRTC, quán nhận game qua P2P WebRTC từ các master mà Hub chỉ định (tracker trong catalog). Mặc
+	// định bật; "0" tắt. Bật thì engine của quán không mở cổng BitTorrent nào (TCP, uTP, DHT, PEX đều tắt).
+	WebRTC bool
+	// ICEServers: GAME_ICE_SERVERS, URL STUN/TURN ngăn bằng dấu phẩy để WebRTC xuyên NAT. Chuỗi chứ không phải slice vì
+	// GameConfig được so sánh bằng ==. Đặt rỗng thì không dùng máy chủ nào (chỉ gặp được nhau trong cùng mạng).
+	ICEServers string
+	// WebseedDelay: GAME_WEBSEED_DELAY, quán thử P2P trước; webseed chỉ được dùng khi bấy lâu không có thêm piece nào
+	// đúng hash. 0 là dùng webseed ngay từ đầu. Chỉ có tác dụng khi catalog vừa có tracker vừa có webseed.
+	WebseedDelay time.Duration
+	// RelayDelay: GAME_RELAY_DELAY, relay của Hub (HTTP qua đường hầm của master) là đường cuối cùng: chỉ dùng khi bấy
+	// lâu không có thêm piece nào đúng hash, tính từ piece cuối cùng nên phải dài hơn WebseedDelay. 0 là không bao giờ
+	// dùng relay. Mặc định 60 giây.
+	RelayDelay time.Duration
 }
+
+// DefaultGameICEServers là GAME_ICE_SERVERS khi không đặt biến này.
+const DefaultGameICEServers = "stun:stun.l.google.com:19302"
 
 // DefaultGameStallTimeout là GAME_STALL_TIMEOUT khi không đặt, đặt sai hoặc <= 0 (không có chế độ
 // "tắt": đồng hồ này là thứ ngăn một lượt tải treo giữ chặn cả quán).
@@ -170,6 +190,7 @@ func Load() *Config {
 		Game: GameConfig{
 			Role:         getEnv("GAME_ROLE", GameRoleOff),
 			Root:         getEnv("GAME_ROOT", ""),
+			RootAllowed:  getEnv("GAME_ROOT_ALLOWED", ""),
 			DataDir:      getEnv("GAME_DATA_DIR", ""),
 			UpstreamURL:  strings.TrimRight(getEnv("GAME_UPSTREAM_URL", ""), "/"),
 			PublicURL:    strings.TrimRight(getEnv("GAME_PUBLIC_URL", ""), "/"),
@@ -178,6 +199,10 @@ func Load() *Config {
 			PollInterval: getEnvDuration("GAME_POLL_INTERVAL", 5*time.Minute),
 			StableFor:    getEnvDuration("GAME_STABLE_FOR", 10*time.Minute),
 			StallTimeout: stall,
+			WebRTC:       getEnv("GAME_WEBRTC", "1") != "0",
+			ICEServers:   lookupEnv("GAME_ICE_SERVERS", DefaultGameICEServers),
+			WebseedDelay: max(getEnvDuration("GAME_WEBSEED_DELAY", 30*time.Second), 0),
+			RelayDelay:   relayDelayFromEnv(),
 		},
 	}
 }
@@ -222,6 +247,29 @@ func (c *Config) RedisAddr() string {
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+// relayDelayFromEnv: GAME_RELAY_DELAY, mặc định 60 giây; "0" là tắt, giá trị sai hoặc âm thì về mặc định.
+func relayDelayFromEnv() time.Duration {
+	v, ok := os.LookupEnv("GAME_RELAY_DELAY")
+	if !ok || strings.TrimSpace(v) == "" {
+		return 60 * time.Second
+	}
+	if strings.TrimSpace(v) == "0" {
+		return 0
+	}
+	if d, err := time.ParseDuration(strings.TrimSpace(v)); err == nil && d >= 0 {
+		return d
+	}
+	return 60 * time.Second
+}
+
+// lookupEnv khác getEnv ở chỗ biến đã đặt nhưng để trống vẫn thắng giá trị mặc định.
+func lookupEnv(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return strings.TrimSpace(v)
 	}
 	return fallback
 }

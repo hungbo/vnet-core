@@ -276,6 +276,90 @@ func (h *MachineHandler) GetHardware(c *gin.Context) {
 	response.Paginated(c, result.Items, result.Total, result.Page, result.PageSize)
 }
 
+// HardwareOverview
+// @Summary      Machine boot/security overview
+// @Description  Boot mode, Secure Boot, TPM and other security settings of every machine
+// @Tags         Machines
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.Response{data=[]service.MachineHardwareRow}
+// @Router       /api/machine-hardware/overview [get]
+func (h *MachineHandler) HardwareOverview(c *gin.Context) {
+	rows, err := h.svc.HardwareOverview()
+	if err != nil {
+		response.InternalError(c, "Failed to fetch hardware overview", err)
+		return
+	}
+	response.Success(c, rows)
+}
+
+// MachineActivity
+// @Summary      Machine activity table
+// @Description  Latest foreground app, load, temperature, bandwidth and latency of every machine
+// @Tags         Machines
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.Response{data=[]service.MachineActivityRow}
+// @Router       /api/machine-hardware/activity [get]
+func (h *MachineHandler) MachineActivity(c *gin.Context) {
+	rows, err := h.svc.MachineActivity()
+	if err != nil {
+		response.InternalError(c, "Failed to fetch machine activity", err)
+		return
+	}
+	response.Success(c, rows)
+}
+
+// ListHardwareChanges
+// @Summary      List hardware change log
+// @Tags         Machines
+// @Produce      json
+// @Security     BearerAuth
+// @Param        machine_id      query  string  false  "Machine ID"
+// @Param        component       query  string  false  "Component (cpu, gpu, ram, monitor...)"
+// @Param        unacknowledged  query  bool    false  "Only unacknowledged"
+// @Success      200  {object}  response.Response{data=response.PaginatedData{data=[]model.MachineHardwareChange}}
+// @Router       /api/machine-hardware/changes [get]
+func (h *MachineHandler) ListHardwareChanges(c *gin.Context) {
+	params := pagination.GetParams(c)
+	result, err := h.svc.ListHardwareChanges(*params, service.HardwareChangeFilter{
+		MachineID:      c.Query("machine_id"),
+		Component:      c.Query("component"),
+		Unacknowledged: c.Query("unacknowledged") == "true",
+	})
+	if err != nil {
+		response.InternalError(c, "Failed to fetch hardware changes", err)
+		return
+	}
+	response.Paginated(c, result.Items, result.Total, result.Page, result.PageSize)
+}
+
+// AckHardwareChanges
+// @Summary      Acknowledge hardware changes
+// @Description  Mark the given changes (or all unacknowledged ones) as seen
+// @Tags         Machines
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.Response
+// @Router       /api/machine-hardware/changes/ack [post]
+func (h *MachineHandler) AckHardwareChanges(c *gin.Context) {
+	var req struct {
+		IDs []string `json:"ids"`
+		All bool     `json:"all"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	n, err := h.svc.AckHardwareChanges(req.IDs, req.All, c.GetString("username"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"acknowledged": n})
+}
+
 // GetByCode
 // @Summary      Get Machine By Code
 // @Description  Get a machine by its machine code

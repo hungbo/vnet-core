@@ -288,7 +288,7 @@ func TestMachineService_Heartbeat_BootReportKhongDoiSQL(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code", "status"}).AddRow("m1", "MAY1", "available"))
 
 	mock.ExpectBegin()
-	mock.ExpectExec(`^UPDATE "machines" SET "booted_at"=\$1,"cpu_temp"=\$2,"gpu_temp"=\$3,"last_heartbeat"=\$4,"updated_at"=\$5 WHERE`).
+	mock.ExpectExec(`^UPDATE "machines" SET "booted_at"=\$1,"cpu_temp"=\$2,"cpu_usage"=\$3,"disk_usage"=\$4,"gpu_temp"=\$5,"last_heartbeat"=\$6,"ram_usage"=\$7,"updated_at"=\$8 WHERE`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 

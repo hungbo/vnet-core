@@ -914,6 +914,7 @@ func pullCatalogVoi(t *testing.T, items []CatalogItem, setup func(mock sqlmock.S
 	defer srv.Close()
 	db, mock := newMockDB(t)
 	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe, UpstreamURL: srv.URL, CatalogKey: "k"})
+	svc.http = http.DefaultClient // master giả nằm trên loopback, client thật của dịch vụ chặn loopback
 	setup(mock)
 	require.NoError(t, svc.pullCatalog(context.Background()))
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -921,8 +922,8 @@ func pullCatalogVoi(t *testing.T, items []CatalogItem, setup func(mock sqlmock.S
 
 func TestPullCatalog_KhongGhiDeTenTotBangTenHong(t *testing.T) {
 	const selectSQL = `SELECT \* FROM "games" WHERE name = \$1`
-	const updateKhongTen = `UPDATE "games" SET "category"=\$1,"icon"=\$2,"launch_args"=\$3,"launcher"=\$4,"menu_entries"=\$5,"remote_infohash"=\$6,"remote_version"=\$7,"updated_at"=\$8 WHERE "id" = \$9`
-	const updateCoTen = `UPDATE "games" SET "category"=\$1,"display_name"=\$2,"icon"=\$3,"launch_args"=\$4,"launcher"=\$5,"menu_entries"=\$6,"remote_infohash"=\$7,"remote_version"=\$8,"updated_at"=\$9 WHERE "id" = \$10`
+	const updateKhongTen = `UPDATE "games" SET "category"=\$1,"icon"=\$2,"launch_args"=\$3,"launcher"=\$4,"menu_entries"=\$5,"remote_infohash"=\$6,"remote_relays"=\$7,"remote_trackers"=\$8,"remote_version"=\$9,"remote_webseeds"=\$10,"run_first"=\$11,"updated_at"=\$12 WHERE "id" = \$13`
+	const updateCoTen = `UPDATE "games" SET "category"=\$1,"display_name"=\$2,"icon"=\$3,"launch_args"=\$4,"launcher"=\$5,"menu_entries"=\$6,"remote_infohash"=\$7,"remote_relays"=\$8,"remote_trackers"=\$9,"remote_version"=\$10,"remote_webseeds"=\$11,"run_first"=\$12,"updated_at"=\$13 WHERE "id" = \$14`
 	item := func(ten string) []CatalogItem {
 		return []CatalogItem{{Name: "lol", DisplayName: ten, Category: "Online", Launcher: "a.exe", Version: 2, Infohash: "h2"}}
 	}
@@ -933,26 +934,26 @@ func TestPullCatalog_KhongGhiDeTenTotBangTenHong(t *testing.T) {
 	t.Run("master gửi tên hỏng, quán có tên tốt: giữ tên cũ", func(t *testing.T) {
 		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
 			existing(mock, "Liên Minh Huyền Thoại")
-			expectGameUpdate(mock, updateKhongTen, "Online", "", "", "a.exe", nil, "h2", 2, anyTime{}, "g1")
+			expectGameUpdate(mock, updateKhongTen, "Online", "", "", "a.exe", nil, "h2", nil, nil, 2, nil, nil, anyTime{}, "g1")
 		})
 	})
 	t.Run("master gửi tên tốt: cập nhật như cũ", func(t *testing.T) {
 		pullCatalogVoi(t, item("Liên Minh Huyền Thoại (Riot)"), func(mock sqlmock.Sqlmock) {
 			existing(mock, "Liên Minh Huyền Thoại")
-			expectGameUpdate(mock, updateCoTen, "Online", "Liên Minh Huyền Thoại (Riot)", "", "", "a.exe", nil, "h2", 2, anyTime{}, "g1")
+			expectGameUpdate(mock, updateCoTen, "Online", "Liên Minh Huyền Thoại (Riot)", "", "", "a.exe", nil, "h2", nil, nil, 2, nil, nil, anyTime{}, "g1")
 		})
 	})
 	t.Run("quán cũng đang có tên hỏng: nhận tên của master", func(t *testing.T) {
 		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
 			existing(mock, "Li\uFFFDn")
-			expectGameUpdate(mock, updateCoTen, "Online", tenHong, "", "", "a.exe", nil, "h2", 2, anyTime{}, "g1")
+			expectGameUpdate(mock, updateCoTen, "Online", tenHong, "", "", "a.exe", nil, "h2", nil, nil, 2, nil, nil, anyTime{}, "g1")
 		})
 	})
 	t.Run("quán chưa có game đó: nhận như cũ, Menu lo hiển thị", func(t *testing.T) {
 		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
 			mock.ExpectQuery(selectSQL).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 			mock.ExpectBegin()
-			args := make([]driver.Value, 22) // 22 cột của bảng games; chỉ name và display_name cần khớp
+			args := make([]driver.Value, 28) // 28 cột của bảng games; chỉ name và display_name cần khớp
 			for i := range args {
 				args[i] = sqlmock.AnyArg()
 			}

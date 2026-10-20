@@ -56,6 +56,10 @@ var Catalog = []Permission{
 	{"machine_assets.update", "Sửa tài sản máy", "machine_assets"},
 	{"machine_assets.delete", "Xoá tài sản máy", "machine_assets"},
 
+	{"windows_keys.view", "Xem bảng Windows Key (key được che)", "windows_keys"},
+	{"windows_keys.manage", "Ghi, nhập hàng loạt và xoá Windows Key", "windows_keys"},
+	{"windows_keys.reveal", "Xem Windows Key đầy đủ", "windows_keys"},
+
 	{"pricing.view", "Xem bảng giá", "pricing"},
 	{"pricing.create", "Thêm bảng giá", "pricing"},
 	{"pricing.update", "Sửa bảng giá", "pricing"},
@@ -121,6 +125,9 @@ var Catalog = []Permission{
 	{"games.create", "Thêm game để phân phối", "games"},
 	{"games.update", "Sửa, publish, tải ngay game", "games"},
 	{"games.delete", "Bỏ game khỏi danh mục", "games"},
+	// Chọn Hub máy chủ tải game từ đó và thư mục game trên máy chủ: máy chủ gọi ra địa chỉ này và ghi file vào
+	// thư mục kia, nên chỉ chủ quán (xem ManagerCodes), không theo "games.update" của người vận hành.
+	{"games.hub", "Nối Hub và đặt thư mục game trên máy chủ", "games"},
 
 	{"app_updates.view", "Xem bản cập nhật máy khách", "app_updates"},
 	{"app_updates.create", "Công bố bản cập nhật", "app_updates"},
@@ -213,7 +220,7 @@ var BackOfficeModules = map[string]bool{
 func ManagerCodes() []string {
 	out := make([]string, 0, len(Catalog))
 	for _, p := range Catalog {
-		if p.Code == Wildcard || p.Code == "client.admin" || BackOfficeModules[p.Module] {
+		if p.Code == Wildcard || p.Code == "client.admin" || p.Code == "games.hub" || BackOfficeModules[p.Module] {
 			continue
 		}
 		out = append(out, p.Code)

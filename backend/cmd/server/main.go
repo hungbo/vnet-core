@@ -41,6 +41,9 @@ import (
 	"github.com/vnet/core/pkg/response"
 )
 
+// version do scripts/build-server.sh đặt bằng -ldflags -X main.version=...
+var version = "dev"
+
 func main() {
 	// Lấy trước mọi thứ khác: chạy dưới dạng dịch vụ Windows thì đây là nơi
 	// log được chuyển sang tệp, và SCM phải nhận được tín hiệu đã chạy trong
@@ -58,6 +61,8 @@ func main() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 
+	service.CoreVersion = version // quán báo phiên bản này lên Hub
+
 	db := database.Init(&cfg.Database)
 
 	jwtManager := jwt.New(
@@ -73,7 +78,7 @@ func main() {
 		&model.Member{}, &model.MemberGroup{}, &model.MemberTransaction{}, &model.MemberAttendance{},
 		&model.Machine{}, &model.MachineGroup{},
 		&model.MachinePrice{}, &model.TimeBasedPricing{},
-		&model.MachineAsset{}, &model.MachineHardwareSnapshot{},
+		&model.MachineAsset{}, &model.MachineHardwareSnapshot{}, &model.MachineHardwareChange{}, &model.WindowsKey{},
 		&model.MachineSession{},
 		&model.Combo{}, &model.ComboPurchase{},
 		&model.MachineBooking{},

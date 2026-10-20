@@ -233,6 +233,26 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				machines.GET("/:id/remote-desktop/ws", middleware.StaffOnly(), middleware.PermissionRequired("machines.remote_desktop"), h.Machine.RemoteDesktopWS)
 			}
 
+			// Boot / bảo mật và nhật ký thay đổi phần cứng của máy trạm.
+			machineHardware := protected.Group("/machine-hardware", middleware.StaffOnly())
+			{
+				machineHardware.GET("/overview", middleware.PermissionRequired("machines.view"), h.Machine.HardwareOverview)
+				machineHardware.GET("/activity", middleware.PermissionRequired("machines.view"), h.Machine.MachineActivity)
+				machineHardware.GET("/changes", middleware.PermissionRequired("machines.view"), h.Machine.ListHardwareChanges)
+				machineHardware.POST("/changes/ack", middleware.PermissionRequired("machines.update"), h.Machine.AckHardwareChanges)
+			}
+
+			// Windows key theo máy. Key chỉ ra khỏi API qua /reveal, có quyền riêng và có nhật ký.
+			windowsKeys := protected.Group("/windows-keys", middleware.StaffOnly())
+			{
+				windowsKeys.GET("", middleware.PermissionRequired("windows_keys.view"), h.WindowsKey.List)
+				windowsKeys.GET("/summary", middleware.PermissionRequired("windows_keys.view"), h.WindowsKey.Summary)
+				windowsKeys.POST("/import", middleware.PermissionRequired("windows_keys.manage"), h.WindowsKey.Import)
+				windowsKeys.PUT("/:machine_id", middleware.PermissionRequired("windows_keys.manage"), h.WindowsKey.Set)
+				windowsKeys.DELETE("/:machine_id", middleware.PermissionRequired("windows_keys.manage"), h.WindowsKey.Delete)
+				windowsKeys.GET("/:machine_id/reveal", middleware.PermissionRequired("windows_keys.reveal"), h.WindowsKey.Reveal)
+			}
+
 			machineGroups := protected.Group("/machine-groups", middleware.StaffOnly())
 			{
 				machineGroups.GET("", middleware.PermissionRequired("machine_groups.view"), h.Machine.ListGroups)
@@ -371,14 +391,28 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				games.GET("/info", middleware.PermissionRequired("games.view"), h.Game.Info)
 				games.GET("", middleware.PermissionRequired("games.view"), h.Game.List)
 				games.POST("", middleware.PermissionRequired("games.create"), h.Game.Create)
+				games.POST("/local", middleware.PermissionRequired("games.create"), h.Game.CreateLocal)
+				games.GET("/local/folders", middleware.PermissionRequired("games.create"), h.Game.LocalFolders)
+				games.GET("/local/launchers", middleware.PermissionRequired("games.create"), h.Game.LocalLaunchers)
 				games.PUT("/:id", middleware.PermissionRequired("games.update"), h.Game.Update)
+				games.PUT("/:id/custom", middleware.PermissionRequired("games.update"), h.Game.UpdateCustom)
 				games.DELETE("/:id", middleware.PermissionRequired("games.delete"), h.Game.Delete)
+				games.PUT("/hub", middleware.PermissionRequired("games.hub"), h.Game.SetHub)
+				games.DELETE("/hub", middleware.PermissionRequired("games.hub"), h.Game.ClearHub)
 				games.POST("/:id/publish", middleware.PermissionRequired("games.update"), h.Game.Publish)
 				games.POST("/:id/sync", middleware.PermissionRequired("games.update"), h.Game.Sync)
+				// Danh mục Hub ở quán: xem cả danh mục, chọn game, tải hàng loạt, hàng đợi và trần băng thông.
+				games.GET("/hub-catalog", middleware.PermissionRequired("games.view"), h.Game.HubCatalog)
+				games.PUT("/hub-selection", middleware.PermissionRequired("games.update"), h.Game.SelectHubGames)
+				games.POST("/bulk-sync", middleware.PermissionRequired("games.update"), h.Game.BulkSync)
+				games.GET("/queue", middleware.PermissionRequired("games.view"), h.Game.Queue)
+				games.GET("/limits", middleware.PermissionRequired("games.view"), h.Game.GetLimits)
+				games.PUT("/limits", middleware.PermissionRequired("games.update"), h.Game.SetLimits)
 			}
 			// Menu game của máy trạm: chỉ cần đăng nhập, hội viên cũng gọi được
 			// (giống /products). Nằm ngoài nhóm /games vì nhóm đó là StaffOnly.
 			protected.GET("/game-menu", h.Game.Menu)
+			protected.GET("/game-menu/version", h.Game.MenuVersion)
 			protected.POST("/game-menu/launch", h.Game.Launch)
 
 			appUpdates := protected.Group("/app-updates", middleware.StaffOnly())

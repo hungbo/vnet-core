@@ -213,7 +213,7 @@ func TestMachineService_Heartbeat_GoiTinThieuIPThiKhongXoaTrang(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow("m1", "available"))
 
 	mock.ExpectBegin()
-	mock.ExpectExec(`^UPDATE "machines" SET "booted_at"=\$1,"cpu_temp"=\$2,"gpu_temp"=\$3,"last_heartbeat"=\$4,"updated_at"=\$5 WHERE`).
+	mock.ExpectExec(`^UPDATE "machines" SET "booted_at"=\$1,"cpu_temp"=\$2,"cpu_usage"=\$3,"disk_usage"=\$4,"gpu_temp"=\$5,"last_heartbeat"=\$6,"ram_usage"=\$7,"updated_at"=\$8 WHERE`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
@@ -243,10 +243,10 @@ func TestMachineService_Heartbeat_GhiCauHinhMayTuKhai(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "status"}).AddRow("m1", "available"))
 
 	mock.ExpectBegin()
-	mock.ExpectExec(`^UPDATE "machines" SET "booted_at"=\$1,"cpu_name"=\$2,"cpu_temp"=\$3,"gpu_name"=\$4,"gpu_temp"=\$5,`+
-		`"ip_address"=\$6,"last_heartbeat"=\$7,"mac_address"=\$8,"ram_gb"=\$9,"storage_gb"=\$10,"updated_at"=\$11 WHERE`).
-		WithArgs(anyTime{}, "Intel Core i5-12400F", 45.0, "NVIDIA GeForce RTX 3060", 60.0,
-			"192.168.1.5", anyTime{}, "AA:BB:CC:DD:EE:FF", 16, 512, anyTime{}, "m1").
+	mock.ExpectExec(`^UPDATE "machines" SET "booted_at"=\$1,"cpu_name"=\$2,"cpu_temp"=\$3,"cpu_usage"=\$4,"disk_usage"=\$5,"gpu_name"=\$6,"gpu_temp"=\$7,`+
+		`"hw_baseline_at"=\$8,"ip_address"=\$9,"last_heartbeat"=\$10,"mac_address"=\$11,"ram_gb"=\$12,"ram_usage"=\$13,"storage_gb"=\$14,"updated_at"=\$15 WHERE`).
+		WithArgs(anyTime{}, "Intel Core i5-12400F", 45.0, 12.5, 55.0, "NVIDIA GeForce RTX 3060", 60.0,
+			anyTime{}, "192.168.1.5", anyTime{}, "AA:BB:CC:DD:EE:FF", 16, 40.0, 512, anyTime{}, "m1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
@@ -776,9 +776,9 @@ func TestMachineService_Heartbeat_GhiCanhBaoMayTram(t *testing.T) {
 			AddRow("m1", "available", "PC-01", ""))
 
 	mock.ExpectBegin()
-	mock.ExpectExec(`^UPDATE "machines" SET "cpu_temp"=\$1,"extra_network"=\$2,"gpu_temp"=\$3,`+
-		`"last_heartbeat"=\$4,"updated_at"=\$5,"user_is_admin"=\$6 WHERE`).
-		WithArgs(0.0, "Wi-Fi (10.0.0.5)", 0.0, anyTime{}, anyTime{}, true, "m1").
+	mock.ExpectExec(`^UPDATE "machines" SET "cpu_temp"=\$1,"cpu_usage"=\$2,"disk_usage"=\$3,"extra_network"=\$4,"gpu_temp"=\$5,`+
+		`"last_heartbeat"=\$6,"ram_usage"=\$7,"updated_at"=\$8,"user_is_admin"=\$9 WHERE`).
+		WithArgs(0.0, 0.0, 0.0, "Wi-Fi (10.0.0.5)", 0.0, anyTime{}, 0.0, anyTime{}, true, "m1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 

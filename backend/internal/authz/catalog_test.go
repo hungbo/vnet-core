@@ -121,3 +121,12 @@ func TestClientAdminChiDanhChoChu(t *testing.T) {
 	assert.NotContains(t, ManagerCodes(), "client.admin")
 	assert.NotContains(t, StaffCodes(), "client.admin")
 }
+
+// games.hub cho phép trỏ máy chủ gọi ra một địa chỉ và ghi file vào một thư mục do người gõ chọn: chỉ chủ quán
+// (giữ "*") có mặc định, không theo quản lý hay nhân viên như phần còn lại của nhóm games.
+func TestQuyenGamesHubChiChuQuan(t *testing.T) {
+	assert.True(t, Has("games.hub"))
+	assert.NotContains(t, ManagerCodes(), "games.hub")
+	assert.NotContains(t, StaffCodes(), "games.hub")
+	assert.Contains(t, ManagerCodes(), "games.update", "quản lý vẫn sửa/publish game như cũ")
+}

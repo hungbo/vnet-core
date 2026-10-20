@@ -102,3 +102,36 @@ func TestLoad_GameStallTimeout(t *testing.T) {
 		assert.Equal(t, 10*time.Minute, Load().Game.StallTimeout, bad)
 	}
 }
+
+func TestLoad_GameWebRTC(t *testing.T) {
+	g := Load().Game
+	assert.True(t, g.WebRTC, "mặc định bật")
+	assert.Equal(t, DefaultGameICEServers, g.ICEServers)
+	assert.Equal(t, 30*time.Second, g.WebseedDelay)
+
+	t.Setenv("GAME_WEBRTC", "0")
+	t.Setenv("GAME_ICE_SERVERS", "") // đặt rỗng là chủ ý không dùng máy chủ nào
+	t.Setenv("GAME_WEBSEED_DELAY", "-5s")
+	g = Load().Game
+	assert.False(t, g.WebRTC)
+	assert.Equal(t, "", g.ICEServers)
+	assert.Equal(t, time.Duration(0), g.WebseedDelay, "âm thành 0: dùng webseed ngay")
+
+	t.Setenv("GAME_ICE_SERVERS", "stun:a:1, turn:b:2")
+	t.Setenv("GAME_WEBSEED_DELAY", "2m")
+	g = Load().Game
+	assert.Equal(t, "stun:a:1, turn:b:2", g.ICEServers)
+	assert.Equal(t, 2*time.Minute, g.WebseedDelay)
+}
+
+func TestLoad_GameRelayDelay(t *testing.T) {
+	assert.Equal(t, 60*time.Second, Load().Game.RelayDelay, "mặc định")
+	t.Setenv("GAME_RELAY_DELAY", "0")
+	assert.Equal(t, time.Duration(0), Load().Game.RelayDelay, "0 là không dùng relay")
+	t.Setenv("GAME_RELAY_DELAY", "2m")
+	assert.Equal(t, 2*time.Minute, Load().Game.RelayDelay)
+	for _, bad := range []string{"-5s", "abc"} {
+		t.Setenv("GAME_RELAY_DELAY", bad)
+		assert.Equal(t, 60*time.Second, Load().Game.RelayDelay, bad)
+	}
+}

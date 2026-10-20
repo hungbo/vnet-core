@@ -46,6 +46,37 @@ type Machine struct {
 	// Thiết bị ngoại vi máy trạm tự đọc lúc khởi động: màn hình, bàn phím,
 	// chuột, âm thanh. Mỗi dòng dạng "Màn hình: Samsung S24F350 (serial)".
 	Peripherals StringArray `gorm:"type:jsonb" json:"peripherals"`
+	// Boot và bảo mật máy trạm tự đọc (client security.go): game chống gian lận như
+	// Vanguard cần UEFI + Secure Boot + TPM 2.0. Rỗng = máy trạm chưa báo (bản cũ,
+	// hoặc không đọc được); khi đó giữ nguyên giá trị đang có.
+	BootMode       string `gorm:"type:varchar(10)" json:"boot_mode"`      // uefi | legacy
+	SecureBoot     string `gorm:"type:varchar(12)" json:"secure_boot"`    // on | off | unsupported
+	TPM            string `gorm:"column:tpm;type:varchar(10)" json:"tpm"` // 2.0 | 1.2 | none
+	HVCI           string `gorm:"column:hvci;type:varchar(5)" json:"hvci"`
+	Virtualization string `gorm:"type:varchar(5)" json:"virtualization"` // on | off
+	BIOSVersion    string `gorm:"column:bios_version;type:varchar(64)" json:"bios_version"`
+	// Chế độ màn hình đang dùng, "1920x1080 144Hz". Là trạng thái hiện tại; nhật ký
+	// thay đổi phần cứng chỉ ghi khi tần số quét TỤT (game đổi độ phân giải rồi trả
+	// lại mỗi lần chạy, ghi mọi thay đổi thì tràn).
+	DisplayMode string `gorm:"type:varchar(32)" json:"display_mode"`
+	// Số đo mới nhất của nhịp tim gần nhất, cho bảng Hoạt động: đọc từ đây thay vì lấy dòng mới
+	// nhất trong machine_hardware_snapshots (bảng lớn nhất hệ thống) cho từng máy.
+	CPUUsage  float64 `gorm:"type:decimal(5,2)" json:"cpu_usage"`
+	RAMUsage  float64 `gorm:"type:decimal(5,2)" json:"ram_usage"`
+	DiskUsage float64 `gorm:"type:decimal(5,2)" json:"disk_usage"`
+	// Ứng dụng đang ở trên cùng (tên tệp .exe), băng thông byte/giây giữa hai nhịp tim, và độ
+	// trễ tới máy chủ (mili giây). Rỗng/0 = máy trạm chưa báo (bản cũ hoặc chưa đo).
+	ActiveApp  string `gorm:"type:varchar(64)" json:"active_app"`
+	NetDownBps int64  `gorm:"default:0" json:"net_down_bps"`
+	NetUpBps   int64  `gorm:"default:0" json:"net_up_bps"`
+	PingMS     int    `gorm:"column:ping_ms;default:0" json:"ping_ms"`
+	// Bản quyền Windows máy trạm đọc từ chính Windows: licensed | unlicensed | grace |
+	// notification, và 5 ký tự cuối key đang cài (WindowsKey.Key so với nó).
+	WinLicense string `gorm:"type:varchar(14)" json:"win_license"`
+	WinKeyTail string `gorm:"type:varchar(5)" json:"win_key_tail"`
+	// Lần đầu thấy cấu hình máy trạm tự đo. Trước mốc này các cột cpu/gpu/ram… có thể là
+	// số người nhập tay, nên khác với số đo không phải là "thay đổi phần cứng".
+	HWBaselineAt *time.Time `gorm:"column:hw_baseline_at;type:timestamptz" json:"hw_baseline_at,omitempty"`
 	// Mật khẩu TightVNC trên máy trạm, máy trạm nhận qua phản hồi nhịp tim.
 	// json:"-": chỉ trả riêng qua GET /machines/:id/remote-desktop.
 	VNCPassword string `gorm:"type:varchar(8)" json:"-"`
@@ -53,9 +84,9 @@ type Machine struct {
 	// bảng ở trang Máy và Bảng điều khiển. GetByCode không trả cột này cho máy trạm.
 	Note      string         `gorm:"type:varchar(255)" json:"note"`
 	IsActive  bool           `gorm:"default:true" json:"is_active"`
-	CreatedAt          time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
-	UpdatedAt          time.Time      `gorm:"default:now()" json:"updated_at,omitempty"`
-	DeletedAt          gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	CreatedAt time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
+	UpdatedAt time.Time      `gorm:"default:now()" json:"updated_at,omitempty"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }
 
 type MachinePrice struct {
@@ -115,4 +146,27 @@ type MachineHardwareSnapshot struct {
 	// thời gian giảm dần, và tác vụ dọn dẹp xoá theo mốc thời gian. Không có
 	// chỉ mục thì cả hai quét toàn bảng — mà đây là bảng lớn nhất hệ thống.
 	CreatedAt time.Time `gorm:"default:now();index" json:"created_at,omitempty"`
+}
+
+// MachineHardwareChange là một dòng nhật ký thay đổi phần cứng của máy: linh kiện (CPU,
+// GPU, RAM, ổ đĩa), thiết bị ngoại vi cắm/rút, và các thiết lập Boot/bảo mật đổi
+// (Secure Boot, TPM, UEFI…). Ghi khi nhịp tim mang số đo khác số đã lưu — trừ lần đo
+// đầu tiên của một máy (xem Machine.HWBaselineAt).
+type MachineHardwareChange struct {
+	ID        string `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
+	MachineID string `gorm:"type:uuid;not null;index" json:"machine_id"`
+	// cpu | gpu | ram | storage | monitor | keyboard | mouse | sound | display (tần số
+	// quét tụt) | boot_mode | secure_boot | tpm | hvci | virtualization | bios
+	Component string `gorm:"type:varchar(20);not null" json:"component"`
+	// changed | added | removed
+	Action     string    `gorm:"type:varchar(10);not null" json:"action"`
+	OldValue   string    `gorm:"type:varchar(200)" json:"old_value"`
+	NewValue   string    `gorm:"type:varchar(200)" json:"new_value"`
+	DetectedAt time.Time `gorm:"default:now();index" json:"detected_at"`
+	// Nhân viên đã xem và xác nhận. Nil = chưa xác nhận, hiện ở đầu danh sách.
+	AcknowledgedAt *time.Time `gorm:"type:timestamptz;index" json:"acknowledged_at,omitempty"`
+	AcknowledgedBy string     `gorm:"type:varchar(50)" json:"acknowledged_by,omitempty"`
+
+	// Chỉ điền khi liệt kê (join sang machines), không phải cột.
+	MachineCode string `gorm:"->;-:migration" json:"machine_code,omitempty"`
 }

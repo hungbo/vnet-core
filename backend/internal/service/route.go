@@ -106,6 +106,24 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Component: "view.vnet_machines",
 			Meta:      RouteMeta{Title: "vnet_machines", I18nKey: "route.vnet_machines", RequiredPermission: "machines.view"},
 		},
+		{
+			Name:      "vnet_hub-games",
+			Path:      "/vnet/hub-games",
+			Component: "view.vnet_hub-games",
+			Meta:      RouteMeta{Title: "vnet_hub-games", I18nKey: "route.vnet_hub-games", RequiredPermission: "games.view"},
+		},
+		{
+			Name:      "vnet_windows-keys",
+			Path:      "/vnet/windows-keys",
+			Component: "view.vnet_windows-keys",
+			Meta:      RouteMeta{Title: "vnet_windows-keys", I18nKey: "route.vnet_windows-keys", RequiredPermission: "windows_keys.view"},
+		},
+		{
+			Name:      "vnet_hardware",
+			Path:      "/vnet/hardware",
+			Component: "view.vnet_hardware",
+			Meta:      RouteMeta{Title: "vnet_hardware", I18nKey: "route.vnet_hardware", RequiredPermission: "machines.view"},
+		},
 
 		{
 			Name:      "vnet_machine-groups",

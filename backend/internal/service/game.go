@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/anacrolix/torrent/metainfo"
+	"github.com/gorilla/websocket"
 	"github.com/vnet/core/internal/config"
 	"github.com/vnet/core/internal/gameupdate"
 	"github.com/vnet/core/internal/hub"
@@ -140,6 +141,21 @@ type GameService struct {
 	http   *http.Client
 	hub    *hub.Hub
 
+	cfgMu      sync.RWMutex
+	live       *config.GameConfig // cấu hình có hiệu lực khi quán nối Hub từ trang Game; nil là dùng cfg (môi trường)
+	supervised bool               // Run đang chạy, nên có người nhận yêu cầu đổi cấu hình
+	reconf     chan chan struct{} // yêu cầu áp lại cấu hình, kèm kênh để báo xong
+	syncAt     time.Time          // lần đọc catalog gần nhất (quán); giữ mu
+	syncErr    string             // lỗi của lần đó, rỗng là tốt; giữ mu
+	keyInfo    *hubKeyInfo        // tình trạng key do Hub báo qua report; giữ mu
+	eventsUp   bool               // đang giữ kênh WebSocket tới Hub; giữ mu
+	noReport   bool               // upstream không có /report (master cũ): thôi gọi; giữ mu
+	transfers  []reportTransfer   // các lần cài xong chưa báo Hub, mỗi mục gửi đúng một lần; giữ mu
+	noEvents   bool               // upstream không có kênh WebSocket (master cũ): thôi nối; giữ mu
+	eventsDial *websocket.Dialer  // test thay được; nil là dùng bộ nối có rào chặn địa chỉ nội bộ
+	localClash map[string]bool    // tên game cục bộ trùng một game của catalog; giữ mu
+	stats      *menuStats         // xếp hạng lượt mở đã đếm (nhãn Hot, thứ tự menu); giữ mu
+
 	mu          sync.Mutex
 	runCtx      context.Context // context của vòng nền; nil khi chưa chạy
 	pubMu       sync.Mutex      // một lần publish một lúc: số phiên bản không được trùng
@@ -150,6 +166,7 @@ type GameService struct {
 	retry       map[string]*retryInfo // game tải lỗi: bao giờ được thử lại
 	riotLogged  map[string]bool       // game Riot đã báo "Riot chạy từ thư mục khác" trong nhật ký; giữ pubMu
 	riotBroken  map[string]bool       // thư mục game Riot có lần chụp gần nhất lỗi, bản chụp có thể dở; giữ pubMu
+	speeds      map[string]*rateMeter // tốc độ tải đo giữa hai lần hỏi hàng đợi; giữ mu
 }
 
 // installJob là lượt tải đang chạy, để lượt đọc catalog sau hủy được khi master đã có bản mới hơn.
@@ -179,13 +196,15 @@ func NewGameService(db *gorm.DB, cfg config.GameConfig) *GameService {
 	return &GameService{
 		db:          db,
 		cfg:         cfg,
-		http:        &http.Client{Timeout: 60 * time.Second},
+		http:        newHubHTTPClient(60 * time.Second),
 		stabilizers: map[string]*gameupdate.Stabilizer{},
 		kick:        make(chan struct{}, 1),
 		wake:        make(chan struct{}, 1),
+		reconf:      make(chan chan struct{}, 4),
 		retry:       map[string]*retryInfo{},
 		riotLogged:  map[string]bool{},
 		riotBroken:  map[string]bool{},
+		speeds:      map[string]*rateMeter{},
 	}
 }
 
@@ -203,7 +222,7 @@ func (s *GameService) baoDoi(id string) {
 	s.hub.Changed("games", map[string]interface{}{"id": id})
 }
 
-func (s *GameService) Role() string { return s.cfg.Role }
+func (s *GameService) Role() string { return s.conf().Role }
 
 func (s *GameService) getRunCtx() context.Context {
 	s.mu.Lock()
@@ -226,17 +245,65 @@ type GameInfo struct {
 	UpdateWindow string `json:"update_window"`
 	// ClientRoot đã chuẩn hoá: trang quản trị thấy đúng giá trị menu game đang dùng.
 	ClientRoot string `json:"client_root"`
+	// Source: "env" khi GAME_ROLE đặt vai (trang chỉ hiện), "settings" khi quán nối Hub từ trang Game, rỗng khi chưa có vai.
+	Source string `json:"source"`
+	// Giá trị đã lưu cho ô nối Hub. Key không bao giờ trả ra, chỉ báo đã có và vài ký tự cuối.
+	HubURL   string `json:"hub_url"`
+	HasKey   bool   `json:"has_key"`
+	KeyHint  string `json:"key_hint"`
+	GameRoot string `json:"game_root"`
+	// LastSyncAt và SyncError: lần đọc catalog gần nhất của quán và lỗi của nó (key sai, hết hạn, mất mạng).
+	LastSyncAt *time.Time `json:"last_sync_at,omitempty"`
+	SyncError  string     `json:"sync_error"`
+	// Tình trạng key do Hub báo (qua report): active, grace hoặc expired, kèm ngày hết hạn. Rỗng khi chưa có tin
+	// (master cũ không có report). EventsConnected: đang giữ kênh WebSocket nhận "có bản mới" từ Hub.
+	KeyStatus       string     `json:"key_status"`
+	KeyExpiresAt    *time.Time `json:"key_expires_at,omitempty"`
+	KeyGraceUntil   *time.Time `json:"key_grace_until,omitempty"`
+	EventsConnected bool       `json:"events_connected"`
+	// LocalClash: game cục bộ mà catalog cũng đang phát cùng tên. Quán giữ bản cục bộ; muốn dùng bản của Hub thì xoá
+	// game cục bộ đó (tệp trên ổ giữ nguyên) rồi chờ lượt đọc catalog kế tiếp.
+	LocalClash []string `json:"local_clash,omitempty"`
 }
 
 func (s *GameService) Info() GameInfo {
 	st := settingsGroup(s.db, GamesGroup)
-	return GameInfo{
-		Role:         s.cfg.Role,
-		Root:         s.cfg.Root,
-		UpstreamURL:  s.cfg.UpstreamURL,
+	c := s.conf()
+	info := GameInfo{
+		Role:         c.Role,
+		Root:         c.Root,
+		UpstreamURL:  c.UpstreamURL,
 		UpdateWindow: st[GameUpdateWindowKey],
 		ClientRoot:   normalizeGameClientRoot(st[GameClientRootKey]),
+		HubURL:       st[GameHubURLKey],
+		HasKey:       st[GameHubKeyKey] != "",
+		KeyHint:      keyHint(st[GameHubKeyKey]),
+		GameRoot:     st[GameRootKey],
 	}
+	switch {
+	case s.cfg.Role != config.GameRoleOff:
+		info.Source = "env"
+	case c.Role != config.GameRoleOff:
+		info.Source = "settings"
+	}
+	s.mu.Lock()
+	if !s.syncAt.IsZero() {
+		at := s.syncAt
+		info.LastSyncAt = &at
+	}
+	info.SyncError = s.syncErr
+	if k := s.keyInfo; k != nil {
+		info.KeyStatus = k.Status
+		exp, grace := k.ExpiresAt, k.GraceUntil
+		info.KeyExpiresAt, info.KeyGraceUntil = &exp, &grace
+	}
+	info.EventsConnected = s.eventsUp
+	for name := range s.localClash {
+		info.LocalClash = append(info.LocalClash, name)
+	}
+	sort.Strings(info.LocalClash)
+	s.mu.Unlock()
+	return info
 }
 
 // normalizeGameClientRoot trả gốc game để máy trạm dùng, hoặc mặc định nếu cài đặt
@@ -286,6 +353,12 @@ func parseGameClientRoot(raw string) (string, error) {
 // viên thấy lỗi thay vì thấy menu lặng lẽ quay về mặc định. Rỗng là hợp lệ (dùng
 // mặc định). Giá trị cũ đã nằm sẵn trong DB thì vẫn được normalizeGameClientRoot đỡ.
 func kiemTraCaiDatGame(in map[string]interface{}) error {
+	// Kết nối Hub đi đường riêng PUT /api/games/hub: key là bí mật, và địa chỉ phải được thử trước khi lưu.
+	for _, k := range []string{GameHubURLKey, GameHubKeyKey, GameRootKey} {
+		if _, ok := in[k]; ok {
+			return fmt.Errorf("không ghi %q ở đây: dùng PUT /api/games/hub", k)
+		}
+	}
 	v, ok := in[GameClientRootKey]
 	if !ok {
 		return nil
@@ -387,12 +460,14 @@ type CreateGameRequest struct {
 	Icon        string `json:"icon"`
 	// MenuEntries: các mục riêng trên menu máy trạm (xem model.Game.MenuEntries).
 	MenuEntries []model.GameMenuEntry `json:"menu_entries"`
-	Priority    int                   `json:"priority"`
+	// RunFirst: lệnh chạy trước khi mở game.
+	RunFirst []model.GameRunStep `json:"run_first"`
+	Priority int                 `json:"priority"`
 }
 
 // Create thêm một game ở master. Thư mục GAME_ROOT/<name> phải có sẵn.
 func (s *GameService) Create(req *CreateGameRequest) (*model.Game, error) {
-	if s.cfg.Role != config.GameRoleMaster {
+	if s.conf().Role != config.GameRoleMaster {
 		return nil, ErrGameMasterOnly
 	}
 	name := strings.TrimSpace(req.Name)
@@ -402,8 +477,8 @@ func (s *GameService) Create(req *CreateGameRequest) (*model.Game, error) {
 	if err := kiemTraCacTruongChuGame(&req.DisplayName, &req.Category, &req.Launcher, &req.LaunchArgs); err != nil {
 		return nil, err
 	}
-	if fi, err := os.Stat(filepath.Join(s.cfg.Root, name)); err != nil || !fi.IsDir() {
-		return nil, fmt.Errorf("không thấy thư mục %s", filepath.Join(s.cfg.Root, name))
+	if fi, err := os.Stat(filepath.Join(s.conf().Root, name)); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("không thấy thư mục %s", filepath.Join(s.conf().Root, name))
 	}
 	if err := checkLauncher(req.Launcher); err != nil {
 		return nil, err
@@ -415,6 +490,10 @@ func (s *GameService) Create(req *CreateGameRequest) (*model.Game, error) {
 	if err != nil {
 		return nil, err
 	}
+	runFirst, err := chuanHoaRunFirst(req.RunFirst)
+	if err != nil {
+		return nil, err
+	}
 	g := model.Game{
 		Name:        name,
 		DisplayName: orDefault(strings.TrimSpace(req.DisplayName), name),
@@ -423,6 +502,7 @@ func (s *GameService) Create(req *CreateGameRequest) (*model.Game, error) {
 		LaunchArgs:  strings.TrimSpace(req.LaunchArgs),
 		Icon:        strings.TrimSpace(req.Icon),
 		MenuEntries: entries,
+		RunFirst:    runFirst,
 		Priority:    req.Priority,
 		Enabled:     true,
 		AutoUpdate:  true,
@@ -446,9 +526,13 @@ type UpdateGameRequest struct {
 	Icon        *string `json:"icon"`
 	// MenuEntries: gửi [] để bỏ các mục riêng, không gửi thì giữ nguyên.
 	MenuEntries *[]model.GameMenuEntry `json:"menu_entries"`
-	Enabled     *bool                  `json:"enabled"`
-	AutoUpdate  *bool                  `json:"auto_update"`
-	Priority    *int                   `json:"priority"`
+	// RunFirst: gửi [] để bỏ lệnh chạy trước, không gửi thì giữ nguyên (master và game cục bộ).
+	RunFirst *[]model.GameRunStep `json:"run_first"`
+	// ClientRoot: gốc game trên máy trạm riêng cho game cục bộ ("" để theo ổ chung). Game của Hub đặt qua SetCustom.
+	ClientRoot *string `json:"client_root"`
+	Enabled    *bool   `json:"enabled"`
+	AutoUpdate *bool   `json:"auto_update"`
+	Priority   *int    `json:"priority"`
 }
 
 func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, error) {
@@ -462,7 +546,8 @@ func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, er
 	updates := map[string]interface{}{}
 	// Ở quán, tên hiển thị, nhóm và launcher đến từ catalog của master: sửa tay
 	// sẽ bị lần đồng bộ sau ghi đè, nên chỉ cho sửa ở master.
-	if s.cfg.Role == config.GameRoleMaster {
+	// Game cục bộ là của quán: sửa được mọi trường, không có catalog nào ghi đè.
+	if s.conf().Role == config.GameRoleMaster || g.Origin == model.GameOriginLocal {
 		if err := kiemTraCacTruongChuGame(req.DisplayName, req.Category, req.Launcher, req.LaunchArgs); err != nil {
 			return nil, err
 		}
@@ -494,6 +579,26 @@ func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, er
 			}
 			updates["menu_entries"] = entries
 		}
+		if req.RunFirst != nil {
+			steps, err := chuanHoaRunFirst(*req.RunFirst)
+			if err != nil {
+				return nil, err
+			}
+			updates["run_first"] = steps
+		}
+	}
+	if req.ClientRoot != nil && g.Origin == model.GameOriginLocal {
+		root := strings.TrimSpace(*req.ClientRoot)
+		if root != "" {
+			p, err := parseGameClientRoot(root)
+			if err != nil {
+				return nil, fmt.Errorf("gốc game trên máy trạm %q: %w", root, err)
+			}
+			root = p
+		}
+		c := g.Custom
+		c.ClientRoot = root
+		updates["custom"] = c
 	}
 	if req.Enabled != nil {
 		updates["enabled"] = *req.Enabled
@@ -518,8 +623,9 @@ func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, er
 
 // Delete bỏ một game khỏi danh mục. Tệp trên ổ đĩa giữ nguyên.
 func (s *GameService) Delete(id string) error {
-	if s.cfg.Role != config.GameRoleMaster {
-		return ErrGameMasterOnly
+	master := s.conf().Role == config.GameRoleMaster
+	if !master && !laUUID(id) {
+		return ErrGameMasterOnly // quán chỉ xoá được game cục bộ; id lạ thì khỏi đọc DB
 	}
 	if !laUUID(id) {
 		return gorm.ErrRecordNotFound
@@ -527,6 +633,9 @@ func (s *GameService) Delete(id string) error {
 	var g model.Game
 	if err := s.db.First(&g, "id = ?", id).Error; err != nil {
 		return err
+	}
+	if !master && g.Origin != model.GameOriginLocal {
+		return ErrGameMasterOnly
 	}
 	if e := s.getEngine(); e != nil {
 		e.Remove(g.Name)
@@ -560,12 +669,21 @@ type GameMenuItem struct {
 	Status   string `json:"status"`
 	Progress int    `json:"progress"`
 	Version  int    `json:"version"`
+	// Root: gốc game riêng của game này (khi quán đặt khác ổ chung). Rỗng là dùng GameMenu.Root.
+	Root string `json:"root,omitempty"`
+	// RunFirst: các bước chạy lần lượt (và chờ) trước khi mở game; máy trạm cũ không biết trường này thì bỏ qua.
+	RunFirst model.GameRunSteps `json:"run_first,omitempty"`
+	// Label: nhãn trên thẻ game, "hot" (nhiều lượt mở gần đây) hoặc "new" (mới về quán); rỗng là không nhãn.
+	Label string `json:"label,omitempty"`
 }
 
 // GameMenu: Root là GAME_ROOT như máy trạm thấy (xem GameClientRootKey).
 type GameMenu struct {
 	Root  string         `json:"root"`
 	Items []GameMenuItem `json:"items"`
+	// CafeName và LogoURL: tên quán và đường dẫn logo (/uploads/...) hiện ở đầu menu máy trạm; rỗng là không có.
+	CafeName string `json:"cafe_name,omitempty"`
+	LogoURL  string `json:"logo_url,omitempty"`
 }
 
 // Menu trả các game đang bật và có tệp chạy, mọi GAME_ROLE đều dùng được. Game
@@ -580,10 +698,20 @@ func (s *GameService) Menu() (*GameMenu, error) {
 		Root:  normalizeGameClientRoot(settingsGroup(s.db, GamesGroup)[GameClientRootKey]),
 		Items: make([]GameMenuItem, 0, len(games)),
 	}
+	general := settingsGroup(s.db, GeneralGroup)
+	menu.CafeName = truncateRunes(strings.TrimSpace(general["store_name"]), 100)
+	if logo, ok := logoMenuHopLe(general[MenuLogoKey]); ok {
+		menu.LogoURL = logo
+	}
+	now := time.Now()
+	counts := s.launchCounts(now)
+	sortByLaunches(games, counts)
+	hot := hotGames(games, counts)
 	for _, g := range games {
 		if !g.Enabled {
 			continue
 		}
+		label := menuLabel(&g, hot, now)
 		item := func(key, display, launcher, args, icon string) GameMenuItem {
 			// Tên đã lưu mà hỏng bảng mã (dữ liệu cũ, tạo qua đường mã hoá sai) thì hiện slug: một tên có
 			// ô vuông còn tệ hơn tên không dấu. Không sửa DB — chỉ là cách hiển thị cho tới khi quản trị viên nhập lại.
@@ -594,6 +722,7 @@ func (s *GameService) Menu() (*GameMenu, error) {
 				Key: key, Name: g.Name, DisplayName: display, Category: g.Category,
 				Launcher: launcher, LaunchArgs: args, Icon: icon,
 				Status: g.Status, Progress: g.Progress, Version: g.Version,
+				Root: g.Custom.ClientRoot, RunFirst: runFirstOf(&g), Label: label,
 			}
 		}
 		if len(g.MenuEntries) > 0 {
@@ -605,7 +734,9 @@ func (s *GameService) Menu() (*GameMenu, error) {
 			continue
 		}
 		if g.Launcher != "" {
-			menu.Items = append(menu.Items, item(g.Name, g.DisplayName, g.Launcher, g.LaunchArgs, g.Icon))
+			// Tên và icon quán đặt riêng thắng của catalog (game một mục).
+			display, icon := orDefault(g.Custom.DisplayName, g.DisplayName), orDefault(g.Custom.Icon, g.Icon)
+			menu.Items = append(menu.Items, item(g.Name, display, g.Launcher, g.LaunchArgs, icon))
 		}
 	}
 	return menu, nil
@@ -618,7 +749,7 @@ func (s *GameService) Menu() (*GameMenu, error) {
 // Không lọc theo trạng thái: giá trị đổi qua lại suốt mấy giờ tải lại game thì mỗi lần đổi máy trạm
 // lại ghi policy.json và chép lại metadata. Bản chụp là liên kết (Lstat) thì bỏ, như máy trạm từ chối.
 func (s *GameService) RiotMetadataSource() string {
-	if s.cfg.Role != config.GameRoleCafe || s.cfg.Root == "" {
+	if s.conf().Role != config.GameRoleCafe || s.conf().Root == "" {
 		return ""
 	}
 	var names []string
@@ -629,7 +760,7 @@ func (s *GameService) RiotMetadataSource() string {
 		if !tenGameDungDuoc(n) {
 			continue
 		}
-		if fi, err := os.Lstat(filepath.Join(s.cfg.Root, n, "_vnet", "ProgramData", "Riot Games")); err != nil || !fi.IsDir() {
+		if fi, err := os.Lstat(filepath.Join(s.conf().Root, n, "_vnet", "ProgramData", "Riot Games")); err != nil || !fi.IsDir() {
 			continue
 		}
 		root := normalizeGameClientRoot(settingsGroup(s.db, GamesGroup)[GameClientRootKey])
@@ -737,6 +868,16 @@ type CatalogItem struct {
 	Version     int                   `json:"version"`
 	Infohash    string                `json:"infohash"`
 	SizeBytes   int64                 `json:"size_bytes"`
+	// Webseeds: omitempty để catalog của master cũ giữ nguyên như trước. Hub điền khi dữ liệu nằm ở máy master khác.
+	Webseeds []string `json:"webseeds,omitempty"`
+	// Trackers: tracker WebRTC để quán gặp master qua P2P, URL đã ký cho quán này. Hub điền khi bật tracker; master
+	// cũ không có. Có Trackers mà không có Webseeds nghĩa là master chỉ phát qua P2P.
+	Trackers []string `json:"trackers,omitempty"`
+	// RelayWebseeds: relay của Hub (HTTP qua đường hầm của master), đã ký cho quán này. Chỉ dùng khi P2P và webseed đều
+	// bế tắc. Master cũ và Hub chưa bật relay không có trường này.
+	RelayWebseeds []string `json:"relay_webseeds,omitempty"`
+	// RunFirst: lệnh chạy trước khi mở game. omitempty để catalog của game thường giữ nguyên như trước.
+	RunFirst model.GameRunSteps `json:"run_first,omitempty"`
 }
 
 // SeedToken là phần bí mật trong URL webseed: /seed/<token>/<game>/<tệp>.
@@ -744,10 +885,10 @@ type CatalogItem struct {
 // trong đường dẫn. Dùng băm của khoá catalog chứ không dùng chính nó, để log
 // truy cập của master không làm lộ khoá đọc catalog.
 func (s *GameService) SeedToken() string {
-	if s.cfg.CatalogKey == "" {
+	if s.conf().CatalogKey == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte("vnet-seed:" + s.cfg.CatalogKey))
+	sum := sha256.Sum256([]byte("vnet-seed:" + s.conf().CatalogKey))
 	return hex.EncodeToString(sum[:16])
 }
 
@@ -770,11 +911,11 @@ func (s *GameService) SeedServable(name string) bool {
 
 // CheckCatalogKey so khoá bằng thời gian cố định.
 func (s *GameService) CheckCatalogKey(key string) bool {
-	return s.cfg.CatalogKey != "" && subtle.ConstantTimeCompare([]byte(key), []byte(s.cfg.CatalogKey)) == 1
+	return s.conf().CatalogKey != "" && subtle.ConstantTimeCompare([]byte(key), []byte(s.conf().CatalogKey)) == 1
 }
 
 func (s *GameService) Catalog() ([]CatalogItem, error) {
-	if s.cfg.Role != config.GameRoleMaster {
+	if s.conf().Role != config.GameRoleMaster {
 		return nil, ErrGameMasterOnly
 	}
 	var games []model.Game
@@ -787,6 +928,7 @@ func (s *GameService) Catalog() ([]CatalogItem, error) {
 			Name: g.Name, DisplayName: g.DisplayName, Category: g.Category,
 			Launcher: g.Launcher, LaunchArgs: g.LaunchArgs, Icon: g.Icon, MenuEntries: g.MenuEntries,
 			Priority: g.Priority, Version: g.Version, Infohash: g.Infohash, SizeBytes: g.SizeBytes,
+			RunFirst: g.RunFirst,
 		})
 	}
 	return out, nil
@@ -794,7 +936,7 @@ func (s *GameService) Catalog() ([]CatalogItem, error) {
 
 // Torrent trả tệp .torrent của bản mới nhất.
 func (s *GameService) Torrent(name string) ([]byte, error) {
-	if s.cfg.Role != config.GameRoleMaster {
+	if s.conf().Role != config.GameRoleMaster {
 		return nil, ErrGameMasterOnly
 	}
 	var g model.Game
@@ -826,18 +968,25 @@ const torrentFileIOEnv = "TORRENT_STORAGE_DEFAULT_FILE_IO"
 // config.env vào môi trường: biến đặt trong config.env không đổi được cách anacrolix đọc tệp.
 var torrentFileIOClassic = os.Getenv(torrentFileIOEnv) == "classic"
 
-// Run chạy cho tới khi ctx kết thúc. Không làm gì khi GAME_ROLE trống.
-func (s *GameService) Run(ctx context.Context) {
-	if s.cfg.Role == config.GameRoleOff {
+// runRole chạy vai đang có hiệu lực (master hoặc quán) cho tới khi ctx kết thúc. Run (game_hub.go) gọi nó và
+// dừng rồi bật lại khi quán nối hay ngắt Hub. Không làm gì khi chưa có vai.
+func (s *GameService) runRole(ctx context.Context) {
+	if s.conf().Role == config.GameRoleOff {
 		return
 	}
-	dataDir := s.cfg.DataDir
+	dataDir := s.conf().DataDir
 	if dataDir == "" || !filepath.IsAbs(dataDir) {
-		dataDir = filepath.Join(s.cfg.Root, ".vnet-gameupdate")
+		dataDir = filepath.Join(s.conf().Root, ".vnet-gameupdate")
 	}
+	c := s.conf()
 	engine, err := gameupdate.NewEngine(gameupdate.EngineConfig{
 		DataDir:    dataDir,
-		ListenPort: s.cfg.ListenPort,
+		ListenPort: c.ListenPort,
+		// Quán chỉ cần P2P qua tracker của Hub: engine không mở cổng BitTorrent nào. Master của core vẫn dùng cổng cũ.
+		WebRTC:     c.Role == config.GameRoleCafe && c.WebRTC,
+		ICEServers: splitList(c.ICEServers),
+		// Trần băng thông quán đặt ở trang Danh mục Hub; không đặt thì không giới hạn.
+		DownloadBps: s.Limits().DownloadMbps * mbpsBytes, UploadBps: s.Limits().UploadMbps * mbpsBytes,
 	})
 	if err != nil {
 		log.Printf("[game] không khởi động được engine: %v", err)
@@ -856,7 +1005,7 @@ func (s *GameService) Run(ctx context.Context) {
 		s.mu.Unlock()
 		engine.Close()
 	}()
-	log.Printf("[game] bật vai trò %s, thư mục %s", s.cfg.Role, s.cfg.Root)
+	log.Printf("[game] bật vai trò %s, thư mục %s", s.conf().Role, s.conf().Root)
 	if runtime.GOOS == "windows" && !torrentFileIOClassic {
 		log.Printf("[game] CẢNH BÁO: dịch vụ thiếu %s=classic: tệp đã phát bị khoá tới khi dịch vụ dừng "+
 			"(quán không xoá được tệp thừa, master không chụp được ProgramData). Chạy lại bộ cài vnet-server.", torrentFileIOEnv)
@@ -865,17 +1014,21 @@ func (s *GameService) Run(ctx context.Context) {
 	s.recoverDownloading()
 	s.recoverPublishing()
 
-	if s.cfg.Role == config.GameRoleMaster {
+	if s.conf().Role == config.GameRoleMaster {
 		s.seedPublished(ctx)
 	} else {
-		worker.Add(1)
+		worker.Add(2)
 		go func() {
 			defer worker.Done()
 			s.installLoop(ctx)
 		}()
+		go func() {
+			defer worker.Done()
+			s.eventsLoop(ctx)
+		}()
 	}
 	for {
-		if s.cfg.Role == config.GameRoleMaster {
+		if s.conf().Role == config.GameRoleMaster {
 			s.publishTick(ctx, time.Now())
 		} else {
 			s.syncTick(ctx)
@@ -883,7 +1036,7 @@ func (s *GameService) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(s.cfg.PollInterval):
+		case <-time.After(s.conf().PollInterval):
 		case <-s.kick:
 		}
 	}
@@ -951,7 +1104,7 @@ func (s *GameService) seedPublished(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		job := gameupdate.Job{Name: g.Name, MetaInfo: mi, Dest: filepath.Join(s.cfg.Root, g.Name)}
+		job := gameupdate.Job{Name: g.Name, MetaInfo: mi, Dest: filepath.Join(s.conf().Root, g.Name)}
 		if err := e.Seed(ctx, job); err != nil {
 			// Thư mục đã đổi kể từ lần publish: lượt publish tới sẽ làm bản mới.
 			log.Printf("[game] %s: chưa phát được bản %d: %v", g.Name, g.Version, err)
@@ -978,7 +1131,7 @@ func (s *GameService) publishTick(ctx context.Context, now time.Time) {
 		if ctx.Err() != nil {
 			return
 		}
-		dir := filepath.Join(s.cfg.Root, g.Name)
+		dir := filepath.Join(s.conf().Root, g.Name)
 		if err := s.captureLauncherState(dir); err != nil {
 			// Chỉ ở master, để người quản trị đọc: Catalog không xét trạng thái nên quán vẫn nhận bản cũ.
 			// Lượt này không fingerprint, không Observe, không publish.
@@ -1002,7 +1155,7 @@ func (s *GameService) publishTick(ctx context.Context, now time.Time) {
 		s.mu.Lock()
 		st := s.stabilizers[g.Name]
 		if st == nil {
-			st = gameupdate.NewStabilizer(s.cfg.StableFor, g.Fingerprint)
+			st = gameupdate.NewStabilizer(s.conf().StableFor, g.Fingerprint)
 			s.stabilizers[g.Name] = st
 		}
 		settled := st.Observe(fp, now)
@@ -1028,7 +1181,7 @@ func (s *GameService) publishTick(ctx context.Context, now time.Time) {
 // HTTP server. Trạng thái chuyển "publishing" ngay, trang quản trị tự làm mới
 // cho tới khi thành "ready" (hoặc "error").
 func (s *GameService) PublishNow(_ context.Context, id string) (*model.Game, error) {
-	if s.cfg.Role != config.GameRoleMaster {
+	if s.conf().Role != config.GameRoleMaster {
 		return nil, ErrGameMasterOnly
 	}
 	if !laUUID(id) {
@@ -1045,7 +1198,7 @@ func (s *GameService) PublishNow(_ context.Context, id string) (*model.Game, err
 	if g.Status == model.GameStatusPublishing {
 		return &g, nil
 	}
-	dir := filepath.Join(s.cfg.Root, g.Name)
+	dir := filepath.Join(s.conf().Root, g.Name)
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("không thấy thư mục %s", dir)
 	}
@@ -1205,7 +1358,7 @@ func (s *GameService) setError(id, msg string) {
 
 // SyncNow tải ngay một game ở quán, bỏ qua tự cập nhật, khung giờ và thời gian chờ thử lại.
 func (s *GameService) SyncNow(id string) error {
-	if s.cfg.Role != config.GameRoleCafe {
+	if s.conf().Role != config.GameRoleCafe {
 		return ErrGameCafeOnly
 	}
 	if !laUUID(id) {
@@ -1214,6 +1367,9 @@ func (s *GameService) SyncNow(id string) error {
 	var g model.Game
 	if err := s.db.First(&g, "id = ?", id).Error; err != nil {
 		return err
+	}
+	if g.Origin == model.GameOriginLocal {
+		return ErrGameIsLocal
 	}
 	if err := s.db.Model(&model.Game{}).Where("id = ? AND status <> ?", g.ID, model.GameStatusDownloading).
 		Update("status", model.GameStatusQueued).Error; err != nil {
@@ -1239,9 +1395,14 @@ func (s *GameService) SyncNow(id string) error {
 
 // syncTick đọc catalog rồi đánh thức luồng tải.
 func (s *GameService) syncTick(ctx context.Context) {
-	if err := s.pullCatalog(ctx); err != nil {
+	err := s.pullCatalog(ctx)
+	s.noteSync(err)
+	if err != nil {
 		log.Printf("[game] đọc catalog của master: %v", err)
 	}
+	// Báo cả khi đọc catalog lỗi: key hết hạn bị catalog từ chối nhưng report vẫn nhận, và chính phản hồi của nó cho
+	// quán biết key hết hạn ngày nào.
+	s.reportToHub(ctx)
 	select {
 	case s.wake <- struct{}{}:
 	default:
@@ -1262,6 +1423,7 @@ func (s *GameService) installLoop(ctx context.Context) {
 				break
 			}
 			s.installOne(ctx, *g)
+			s.reportToHub(ctx) // Hub thấy bản mới của quán ngay, không đợi lượt đọc catalog sau
 		}
 	}
 }
@@ -1365,7 +1527,7 @@ func (s *GameService) failInstall(g model.Game, err error, now time.Time) {
 
 	msg := err.Error()
 	if errors.Is(err, gameupdate.ErrStalled) {
-		msg = fmt.Sprintf("Tải bị treo: %s không có thêm dữ liệu nào đúng hash (master không phản hồi, hoặc master đã đổi tệp sau khi publish)", thoiLuong(s.cfg.StallTimeout))
+		msg = fmt.Sprintf("Tải bị treo: %s không có thêm dữ liệu nào đúng hash (master không phản hồi, hoặc master đã đổi tệp sau khi publish)", thoiLuong(s.conf().StallTimeout))
 	}
 	// Chỉ hứa tự thử lại khi nextInstall sẽ thật sự nhặt game này lên: game đã đúng bản master thì luôn,
 	// game chờ bản mới thì phải bật tự cập nhật (và còn phải chờ khung giờ, nên là "sớm nhất").
@@ -1399,6 +1561,9 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 	if err := s.upstreamJSON(ctx, "/api/game-catalog", &items); err != nil {
 		return err
 	}
+	s.mu.Lock()
+	s.localClash = nil // dựng lại từ lượt đọc này: xoá game cục bộ hay catalog gỡ game thì hết trùng
+	s.mu.Unlock()
 	for _, it := range items {
 		if !tenGameDungDuoc(it.Name) {
 			log.Printf("[game] bỏ qua game có tên không hợp lệ từ master: %q", it.Name)
@@ -1411,6 +1576,10 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 			"launcher": it.Launcher, "launch_args": it.LaunchArgs,
 			"icon": it.Icon, "menu_entries": it.MenuEntries,
 			"remote_version": it.Version, "remote_infohash": it.Infohash,
+			"remote_webseeds": model.StringArray(webseedsHopLe(it.Name, it.Webseeds)),
+			"remote_trackers": model.StringArray(trackersHopLe(it.Name, it.Trackers)),
+			"remote_relays":   model.StringArray(relaysHopLe(it.Name, it.RelayWebseeds)),
+			"run_first":       runFirstHopLe(it.Name, it.RunFirst),
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			g = model.Game{
@@ -1418,6 +1587,8 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 				Launcher: it.Launcher, LaunchArgs: it.LaunchArgs, Icon: it.Icon, MenuEntries: it.MenuEntries,
 				Priority: it.Priority, Enabled: true, AutoUpdate: true, Status: model.GameStatusNotInstalled,
 				RemoteVersion: it.Version, RemoteInfohash: it.Infohash, SizeBytes: it.SizeBytes,
+				RemoteWebseeds: webseedsHopLe(it.Name, it.Webseeds), RemoteTrackers: trackersHopLe(it.Name, it.Trackers),
+				RemoteRelays: relaysHopLe(it.Name, it.RelayWebseeds), RunFirst: runFirstHopLe(it.Name, it.RunFirst),
 			}
 			if err := s.db.Create(&g).Error; err != nil {
 				return err
@@ -1427,6 +1598,11 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 		}
 		if err != nil {
 			return err
+		}
+		if g.Origin == model.GameOriginLocal {
+			// Game cục bộ trùng tên với một game của catalog: quán giữ bản của mình, catalog không ghi đè.
+			s.noteLocalClash(it.Name)
+			continue
 		}
 		// Vòng nền ghi lại catalog mỗi lượt dù không có gì mới: chỉ báo trang
 		// quản trị khi có cột thật sự đổi.
@@ -1487,9 +1663,20 @@ func (s *GameService) install(ctx context.Context, g model.Game) error {
 	job := gameupdate.Job{
 		Name:         g.Name,
 		MetaInfo:     mi,
-		Dest:         filepath.Join(s.cfg.Root, g.Name),
-		Webseeds:     []string{s.cfg.UpstreamURL + "/seed/" + s.SeedToken() + "/"},
-		StallTimeout: s.cfg.StallTimeout,
+		Dest:         filepath.Join(s.conf().Root, g.Name),
+		Webseeds:     s.webseedsFor(g),
+		Trackers:     g.RemoteTrackers,
+		Relays:       g.RemoteRelays,
+		RelayDelay:   s.conf().RelayDelay,
+		WebseedDelay: s.conf().WebseedDelay,
+		StallTimeout: s.conf().StallTimeout,
+		OnTransfer:   func(t gameupdate.Transfer) { s.noteTransfer(g.Name, g.RemoteVersion, t) },
+		OnRelayFallback: func() {
+			log.Printf("[game] %s: P2P và webseed đều không có thêm dữ liệu nào sau %s, dùng relay của Hub", g.Name, s.conf().RelayDelay)
+		},
+		OnWebseedFallback: func() {
+			log.Printf("[game] %s: P2P không có thêm dữ liệu nào sau %s, dùng webseed", g.Name, s.conf().WebseedDelay)
+		},
 	}
 	if err := os.MkdirAll(job.Dest, 0o755); err != nil {
 		return err
@@ -1514,11 +1701,11 @@ func (s *GameService) install(ctx context.Context, g model.Game) error {
 }
 
 func (s *GameService) upstreamBytes(ctx context.Context, path string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.cfg.UpstreamURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.conf().UpstreamURL+path, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set(GameCatalogKeyHeader, s.cfg.CatalogKey)
+	req.Header.Set(GameCatalogKeyHeader, s.conf().CatalogKey)
 	resp, err := s.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -1530,7 +1717,7 @@ func (s *GameService) upstreamBytes(ctx context.Context, path string) ([]byte, e
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s trả %d: %s", path, resp.StatusCode, truncateRunes(string(body), 200))
+		return nil, fmt.Errorf("%s trả %d: %s", path, resp.StatusCode, truncateRunes(hubText(body), 200))
 	}
 	return body, nil
 }
@@ -1552,6 +1739,18 @@ func (s *GameService) upstreamJSON(ctx context.Context, path string, out interfa
 		return errors.New(env.Message)
 	}
 	return json.Unmarshal(env.Data, out)
+}
+
+// hubText: lời nhắn trong phản hồi lỗi {code, message} của Hub để quản trị viên đọc được ("sai khoá catalog
+// game"), thay vì cả khối JSON. Không đúng dạng đó thì giữ nguyên nội dung.
+func hubText(body []byte) string {
+	var env struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(body, &env) == nil && env.Message != "" {
+		return env.Message
+	}
+	return string(body)
 }
 
 // GameCatalogKeyHeader mang khoá catalog giữa quán và master.
