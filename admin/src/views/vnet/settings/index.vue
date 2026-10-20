@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { type PaymentMethod, usePaymentMethods } from '@/hooks/business/payment-methods';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { moneyInput } from '@/utils/money';
+import ImageUpload from '@/components/common/ImageUpload.vue';
 
 const { t: $t } = useI18n();
 const { reload: reloadPaymentMethods } = usePaymentMethods();
@@ -151,11 +152,35 @@ function applyClientDefaults() {
       ? 300
       : reboot;
   if (settings.idle_action !== 'shutdown' && settings.idle_action !== 'standby') settings.idle_action = 'shutdown';
+  // Phím nóng Alt+K mặc định TẮT; khoảng đổi hình nền là số (cột lưu chuỗi).
+  if (settings.close_hotkey !== 'true' && settings.close_hotkey !== 'false') settings.close_hotkey = 'false';
+  const wp = Number(settings.wallpaper_interval_seconds);
+  settings.wallpaper_interval_seconds = Number.isFinite(wp) && wp > 0 ? wp : 0;
   const idle = Number(settings.idle_shutdown_minutes);
   settings.idle_shutdown_minutes =
     settings.idle_shutdown_minutes === undefined || settings.idle_shutdown_minutes === '' || !Number.isFinite(idle)
       ? 5
       : idle;
+}
+
+// Hình nền máy trạm lưu thành một chuỗi nhiều dòng (mỗi dòng một đường dẫn /uploads/...); trang giữ nó dạng danh sách để
+// thêm và bỏ từng ảnh.
+const wallpaperList = computed(() =>
+  String(settings.wallpaper_urls || '')
+    .split('\n')
+    .map(s => s.trim())
+    .filter(Boolean)
+);
+const newWallpaper = ref('');
+watch(newWallpaper, url => {
+  if (!url) return;
+  settings.wallpaper_urls = [...wallpaperList.value, url].join('\n');
+  newWallpaper.value = '';
+});
+function removeWallpaper(i: number) {
+  const list = [...wallpaperList.value];
+  list.splice(i, 1);
+  settings.wallpaper_urls = list.join('\n');
 }
 
 function addPreset() {
@@ -218,6 +243,12 @@ onMounted(() => {
           <ElForm :model="settings" label-width="180px" label-position="left">
             <ElFormItem :label="$t('vnetPages.settings.storeName')">
               <ElInput v-model="settings.store_name" />
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.settings.menuLogo')">
+              <ImageUpload :model-value="settings.menu_logo || ''" @update:model-value="(v: string) => (settings.menu_logo = v)" />
+              <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
+                {{ $t('vnetPages.settings.menuLogoHint') }}
+              </div>
             </ElFormItem>
             <ElFormItem :label="$t('vnetPages.settings.address')">
               <ElInput v-model="settings.store_address" type="textarea" :rows="2" />
@@ -456,6 +487,58 @@ onMounted(() => {
                 {{ $t('vnetPages.settings.hiddenShortcutsHint') }}
               </div>
             </ElFormItem>
+            <ElDivider content-position="left">{{ $t('vnetPages.settings.wallpaperTitle') }}</ElDivider>
+            <ElFormItem :label="$t('vnetPages.settings.wallpapers')">
+              <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center">
+                <div v-for="(url, i) in wallpaperList" :key="url" class="wallpaper-item">
+                  <ElImage :src="url" fit="cover" style="width: 120px; height: 68px; border-radius: 6px" />
+                  <ElButton size="small" type="danger" circle class="wallpaper-remove" @click="removeWallpaper(i)">×</ElButton>
+                </div>
+                <ImageUpload v-if="wallpaperList.length < 20" v-model="newWallpaper" />
+              </div>
+              <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
+                {{ $t('vnetPages.settings.wallpaperHint') }}
+              </div>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.settings.wallpaperInterval')">
+              <ElInputNumber v-model="settings.wallpaper_interval_seconds" :min="0" :max="86400" :step="30" style="width: 100%" />
+              <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
+                {{ $t('vnetPages.settings.wallpaperIntervalHint') }}
+              </div>
+            </ElFormItem>
+            <ElDivider content-position="left">{{ $t('vnetPages.settings.startupTitle') }}</ElDivider>
+            <ElFormItem :label="$t('vnetPages.settings.startupApps')">
+              <ElInput
+                v-model="settings.startup_apps"
+                type="textarea"
+                :rows="4"
+                :placeholder="$t('vnetPages.settings.startupAppsPlaceholder')"
+              />
+              <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
+                {{ $t('vnetPages.settings.startupAppsHint') }}
+              </div>
+            </ElFormItem>
+            <ElDivider content-position="left">{{ $t('vnetPages.settings.closeTitle') }}</ElDivider>
+            <ElFormItem :label="$t('vnetPages.settings.closeHotkey')">
+              <ElSwitch
+                :model-value="settings.close_hotkey === 'true'"
+                @update:model-value="(v: any) => (settings.close_hotkey = v ? 'true' : 'false')"
+              />
+              <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-left: 12px">
+                {{ $t('vnetPages.settings.closeHotkeyHint') }}
+              </div>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.settings.closeExclude')">
+              <ElInput
+                v-model="settings.close_exclude"
+                type="textarea"
+                :rows="3"
+                :placeholder="$t('vnetPages.settings.closeExcludePlaceholder')"
+              />
+              <div style="color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5">
+                {{ $t('vnetPages.settings.closeExcludeHint') }}
+              </div>
+            </ElFormItem>
             <ElDivider content-position="left">{{ $t('vnetPages.settings.riotMetadataTitle') }}</ElDivider>
             <ElFormItem :label="$t('vnetPages.settings.riotMetadataSource')">
               <ElInput
@@ -499,3 +582,14 @@ onMounted(() => {
     </ElCard>
   </div>
 </template>
+
+<style scoped>
+.wallpaper-item {
+  position: relative;
+}
+.wallpaper-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+}
+</style>

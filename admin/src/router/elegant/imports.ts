@@ -71,6 +71,8 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   "vnet_error-logs": () => import("@/views/vnet/error-logs/index.vue"),
   vnet_feedback: () => import("@/views/vnet/feedback/index.vue"),
   vnet_games: () => import("@/views/vnet/games/index.vue"),
+  vnet_hardware: () => import("@/views/vnet/hardware/index.vue"),
+  "vnet_hub-games": () => import("@/views/vnet/hub-games/index.vue"),
   "vnet_inventory-counts": () => import("@/views/vnet/inventory-counts/index.vue"),
   "vnet_machine-assets": () => import("@/views/vnet/machine-assets/index.vue"),
   "vnet_machine-groups": () => import("@/views/vnet/machine-groups/index.vue"),
@@ -90,4 +92,5 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   vnet_suppliers: () => import("@/views/vnet/suppliers/index.vue"),
   vnet_transactions: () => import("@/views/vnet/transactions/index.vue"),
   "vnet_website-blocking": () => import("@/views/vnet/website-blocking/index.vue"),
+  "vnet_windows-keys": () => import("@/views/vnet/windows-keys/index.vue"),
 };

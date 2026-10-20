@@ -447,12 +447,15 @@ const { schedule: reloadSoon } = useRealtimeRefresh(['machines', 'sessions', 'me
 // Cột Nhóm tra tên trong danh sách nhóm đã nạp, ô chọn nhóm cũng vậy.
 useRealtimeRefresh(['machine-groups'], fetchGroups);
 
-// Máy trạm vừa báo một dấu hiệu mới (hiện chỉ có card mạng lạ). Hiện thông báo
-// không tự tắt: chủ quán có thể không ngồi trước màn hình lúc nó xảy ra.
+// Máy trạm vừa báo một dấu hiệu mới: card mạng lạ, hoặc thay đổi phần cứng (kind =
+// hardware_change, xem trang Phần cứng). Hiện thông báo không tự tắt: chủ quán có thể
+// không ngồi trước màn hình lúc nó xảy ra.
 function onMachineAlert(alert: any) {
+  const what =
+    alert?.kind === 'hardware_change' ? $t('vnetPages.machines.warnHardware') : $t('vnetPages.machines.warnNetwork');
   ElNotification({
     title: $t('vnetPages.machines.alertTitle', { code: alert?.machine_code || '' }),
-    message: `${$t('vnetPages.machines.warnNetwork')}: ${alert?.detail || ''}`,
+    message: `${what}: ${alert?.detail || ''}`,
     type: 'warning',
     duration: 0
   });

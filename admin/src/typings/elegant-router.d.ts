@@ -101,6 +101,8 @@ declare module "@elegant-router/types" {
     "vnet_error-logs": "/vnet/error-logs";
     "vnet_feedback": "/vnet/feedback";
     "vnet_games": "/vnet/games";
+    "vnet_hardware": "/vnet/hardware";
+    "vnet_hub-games": "/vnet/hub-games";
     "vnet_inventory-counts": "/vnet/inventory-counts";
     "vnet_machine-assets": "/vnet/machine-assets";
     "vnet_machine-groups": "/vnet/machine-groups";
@@ -120,6 +122,7 @@ declare module "@elegant-router/types" {
     "vnet_suppliers": "/vnet/suppliers";
     "vnet_transactions": "/vnet/transactions";
     "vnet_website-blocking": "/vnet/website-blocking";
+    "vnet_windows-keys": "/vnet/windows-keys";
   };
 
   /**
@@ -253,6 +256,8 @@ declare module "@elegant-router/types" {
     | "vnet_error-logs"
     | "vnet_feedback"
     | "vnet_games"
+    | "vnet_hardware"
+    | "vnet_hub-games"
     | "vnet_inventory-counts"
     | "vnet_machine-assets"
     | "vnet_machine-groups"
@@ -272,6 +277,7 @@ declare module "@elegant-router/types" {
     | "vnet_suppliers"
     | "vnet_transactions"
     | "vnet_website-blocking"
+    | "vnet_windows-keys"
   >;
 
   /**

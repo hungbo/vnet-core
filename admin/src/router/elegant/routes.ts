@@ -747,6 +747,24 @@ export const generatedRoutes = [
         }
       },
       {
+        name: 'vnet_hardware',
+        path: '/vnet/hardware',
+        component: 'view.vnet_hardware',
+        meta: {
+          title: 'vnet_hardware',
+          i18nKey: 'route.vnet_hardware'
+        }
+      },
+      {
+        name: 'vnet_hub-games',
+        path: '/vnet/hub-games',
+        component: 'view.vnet_hub-games',
+        meta: {
+          title: 'vnet_hub-games',
+          i18nKey: 'route.vnet_hub-games'
+        }
+      },
+      {
         name: 'vnet_inventory-counts',
         path: '/vnet/inventory-counts',
         component: 'view.vnet_inventory-counts',
@@ -915,6 +933,15 @@ export const generatedRoutes = [
         meta: {
           title: 'vnet_website-blocking',
           i18nKey: 'route.vnet_website-blocking'
+        }
+      },
+      {
+        name: 'vnet_windows-keys',
+        path: '/vnet/windows-keys',
+        component: 'view.vnet_windows-keys',
+        meta: {
+          title: 'vnet_windows-keys',
+          i18nKey: 'route.vnet_windows-keys'
         }
       }
     ]

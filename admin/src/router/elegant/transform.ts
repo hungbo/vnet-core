@@ -247,6 +247,8 @@ const routeMap: RouteMap = {
   "vnet_error-logs": "/vnet/error-logs",
   "vnet_feedback": "/vnet/feedback",
   "vnet_games": "/vnet/games",
+  "vnet_hardware": "/vnet/hardware",
+  "vnet_hub-games": "/vnet/hub-games",
   "vnet_inventory-counts": "/vnet/inventory-counts",
   "vnet_machine-assets": "/vnet/machine-assets",
   "vnet_machine-groups": "/vnet/machine-groups",
@@ -265,7 +267,8 @@ const routeMap: RouteMap = {
   "vnet_stock-transactions": "/vnet/stock-transactions",
   "vnet_suppliers": "/vnet/suppliers",
   "vnet_transactions": "/vnet/transactions",
-  "vnet_website-blocking": "/vnet/website-blocking"
+  "vnet_website-blocking": "/vnet/website-blocking",
+  "vnet_windows-keys": "/vnet/windows-keys"
 };
 
 /**
