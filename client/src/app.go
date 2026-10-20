@@ -176,6 +176,10 @@ func (a *App) Startup(ctx context.Context) {
 	go runGuard(aCtx, a.cfg, a.baoTri.Load)
 	// Chính sách gần nhất dịch vụ nền đã lưu, rồi kênh báo cáo với dịch vụ.
 	loadPolicyFile()
+	// Một dòng để nhật ký tự nói giao diện đang chạy bản nào, từ tệp nào (bản cũ còn sống, hay hai tệp vnet-client.exe), và
+	// chính sách đọc được từ policy.json lúc mới bật.
+	exe, _ := os.Executable()
+	log.Printf("[ui] phiên bản %s, tệp %s, PID %d, chính sách từ policy.json: %s", version, exe, os.Getpid(), moTaCaiDatMayTram(currentPolicy()))
 	go runUILinkClient(aCtx, a)
 	// Chính sách C1–C3: hình nền, ứng dụng tự chạy khi khách đăng nhập, phím nóng Alt+K. Chạy trong giao diện vì chúng
 	// là việc của phiên khách.
@@ -893,7 +897,9 @@ func (a *App) linkStatus() uiStatus {
 
 // applyServiceReply làm theo chỉ thị của dịch vụ nền.
 func (a *App) applyServiceReply(r svcReply) {
-	setPolicy(r.Policy)
+	if setPolicy(r.Policy) {
+		log.Printf("[chính sách] giao diện nhận từ dịch vụ nền: %s", moTaCaiDatMayTram(currentPolicy()))
+	}
 	a.coChinhSach()
 	a.setOfflineLock(r.OfflineLock)
 }

@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	akUser32                       = windows.NewLazySystemDLL("akUser32.dll")
+	akUser32                       = windows.NewLazySystemDLL("user32.dll")
 	akProcEnumWindows              = akUser32.NewProc("EnumWindows")
 	akProcIsWindowVisible          = akUser32.NewProc("IsWindowVisible")
 	akProcGetWindowTextLengthW     = akUser32.NewProc("GetWindowTextLengthW")
@@ -132,6 +132,7 @@ func osRegisterCloseHotkey(onPress func()) func() {
 			wg.Done()
 			return
 		}
+		log.Printf("[alt+k] đã đăng ký phím nóng Alt+K")
 		defer wg.Done()
 		defer akProcUnregisterHotKey.Call(0, akCloseHotkeyID)
 		var m akWinMsg

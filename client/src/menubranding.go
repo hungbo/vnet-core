@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path"
 	"strings"
@@ -83,6 +84,18 @@ type logoCache struct {
 	path    string
 	dataURI string
 	failAt  time.Time
+	seen    string // tên quán + logo_url máy chủ gửi lần gần nhất, để chỉ ghi nhật ký khi đổi
+}
+
+// ghiNhan ghi một dòng khi tên quán hay logo_url trong menu đổi (lần đầu cũng tính), để nhật ký nói rõ máy chủ có gửi logo
+// cho máy này hay không. Menu được hỏi mỗi 10 giây nên không ghi mỗi lần.
+func (c *logoCache) ghiNhan(name, logoURL string, hopLe bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if key := name + "|" + logoURL; key != c.seen {
+		c.seen = key
+		log.Printf("[logo] menu từ máy chủ: tên quán %q, logo_url %q (hợp lệ: %v)", name, logoURL, hopLe)
+	}
 }
 
 var brandingLogo logoCache
@@ -99,8 +112,10 @@ func (c *logoCache) get(serverURL, urlPath string, now time.Time) string {
 	c.path, c.dataURI = urlPath, uri
 	if err != nil {
 		c.failAt = now
+		log.Printf("[logo] không tải được %s: %v", urlPath, err)
 		return ""
 	}
+	log.Printf("[logo] đã tải %s (%d byte base64)", urlPath, len(uri))
 	return uri
 }
 
@@ -114,7 +129,9 @@ func (a *App) MenuBranding() (string, error) {
 		Name string `json:"name"`
 		Logo string `json:"logo"`
 	}{Name: strings.TrimSpace(m.CafeName)}
-	if p, ok := logoHopLeMay(m.LogoURL); ok {
+	p, hopLe := logoHopLeMay(m.LogoURL)
+	brandingLogo.ghiNhan(out.Name, m.LogoURL, hopLe)
+	if hopLe {
 		out.Logo = brandingLogo.get(a.cfg.ServerURL, p, time.Now())
 	}
 	raw, _ := json.Marshal(out)

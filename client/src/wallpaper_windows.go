@@ -4,8 +4,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -21,6 +23,7 @@ func wallpaperDir() string {
 }
 
 const (
+	spiGetDeskWallpaper = 0x0073
 	spiSetDeskWallpaper = 0x0014
 	spifUpdateIniFile   = 0x01
 	spifSendChange      = 0x02
@@ -50,5 +53,49 @@ func osSetWallpaper(file string) error {
 	if r == 0 {
 		return fmt.Errorf("SystemParametersInfo: %v", callErr)
 	}
+	// Windows báo đặt được chưa chắc là hình nền đã đổi (chính sách nhóm ép hình nền thì lệnh vẫn "thành công"): đọc lại,
+	// lệch thì ghi nhật ký kèm dấu hiệu chính sách để lần chạy thật nói rõ chỗ gãy.
+	if cur := osCurrentWallpaper(); !strings.EqualFold(cur, file) {
+		log.Printf("[hình nền] Windows nhận lệnh nhưng hình nền hiện tại là %q chứ không phải %q%s", cur, file, wallpaperPolicyHint())
+	}
 	return nil
+}
+
+// osCurrentWallpaper: đường dẫn hình nền Windows đang dùng cho người dùng này, "" nếu không đọc được.
+func osCurrentWallpaper() string {
+	buf := make([]uint16, windows.MAX_PATH)
+	r, _, _ := procSystemParametersInfoW.Call(spiGetDeskWallpaper, uintptr(len(buf)), uintptr(unsafe.Pointer(&buf[0])), 0)
+	if r == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(buf)
+}
+
+// wallpaperPolicyHint: nhắc các khoá chính sách Windows thường dùng để khoá hình nền, nếu máy này có; "" nếu không có khoá nào.
+func wallpaperPolicyHint() string {
+	var found []string
+	for _, c := range []struct {
+		root registry.Key
+		path string
+		name string
+	}{
+		{registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Policies\System`, "Wallpaper"},
+		{registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System`, "Wallpaper"},
+		{registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Policies\ActiveDesktop`, "NoChangingWallPaper"},
+	} {
+		k, err := registry.OpenKey(c.root, c.path, registry.QUERY_VALUE)
+		if err != nil {
+			continue
+		}
+		if _, _, err := k.GetStringValue(c.name); err == nil {
+			found = append(found, c.name)
+		} else if _, _, err := k.GetIntegerValue(c.name); err == nil {
+			found = append(found, c.name)
+		}
+		k.Close()
+	}
+	if len(found) == 0 {
+		return ""
+	}
+	return " (máy có khoá chính sách Windows: " + strings.Join(found, ", ") + ")"
 }

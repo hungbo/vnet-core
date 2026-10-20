@@ -56,6 +56,17 @@ func danhSachHinhNen(raw string) []string {
 	return out
 }
 
+// moTaCaiDatMayTram là một câu ngắn về phần C1–C3 của chính sách, để nhật ký của dịch vụ và của giao diện nói rõ chúng nhận
+// được gì (không in đường dẫn hay tên tệp, chỉ số lượng).
+func moTaCaiDatMayTram(p clientPolicy) string {
+	altK := "tắt"
+	if p.CloseHotkey {
+		altK = "bật"
+	}
+	return fmt.Sprintf("hình nền %d ảnh (đổi mỗi %ds), ứng dụng tự chạy %d, Alt+K %s",
+		len(danhSachHinhNen(p.Wallpapers)), p.WallpaperIntervalSeconds, len(danhSachUngDungKhoiDong(p.StartupApps)), altK)
+}
+
 // khoangTrinhChieuMay ép thời gian đổi ảnh về khoảng hợp lệ; 0 là không trình chiếu.
 func khoangTrinhChieuMay(v int64) int64 {
 	if v <= 0 {

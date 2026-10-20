@@ -65,6 +65,7 @@ func (w *wallpaperRunner) tick(p clientPolicy, now time.Time) {
 	}
 	if key := strings.Join(urls, "\n"); key != w.key {
 		w.key, w.files, w.idx, w.applied, w.retryAt = key, nil, 0, false, time.Time{}
+		log.Printf("[hình nền] chính sách có %d ảnh, bắt đầu tải về %s", len(urls), w.dir)
 	}
 	// Tải ảnh còn thiếu. Một ảnh lỗi thì bỏ qua và thử lại sau một phút; các ảnh khác vẫn chạy.
 	if len(w.files) < len(urls) && !now.Before(w.retryAt) {
@@ -110,6 +111,7 @@ func (w *wallpaperRunner) apply(now time.Time, interval time.Duration) {
 	}
 	w.applied = true
 	w.nextAt = now.Add(interval)
+	log.Printf("[hình nền] đã đặt %s (ảnh %d/%d)", filepath.Base(w.files[w.idx]), w.idx+1, len(w.files))
 }
 
 // fetchWallpaper tải ảnh từ máy chủ (đường dẫn /uploads/... công khai, không cần token) về dest.
@@ -145,11 +147,16 @@ func fetchWallpaper(serverURL, urlPath, dest string) error {
 	if err := os.WriteFile(tmp, body, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, dest)
+	if err := os.Rename(tmp, dest); err != nil {
+		return err
+	}
+	log.Printf("[hình nền] đã tải %s (%d byte)", urlPath, len(body))
+	return nil
 }
 
 // runWallpaper là vòng nền của giao diện.
 func runWallpaper(ctx context.Context, cfg *Config) {
+	defer ghiPanic("hình nền")
 	w := &wallpaperRunner{
 		dir:   wallpaperDir(),
 		fetch: func(u, dest string) error { return fetchWallpaper(cfg.ServerURL, u, dest) },

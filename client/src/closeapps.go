@@ -73,7 +73,10 @@ func runCloseApps(ctx context.Context, a *App) {
 		want := currentPolicy().CloseHotkey
 		switch {
 		case want && stop == nil:
+			// Hàm này chạy trên goroutine của phím nóng, không phải của vòng này: panic ở đây (liệt kê cửa sổ, tắt tiến
+			// trình) mà không bắt là sập cả giao diện của khách.
 			stop = osRegisterCloseHotkey(func() {
+				defer ghiPanic("alt+k")
 				st.press(currentPolicy(), a.linkStatus().Locked, time.Now())
 			})
 		case !want && stop != nil:

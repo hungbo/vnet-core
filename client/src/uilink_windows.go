@@ -81,7 +81,7 @@ func serveUIPipe(h windows.Handle, sup *uiSupervisor) {
 		return
 	}
 
-	buf := make([]byte, 4096)
+	buf := make([]byte, uiLinkMsgMax)
 	for {
 		var n uint32
 		if err := windows.ReadFile(h, buf, &n, nil); err != nil {
@@ -151,7 +151,8 @@ func runUILinkClient(ctx context.Context, a *App) {
 }
 
 func uiLinkLoop(ctx context.Context, h windows.Handle, a *App) {
-	buf := make([]byte, 4096)
+	buf := make([]byte, uiLinkMsgMax)
+	log.Printf("[kênh giao diện] đã nối với dịch vụ nền")
 	for ctx.Err() == nil {
 		st := a.linkStatus()
 		boot := bootRec.phanGiaoDien()
@@ -166,7 +167,9 @@ func uiLinkLoop(ctx context.Context, h windows.Handle, a *App) {
 		}
 		dichVuTraLoiLuc.Store(time.Now().UnixNano())
 		var reply svcReply
-		if json.Unmarshal(buf[:n], &reply) == nil {
+		if err := json.Unmarshal(buf[:n], &reply); err != nil {
+			log.Printf("[kênh giao diện] trả lời của dịch vụ nền không đọc được (%d byte): %v", n, err)
+		} else {
 			a.applyServiceReply(reply)
 		}
 		sleepCtx(ctx, 2*time.Second)

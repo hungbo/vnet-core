@@ -38,6 +38,7 @@ func (r *startupRunner) tick(p clientPolicy, member bool) int {
 		return 0
 	}
 	apps := danhSachUngDungKhoiDong(p.StartupApps)
+	log.Printf("[khởi động] hội viên vừa đăng nhập: chính sách có %d ứng dụng tự chạy", len(apps))
 	if len(apps) == 0 {
 		return 0
 	}
@@ -75,12 +76,14 @@ func (r *startupRunner) tick(p clientPolicy, member bool) int {
 		}
 		running[name] = true
 		started++
+		log.Printf("[khởi động] đã mở %s", exe)
 	}
 	return started
 }
 
 // runStartupApps là vòng nền của giao diện.
 func runStartupApps(ctx context.Context, a *App) {
+	defer ghiPanic("khởi động")
 	r := &startupRunner{
 		root: func() (string, error) {
 			m, err := gameMenuCache.get(a.menuSource())

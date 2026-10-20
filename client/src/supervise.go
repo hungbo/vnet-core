@@ -183,6 +183,11 @@ type uiStatus struct {
 	App *string `json:"app,omitempty"`
 }
 
+// uiLinkMsgMax là cỡ bộ đệm đọc một thông điệp trên kênh dịch vụ ↔ giao diện, ở cả hai đầu. Chính sách chạy được tới vài
+// chục KB (tối đa 20 ảnh nền, 20 ứng dụng tự chạy, 50 lối tắt ẩn...); đọc bằng bộ đệm nhỏ hơn thì thông điệp bị cắt, JSON
+// hỏng, phần thừa nằm lại trong pipe và mọi câu trả lời sau đó lệch một nhịp: giao diện không bao giờ nhận được chính sách.
+const uiLinkMsgMax = 64 << 10
+
 // svcReply là câu trả lời của dịch vụ nền cho mỗi báo cáo.
 type svcReply struct {
 	OfflineLock bool         `json:"offline_lock"`

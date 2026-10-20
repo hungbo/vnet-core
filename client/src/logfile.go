@@ -74,3 +74,12 @@ func setupLogFile(service bool, windowMode string) {
 		cf.Close() // SetCrashOutput giữ bản sao file descriptor của nó
 	}
 }
+
+// ghiPanic dùng dạng `defer ghiPanic("hình nền")` ở đầu vòng nền của một tính năng phụ (hình nền, ứng dụng tự chạy, Alt+K):
+// lỗi không lường trước thì ghi nhật ký kèm stack rồi dừng RIÊNG vòng đó. Panic không ai bắt trong một goroutine là sập cả
+// tiến trình, tức màn hình khoá và thanh điều khiển của khách cũng sập theo một tính năng chỉ là tiện ích.
+func ghiPanic(ten string) {
+	if r := recover(); r != nil {
+		log.Printf("[%s] vòng nền dừng vì lỗi không lường trước: %v\n%s", ten, r, debug.Stack())
+	}
+}
