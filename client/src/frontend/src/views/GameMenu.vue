@@ -2,7 +2,9 @@
 	<div class="game-menu">
 		<header class="menu-header">
 			<div class="menu-title">
-				<h3>Game</h3>
+				<!-- Logo và tên quán do quán đặt ở trang quản trị; thiếu thì chỉ còn chữ "Game". -->
+				<img v-if="branding.logo" class="menu-logo" :src="branding.logo" alt="" />
+				<h3>{{ branding.name || 'Game' }}</h3>
 				<span v-if="games.length" class="menu-count">{{ games.length }} game</span>
 			</div>
 			<!-- Tìm không dấu, theo nhóm hoặc chữ cái đầu ("lmht"). Gõ phím bất kỳ ở đâu
@@ -17,7 +19,7 @@
 				:prefix-icon="Search"
 				@keydown.esc="query = ''"
 			/>
-			<el-button text circle :loading="refreshing" title="Làm mới" @click="load">
+			<el-button text circle :loading="refreshing" title="Làm mới" @click="load(true)">
 				<el-icon><Refresh /></el-icon>
 			</el-button>
 		</header>
@@ -62,8 +64,8 @@
 					:key="gid(g)"
 					type="button"
 					class="tile"
-					:class="{ ready: g.status === 'ready', busy: launching === gid(g) }"
-					:disabled="g.status !== 'ready' || (!!launching && launching !== gid(g))"
+					:class="{ ready: g.status === 'ready' && !g.problem, busy: launching === gid(g) }"
+					:disabled="g.status !== 'ready' || !!g.problem || (!!launching && launching !== gid(g))"
 					:title="gameLabel(g)"
 					@click="play(g)"
 				>
@@ -80,10 +82,13 @@
 							/>
 							<span v-else class="game-initial" aria-hidden="true">{{ initial(g) }}</span>
 						</div>
-						<span v-if="g.status !== 'ready'" class="tile-status" :class="'is-' + badge(g).type">
+						<span v-if="g.status !== 'ready' || g.problem" class="tile-status" :class="'is-' + badge(g).type">
 							{{ badge(g).text }}
 						</span>
-						<div v-if="g.status === 'ready'" class="tile-play">
+						<span v-else-if="g.label" class="tile-label" :class="'is-' + g.label">
+							{{ g.label === 'hot' ? 'Hot' : 'Mới' }}
+						</span>
+						<div v-if="g.status === 'ready' && !g.problem" class="tile-play">
 							<el-icon v-if="launching !== gid(g)"><VideoPlay /></el-icon>
 							<el-icon v-else class="is-loading"><Loading /></el-icon>
 							<span>{{ launching === gid(g) ? 'Đang mở…' : 'Chơi' }}</span>
@@ -122,6 +127,10 @@ interface Game {
 	progress: number
 	version?: number
 	icon?: string
+	// "hot" (nhiều lượt mở gần đây) hoặc "new" (mới về quán).
+	label?: string
+	// Máy trạm tự đặt khi tệp chạy của mục sẵn sàng không dùng được: "missing_launcher" hoặc "bad_config".
+	problem?: string
 }
 
 // Khoá của mục: máy chủ cũ không gửi key thì mỗi game là một mục, khoá là tên.
@@ -176,21 +185,38 @@ function cleanError(e: unknown): string {
 	return String(e).replace(/^Error:\s*/, '')
 }
 
-async function load() {
+// force: nút "Làm mới" của khách bỏ qua bản nhớ và hỏi lại máy chủ. Các lượt tự động mỗi 10 giây dùng lại danh sách khi
+// version của máy chủ không đổi, nên nhẹ hơn nhiều khi phòng máy đông.
+async function load(force = false) {
 	if (inflight) return
 	inflight = true
 	refreshing.value = true
 	try {
-		const data = JSON.parse(await api().ListGames())
+		const call = force === true && typeof api()?.RefreshGames === 'function' ? api().RefreshGames : api().ListGames
+		const data = JSON.parse(await call())
 		games.value = Array.isArray(data?.items) ? data.items : []
 		loadError.value = ''
 		syncIcons(games.value)
+		void loadBranding()
 	} catch (e) {
 		loadError.value = cleanError(e) || 'Không tải được danh sách game'
 	} finally {
 		inflight = false
 		refreshing.value = false
 		loading.value = false
+	}
+}
+
+// Tên quán và logo ở đầu menu. Hỏi cùng nhịp với danh sách (Go dùng lại bản nhớ, logo chỉ tải một lần), lỗi thì giữ cái cũ.
+const branding = ref({ name: '', logo: '' })
+
+async function loadBranding() {
+	if (typeof api()?.MenuBranding !== 'function') return
+	try {
+		const b = JSON.parse(await api().MenuBranding())
+		branding.value = { name: typeof b?.name === 'string' ? b.name : '', logo: typeof b?.logo === 'string' ? b.logo : '' }
+	} catch {
+		// Giữ tên và logo đang hiện.
 	}
 }
 
@@ -258,6 +284,10 @@ function artStyle(g: Game) {
 // Chỉ "ready" mới chơi được. Mọi trạng thái còn lại (queued, publishing,
 // not_installed, và cả giá trị lạ máy chủ thêm sau này) đều là "chờ".
 function badge(g: Game): { type: 'success' | 'primary' | 'info' | 'danger'; text: string } {
+	// Máy chủ báo sẵn sàng nhưng tệp chạy không dùng được trên ổ game của máy này: nói rõ lý do thay vì để khách bấm rồi lỗi.
+	if (g.status === 'ready' && g.problem) {
+		return { type: 'danger', text: g.problem === 'missing_launcher' ? 'Thiếu tệp chạy' : 'Cấu hình lỗi' }
+	}
 	switch (g.status) {
 		case 'ready': return { type: 'success', text: 'Sẵn sàng' }
 		case 'downloading': return { type: 'primary', text: `Đang cập nhật ${g.progress}%` }
@@ -339,6 +369,14 @@ onUnmounted(() => {
 	align-items: baseline;
 	gap: 10px;
 	margin-right: auto;
+}
+
+.menu-logo {
+	align-self: center;
+	height: 32px;
+	max-width: 96px;
+	object-fit: contain;
+	border-radius: 6px;
 }
 
 .menu-title h3 {
@@ -526,6 +564,23 @@ onUnmounted(() => {
 
 .tile-status.is-danger {
 	color: var(--vnet-danger);
+}
+
+/* Nhãn Hot / Mới: cùng chỗ với trạng thái (chỉ hiện khi game sẵn sàng và không có vấn đề). */
+.tile-label {
+	position: absolute;
+	top: 8px;
+	left: 8px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	color: #fff;
+	background: linear-gradient(135deg, rgb(255, 105, 135), rgb(255, 60, 90));
+}
+
+.tile-label.is-new {
+	background: linear-gradient(135deg, rgb(0, 188, 255), rgb(0, 130, 230));
 }
 
 /* Nút Chơi hiện ở đáy hình khi rê chuột (icon nhích lên nhường chỗ): hình

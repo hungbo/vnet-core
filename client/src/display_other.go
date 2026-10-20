@@ -6,6 +6,8 @@ package main
 // biên dịch được khi phát triển trên Mac/Linux: không đọc được gì, không đổi được
 // gì, và GetDisplayInfo báo supported=false để giao diện ẩn cả mục.
 
+func osCurrentDisplay() (DisplayMode, bool) { return DisplayMode{}, false }
+
 func osDisplayHW() displayHW {
 	return displayHW{
 		modes: func() ([]rawDisplayMode, rawDisplayMode, error) {

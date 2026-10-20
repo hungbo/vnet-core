@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -33,6 +34,15 @@ type gameMenuItem struct {
 	Status   string `json:"status"`
 	Progress int    `json:"progress"`
 	Version  int    `json:"version"`
+	// Root: gốc game riêng của game này khi quán đặt khác ổ chung; rỗng là dùng gameMenu.Root.
+	Root string `json:"root"`
+	// RunFirst: các bước chạy lần lượt (và chờ) trước khi mở game. Máy chủ cũ không gửi.
+	RunFirst []gameRunStep `json:"run_first"`
+	// Label: nhãn trên thẻ game, "hot" hoặc "new"; máy chủ cũ không gửi.
+	Label string `json:"label"`
+	// Problem do CHÍNH máy trạm đặt (không đến từ máy chủ): "missing_launcher" hay "bad_config" khi tệp chạy của mục
+	// sẵn sàng không dùng được. Giao diện hiện lý do và không cho bấm.
+	Problem string `json:"problem,omitempty"`
 }
 
 // gameMenu: Root là đường dẫn GAME_ROOT NHƯ MÁY TRẠM THẤY (ổ Game Disk),
@@ -40,6 +50,17 @@ type gameMenuItem struct {
 type gameMenu struct {
 	Root  string         `json:"root"`
 	Items []gameMenuItem `json:"items"`
+	// Tên quán và đường dẫn logo (/uploads/...) hiện ở đầu menu; xem menubranding.go.
+	CafeName string `json:"cafe_name,omitempty"`
+	LogoURL  string `json:"logo_url,omitempty"`
+}
+
+// rootOf là gốc game dùng cho mục này: gốc riêng của game nếu quán đặt, không thì gốc chung của menu.
+func (g *gameMenuItem) rootOf(menuRoot string) string {
+	if r := strings.TrimSpace(g.Root); r != "" {
+		return r
+	}
+	return menuRoot
 }
 
 // menuKey là khoá giao diện dùng để chạy mục và lấy icon. Máy chủ trước 1.1.15
@@ -78,14 +99,21 @@ func (a *App) fetchGameMenu() (*gameMenu, error) {
 	return &m, nil
 }
 
-// ListGames trả JSON {root, items} các game quán đã phát hành cho phòng máy.
+// ListGames trả JSON {root, items} các game quán đã phát hành cho phòng máy. Dùng lại danh sách đã kéo khi version của
+// máy chủ không đổi (gamemenucache.go), và ghi thêm vấn đề tệp chạy của máy trạm vào từng mục (gamelaunchcheck.go).
 func (a *App) ListGames() (string, error) {
-	m, err := a.fetchGameMenu()
+	m, err := gameMenuCache.get(a.menuSource())
 	if err != nil {
 		return "", err
 	}
-	out, _ := json.Marshal(m)
+	out, _ := json.Marshal(annotateLaunchers(m, time.Now()))
 	return string(out), nil
+}
+
+// RefreshGames là ListGames bỏ qua bộ nhớ đệm: nút "Làm mới" của khách luôn hỏi lại máy chủ.
+func (a *App) RefreshGames() (string, error) {
+	gameMenuCache.reset()
+	return a.ListGames()
 }
 
 // LaunchGame chạy một mục của menu game từ Game Disk.
@@ -113,7 +141,8 @@ func (a *App) LaunchGame(key string) error {
 		return fmt.Errorf("%s chưa sẵn sàng, vui lòng chờ cập nhật xong", gameLabel(g))
 	}
 
-	exe, dir, err := resolveGameLaunch(m.Root, g.Name, g.Launcher)
+	root := g.rootOf(m.Root)
+	exe, dir, err := resolveGameLaunch(root, g.Name, g.Launcher)
 	if err != nil {
 		log.Printf("[game] từ chối %q: %v", g.Name, err)
 		reportError("error", "game", fmt.Sprintf("cấu hình chạy game %s không hợp lệ", g.Name), err.Error())
@@ -124,6 +153,9 @@ func (a *App) LaunchGame(key string) error {
 		reportError("error", "game", fmt.Sprintf("không thấy tệp chạy game %s", g.Name), fmt.Sprintf("%s: %v", exe, err))
 		return fmt.Errorf("không tìm thấy tệp chạy %s trên ổ game, vui lòng báo nhân viên", gameLabel(g))
 	}
+
+	// Các bước chuẩn bị chạy xong (hoặc quá hạn) rồi mới mở game; một bước lỗi không chặn game.
+	a.runFirstBeforeGame(root, g)
 
 	if err := startGame(exe, dir, g.LaunchArgs); err != nil {
 		log.Printf("[game] không mở được %q (%s): %v", g.Name, exe, err)

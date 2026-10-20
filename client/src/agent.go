@@ -52,6 +52,25 @@ type TelemetryPayload struct {
 	OSInfo    string `json:"os_info,omitempty"`
 	// Thiết bị ngoại vi đang cắm, đo cùng lúc đó.
 	Peripherals []string `json:"peripherals,omitempty"`
+	// Boot và bảo mật (security.go), đo cùng lúc đó; trường nào không đọc được thì để trống.
+	BootMode       string `json:"boot_mode,omitempty"`
+	SecureBoot     string `json:"secure_boot,omitempty"`
+	TPM            string `json:"tpm,omitempty"`
+	HVCI           string `json:"hvci,omitempty"`
+	Virtualization string `json:"virtualization,omitempty"`
+	BIOSVersion    string `json:"bios_version,omitempty"`
+	WinLicense     string `json:"win_license,omitempty"`
+	WinKeyTail     string `json:"win_key_tail,omitempty"`
+	// Chế độ màn hình đang dùng, "1920x1080 144Hz". Tụt tần số quét thì máy chủ ghi nhật ký.
+	DisplayMode string `json:"display_mode,omitempty"`
+
+	// Bảng Hoạt động: ứng dụng đang ở trên cùng, băng thông lên/xuống (byte/giây giữa hai nhịp
+	// tim) và độ trễ tới máy chủ (mili giây, đo ở nhịp tim trước). Con trỏ: nil = chưa đo
+	// được, máy chủ giữ nguyên chứ không ghi đè bằng 0.
+	ActiveApp  *string `json:"active_app,omitempty"`
+	NetDownBps *int64  `json:"net_down_bps,omitempty"`
+	NetUpBps   *int64  `json:"net_up_bps,omitempty"`
+	PingMS     *int    `json:"ping_ms,omitempty"`
 
 	// Hai dấu hiệu chỉ DỊCH VỤ NỀN khai (giao diện để nil): tài khoản Windows
 	// đang đăng nhập có quyền quản trị không, và card mạng xuất hiện sau khi máy
@@ -120,6 +139,9 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 		s := readMachineSpecs()
 		log.Printf("cấu hình máy: CPU=%q GPU=%q RAM=%dGB Ổ đĩa=%dGB HĐH=%q ngoại vi=%d, đo mất %dms",
 			s.CPUName, s.GPUName, s.RAMGB, s.StorageGB, s.OSInfo, len(s.Peripherals), time.Since(batDau).Milliseconds())
+		log.Printf("bảo mật máy: boot=%q secureboot=%q tpm=%q hvci=%q ảo hoá=%q bios=%q bản quyền Windows=%q …%s",
+			s.Security.BootMode, s.Security.SecureBoot, s.Security.TPM, s.Security.HVCI, s.Security.Virtualization,
+			s.Security.BIOSVersion, s.Security.WinLicense, s.Security.WinKeyTail)
 		// Một dòng để kiểm nhanh trên máy thật: 0 nghĩa là Windows không cung cấp
 		// cảm biến đó cho tiến trình này (máy ảo, driver cũ, bo mạch không báo).
 		log.Printf("nhiệt độ lần đầu: CPU=%.1f°C GPU=%.1f°C", getCPUTemp(), getGPUTemp())
@@ -127,6 +149,7 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 	}}
 
 	nics := &nicWatcher{}
+	netBps := &netRate{}
 
 	// guiMotLan gửi một nhịp tim; false = chưa tới được máy chủ, nên thử lại.
 	guiMotLan := func() bool {
@@ -157,6 +180,25 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 			StorageGB:   sp.StorageGB,
 			OSInfo:      sp.OSInfo,
 			Peripherals: sp.Peripherals,
+
+			BootMode:       sp.Security.BootMode,
+			SecureBoot:     sp.Security.SecureBoot,
+			TPM:            sp.Security.TPM,
+			HVCI:           sp.Security.HVCI,
+			Virtualization: sp.Security.Virtualization,
+			BIOSVersion:    sp.Security.BIOSVersion,
+			WinLicense:     sp.Security.WinLicense,
+			WinKeyTail:     sp.Security.WinKeyTail,
+			DisplayMode:    currentDisplayText(),
+			ActiveApp:      activeAppNow(),
+		}
+		if cur, ok := readNetCounters(); ok {
+			if down, up, have := netBps.sample(time.Now(), cur); have {
+				payload.NetDownBps, payload.NetUpBps = &down, &up
+			}
+		}
+		if rtt := int(serverRTT.Load()); rtt > 0 {
+			payload.PingMS = &rtt
 		}
 		if agentSupervisor != nil {
 			payload.UserIsAdmin = consoleUserIsAdmin()
@@ -168,11 +210,14 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 			log.Printf("báo cáo: không đóng gói được dữ liệu: %v", err)
 			return true
 		}
+		batDauGui := time.Now()
 		resp, err := postHeartbeat(cfg, data)
 		if err != nil {
 			log.Printf("báo cáo: %v", err)
 			return false
 		}
+		// Làm tròn lên: nhịp tim trong mạng LAN thường dưới 1 ms, mà 0 nghĩa là "chưa đo".
+		serverRTT.Store(max(time.Since(batDauGui).Milliseconds(), 1))
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		resp.Body.Close()
 		if resp.StatusCode >= 400 {
@@ -209,6 +254,42 @@ func runTelemetry(ctx context.Context, cfg *Config) {
 			}
 		}
 	}
+}
+
+// uiDisplay: chế độ màn hình giao diện báo qua kênh nối (dịch vụ nền không thấy màn hình
+// của khách). Dịch vụ gửi nó kèm nhịp tim; nil = chưa có báo cáo nào.
+var uiDisplay atomic.Pointer[DisplayMode]
+
+// uiApp: tên ứng dụng ở trên cùng giao diện báo qua kênh nối, cùng lý do với uiDisplay.
+var uiApp atomic.Pointer[string]
+
+// serverRTT: thời gian đi-về của nhịp tim gần nhất gửi được, tính bằng mili giây (0 = chưa có).
+var serverRTT atomic.Int64
+
+// activeAppNow là ứng dụng đang ở trên cùng để gửi kèm nhịp tim, hoặc nil khi chưa biết.
+func activeAppNow() *string {
+	if agentSupervisor != nil {
+		return uiApp.Load()
+	}
+	if app, ok := osForegroundApp(); ok {
+		return &app
+	}
+	return nil
+}
+
+// currentDisplayText là chế độ màn hình để gửi kèm nhịp tim, hoặc "" khi chưa biết.
+func currentDisplayText() string {
+	if agentSupervisor != nil {
+		if m := uiDisplay.Load(); m != nil {
+			return m.String()
+		}
+		return ""
+	}
+	// Không có dịch vụ nền: tiến trình này là giao diện, tự đọc được.
+	if m, ok := osCurrentDisplay(); ok {
+		return m.String()
+	}
+	return ""
 }
 
 // nhipTimGiuc: onResume (dịch vụ nền) giục vòng nhịp tim gửi ngay. Máy chủ đóng

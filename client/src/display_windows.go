@@ -186,6 +186,20 @@ func rawFromDevMode(dm *devModeW, orientation int) rawDisplayMode {
 	return r
 }
 
+// osCurrentDisplay đọc riêng chế độ đang dùng của màn hình chính, không liệt kê cả
+// danh sách chế độ như winDisplayModes: giao diện hỏi mỗi hai giây để báo về dịch vụ nền.
+func osCurrentDisplay() (DisplayMode, bool) {
+	dev, err := primaryDisplayName()
+	if err != nil {
+		return DisplayMode{}, false
+	}
+	dm, ok := enumDisplaySettings(&dev[0], enumCurrentSettings)
+	if !ok {
+		return DisplayMode{}, false
+	}
+	return rawFromDevMode(&dm, 0).DisplayMode, true
+}
+
 // winDisplayModes liệt kê mọi chế độ của màn hình chính. Không truyền EDS_ROTATEDMODE
 // nên Windows chỉ trả chế độ cùng hướng xoay hiện tại.
 func winDisplayModes() ([]rawDisplayMode, rawDisplayMode, error) {

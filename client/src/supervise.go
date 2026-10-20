@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,6 +42,15 @@ type clientPolicy struct {
 	// chưa ai đăng nhập từ lúc bật thì cho ngủ chờ, đã có người dùng thì khởi động
 	// lại cho sạch (decide, luật 4). Máy chủ cũ không gửi trường này: tắt máy.
 	IdleAction string `json:"idle_action"`
+	// Hình nền và trình chiếu (wallpaper.go): đường dẫn /uploads/... nối bằng xuống dòng; rỗng = tắt. Chuỗi chứ không
+	// phải mảng để clientPolicy vẫn so sánh được bằng ==.
+	Wallpapers               string `json:"wallpapers,omitempty"`
+	WallpaperIntervalSeconds int64  `json:"wallpaper_interval_seconds,omitempty"`
+	// Ứng dụng chạy khi khách đăng nhập (startupapps.go), mỗi dòng một tệp .exe; rỗng = tắt.
+	StartupApps string `json:"startup_apps,omitempty"`
+	// Alt+K đóng mọi ứng dụng đang hiện cửa sổ (closeapps.go) trừ CloseExclude ("discord,steam").
+	CloseHotkey  bool   `json:"close_hotkey,omitempty"`
+	CloseExclude string `json:"close_exclude,omitempty"`
 }
 
 func defaultClientPolicy() clientPolicy {
@@ -75,6 +86,16 @@ func normalizePolicy(p clientPolicy) clientPolicy {
 	// ép về dạng chuẩn ngay cổng vào chứ không tin thẳng chuỗi nhận về.
 	p.HiddenShortcuts = chuanHoaLoiTat(p.HiddenShortcuts)
 	p.RiotMetadataSource = chuanHoaNguonRiot(p.RiotMetadataSource)
+	// Ba tính năng sau chạm vào hình nền, tệp chạy và tiến trình của khách: cùng luật với máy chủ, kiểm lại ở cổng vào.
+	p.Wallpapers = strings.Join(danhSachHinhNen(p.Wallpapers), "\n")
+	p.WallpaperIntervalSeconds = khoangTrinhChieuMay(p.WallpaperIntervalSeconds)
+	p.StartupApps = strings.Join(danhSachUngDungKhoiDong(p.StartupApps), "\n")
+	var exclude []string
+	for n := range danhSachLoaiTruDong(p.CloseExclude) {
+		exclude = append(exclude, n)
+	}
+	sort.Strings(exclude) // thứ tự cố định: so sánh == giữa hai lần chuẩn hoá không được lệch vì thứ tự map
+	p.CloseExclude = strings.Join(exclude, ",")
 	// Nửa tài khoản (có tên không băm hoặc ngược lại) là không có tài khoản.
 	if p.LocalAdminUsername == "" || p.LocalAdminHash == "" {
 		p.LocalAdminUsername, p.LocalAdminHash = "", ""
@@ -152,6 +173,14 @@ type uiStatus struct {
 
 	// Các mốc khởi động giao diện đã ghi (bootreport.go); dịch vụ gộp vào báo cáo của nó.
 	Boot *bootGUI `json:"boot,omitempty"`
+
+	// Chế độ màn hình đang dùng. Chỉ đọc được trong phiên của khách — dịch vụ nền
+	// chạy ở phiên 0 không thấy màn hình — nên giao diện đọc rồi nhờ dịch vụ gửi kèm nhịp tim.
+	Display *DisplayMode `json:"display,omitempty"`
+
+	// Ứng dụng đang ở trên cùng (tên tệp .exe). nil = giao diện không đọc được; con trỏ tới ""
+	// = biết chắc là chưa có cửa sổ nào. Cùng lý do với Display.
+	App *string `json:"app,omitempty"`
 }
 
 // svcReply là câu trả lời của dịch vụ nền cho mỗi báo cáo.

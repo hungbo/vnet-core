@@ -177,6 +177,11 @@ func (a *App) Startup(ctx context.Context) {
 	// Chính sách gần nhất dịch vụ nền đã lưu, rồi kênh báo cáo với dịch vụ.
 	loadPolicyFile()
 	go runUILinkClient(aCtx, a)
+	// Chính sách C1–C3: hình nền, ứng dụng tự chạy khi khách đăng nhập, phím nóng Alt+K. Chạy trong giao diện vì chúng
+	// là việc của phiên khách.
+	go runWallpaper(aCtx, a.cfg)
+	go runStartupApps(aCtx, a)
+	go runCloseApps(aCtx, a)
 	// Màn hình khoá phải phủ kín cả khi game nhả chế độ màn hình riêng của nó (display_app.go).
 	go a.giuManHinhKhoaPhuKin(aCtx)
 
@@ -871,12 +876,19 @@ const offlineReason = "Mất kết nối máy chủ — đang thử lại"
 func (a *App) linkStatus() uiStatus {
 	maint := a.baoTri.Load()
 	dangNhap := a.loggedIn() && a.verified.Load()
-	return uiStatus{
+	st := uiStatus{
 		Locked: !maint && (!dangNhap || a.offlineLocked.Load()),
 		Member: dangNhap && a.role != "admin",
 		Admin:  dangNhap && a.role == "admin",
 		Maint:  maint,
 	}
+	if m, ok := osCurrentDisplay(); ok {
+		st.Display = &m
+	}
+	if app, ok := osForegroundApp(); ok {
+		st.App = &app
+	}
+	return st
 }
 
 // applyServiceReply làm theo chỉ thị của dịch vụ nền.

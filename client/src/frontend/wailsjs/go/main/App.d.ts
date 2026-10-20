@@ -72,9 +72,13 @@ export function LaunchGame(arg1:string):Promise<void>;
 
 export function ListGames():Promise<string>;
 
+export function RefreshGames():Promise<string>;
+
 export function Login(arg1:string,arg2:string):Promise<string>;
 
 export function Logout():Promise<void>;
+
+export function MenuBranding():Promise<string>;
 
 export function MarkAllNotificationsRead():Promise<string>;
 

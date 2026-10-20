@@ -27,6 +27,8 @@ type MachineSpecs struct {
 	// Thiết bị ngoại vi đang cắm: màn hình, bàn phím, chuột, âm thanh. Mỗi
 	// dòng đã có nhãn loại, ví dụ "Màn hình: DELL S2421HN".
 	Peripherals []string
+	// Boot và bảo mật (UEFI, Secure Boot, TPM…), đo cùng lúc với phần trên.
+	Security MachineSecurity
 }
 
 // readMachineSpecs đo một lần mỗi tiến trình; khi nào đo do lazySpecs (agent.go)
@@ -71,6 +73,7 @@ func readMachineSpecs() MachineSpecs {
 
 	s.GPUName = readGPUName()
 	s.Peripherals = readPeripherals()
+	s.Security = readSecurity()
 	return s
 }
 

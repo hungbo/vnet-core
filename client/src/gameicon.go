@@ -120,11 +120,12 @@ func gameIconTarget(m *gameMenu, key string) (exe, gameDir string, ok bool) {
 	if src == "" {
 		src = g.Launcher
 	}
-	exe, _, err := resolveGameLaunch(m.Root, g.Name, src)
+	root := g.rootOf(m.Root)
+	exe, _, err := resolveGameLaunch(root, g.Name, src)
 	if err != nil {
 		return "", "", false
 	}
-	base, err := gameRootBase(m.Root)
+	base, err := gameRootBase(root)
 	if err != nil {
 		return "", "", false
 	}

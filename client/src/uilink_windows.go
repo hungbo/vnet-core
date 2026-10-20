@@ -94,6 +94,12 @@ func serveUIPipe(h windows.Handle, sup *uiSupervisor) {
 		if st.Boot != nil {
 			bootRec.gopGiaoDien(*st.Boot)
 		}
+		if st.Display != nil {
+			uiDisplay.Store(st.Display)
+		}
+		if st.App != nil {
+			uiApp.Store(st.App)
+		}
 		now := supNow()
 		if sup.noteStatus(now, st) {
 			ghiDaDung(daDungFilePath(), time.Now(), systemUptime())

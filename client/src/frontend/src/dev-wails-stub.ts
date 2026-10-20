@@ -37,8 +37,9 @@ const DEV_MENU = [
 // Đủ các trạng thái menu game phải vẽ được. Tiến độ của game đang tải nhích theo
 // đồng hồ để thấy lượt làm mới mỗi 10 giây có tác dụng.
 const DEV_GAMES = [
-	{ name: 'lol', display_name: 'Liên Minh Huyền Thoại', category: 'MOBA', status: 'ready' },
-	{ name: 'valorant', display_name: 'Valorant', category: 'FPS', status: 'ready' },
+	{ name: 'lol', display_name: 'Liên Minh Huyền Thoại', category: 'MOBA', status: 'ready', label: 'hot' },
+	{ name: 'valorant', display_name: 'Valorant', category: 'FPS', status: 'ready', label: 'new' },
+	{ name: 'cs-old', display_name: 'Game mất tệp chạy', category: 'FPS', status: 'ready', problem: 'missing_launcher' },
 	{ name: 'pubg', display_name: 'PUBG: Battlegrounds', category: 'FPS', status: 'downloading' },
 	{ name: 'fo4', display_name: 'FC Online', category: 'Thể thao', status: 'queued' },
 	{ name: 'csgo2', display_name: 'Counter-Strike 2', category: 'FPS', status: 'error' },
@@ -188,6 +189,8 @@ export function installDevWailsStub() {
 							progress: g.status === 'downloading' ? 20 + (Math.floor(Date.now() / 10000) % 80) : 0,
 						})),
 					})),
+				RefreshGames: () => (window as any).go.main.App.ListGames(),
+				MenuBranding: () => ok(JSON.stringify({ name: 'Net Mia Gaming', logo: '' })),
 				// Valorant cố tình thất bại: nút Chơi của game "ready" là đường duy nhất
 				// tới được thông báo lỗi.
 				LaunchGame: (name: string) =>
