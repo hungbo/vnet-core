@@ -252,7 +252,8 @@ type MachineActivityRow struct {
 // MachineActivity trả số đo nhịp tim gần nhất của MỌI máy. Máy đang tắt vẫn có dòng (số cũ),
 // trang tự che bằng trạng thái.
 func (s *MachineService) MachineActivity() ([]MachineActivityRow, error) {
-	var rows []MachineActivityRow
+	// Khởi tạo sẵn: không có dòng nào thì Scan để nguyên, slice nil ra JSON null làm trang sập.
+	rows := []MachineActivityRow{}
 	err := s.db.Table("machines").
 		Select(`id, machine_code, status, last_heartbeat, active_app, cpu_temp, gpu_temp,
 			cpu_usage, ram_usage, disk_usage, net_down_bps, net_up_bps, ping_ms`).
@@ -265,7 +266,7 @@ func (s *MachineService) MachineActivity() ([]MachineActivityRow, error) {
 // HardwareOverview trả MỌI máy (không phân trang): trang so sánh cả phòng máy, và bộ lọc
 // "máy nào chưa bật Secure Boot" phải thấy hết chứ không phải trang đang xem.
 func (s *MachineService) HardwareOverview() ([]MachineHardwareRow, error) {
-	var rows []MachineHardwareRow
+	rows := []MachineHardwareRow{} // quán chưa có máy: trả [] chứ không phải null, như MachineActivity
 	err := s.db.Table("machines AS m").
 		Select(`m.id, m.machine_code, m.status, m.cpu_name, m.gpu_name, m.ram_gb, m.storage_gb,
 			m.boot_mode, m.secure_boot, m.tpm, m.hvci, m.virtualization, m.bios_version,

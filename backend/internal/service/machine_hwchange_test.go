@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -306,5 +307,28 @@ func TestMachineService_MachineActivity(t *testing.T) {
 	require.Len(t, rows, 1)
 	assert.Equal(t, "chrome.exe", rows[0].ActiveApp)
 	assert.Equal(t, int64(1250000), rows[0].NetDownBps)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Quán chưa có máy: hai bảng phải ra [] chứ không phải null, không thì trang Phần cứng trắng.
+func TestMachineService_HardwareListsEmptyNotNull(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMachineService(db, nil, NewAuditService(db))
+
+	mock.ExpectQuery(`FROM "machines" WHERE deleted_at IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}))
+	mock.ExpectQuery(`FROM machines AS m WHERE m.deleted_at IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}))
+
+	activity, err := svc.MachineActivity()
+	require.NoError(t, err)
+	overview, err := svc.HardwareOverview()
+	require.NoError(t, err)
+
+	for name, v := range map[string]interface{}{"activity": activity, "overview": overview} {
+		b, err := json.Marshal(v)
+		require.NoError(t, err)
+		assert.Equal(t, "[]", string(b), name)
+	}
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
