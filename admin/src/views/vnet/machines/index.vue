@@ -515,21 +515,21 @@ onBeforeUnmount(() => {
       <ElTable v-loading="loading" :data="data" row-key="id" border stripe style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <!--
-          Một cột thao tác: Sửa, Khác (phần cứng + điều khiển máy), Xoá. Nút nào
+          Một cột thao tác: Khác (phần cứng + điều khiển máy), Sửa, Xoá. Nút nào
           thiếu quyền của API tương ứng thì không hiện.
         -->
         <ElTableColumn :label="$t('vnetPages.common.action')" width="220" fixed="right">
           <template #default="{ row }">
             <div class="machine-actions">
-              <ElButton v-if="hasAuth('machines.update')" size="small" @click="openEdit(row)">
-                {{ $t('vnetPages.common.edit') }}
-              </ElButton>
               <MachineRemoteActions
                 :machine="row as any"
                 :member-id="(row as any).session?.member_id"
                 :extra-items="hardwareItem"
                 @command="(cmd: string) => cmd === 'hardware' && openHardware(row)"
               />
+              <ElButton v-if="hasAuth('machines.update')" size="small" @click="openEdit(row)">
+                {{ $t('vnetPages.common.edit') }}
+              </ElButton>
               <ElButton v-if="hasAuth('machines.delete')" size="small" type="danger" @click="handleDelete(row)">
                 {{ $t('vnetPages.common.delete') }}
               </ElButton>
