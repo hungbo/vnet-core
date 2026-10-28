@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
     <ElCard>
       <template #header>
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-8px">
+          <div class="flex flex-wrap items-center gap-8px">
             <ElSelect v-model="filterStatus" style="width: 170px" @change="searchData">
               <ElOption :label="$t('vnetPages.sessions.allStatus')" value="all" />
               <ElOption :label="$t('vnetPages.sessions.running')" value="active" />

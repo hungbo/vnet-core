@@ -1,0 +1,81 @@
+/* Admin trên điện thoại. Mốc 640px trùng appStore.isMobile (breakpoints.smaller('sm')). */
+
+/* Các hộp thoại khai báo width cố định 400–1000px: không bao giờ rộng hơn màn hình. */
+.el-dialog {
+  max-width: calc(100vw - 16px);
+}
+
+@media (max-width: 639.98px) {
+  .el-dialog {
+    --el-dialog-margin-top: 8px;
+  }
+
+  .el-card {
+    --el-card-padding: 12px;
+  }
+
+  /* Tiêu đề thẻ + thanh công cụ: cho xuống dòng, không bóp thanh công cụ thành một cột. */
+  .el-card__header > div {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Form nhãn trái (label-width 100–180px) chỉ chừa ~80px cho ô nhập: đưa nhãn lên trên. */
+  .el-form:not(.el-form--inline) .el-form-item {
+    display: block;
+  }
+
+  .el-form:not(.el-form--inline) .el-form-item__label {
+    display: block;
+    width: auto !important;
+    height: auto;
+    line-height: 22px;
+    margin-bottom: 4px;
+    text-align: left;
+  }
+
+  .el-form:not(.el-form--inline) .el-form-item__content {
+    margin-left: 0 !important;
+  }
+
+  /* Cột Thao tác fixed="right" rộng 180–400px che gần hết bảng ~310px: cho nó cuộn theo bảng. */
+  .el-table
+    :is(.el-table__header-wrapper, .el-table__body-wrapper, .el-table__footer-wrapper)
+    tr
+    :is(td, th).el-table-fixed-column--right {
+    position: static !important;
+  }
+
+  .el-table
+    :is(.el-table__header-wrapper, .el-table__body-wrapper, .el-table__footer-wrapper)
+    tr
+    :is(td, th).el-table-fixed-column--right::before {
+    display: none;
+  }
+
+  .el-pagination {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  /* Ô khoảng ngày mặc định 350px, bảng chọn hai tháng cạnh nhau 646px: thu ô lại, xếp hai tháng chồng lên nhau. */
+  .el-date-editor {
+    --el-date-editor-daterange-width: 280px;
+  }
+
+  .el-date-range-picker {
+    width: 300px;
+  }
+
+  .el-date-range-picker .el-picker-panel__body {
+    min-width: 0;
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+
+  .el-date-range-picker .el-date-range-picker__content {
+    display: block;
+    float: none;
+    width: 100%;
+  }
+}

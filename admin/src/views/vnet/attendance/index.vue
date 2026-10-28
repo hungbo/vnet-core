@@ -141,7 +141,7 @@ onMounted(() => {
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.attendance.listHint') }}</span>
-          <div style="display: flex; gap: 8px">
+          <div style="display: flex; flex-wrap: wrap; gap: 8px">
             <ElDatePicker
               v-model="dateFilter"
               type="date"

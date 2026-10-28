@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAppStore } from '@/store/modules/app';
 import { useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
@@ -20,6 +21,7 @@ const { enabledMethods, paymentLabel } = usePaymentMethods();
 // (orders.pay), sửa (orders.update), tách (orders.split), in (orders.print),
 // xoá (orders.delete), tạo đơn ở quầy (orders.create).
 const { hasAuth } = useAuth();
+const appStore = useAppStore();
 // Menu "Khác" chỉ hiện khi dòng đó còn ít nhất một mục được phép.
 function hasMore(row: any) {
   const dangXuLy = row.status !== 'completed' && row.status !== 'cancelled';
@@ -971,7 +973,7 @@ watch(
 
     <ElDialog v-model="detailVisible" :title="$t('vnetPages.orders.detail')" width="840px">
       <template v-if="detail">
-        <ElDescriptions :column="2" border>
+        <ElDescriptions :column="appStore.isMobile ? 1 : 2" border>
           <ElDescriptionsItem :label="$t('vnetPages.orders.orderCode')">{{ detail.order_code }}</ElDescriptionsItem>
           <ElDescriptionsItem :label="$t('vnetPages.common.status')">
             <ElTag :type="statusType(detail.status)">{{ statusLabel(detail.status) }}</ElTag>

@@ -255,7 +255,7 @@ function importTagType(status: string): any {
       <ElAlert type="info" :closable="false" class="mb-12px" :title="$t('vnetPages.windowsKeys.hint')" />
 
       <div class="mb-12px flex flex-wrap items-center justify-between gap-8px">
-        <div class="flex items-center gap-8px">
+        <div class="flex flex-wrap items-center gap-8px">
           <ElInput
             v-model="search"
             :placeholder="$t('vnetPages.windowsKeys.searchPlaceholder')"

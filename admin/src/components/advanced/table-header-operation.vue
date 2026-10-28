@@ -49,7 +49,7 @@ function refresh() {
 </script>
 
 <template>
-  <ElSpace direction="horizontal" wrap justify="end" class="lt-sm:w-200px">
+  <ElSpace direction="horizontal" wrap justify="end" class="lt-sm:w-full">
     <slot name="prefix"></slot>
     <slot name="default">
       <ElButton v-if="showAdd" plain type="primary" @click="add">

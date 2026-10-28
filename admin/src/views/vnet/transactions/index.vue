@@ -66,7 +66,7 @@ useRealtimeRefresh(
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>{{ $t('vnetPages.transactions.title') }}</span>
-          <div style="display: flex; gap: 8px; align-items: center">
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
             <ElDatePicker
               v-model="dateRange"
               type="daterange"

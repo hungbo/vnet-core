@@ -262,8 +262,8 @@ onBeforeUnmount(() => {
 <template>
   <div>
     <ElRow :gutter="20" class="stat-cards mb-16px">
-      <ElCol v-for="stat in stats" :key="stat.label" :span="6">
-        <ElCard shadow="hover">
+      <ElCol v-for="stat in stats" :key="stat.label" :span="6" :xs="12">
+        <ElCard shadow="hover" class="h-full">
           <div style="display: flex; justify-content: space-between; align-items: center">
             <div>
               <div style="font-size: 13px; color: #909399">
@@ -273,7 +273,7 @@ onBeforeUnmount(() => {
                 {{ stat.value }}
               </div>
             </div>
-            <ElIcon :size="40" :color="stat.color"><component :is="stat.icon" /></ElIcon>
+            <ElIcon :size="40" :color="stat.color" class="lt-sm:hidden"><component :is="stat.icon" /></ElIcon>
           </div>
         </ElCard>
       </ElCol>
@@ -432,6 +432,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Điện thoại xếp 2×2 (:xs="12"): cần khoảng cách giữa hai hàng thẻ. */
+.stat-cards {
+  row-gap: 12px;
+}
+
 .orders-footer {
   display: flex;
   align-items: center;

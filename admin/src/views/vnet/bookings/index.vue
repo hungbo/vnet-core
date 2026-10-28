@@ -381,8 +381,8 @@ watch(dialogVisible, open => {
 <template>
   <div>
     <ElCard>
-      <div class="flex items-center justify-between" style="margin-bottom: 16px">
-        <div class="flex items-center gap-8px">
+      <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
+        <div class="flex flex-wrap items-center gap-8px">
           <ElSelect
             v-model="filterStatus"
             :placeholder="$t('vnetPages.common.status')"

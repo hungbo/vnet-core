@@ -5,6 +5,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAppStore } from '@/store/modules/app';
 import { useWebSocketStore } from '@/store/modules/ws';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
@@ -19,6 +20,7 @@ import MemberTopupDialog from './modules/member-topup-dialog.vue';
 const { t: $t } = useI18n();
 const { paymentLabel } = usePaymentMethods();
 const txTypeLabel = useTransactionTypeLabel();
+const appStore = useAppStore();
 
 const search = ref('');
 // Loại tài khoản: hội viên thường do quầy tạo, hoặc tài khoản combo sinh ra khi
@@ -574,8 +576,8 @@ onBeforeUnmount(() => {
 <template>
   <div>
     <ElCard>
-      <div class="flex items-center justify-between" style="margin-bottom: 16px">
-        <div class="flex items-center gap-8px">
+      <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
+        <div class="flex flex-wrap items-center gap-8px">
           <ElInput
             v-model="search"
             :placeholder="$t('vnetPages.members.searchPlaceholder')"
@@ -773,7 +775,7 @@ onBeforeUnmount(() => {
       <ElCard v-loading="detailLoading" shadow="never" style="border: none">
         <ElTabs v-model="detailTab">
           <ElTabPane :label="$t('vnetPages.members.detail')" name="info">
-            <ElDescriptions :column="2" border>
+            <ElDescriptions :column="appStore.isMobile ? 1 : 2" border>
               <ElDescriptionsItem :label="$t('vnetPages.members.username')">
                 {{ detailMember?.username }}
               </ElDescriptionsItem>

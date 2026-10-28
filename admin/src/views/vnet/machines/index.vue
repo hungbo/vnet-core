@@ -481,8 +481,8 @@ onBeforeUnmount(() => {
 <template>
   <div>
     <ElCard>
-      <div class="flex items-center justify-between" style="margin-bottom: 16px">
-        <div class="flex items-center gap-8px">
+      <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
+        <div class="flex flex-wrap items-center gap-8px">
           <ElInput
             v-model="search"
             :placeholder="$t('vnetPages.machines.searchPlaceholder')"
@@ -495,7 +495,7 @@ onBeforeUnmount(() => {
             {{ $t('vnetPages.machines.onlyWarnings') }}
           </ElCheckbox>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center">
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
           <ElButton v-if="hasAuth('machines.create')" @click="openBatch">
             {{ $t('vnetPages.machines.batch.open') }}
           </ElButton>

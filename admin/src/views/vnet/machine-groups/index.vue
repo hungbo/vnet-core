@@ -299,8 +299,8 @@ async function handleDelete(row: any) {
 <template>
   <div>
     <ElCard>
-      <div class="flex items-center justify-between" style="margin-bottom: 16px">
-        <div class="flex items-center gap-8px">
+      <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
+        <div class="flex flex-wrap items-center gap-8px">
           <ElInput
             v-model="search"
             :placeholder="$t('vnetPages.common.searchPlaceholder')"
