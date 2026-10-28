@@ -864,17 +864,20 @@ func (s *MemberService) GetCombos(id string, params pagination.Params) ([]ComboP
 		comboIDs[i] = p.ComboID
 	}
 	comboMap := make(map[string]string, len(comboIDs))
+	nhomMay := make(map[string][]string, len(comboIDs))
 	if len(comboIDs) > 0 {
 		var combos []model.Combo
 		s.db.Where("id IN ?", comboIDs).Find(&combos)
 		for _, c := range combos {
 			comboMap[c.ID] = c.Name
+			nhomMay[c.ID] = c.MachineGroupIDs
 		}
 	}
 
 	result := make([]ComboPurchaseResponse, len(purchases))
 	for i := range purchases {
 		result[i] = purchaseToResponse(purchases[i], comboMap[purchases[i].ComboID])
+		result[i].MachineGroupIDs = nhomMay[purchases[i].ComboID]
 	}
 
 	return result, total, params.Page, params.PageSize, nil

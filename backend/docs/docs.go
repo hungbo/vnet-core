@@ -12557,6 +12557,13 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "machine_group_ids": {
+                    "description": "Nhóm máy của gói, để quầy chỉ đưa ra máy dùng được. Rỗng = mọi máy.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "member_id": {
                     "type": "string"
                 },
@@ -12605,6 +12612,19 @@ const docTemplate = `{
                 },
                 "is_active": {
                     "type": "boolean"
+                },
+                "machine_group_ids": {
+                    "description": "Rỗng = dùng được ở mọi máy.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "machine_group_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "member_count": {
                     "type": "integer"
@@ -12789,6 +12809,13 @@ const docTemplate = `{
                 "is_active": {
                     "description": "Con trỏ: không gửi = bật như trước nay; gửi false = tạo ở trạng thái tắt.",
                     "type": "boolean"
+                },
+                "machine_group_ids": {
+                    "description": "Nhóm máy được dùng gói; bỏ trống = mọi máy.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "name": {
                     "type": "string"
@@ -15141,6 +15168,13 @@ const docTemplate = `{
                 },
                 "is_active": {
                     "type": "boolean"
+                },
+                "machine_group_ids": {
+                    "description": "Không gửi = giữ nguyên; [] = bỏ giới hạn, dùng được mọi máy.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "name": {
                     "type": "string"

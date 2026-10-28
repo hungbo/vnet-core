@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -72,6 +73,9 @@ type ComboResponse struct {
 	GiftProductID   string `json:"gift_product_id"`
 	GiftProductName string `json:"gift_product_name"`
 	GiftQuantity    int    `json:"gift_quantity"`
+	// Rỗng = dùng được ở mọi máy.
+	MachineGroupIDs   []string `json:"machine_group_ids"`
+	MachineGroupNames []string `json:"machine_group_names"`
 }
 
 type CreateComboRequest struct {
@@ -90,6 +94,8 @@ type CreateComboRequest struct {
 	// Món tặng kèm mặc định; bỏ trống = không tặng. Số lượng dưới 1 tính là 1.
 	GiftProductID string `json:"gift_product_id"`
 	GiftQuantity  int    `json:"gift_quantity"`
+	// Nhóm máy được dùng gói; bỏ trống = mọi máy.
+	MachineGroupIDs []string `json:"machine_group_ids"`
 }
 
 // Description/ValidityDays/Price là con trỏ: với kiểu thường, "" và 0 trùng với
@@ -110,6 +116,8 @@ type UpdateComboRequest struct {
 	// GiftProductID, không gửi thì giữ số lượng cũ.
 	GiftProductID *string `json:"gift_product_id"`
 	GiftQuantity  *int    `json:"gift_quantity"`
+	// Không gửi = giữ nguyên; [] = bỏ giới hạn, dùng được mọi máy.
+	MachineGroupIDs []string `json:"machine_group_ids"`
 }
 
 type PurchaseComboRequest struct {
@@ -187,6 +195,7 @@ func (s *ComboService) List(req *ComboListRequest) (*pagination.Result, error) {
 		items[i] = comboToResponse(c)
 	}
 	ganTenMonTang(s.db, items)
+	ganTenNhomMay(s.db, items)
 
 	return pagination.NewResult(items, total, p), nil
 }
@@ -203,7 +212,86 @@ func (s *ComboService) GetByID(id string) (*ComboResponse, error) {
 func (s *ComboService) comboResponse(c model.Combo) *ComboResponse {
 	items := []ComboResponse{comboToResponse(c)}
 	ganTenMonTang(s.db, items)
+	ganTenNhomMay(s.db, items)
 	return &items[0]
+}
+
+// ganTenNhomMay điền tên nhóm máy cho cả trang bằng một câu truy vấn.
+func ganTenNhomMay(db *gorm.DB, items []ComboResponse) {
+	var ids []string
+	for _, it := range items {
+		ids = append(ids, it.MachineGroupIDs...)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	var groups []model.MachineGroup
+	db.Unscoped().Select("id", "name").Where("id IN ?", ids).Find(&groups)
+	ten := make(map[string]string, len(groups))
+	for _, g := range groups {
+		ten[g.ID] = g.Name
+	}
+	for i := range items {
+		for _, id := range items[i].MachineGroupIDs {
+			items[i].MachineGroupNames = append(items[i].MachineGroupNames, ten[id])
+		}
+	}
+}
+
+// chuanHoaNhomMay bỏ trùng, bỏ id rỗng và từ chối id không phải nhóm máy đang
+// có. Trả nil khi không còn nhóm nào — nghĩa là gói dùng được mọi máy.
+func chuanHoaNhomMay(db *gorm.DB, ids []string) (model.StringArray, error) {
+	var out model.StringArray
+	daCo := map[string]bool{}
+	for _, id := range ids {
+		if id != "" && !daCo[id] {
+			daCo[id] = true
+			out = append(out, id)
+		}
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	var n int64
+	if err := db.Model(&model.MachineGroup{}).Where("id IN ?", []string(out)).Count(&n).Error; err != nil {
+		return nil, err
+	}
+	if int(n) != len(out) {
+		return nil, errors.New("không tìm thấy nhóm máy đã chọn")
+	}
+	return out, nil
+}
+
+// chanXoaNhomMayCuaCombo từ chối xoá nhóm máy khi còn combo chỉ dùng ở nhóm đó.
+func chanXoaNhomMayCuaCombo(db *gorm.DB, groupID string) error {
+	b, _ := json.Marshal([]string{groupID})
+	var n int64
+	if err := db.Model(&model.Combo{}).Where("machine_group_ids @> ?::jsonb", string(b)).Count(&n).Error; err != nil {
+		return err
+	}
+	if n > 0 {
+		return chanVi("không xoá được: còn %d combo giới hạn ở nhóm máy này — hãy bỏ nhóm khỏi combo trước", n)
+	}
+	return nil
+}
+
+// kiemTraNhomMayCuaCombo chặn mở máy bằng gói ở máy ngoài nhóm của gói. Mọi cửa
+// mở máy bằng gói — kích hoạt, quầy mở phiên, đổi máy — đều phải gọi hàm này.
+func kiemTraNhomMayCuaCombo(tx *gorm.DB, combo *model.Combo, machine *model.Machine) error {
+	if len(combo.MachineGroupIDs) == 0 {
+		return nil
+	}
+	if machine.GroupID != nil {
+		for _, id := range combo.MachineGroupIDs {
+			if id == *machine.GroupID {
+				return nil
+			}
+		}
+	}
+	var ten []string
+	tx.Model(&model.MachineGroup{}).Where("id IN ?", []string(combo.MachineGroupIDs)).Order("sort_order").Pluck("name", &ten)
+	return fmt.Errorf("gói %s chỉ dùng được ở nhóm máy %s — máy %s không thuộc nhóm này",
+		combo.Name, strings.Join(ten, ", "), machine.MachineCode)
 }
 
 // ganTenMonTang điền tên món tặng cho cả trang bằng một câu truy vấn. Unscoped:
@@ -274,6 +362,11 @@ func (s *ComboService) Create(req *CreateComboRequest) (*ComboResponse, error) {
 		combo.GiftProductID = &mon.ID
 		combo.GiftQuantity = max(req.GiftQuantity, 1)
 	}
+	nhom, loiNhom := chuanHoaNhomMay(s.db, req.MachineGroupIDs)
+	if loiNhom != nil {
+		return nil, loiNhom
+	}
+	combo.MachineGroupIDs = nhom
 
 	// is_active có `default:true`, GORM thay false bằng default khi INSERT —
 	// ghi lại false trong cùng giao dịch (cùng cách với promotion.go).
@@ -368,6 +461,13 @@ func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboRespons
 			updates["gift_product_id"] = mon.ID
 			updates["gift_quantity"] = max(soLuong, 1)
 		}
+	}
+	if req.MachineGroupIDs != nil {
+		nhom, err := chuanHoaNhomMay(s.db, req.MachineGroupIDs)
+		if err != nil {
+			return nil, err
+		}
+		updates["machine_group_ids"] = nhom
 	}
 
 	if err := s.db.Model(&combo).Updates(updates).Error; err != nil {
@@ -729,6 +829,10 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 		tx.Rollback()
 		return nil, errors.New("máy đang có người dùng")
 	}
+	if err := kiemTraNhomMayCuaCombo(tx, &combo, &machine); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
 	now := time.Now()
 	activatedAt := now
@@ -838,6 +942,8 @@ func comboToResponse(c model.Combo) ComboResponse {
 		IsActive:     c.IsActive,
 		CreatedAt:    c.CreatedAt.Format(time.RFC3339),
 		GiftQuantity: c.GiftQuantity,
+		// Luôn là mảng (kể cả rỗng) để phía admin không phải xử lý null.
+		MachineGroupIDs: append([]string{}, c.MachineGroupIDs...),
 	}
 	if c.GiftProductID != nil {
 		r.GiftProductID = *c.GiftProductID
@@ -866,6 +972,8 @@ type ComboPurchaseResponse struct {
 	GiftProductName string `json:"gift_product_name,omitempty"`
 	GiftQuantity    int    `json:"gift_quantity,omitempty"`
 	GiftOrderCode   string `json:"gift_order_code,omitempty"`
+	// Nhóm máy của gói, để quầy chỉ đưa ra máy dùng được. Rỗng = mọi máy.
+	MachineGroupIDs []string `json:"machine_group_ids,omitempty"`
 }
 
 func purchaseToResponse(p model.ComboPurchase, comboName string) ComboPurchaseResponse {

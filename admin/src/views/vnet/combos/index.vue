@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, ref, watch } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
@@ -35,8 +35,17 @@ const form = ref({
   slots: [{ start: null, end: null }] as { start: Date | null; end: Date | null }[],
   is_active: true,
   gift_product_id: '',
-  gift_quantity: 1
+  gift_quantity: 1,
+  machine_group_ids: [] as string[]
 });
+
+// Nhóm máy được dùng gói. Không chọn nhóm nào = mọi máy.
+const machineGroups = ref<any[]>([]);
+
+async function loadMachineGroups() {
+  const res: any = await client.get('/machine-groups').catch(() => null);
+  machineGroups.value = Array.isArray(res) ? res : res?.items || [];
+}
 
 const purchaseDialogVisible = ref(false);
 const purchaseSubmitting = ref(false);
@@ -156,6 +165,13 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       formatter: (row: any) => (row.gift_product_id ? `${row.gift_product_name} × ${row.gift_quantity}` : '-')
     },
     {
+      prop: 'machine_group_names',
+      label: $t('vnetPages.combos.machineGroups'),
+      minWidth: 120,
+      formatter: (row: any) =>
+        row.machine_group_names?.length ? row.machine_group_names.join(', ') : $t('vnetPages.combos.allMachines')
+    },
+    {
       prop: 'is_active',
       label: $t('vnetPages.combos.isActive'),
       width: 90,
@@ -185,9 +201,11 @@ function openCreate() {
     slots: [{ start: null, end: null }],
     is_active: true,
     gift_product_id: '',
-    gift_quantity: 1
+    gift_quantity: 1,
+    machine_group_ids: []
   };
   loadGiftProducts();
+  loadMachineGroups();
   dialogVisible.value = true;
 }
 
@@ -213,9 +231,11 @@ function openEdit(row: any) {
     slots: [{ start: gioThanhNgay(row.slot_start), end: gioThanhNgay(row.slot_end) }],
     is_active: row.is_active ?? true,
     gift_product_id: row.gift_product_id || '',
-    gift_quantity: row.gift_quantity || 1
+    gift_quantity: row.gift_quantity || 1,
+    machine_group_ids: [...(row.machine_group_ids || [])]
   };
   loadGiftProducts();
+  loadMachineGroups();
   dialogVisible.value = true;
 }
 
@@ -306,6 +326,18 @@ async function loadActivateMachines() {
   }
 }
 
+// Gói giới hạn nhóm máy: ô chọn máy chỉ đưa ra máy thuộc nhóm của các gói chưa
+// kích hoạt (máy chủ vẫn kiểm từng gói). Còn một gói không giới hạn thì mọi máy.
+const mayKichHoat = computed(() => {
+  const choKichHoat = purchases.value.filter(p => !p.activated);
+  if (!choKichHoat.length || choKichHoat.some(p => !p.machine_group_ids?.length)) return activateMachines.value;
+  const nhom = new Set(choKichHoat.flatMap(p => p.machine_group_ids));
+  return activateMachines.value.filter(m => nhom.has(m.group_id));
+});
+watch(mayKichHoat, list => {
+  if (activateMachineId.value && !list.some(m => m.id === activateMachineId.value)) activateMachineId.value = '';
+});
+
 async function openPurchases() {
   purchasesMemberId.value = '';
   purchases.value = [];
@@ -379,7 +411,9 @@ async function handleSubmit() {
       validity_days: form.value.validity_days,
       apply_days: form.value.apply_days,
       is_active: form.value.is_active,
-      ...giftPayload()
+      ...giftPayload(),
+      // Luôn gửi, kể cả []: sửa gói phải bỏ được giới hạn nhóm máy.
+      machine_group_ids: form.value.machine_group_ids
     };
     if (form.value.type === 'fixed_slot') {
       payload.slot_start = form.value.slots?.[0]?.start ? dayjs(form.value.slots[0].start).format('HH:mm') : '';
@@ -531,7 +565,7 @@ useRealtimeRefresh(
           :placeholder="$t('vnetPages.combos.selectMachine')"
           style="width: 200px"
         >
-          <ElOption v-for="m in activateMachines" :key="m.id" :label="m.machine_code" :value="m.id" />
+          <ElOption v-for="m in mayKichHoat" :key="m.id" :label="m.machine_code" :value="m.id" />
         </ElSelect>
       </div>
 
@@ -615,6 +649,20 @@ useRealtimeRefresh(
             />
           </div>
           <div style="color: #909399; font-size: 12px; line-height: 1.5">{{ $t('vnetPages.combos.giftHint') }}</div>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.combos.machineGroups')">
+          <ElSelect
+            v-model="form.machine_group_ids"
+            multiple
+            clearable
+            :placeholder="$t('vnetPages.combos.allMachines')"
+            style="width: 100%"
+          >
+            <ElOption v-for="g in machineGroups" :key="g.id" :label="g.name" :value="g.id" />
+          </ElSelect>
+          <div style="color: #909399; font-size: 12px; line-height: 1.5">
+            {{ $t('vnetPages.combos.machineGroupsHint') }}
+          </div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.combos.description')" prop="description">
           <ElInput v-model="form.description" type="textarea" :rows="2" />

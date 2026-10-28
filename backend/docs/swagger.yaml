@@ -563,6 +563,11 @@ definitions:
         type: integer
       id:
         type: string
+      machine_group_ids:
+        description: Nhóm máy của gói, để quầy chỉ đưa ra máy dùng được. Rỗng = mọi máy.
+        items:
+          type: string
+        type: array
       member_id:
         type: string
       member_username:
@@ -598,6 +603,15 @@ definitions:
         type: string
       is_active:
         type: boolean
+      machine_group_ids:
+        description: Rỗng = dùng được ở mọi máy.
+        items:
+          type: string
+        type: array
+      machine_group_names:
+        items:
+          type: string
+        type: array
       member_count:
         type: integer
       member_prefix:
@@ -726,6 +740,11 @@ definitions:
         description: 'Con trỏ: không gửi = bật như trước nay; gửi false = tạo ở trạng
           thái tắt.'
         type: boolean
+      machine_group_ids:
+        description: Nhóm máy được dùng gói; bỏ trống = mọi máy.
+        items:
+          type: string
+        type: array
       name:
         type: string
       price:
@@ -2354,6 +2373,11 @@ definitions:
         type: integer
       is_active:
         type: boolean
+      machine_group_ids:
+        description: Không gửi = giữ nguyên; [] = bỏ giới hạn, dùng được mọi máy.
+        items:
+          type: string
+        type: array
       name:
         type: string
       price:

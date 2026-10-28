@@ -2212,6 +2212,9 @@ const local: App.I18n.Schema = {
       giftSaleHint: 'Tạo một đơn 0đ và trừ kho món này.',
       giftOrder: 'Đơn tặng',
       stockLeft: 'còn {n}',
+      machineGroups: 'Nhóm máy',
+      allMachines: 'Mọi máy',
+      machineGroupsHint: 'Gói chỉ mở được máy thuộc các nhóm đã chọn. Để trống = dùng được mọi máy.',
       form: {
         name: 'Tên combo',
         type: 'Loại combo',

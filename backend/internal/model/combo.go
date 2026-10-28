@@ -26,6 +26,8 @@ type Combo struct {
 	// được sang món khác hoặc bỏ. NULL = gói không tặng gì.
 	GiftProductID *string `gorm:"type:uuid" json:"gift_product_id"`
 	GiftQuantity  int     `gorm:"default:0" json:"gift_quantity"`
+	// Nhóm máy được mở bằng gói này (id MachineGroup). Rỗng = mọi máy.
+	MachineGroupIDs StringArray `gorm:"type:jsonb" json:"machine_group_ids"`
 }
 
 type ComboPurchase struct {

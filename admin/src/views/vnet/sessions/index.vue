@@ -153,6 +153,15 @@ async function openStart() {
   startVisible.value = true;
 }
 
+// Gói giới hạn nhóm máy chỉ chọn được khi máy đang chọn thuộc nhóm đó; máy chủ
+// cũng chặn, đây chỉ để quầy khỏi bấm rồi mới thấy lỗi.
+function goiDungDuocTrenMay(c: any) {
+  const nhom: string[] = c.machine_group_ids || [];
+  if (!nhom.length) return true;
+  const m = machines.value.find(x => x.id === startForm.value.machine_id);
+  return !m || nhom.includes(m.group_id);
+}
+
 function onMemberChange(id: string) {
   startForm.value.combo_purchase_id = '';
   loadCombos(id);
@@ -426,6 +435,7 @@ onBeforeUnmount(() => {
               :key="c.id"
               :label="`${c.combo_name} — ${c.remaining_minutes}p`"
               :value="c.id"
+              :disabled="!goiDungDuocTrenMay(c)"
             />
           </ElSelect>
         </ElFormItem>

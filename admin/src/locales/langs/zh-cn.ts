@@ -2185,6 +2185,9 @@ const local: App.I18n.Schema = {
       giftSaleHint: '将生成一张 0₫ 订单并扣减该商品库存。',
       giftOrder: '赠品订单',
       stockLeft: '剩 {n}',
+      machineGroups: '机器分组',
+      allMachines: '所有机器',
+      machineGroupsHint: '套餐只能在所选分组的机器上使用。留空表示所有机器。',
       form: {
         name: '套餐名称',
         type: '套餐类型',

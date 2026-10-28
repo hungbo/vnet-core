@@ -1167,6 +1167,11 @@ func (s *MachineService) DeleteGroup(id string) error {
 	}, "hãy chuyển chúng sang nhóm khác trước"); err != nil {
 		return err
 	}
+	// Combo lưu danh sách nhóm trong jsonb nên không đếm được bằng kiemTraPhuThuoc.
+	// Xoá nhóm mà combo còn giới hạn ở đó thì gói không mở được máy nào nữa.
+	if err := chanXoaNhomMayCuaCombo(s.db, id); err != nil {
+		return err
+	}
 	if err := s.db.Delete(&group).Error; err != nil {
 		return err
 	}

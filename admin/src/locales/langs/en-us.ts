@@ -2217,6 +2217,9 @@ const local: App.I18n.Schema = {
       giftSaleHint: 'Creates a 0₫ order and deducts this item from stock.',
       giftOrder: 'Gift order',
       stockLeft: '{n} left',
+      machineGroups: 'Machine groups',
+      allMachines: 'All machines',
+      machineGroupsHint: 'This combo can only open machines in the selected groups. Leave empty for all machines.',
       form: {
         name: 'Combo Name',
         type: 'Combo Type',

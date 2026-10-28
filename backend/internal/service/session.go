@@ -642,6 +642,11 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 			tx.Rollback()
 			return nil, errors.New("không tìm thấy gói cước")
 		}
+		// Cả quầy mở phiên lẫn đổi máy đều qua đây.
+		if err := kiemTraNhomMayCuaCombo(tx, &combo, &lockedMachine); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
 
 		session.ComboID = &purchase.ID
 		session.ComboType = combo.Type
@@ -1288,6 +1293,20 @@ func (s *SessionService) SwitchMachine(sessionID, newMachineID string) (*Session
 	}
 	if newMachine.Status == "in_use" {
 		return nil, errors.New("máy mới đang có người dùng")
+	}
+	// Phiên dùng gói giới hạn nhóm máy: kiểm TRƯỚC khi kết thúc phiên cũ. Để
+	// StartSession bên dưới chặn thì phiên cũ đã đóng, khách mất chỗ đang chơi
+	// chỉ vì quầy chọn nhầm máy.
+	var phienCu model.MachineSession
+	if err := s.db.Where("id = ?", sessionID).First(&phienCu).Error; err == nil && phienCu.ComboID != nil {
+		var purchase model.ComboPurchase
+		var combo model.Combo
+		if s.db.Where("id = ?", *phienCu.ComboID).First(&purchase).Error == nil &&
+			s.db.Where("id = ?", purchase.ComboID).First(&combo).Error == nil {
+			if err := kiemTraNhomMayCuaCombo(s.db, &combo, &newMachine); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	_, err := s.EndSession(sessionID)
