@@ -1004,6 +1004,9 @@ const local: App.I18n.Schema = {
       uptime: '运行时长',
       recordedAt: '记录时间',
       noHardware: '该机器暂无上报数据',
+      openCalling: '点单中',
+      openUnpaid: '未付款',
+      openOrdersHint: '{pending} 个待确认订单，{unpaid} 个未付款 — 共 {amount}',
       statusLabels: {
         offline: '离线',
         available: '可用',
@@ -2277,6 +2280,10 @@ const local: App.I18n.Schema = {
       sessionEndedBody: '机器 {machine} 已释放 — {reason}',
       curfewTitle: '宵禁：已强制下机',
       curfewBody: '机器 {machine} 上的未成年会员已被结束上机',
+      unpaidLeftTitle: '机器 {machine}：顾客未付款离开',
+      unpaidLeftEnded: '{member} 刚刚下机，还有 {count} 个订单未付款（{amount}）。',
+      unpaidLeftOffline: '{member} 刚刚关机或断开连接，还有 {count} 个订单未付款（{amount}）。',
+      guest: '散客',
       reasons: {
         slot_ended: '预约时段已结束',
         minutes_exhausted: '预付分钟已用完',

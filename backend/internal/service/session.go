@@ -1013,7 +1013,7 @@ func (s *SessionService) EndSessionsStaleAfterReboot(machineID string) (int, err
 		if !sessionStaleAfterReboot(r.StartedAt, r.BootedAt) {
 			continue
 		}
-		if _, err := s.EndSessionAt(r.SessionID, r.BootedAt); err != nil {
+		if _, err := s.endSessionAt(r.SessionID, r.BootedAt, "offline"); err != nil {
 			log.Printf("[session] không đóng được phiên sót sau reboot %s: %v", r.SessionID, err)
 			continue
 		}
@@ -1061,7 +1061,7 @@ func (s *SessionService) EndSessionsOnOfflineMachines(timeout time.Duration) (in
 
 	closed := 0
 	for _, r := range rows {
-		if _, err := s.EndSessionAt(r.SessionID, r.LastHeartbeat); err != nil {
+		if _, err := s.endSessionAt(r.SessionID, r.LastHeartbeat, "offline"); err != nil {
 			log.Printf("[session] không đóng được phiên máy mất tín hiệu %s: %v", r.SessionID, err)
 			continue
 		}
@@ -1075,6 +1075,13 @@ func (s *SessionService) EndSessionsOnOfflineMachines(timeout time.Duration) (in
 // reboot thì chốt tại đúng lúc reboot, để khách không bị tính phần máy nằm ở
 // màn hình khoá giữa lúc bật lại và lúc máy chủ nhận ra.
 func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResponse, error) {
+	return s.endSessionAt(id, now, "ended")
+}
+
+// endSessionAt: baoDonMo là lý do báo động cho quầy nếu khách rời máy còn đơn
+// chưa thu tiền ("ended", "offline" — xem baoDonMoKhiRoiMay). Rỗng là không
+// báo: đổi máy thì khách vẫn ngồi trong quán.
+func (s *SessionService) endSessionAt(id string, now time.Time, baoDonMo string) (*EndSessionResponse, error) {
 	var session model.MachineSession
 	if err := s.db.Where("id = ? AND is_active = ?", id, true).First(&session).Error; err != nil {
 		return nil, errors.New("không tìm thấy phiên đang chạy")
@@ -1244,6 +1251,9 @@ func (s *SessionService) EndSessionAt(id string, now time.Time) (*EndSessionResp
 		// hiệu hay reboot), từ đường đăng nhập máy trạm, hay từ lệnh tắt máy từ
 		// xa (chủ đề "machines") đều không qua middleware với chủ đề "sessions".
 		s.hub.Changed("sessions", map[string]interface{}{"id": session.ID, "reason": "ended"})
+		if baoDonMo != "" {
+			baoDonMoKhiRoiMay(s.db, s.hub, session.ID, memberID, &machine, baoDonMo)
+		}
 	}
 
 	return &EndSessionResponse{
@@ -1309,7 +1319,7 @@ func (s *SessionService) SwitchMachine(sessionID, newMachineID string) (*Session
 		}
 	}
 
-	_, err := s.EndSession(sessionID)
+	_, err := s.endSessionAt(sessionID, utils.VietnamTime(), "")
 	if err != nil {
 		return nil, err
 	}

@@ -1190,6 +1190,17 @@ definitions:
       total_orders:
         type: integer
     type: object
+  service.DonMoMay:
+    properties:
+      amount:
+        type: integer
+      machine_id:
+        type: string
+      pending_count:
+        type: integer
+      unpaid_count:
+        type: integer
+    type: object
   service.EndSessionResponse:
     properties:
       amount_unpaid:
@@ -4505,6 +4516,28 @@ paths:
       security:
       - BearerAuth: []
       summary: Create Machine
+      tags:
+      - Machines
+  /api/machines/open-orders:
+    get:
+      description: Product orders still pending or confirmed (not paid), grouped by the machine the customer sits at — or, once they left, the machine they ordered from
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/service.DonMoMay'
+                  type: array
+              type: object
+      security:
+      - BearerAuth: []
+      summary: Unpaid orders per machine
       tags:
       - Machines
   /api/machines/{id}:

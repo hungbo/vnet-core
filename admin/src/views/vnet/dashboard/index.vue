@@ -12,6 +12,8 @@ import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import { formatPrice } from '@/utils/money';
 import MachineRemoteActions from '../machines/modules/machine-remote-actions.vue';
 import MachineNoteCell from '../machines/modules/machine-note-cell.vue';
+import MachineOpenOrdersTag from '../machines/modules/machine-open-orders-tag.vue';
+import { OPEN_ORDERS_ROW_CLASS, fetchOpenOrders } from '../machines/modules/machine-open-orders';
 import MemberTopupDialog from '../members/modules/member-topup-dialog.vue';
 
 const { t: $t } = useI18n();
@@ -49,7 +51,15 @@ const stats = ref([
 const activeSessions = ref<any[]>([]);
 // Bảng "Máy đang hoạt động": máy đang chơi (lấy từ phiên) và máy sẵn sàng (đã
 // bật, chưa ai ngồi). Máy sẵn sàng không có phiên nên các cột phiên để trống.
+// Máy đã tắt mà còn đơn chưa thu tiền cũng ở lại bảng: đó đúng là máy khách vừa
+// bỏ về, mất khỏi bảng thì nhân viên không còn thấy nó nữa.
 const activeMachines = ref<any[]>([]);
+
+const statusTags: Record<string, { type: 'warning' | 'success' | 'danger'; label: string }> = {
+  in_use: { type: 'warning', label: 'vnetPages.machines.statusLabels.inUse' },
+  available: { type: 'success', label: 'vnetPages.machines.statusLabels.available' },
+  offline: { type: 'danger', label: 'vnetPages.machines.statusLabels.offline' }
+};
 const router = useRouter();
 
 // --- Thao tác trên từng máy đang chơi ----------------------------------------
@@ -186,7 +196,7 @@ async function refreshStats() {
   // sáng nó còn là hôm qua, nên ca đêm thấy "Tiền thu hôm nay" của ngày trước.
   const today = dayjs().format('YYYY-MM-DD');
 
-  const [members, machines, sessions, revenue] = await Promise.all([
+  const [members, machines, sessions, revenue, donMo] = await Promise.all([
     (client.get('/members', { params: { page_size: 1 } }) as Promise<any>).catch(() => null),
     fetchAllMachines(),
     (client.get('/sessions/active') as Promise<any>).catch(() => null),
@@ -194,7 +204,8 @@ async function refreshStats() {
       client.get('/reports/daily-revenue', {
         params: { date_from: today, date_to: today }
       }) as Promise<any>
-    ).catch(() => null)
+    ).catch(() => null),
+    fetchOpenOrders()
   ]);
 
   stats.value[0].value = members?.total ?? 0;
@@ -210,13 +221,13 @@ async function refreshStats() {
   // Ghi chú nằm ở máy chứ không ở phiên, nên tra từ danh sách máy vừa tải.
   const noteOf = new Map(machineList.map(m => [m.id, m.note || '']));
   const available = machineList
-    .filter(m => m.status === 'available' && !playing.has(m.id))
-    .map(m => ({ machine_id: m.id, machine_code: m.machine_code, status: 'available', note: m.note || '' }))
+    .filter(m => (m.status === 'available' || donMo.has(m.id)) && !playing.has(m.id))
+    .map(m => ({ machine_id: m.id, machine_code: m.machine_code, status: m.status, note: m.note || '' }))
     .sort((a, b) => String(a.machine_code).localeCompare(String(b.machine_code)));
   activeMachines.value = [
     ...activeSessions.value.map(r => ({ ...r, status: 'in_use', note: noteOf.get(r.machine_id) || '' })),
     ...available
-  ];
+  ].map(r => ({ ...r, open_orders: donMo.get(r.machine_id) }));
 
   const rows: any[] = Array.isArray(revenue) ? revenue : revenue?.items || [];
   stats.value[3].value = formatMoney(rows.reduce((sum, r) => sum + (r.revenue || 0), 0));
@@ -286,17 +297,21 @@ onBeforeUnmount(() => {
       </template>
       <!-- row-key: tải lại theo thời gian thực đổi thứ tự dòng; khoá theo vị trí thì
            hộp thoại điều khiển từ xa đang mở của một dòng nhảy sang máy khác. -->
-      <ElTable :data="activeMachines" row-key="machine_id" style="width: 100%">
+      <ElTable
+        :data="activeMachines"
+        row-key="machine_id"
+        :row-class-name="({ row }: any) => (row.open_orders ? OPEN_ORDERS_ROW_CLASS : '')"
+        style="width: 100%"
+      >
         <ElTableColumn prop="machine_code" :label="$t('vnetPages.dashboard.machine')" min-width="160" />
-        <ElTableColumn :label="$t('vnetPages.common.status')" min-width="120">
+        <ElTableColumn :label="$t('vnetPages.common.status')" min-width="170">
           <template #default="{ row }">
-            <ElTag :type="row.status === 'in_use' ? 'warning' : 'success'" size="small">
-              {{
-                row.status === 'in_use'
-                  ? $t('vnetPages.machines.statusLabels.inUse')
-                  : $t('vnetPages.machines.statusLabels.available')
-              }}
-            </ElTag>
+            <div class="machine-status">
+              <ElTag :type="statusTags[row.status]?.type ?? 'info'" size="small">
+                {{ statusTags[row.status] ? $t(statusTags[row.status].label) : row.status }}
+              </ElTag>
+              <MachineOpenOrdersTag :orders="row.open_orders" />
+            </div>
           </template>
         </ElTableColumn>
         <ElTableColumn prop="member_name" :label="$t('vnetPages.dashboard.member')" min-width="180" />
@@ -435,6 +450,18 @@ onBeforeUnmount(() => {
 /* Điện thoại xếp 2×2 (:xs="12"): cần khoảng cách giữa hai hàng thẻ. */
 .stat-cards {
   row-gap: 12px;
+}
+
+.machine-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Máy còn đơn khách đang gọi hoặc chưa thanh toán: cả dòng một màu khác — giống
+   trang Máy trạm. !important vì dòng đang rê chuột và cột cố định tự tô nền ô. */
+:deep(.el-table__row.machine-row--open-orders > td.el-table__cell) {
+  background-color: var(--el-color-danger-light-8) !important;
 }
 
 .orders-footer {

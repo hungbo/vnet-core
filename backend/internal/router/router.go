@@ -220,6 +220,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				machines.GET("/by-code/:code", h.Machine.GetByCode)
 
 				machines.GET("", middleware.StaffOnly(), middleware.PermissionRequired("machines.view"), h.Machine.List)
+				machines.GET("/open-orders", middleware.StaffOnly(), middleware.PermissionRequired("machines.view"), h.Machine.OpenOrders)
 				machines.GET("/:id", middleware.StaffOnly(), middleware.PermissionRequired("machines.view"), h.Machine.GetByID)
 				machines.POST("", middleware.StaffOnly(), middleware.PermissionRequired("machines.create"), h.Machine.Create)
 				machines.POST("/batch", middleware.StaffOnly(), middleware.PermissionRequired("machines.create"), h.Machine.BatchCreate)

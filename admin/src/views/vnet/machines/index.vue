@@ -15,6 +15,8 @@ import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 import MachineRemoteActions from './modules/machine-remote-actions.vue';
 import MachineNoteCell from './modules/machine-note-cell.vue';
+import MachineOpenOrdersTag from './modules/machine-open-orders-tag.vue';
+import { OPEN_ORDERS_ROW_CLASS, fetchOpenOrders } from './modules/machine-open-orders';
 
 const { t: $t } = useI18n();
 const { hasAuth } = useAuth();
@@ -149,9 +151,9 @@ async function fetchGroups() {
 const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
   // Danh sách máy không kèm phiên, nên lấy song song các phiên đang chạy rồi
   // ghép theo machine_id: máy đang dùng thì nhân viên thấy ngay ai ngồi, đã
-  // chơi bao lâu và còn bao lâu.
+  // chơi bao lâu và còn bao lâu. Đơn chưa thu tiền cũng ghép như vậy.
   api: async ({ page, pageSize }) => {
-    const [res, active]: any[] = await Promise.all([
+    const [res, active, donMo]: any[] = await Promise.all([
       client.get('/machines', {
         params: {
           page,
@@ -160,10 +162,14 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
           warning: onlyWarnings.value ? 1 : undefined
         }
       }),
-      client.get('/sessions/active').catch(() => [])
+      client.get('/sessions/active').catch(() => []),
+      fetchOpenOrders()
     ]);
     const phien = new Map((Array.isArray(active) ? active : []).map((p: any) => [p.machine_id, p]));
-    for (const m of res?.items || []) m.session = phien.get(m.id);
+    for (const m of res?.items || []) {
+      m.session = phien.get(m.id);
+      m.open_orders = donMo.get(m.id);
+    }
     return res;
   },
   transform: vnetTransform,
@@ -198,13 +204,17 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     {
       prop: 'status',
       label: $t('vnetPages.common.status'),
-      width: 110,
+      width: 170,
       // Máy tạm ngừng vẫn nằm trong danh sách (List không lọc is_active) nên
-      // phải nhìn ra được, nếu không nhân viên tưởng máy hỏng.
+      // phải nhìn ra được, nếu không nhân viên tưởng máy hỏng. Máy còn đơn chưa
+      // thu tiền có thêm nhãn đỏ ngay dưới, cùng màu nền dòng.
       formatter: (row: any) =>
-        row.is_active === false
-          ? h(ElTag, { type: 'info', size: 'small' }, () => $t('vnetPages.machines.suspended'))
-          : h(ElTag, { type: statusType(row.status), size: 'small' }, () => statusLabel(row.status))
+        h('div', { class: 'machine-status' }, [
+          row.is_active === false
+            ? h(ElTag, { type: 'info', size: 'small' }, () => $t('vnetPages.machines.suspended'))
+            : h(ElTag, { type: statusType(row.status), size: 'small' }, () => statusLabel(row.status)),
+          h(MachineOpenOrdersTag, { orders: row.open_orders })
+        ])
     },
     {
       prop: 'note',
@@ -440,8 +450,9 @@ async function handleDelete(row: any) {
 // nhịp tim đổi trạng thái hay cảnh báo ("machines", machine:status), và mở/trả
 // máy, trừ tiền mỗi phút làm đổi cột Phiên ("sessions"). Thiếu phiên thì tắt
 // máy từ xa xong bảng vẫn hiện "Đang sử dụng" và nhân viên tưởng lệnh hỏng.
-// Hội viên đổi tên thì cột Phiên đổi theo ("members").
-const { schedule: reloadSoon } = useRealtimeRefresh(['machines', 'sessions', 'members'], getData, {
+// Hội viên đổi tên thì cột Phiên đổi theo ("members"). Khách gọi món, quầy
+// duyệt hay thu tiền thì màu máy đổi theo ("orders").
+const { schedule: reloadSoon } = useRealtimeRefresh(['machines', 'sessions', 'members', 'orders'], getData, {
   events: ['machine:status', 'session:started', 'session:ended']
 });
 // Cột Nhóm tra tên trong danh sách nhóm đã nạp, ô chọn nhóm cũng vậy.
@@ -512,7 +523,15 @@ onBeforeUnmount(() => {
 
       <!-- row-key: bảng tự tải lại theo thời gian thực; khoá theo vị trí thì hộp thoại
            điều khiển từ xa đang mở của một dòng nhảy sang máy khác khi thứ tự đổi. -->
-      <ElTable v-loading="loading" :data="data" row-key="id" border stripe style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        row-key="id"
+        :row-class-name="({ row }: any) => (row.open_orders ? OPEN_ORDERS_ROW_CLASS : '')"
+        border
+        stripe
+        style="width: 100%"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <!--
           Một cột thao tác: Khác (phần cứng + điều khiển máy), Sửa, Xoá. Nút nào
@@ -707,6 +726,18 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.machine-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Máy còn đơn khách đang gọi hoặc chưa thanh toán: cả dòng một màu khác. !important
+   vì dòng sọc, dòng đang rê chuột và cột thao tác cố định đều tự tô nền cho ô. */
+:deep(.el-table__row.machine-row--open-orders > td.el-table__cell) {
+  background-color: var(--el-color-danger-light-8) !important;
+}
+
 .machine-actions {
   display: flex;
   align-items: center;

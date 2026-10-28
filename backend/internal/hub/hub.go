@@ -62,6 +62,9 @@ type Client struct {
 	closeOnce   sync.Once
 }
 
+// MachineCode là mã máy trạm của kết nối; rỗng với trang quản trị.
+func (c *Client) MachineCode() string { return c.machineCode }
+
 type Hub struct {
 	mu       sync.RWMutex
 	upgrader websocket.Upgrader

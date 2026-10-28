@@ -1015,6 +1015,9 @@ const local: App.I18n.Schema = {
       uptime: 'Uptime',
       recordedAt: 'Recorded at',
       noHardware: 'No readings from this machine yet',
+      openCalling: 'Ordering',
+      openUnpaid: 'Unpaid',
+      openOrdersHint: '{pending} order(s) waiting, {unpaid} unpaid — {amount} in total',
       statusLabels: {
         offline: 'Offline',
         available: 'Available',
@@ -2309,6 +2312,10 @@ const local: App.I18n.Schema = {
       sessionEndedBody: 'Machine {machine} is free again — {reason}',
       curfewTitle: 'Curfew: session stopped',
       curfewBody: 'A minor on machine {machine} was signed off',
+      unpaidLeftTitle: 'Machine {machine}: customer left without paying',
+      unpaidLeftEnded: '{member} just ended the session with {count} unpaid order(s) ({amount}).',
+      unpaidLeftOffline: '{member} just shut down or lost connection with {count} unpaid order(s) ({amount}).',
+      guest: 'Walk-in guest',
       reasons: {
         slot_ended: 'the booked slot is over',
         minutes_exhausted: 'prepaid minutes ran out',

@@ -276,6 +276,23 @@ func (h *MachineHandler) GetHardware(c *gin.Context) {
 	response.Paginated(c, result.Items, result.Total, result.Page, result.PageSize)
 }
 
+// OpenOrders
+// @Summary      Unpaid orders per machine
+// @Description  Product orders still pending or confirmed (not paid), grouped by the machine the customer sits at — or, once they left, the machine they ordered from
+// @Tags         Machines
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.Response{data=[]service.DonMoMay}
+// @Router       /api/machines/open-orders [get]
+func (h *MachineHandler) OpenOrders(c *gin.Context) {
+	rows, err := h.svc.DonMoTheoMay()
+	if err != nil {
+		response.InternalError(c, "Failed to fetch open orders", err)
+		return
+	}
+	response.Success(c, rows)
+}
+
 // HardwareOverview
 // @Summary      Machine boot/security overview
 // @Description  Boot mode, Secure Boot, TPM and other security settings of every machine

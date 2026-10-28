@@ -50,6 +50,7 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 	invSvc := service.NewInventoryService(db, auditSvc).WithHub(wsHub)
 	chatSvc := service.NewChatService(db, wsHub, auditSvc)
 	chatSvc.HubRoomSync()
+	service.TheoDoiMayTatKhiConDon(db, wsHub)
 	curfewSvc := service.NewCurfewService(db, auditSvc)
 	// Session starts are gated by curfew, so both handlers share one instance.
 	sessionSvc := service.NewSessionService(db, wsHub, auditSvc).WithCurfew(curfewSvc).WithMinCharge()

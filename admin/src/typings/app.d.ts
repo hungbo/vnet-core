@@ -779,6 +779,9 @@ declare namespace App {
           code: string;
           group: string;
           sessionCol: string;
+          openCalling: string;
+          openUnpaid: string;
+          openOrdersHint: string;
           played: string;
           left: string;
           cpu: string;
@@ -1418,6 +1421,10 @@ declare namespace App {
           sessionEndedBody: string;
           curfewTitle: string;
           curfewBody: string;
+          unpaidLeftTitle: string;
+          unpaidLeftEnded: string;
+          unpaidLeftOffline: string;
+          guest: string;
           reasons: {
             slot_ended: string;
             minutes_exhausted: string;

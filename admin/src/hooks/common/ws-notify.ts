@@ -75,15 +75,52 @@ export function useWsNotify() {
     });
   }
 
+  // Khách rời máy (trả máy, hết tiền, tắt máy ngang) mà còn đơn chưa thu tiền.
+  // Kêu lặp tới khi nhân viên đóng thông báo, tối đa ba lượt (~15 giây): kêu một
+  // lần dễ lẫn vào tiếng ồn của quán, mà lỡ lúc này là khách ra khỏi cửa.
+  function onUnpaidLeft(data: any) {
+    const audio = new Audio('/audio/alarm.mp3');
+    audio.volume = 0.5;
+    let luot = 1;
+    audio.onended = () => {
+      if (luot >= 3) return;
+      luot += 1;
+      audio.play().catch(() => {});
+    };
+    audio.play().catch(() => {});
+
+    const offline = data?.reason === 'offline';
+    const notification = ElNotification({
+      title: $t('vnetPages.realtime.unpaidLeftTitle', { machine: data?.machine_code ?? '' }),
+      message: $t(offline ? 'vnetPages.realtime.unpaidLeftOffline' : 'vnetPages.realtime.unpaidLeftEnded', {
+        member: data?.member_name || $t('vnetPages.realtime.guest'),
+        count: data?.order_count ?? 0,
+        amount: formatPrice(data?.amount)
+      }),
+      type: 'error',
+      duration: 0,
+      onClose: () => {
+        luot = 3;
+        audio.pause();
+      },
+      onClick: () => {
+        notification.close();
+        routerPushByKey('vnet_orders');
+      }
+    });
+  }
+
   onMounted(() => {
     wsStore.on('order:new', onOrderNew);
     wsStore.on('session:auto-ended', onSessionAutoEnded);
     wsStore.on('curfew:enforced', onCurfewEnforced);
+    wsStore.on('order:unpaid-left', onUnpaidLeft);
   });
 
   onBeforeUnmount(() => {
     wsStore.off('order:new', onOrderNew);
     wsStore.off('session:auto-ended', onSessionAutoEnded);
     wsStore.off('curfew:enforced', onCurfewEnforced);
+    wsStore.off('order:unpaid-left', onUnpaidLeft);
   });
 }

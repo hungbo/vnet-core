@@ -3076,6 +3076,46 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/machines/open-orders": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Product orders still pending or confirmed (not paid), grouped by the machine the customer sits at — or, once they left, the machine they ordered from",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Machines"
+                ],
+                "summary": "Unpaid orders per machine",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/response.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/service.DonMoMay"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
         "/api/machines/{id}": {
             "get": {
                 "security": [
@@ -13440,6 +13480,23 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "total_orders": {
+                    "type": "integer"
+                }
+            }
+        },
+        "service.DonMoMay": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "integer"
+                },
+                "machine_id": {
+                    "type": "string"
+                },
+                "pending_count": {
+                    "type": "integer"
+                },
+                "unpaid_count": {
                     "type": "integer"
                 }
             }

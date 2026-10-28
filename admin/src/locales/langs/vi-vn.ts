@@ -1015,6 +1015,9 @@ const local: App.I18n.Schema = {
       uptime: 'Đã bật',
       recordedAt: 'Thời điểm',
       noHardware: 'Chưa có số đo nào từ máy này',
+      openCalling: 'Đang gọi món',
+      openUnpaid: 'Chưa thanh toán',
+      openOrdersHint: '{pending} đơn đang gọi, {unpaid} đơn chưa thanh toán — tổng {amount}',
       statusLabels: {
         offline: 'Ngoại tuyến',
         available: 'Sẵn sàng',
@@ -2304,6 +2307,10 @@ const local: App.I18n.Schema = {
       sessionEndedBody: 'Máy {machine} đã được giải phóng — {reason}',
       curfewTitle: 'Giới nghiêm: đã buộc trả máy',
       curfewBody: 'Hội viên vị thành niên trên máy {machine} đã bị dừng phiên',
+      unpaidLeftTitle: 'Máy {machine}: khách rời máy chưa trả tiền',
+      unpaidLeftEnded: '{member} vừa trả máy, còn {count} đơn chưa thanh toán ({amount}).',
+      unpaidLeftOffline: '{member} vừa tắt máy hoặc mất kết nối, còn {count} đơn chưa thanh toán ({amount}).',
+      guest: 'Khách vãng lai',
       reasons: {
         slot_ended: 'hết khung giờ đã đặt',
         minutes_exhausted: 'hết số phút trả trước',
