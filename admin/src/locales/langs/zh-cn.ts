@@ -2178,6 +2178,13 @@ const local: App.I18n.Schema = {
       password: '密码',
       slot: '时段',
       printReceipt: '打印小票',
+      giftProduct: '赠品',
+      giftQuantity: '数量',
+      noGift: '不赠送',
+      giftHint: '售出套餐时默认赠送的商品，售出时员工可更换或取消。',
+      giftSaleHint: '将生成一张 0₫ 订单并扣减该商品库存。',
+      giftOrder: '赠品订单',
+      stockLeft: '剩 {n}',
       form: {
         name: '套餐名称',
         type: '套餐类型',

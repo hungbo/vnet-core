@@ -2205,6 +2205,13 @@ const local: App.I18n.Schema = {
       password: 'Mật khẩu',
       slot: 'Khung giờ',
       printReceipt: 'In hoá đơn',
+      giftProduct: 'Món tặng kèm',
+      giftQuantity: 'Số lượng',
+      noGift: 'Không tặng',
+      giftHint: 'Món mặc định khi bán gói. Lúc bán nhân viên đổi được sang món khác hoặc bỏ.',
+      giftSaleHint: 'Tạo một đơn 0đ và trừ kho món này.',
+      giftOrder: 'Đơn tặng',
+      stockLeft: 'còn {n}',
       form: {
         name: 'Tên combo',
         type: 'Loại combo',

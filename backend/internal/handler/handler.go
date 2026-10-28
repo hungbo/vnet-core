@@ -60,6 +60,8 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 	// khoá máy trạm, dựng hai bản là hai nguồn sự thật cho cùng một thứ.
 	// Dựng SAU sessionSvc vì tắt máy / khởi động lại từ xa phải chốt được phiên.
 	machineSvc := service.NewMachineService(db, wsHub, auditSvc).WithSessions(sessionSvc).WithRiotSource(gameSvc.RiotMetadataSource)
+	// Bán combo có món tặng kèm ghi một đơn 0đ và trừ kho qua chính bản này.
+	orderSvc := service.NewOrderService(db, wsHub, auditSvc, invSvc)
 	return &Handlers{Upload: NewUploadHandler(cfg.Server.UploadDir, cfg.Server.MaxFileSize),
 		Auth:              NewAuthHandler(service.NewAuthService(db, jwtManager, auditSvc).WithCurfew(curfewSvc).WithSessions(sessionSvc).WithHub(wsHub)),
 		Route:             NewRouteHandler(service.NewRouteService()),
@@ -67,13 +69,13 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 		Machine:           NewMachineHandler(machineSvc).WithHub(wsHub),
 		WindowsKey:        NewWindowsKeyHandler(service.NewWindowsKeyService(db, auditSvc).WithHub(wsHub)),
 		Session:           NewSessionHandler(sessionSvc),
-		Combo:             NewComboHandler(service.NewComboService(db, auditSvc).WithHub(wsHub)),
+		Combo:             NewComboHandler(service.NewComboService(db, auditSvc).WithHub(wsHub).WithOrders(orderSvc)),
 		Booking:           NewBookingHandler(service.NewBookingService(db, auditSvc).WithHub(wsHub)),
 		Promotion:         NewPromotionHandler(service.NewPromotionService(db, auditSvc).WithHub(wsHub)),
 		Curfew:            NewCurfewHandler(curfewSvc),
 		Category:          NewCategoryHandler(service.NewCategoryService(db, auditSvc)),
 		Product:           NewProductHandler(service.NewProductService(db, auditSvc).WithHub(wsHub)),
-		Order:             NewOrderHandler(service.NewOrderService(db, wsHub, auditSvc, invSvc)),
+		Order:             NewOrderHandler(orderSvc),
 		Printer:           NewPrinterHandler(service.NewPrinterService(db, auditSvc)),
 		Receipt:           NewReceiptHandler(service.NewReceiptService(db, auditSvc)),
 		InventoryCount:    NewInventoryCountHandler(service.NewInventoryCountService(db, auditSvc).WithHub(wsHub)),

@@ -297,6 +297,9 @@ func TestProductService_Delete_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "product_ingredients"`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "combos" WHERE gift_product_id = \$1 AND "combos"\."deleted_at" IS NULL`).
+		WithArgs("p1").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectBegin()
 	// Công thức, tuỳ chọn và ánh xạ máy in của CHÍNH sản phẩm này là con sở hữu.
 	mock.ExpectExec(`DELETE FROM "product_ingredients"`).

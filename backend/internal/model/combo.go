@@ -22,6 +22,10 @@ type Combo struct {
 	IsActive     bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt    time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	// Món tặng kèm khi bán gói: món mặc định và số lượng. Lúc bán nhân viên đổi
+	// được sang món khác hoặc bỏ. NULL = gói không tặng gì.
+	GiftProductID *string `gorm:"type:uuid" json:"gift_product_id"`
+	GiftQuantity  int     `gorm:"default:0" json:"gift_quantity"`
 }
 
 type ComboPurchase struct {

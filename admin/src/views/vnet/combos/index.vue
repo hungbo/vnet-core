@@ -33,7 +33,9 @@ const form = ref({
   apply_days: [] as number[],
   minutes: 60,
   slots: [{ start: null, end: null }] as { start: Date | null; end: Date | null }[],
-  is_active: true
+  is_active: true,
+  gift_product_id: '',
+  gift_quantity: 1
 });
 
 const purchaseDialogVisible = ref(false);
@@ -41,8 +43,19 @@ const purchaseSubmitting = ref(false);
 const purchaseFormRef = ref<FormInstance>();
 const purchaseForm = ref({
   payment_method: 'cash',
-  idempotency_key: newIdempotencyKey()
+  idempotency_key: newIdempotencyKey(),
+  gift_product_id: ''
 });
+
+// Món tặng kèm: chỉ hàng bán lẻ, cùng điều kiện máy chủ đặt cho món trong đơn.
+// Món ngưng bán vẫn liệt kê (bị khoá) để gói đang trỏ tới nó hiện được tên thay
+// vì mã UUID trần. Tải lại mỗi lần mở hộp thoại để thấy tồn kho mới.
+const giftProducts = ref<any[]>([]);
+
+async function loadGiftProducts() {
+  const res: any = await client.get('/products', { params: { page_size: 1000, is_retail: true } }).catch(() => null);
+  giftProducts.value = Array.isArray(res) ? res : res?.items || [];
+}
 const members = ref<any[]>([]);
 const memberSearchLoading = ref(false);
 const purchaseComboId = ref('');
@@ -137,6 +150,12 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       formatter: (row: any) => formatAmount(row.price)
     },
     {
+      prop: 'gift_product_name',
+      label: $t('vnetPages.combos.giftProduct'),
+      minWidth: 140,
+      formatter: (row: any) => (row.gift_product_id ? `${row.gift_product_name} × ${row.gift_quantity}` : '-')
+    },
+    {
       prop: 'is_active',
       label: $t('vnetPages.combos.isActive'),
       width: 90,
@@ -164,8 +183,11 @@ function openCreate() {
     apply_days: [],
     minutes: 60,
     slots: [{ start: null, end: null }],
-    is_active: true
+    is_active: true,
+    gift_product_id: '',
+    gift_quantity: 1
   };
+  loadGiftProducts();
   dialogVisible.value = true;
 }
 
@@ -189,8 +211,11 @@ function openEdit(row: any) {
     // ghi đè số phút thật của combo thành 60.
     minutes: row.total_minutes || 60,
     slots: [{ start: gioThanhNgay(row.slot_start), end: gioThanhNgay(row.slot_end) }],
-    is_active: row.is_active ?? true
+    is_active: row.is_active ?? true,
+    gift_product_id: row.gift_product_id || '',
+    gift_quantity: row.gift_quantity || 1
   };
+  loadGiftProducts();
   dialogVisible.value = true;
 }
 
@@ -201,8 +226,10 @@ function openPurchase(row: any) {
     payment_method: 'cash',
     // Khoá mới cho mỗi lần mở hộp thoại; mọi lần bấm Xác nhận của lần mở này
     // mang cùng khoá nên máy chủ chỉ bán một gói.
-    idempotency_key: newIdempotencyKey()
+    idempotency_key: newIdempotencyKey(),
+    gift_product_id: row.gift_product_id || ''
   };
+  if (row.gift_product_id) loadGiftProducts();
   purchaseDialogVisible.value = true;
 }
 
@@ -210,10 +237,13 @@ async function handlePurchase() {
   purchaseSubmitting.value = true;
   try {
     // Không gắn hội viên: máy chủ tự tạo tài khoản khách theo tiền tố của gói.
-    const res: any = await client.post(`/combos/${purchaseComboId.value}/purchase`, {
+    const body: any = {
       payment_method: purchaseForm.value.payment_method,
       idempotency_key: purchaseForm.value.idempotency_key
-    });
+    };
+    // Gói có món tặng thì luôn gửi lựa chọn của quầy: "" nghĩa là khách không lấy.
+    if (purchaseCombo.value?.gift_product_id) body.gift_product_id = purchaseForm.value.gift_product_id || '';
+    const res: any = await client.post(`/combos/${purchaseComboId.value}/purchase`, body);
     purchaseDialogVisible.value = false;
     // Mã tài khoản là cách duy nhất để tìm lại gói trong "Combo đã mua" khi kích
     // hoạt, nên hiện hộp thoại phải bấm đóng chứ không để thông báo tự tắt.
@@ -325,6 +355,12 @@ async function handleActivate(row: any) {
   }
 }
 
+// "" là bỏ tặng; luôn gửi để sửa gói xoá được món tặng (ô chọn bị xoá trả
+// undefined, mà undefined thì không có trong JSON — máy chủ hiểu là giữ nguyên).
+function giftPayload() {
+  return { gift_product_id: form.value.gift_product_id || '', gift_quantity: form.value.gift_quantity };
+}
+
 async function handleSubmit() {
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) return;
@@ -342,7 +378,8 @@ async function handleSubmit() {
       description: form.value.description || '',
       validity_days: form.value.validity_days,
       apply_days: form.value.apply_days,
-      is_active: form.value.is_active
+      is_active: form.value.is_active,
+      ...giftPayload()
     };
     if (form.value.type === 'fixed_slot') {
       payload.slot_start = form.value.slots?.[0]?.start ? dayjs(form.value.slots[0].start).format('HH:mm') : '';
@@ -557,6 +594,28 @@ useRealtimeRefresh(
         <ElFormItem :label="$t('vnetPages.combos.price')" prop="price">
           <ElInputNumber v-bind="moneyInput" v-model="form.price" :min="0" :step="10000" style="width: 100%" />
         </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.combos.giftProduct')">
+          <div class="flex flex-wrap gap-8px" style="width: 100%">
+            <ElSelect
+              v-model="form.gift_product_id"
+              filterable
+              clearable
+              :placeholder="$t('vnetPages.combos.noGift')"
+              style="flex: 1; min-width: 180px"
+            >
+              <ElOption v-for="p in giftProducts" :key="p.id" :label="p.name" :value="p.id" :disabled="!p.is_active" />
+            </ElSelect>
+            <ElInputNumber
+              v-if="form.gift_product_id"
+              v-model="form.gift_quantity"
+              :min="1"
+              :step="1"
+              :aria-label="$t('vnetPages.combos.giftQuantity')"
+              style="width: 120px"
+            />
+          </div>
+          <div style="color: #909399; font-size: 12px; line-height: 1.5">{{ $t('vnetPages.combos.giftHint') }}</div>
+        </ElFormItem>
         <ElFormItem :label="$t('vnetPages.combos.description')" prop="description">
           <ElInput v-model="form.description" type="textarea" :rows="2" />
         </ElFormItem>
@@ -633,6 +692,12 @@ useRealtimeRefresh(
         <ElDescriptionsItem :label="$t('vnetPages.combos.price')">
           {{ formatAmount(purchaseResult.price) }}
         </ElDescriptionsItem>
+        <ElDescriptionsItem v-if="purchaseResult.gift_product_name" :label="$t('vnetPages.combos.giftProduct')">
+          {{ purchaseResult.gift_product_name }} × {{ purchaseResult.gift_quantity }}
+          <span style="color: #909399">
+            ({{ $t('vnetPages.combos.giftOrder') }} {{ purchaseResult.gift_order_code }})
+          </span>
+        </ElDescriptionsItem>
       </ElDescriptions>
       <p style="margin-top: 12px; color: #909399">{{ $t('vnetPages.combos.messages.purchaseHint') }}</p>
       <template #footer>
@@ -649,6 +714,26 @@ useRealtimeRefresh(
           <ElSelect v-model="purchaseForm.payment_method" style="width: 100%">
             <ElOption v-for="m in enabledMethods" :key="m.code" :label="m.name" :value="m.code" />
           </ElSelect>
+        </ElFormItem>
+        <ElFormItem v-if="purchaseCombo?.gift_product_id" :label="$t('vnetPages.combos.giftProduct')">
+          <div class="flex items-center gap-8px" style="width: 100%">
+            <ElSelect
+              v-model="purchaseForm.gift_product_id"
+              filterable
+              clearable
+              :placeholder="$t('vnetPages.combos.noGift')"
+              style="flex: 1"
+            >
+              <ElOption v-for="p in giftProducts" :key="p.id" :label="p.name" :value="p.id" :disabled="!p.is_active">
+                <span>{{ p.name }}</span>
+                <span v-if="p.has_stock" style="float: right; margin-left: 16px; color: #909399; font-size: 12px">
+                  {{ $t('vnetPages.combos.stockLeft', { n: p.current_stock }) }}
+                </span>
+              </ElOption>
+            </ElSelect>
+            <span>× {{ purchaseCombo.gift_quantity }}</span>
+          </div>
+          <div style="color: #909399; font-size: 12px; line-height: 1.5">{{ $t('vnetPages.combos.giftSaleHint') }}</div>
         </ElFormItem>
       </ElForm>
       <template #footer>

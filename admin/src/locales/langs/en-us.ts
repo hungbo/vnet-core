@@ -2210,6 +2210,13 @@ const local: App.I18n.Schema = {
       password: 'Password',
       slot: 'Time slot',
       printReceipt: 'Print receipt',
+      giftProduct: 'Free item',
+      giftQuantity: 'Quantity',
+      noGift: 'No free item',
+      giftHint: 'Default item given with this combo. Staff can swap or drop it at sale time.',
+      giftSaleHint: 'Creates a 0₫ order and deducts this item from stock.',
+      giftOrder: 'Gift order',
+      stockLeft: '{n} left',
       form: {
         name: 'Combo Name',
         type: 'Combo Type',

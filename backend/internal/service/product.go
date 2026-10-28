@@ -427,6 +427,7 @@ func (s *ProductService) Delete(id string) error {
 		{Bang: &model.StockTransaction{}, Cot: "product_id", Nhan: "phiếu kho"},
 		{Bang: &model.InventoryCount{}, Cot: "product_id", Nhan: "dòng kiểm kê"},
 		{Bang: &model.ProductIngredient{}, Cot: "ingredient_id", Nhan: "công thức của sản phẩm khác đang dùng món này làm nguyên liệu"},
+		{Bang: &model.Combo{}, Cot: "gift_product_id", Nhan: "combo đang tặng kèm món này", GoiY: "hãy đổi món tặng của combo trước"},
 	}, "hãy tắt bán (bỏ đang bán) thay vì xoá"); err != nil {
 		return err
 	}

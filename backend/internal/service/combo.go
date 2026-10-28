@@ -17,9 +17,10 @@ import (
 )
 
 type ComboService struct {
-	db    *gorm.DB
-	audit *AuditService
-	hub   *hub.Hub
+	db     *gorm.DB
+	audit  *AuditService
+	hub    *hub.Hub
+	orders *OrderService
 }
 
 func NewComboService(db *gorm.DB, audit *AuditService) *ComboService {
@@ -34,6 +35,13 @@ func NewComboService(db *gorm.DB, audit *AuditService) *ComboService {
 // dựng service không phải sửa, và hub vẫn nil được trong test.
 func (s *ComboService) WithHub(h *hub.Hub) *ComboService {
 	s.hub = h
+	return s
+}
+
+// WithOrders nối dịch vụ đơn hàng để món tặng kèm của gói ghi thành đơn 0đ và
+// trừ kho bằng đúng đường của đơn bán. Bán gói có món tặng mà chưa nối thì hỏng.
+func (s *ComboService) WithOrders(o *OrderService) *ComboService {
+	s.orders = o
 	return s
 }
 
@@ -60,6 +68,10 @@ type ComboResponse struct {
 	MemberCount  int    `json:"member_count"`
 	IsActive     bool   `json:"is_active"`
 	CreatedAt    string `json:"created_at"`
+	// Tên đọc cả sản phẩm đã xoá mềm, để gói vẫn hiện món nó đang trỏ tới.
+	GiftProductID   string `json:"gift_product_id"`
+	GiftProductName string `json:"gift_product_name"`
+	GiftQuantity    int    `json:"gift_quantity"`
 }
 
 type CreateComboRequest struct {
@@ -75,6 +87,9 @@ type CreateComboRequest struct {
 	Price int64 `json:"price" binding:"min=0"`
 	// Con trỏ: không gửi = bật như trước nay; gửi false = tạo ở trạng thái tắt.
 	IsActive *bool `json:"is_active"`
+	// Món tặng kèm mặc định; bỏ trống = không tặng. Số lượng dưới 1 tính là 1.
+	GiftProductID string `json:"gift_product_id"`
+	GiftQuantity  int    `json:"gift_quantity"`
 }
 
 // Description/ValidityDays/Price là con trỏ: với kiểu thường, "" và 0 trùng với
@@ -91,6 +106,10 @@ type UpdateComboRequest struct {
 	ValidityDays *int    `json:"validity_days" binding:"omitempty,min=0"`
 	Price        *int64  `json:"price" binding:"omitempty,min=0"`
 	IsActive     *bool   `json:"is_active"`
+	// Không gửi = giữ món tặng; "" = bỏ tặng. GiftQuantity chỉ đọc khi có
+	// GiftProductID, không gửi thì giữ số lượng cũ.
+	GiftProductID *string `json:"gift_product_id"`
+	GiftQuantity  *int    `json:"gift_quantity"`
 }
 
 type PurchaseComboRequest struct {
@@ -101,6 +120,9 @@ type PurchaseComboRequest struct {
 	// IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
 	// MỘT ý định, không phải hai lần thao tác. Bỏ trống là không tham gia.
 	IdempotencyKey string `json:"idempotency_key"`
+	// Món tặng nhân viên chọn lúc bán. Không gửi = món mặc định của gói; "" =
+	// khách không lấy. Số lượng luôn theo gói.
+	GiftProductID *string `json:"gift_product_id"`
 }
 
 type ActivateComboRequest struct {
@@ -164,6 +186,7 @@ func (s *ComboService) List(req *ComboListRequest) (*pagination.Result, error) {
 	for i, c := range combos {
 		items[i] = comboToResponse(c)
 	}
+	ganTenMonTang(s.db, items)
 
 	return pagination.NewResult(items, total, p), nil
 }
@@ -173,8 +196,50 @@ func (s *ComboService) GetByID(id string) (*ComboResponse, error) {
 	if err := s.db.Where("id = ?", id).First(&combo).Error; err != nil {
 		return nil, err
 	}
-	result := comboToResponse(combo)
-	return &result, nil
+	return s.comboResponse(combo), nil
+}
+
+// comboResponse dựng phản hồi cho MỘT gói, kèm tên món tặng.
+func (s *ComboService) comboResponse(c model.Combo) *ComboResponse {
+	items := []ComboResponse{comboToResponse(c)}
+	ganTenMonTang(s.db, items)
+	return &items[0]
+}
+
+// ganTenMonTang điền tên món tặng cho cả trang bằng một câu truy vấn. Unscoped:
+// món đã xoá mềm vẫn hiện tên, giống mọi chỗ trang trí bản ghi cũ.
+func ganTenMonTang(db *gorm.DB, items []ComboResponse) {
+	var ids []string
+	for _, it := range items {
+		if it.GiftProductID != "" {
+			ids = append(ids, it.GiftProductID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	var products []model.Product
+	db.Unscoped().Select("id", "name").Where("id IN ?", ids).Find(&products)
+	ten := make(map[string]string, len(products))
+	for _, p := range products {
+		ten[p.ID] = p.Name
+	}
+	for i := range items {
+		items[i].GiftProductName = ten[items[i].GiftProductID]
+	}
+}
+
+// timMonTang đọc một món dùng làm quà tặng kèm. Chỉ hàng bán lẻ đang bán: cùng
+// điều kiện với món trong đơn bán, vì món tặng cũng thành một dòng đơn.
+func timMonTang(db *gorm.DB, id string) (*model.Product, error) {
+	var p model.Product
+	if err := db.Where("id = ?", id).First(&p).Error; err != nil {
+		return nil, errors.New("không tìm thấy món tặng kèm")
+	}
+	if !p.IsRetail || !p.IsActive {
+		return nil, fmt.Errorf("món %s đang ngưng bán, hãy chọn món tặng khác", p.Name)
+	}
+	return &p, nil
 }
 
 func (s *ComboService) Create(req *CreateComboRequest) (*ComboResponse, error) {
@@ -200,6 +265,14 @@ func (s *ComboService) Create(req *CreateComboRequest) (*ComboResponse, error) {
 		MemberPrefix: prefix,
 		MemberCount:  0,
 		IsActive:     true,
+	}
+	if req.GiftProductID != "" {
+		mon, err := timMonTang(s.db, req.GiftProductID)
+		if err != nil {
+			return nil, err
+		}
+		combo.GiftProductID = &mon.ID
+		combo.GiftQuantity = max(req.GiftQuantity, 1)
 	}
 
 	// is_active có `default:true`, GORM thay false bằng default khi INSERT —
@@ -231,8 +304,7 @@ func (s *ComboService) Create(req *CreateComboRequest) (*ComboResponse, error) {
 		},
 	})
 
-	result := comboToResponse(combo)
-	return &result, nil
+	return s.comboResponse(combo), nil
 }
 
 func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboResponse, error) {
@@ -280,6 +352,23 @@ func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboRespons
 	if req.IsActive != nil {
 		updates["is_active"] = *req.IsActive
 	}
+	if req.GiftProductID != nil {
+		if *req.GiftProductID == "" {
+			updates["gift_product_id"] = nil
+			updates["gift_quantity"] = 0
+		} else {
+			mon, err := timMonTang(s.db, *req.GiftProductID)
+			if err != nil {
+				return nil, err
+			}
+			soLuong := combo.GiftQuantity
+			if req.GiftQuantity != nil {
+				soLuong = *req.GiftQuantity
+			}
+			updates["gift_product_id"] = mon.ID
+			updates["gift_quantity"] = max(soLuong, 1)
+		}
+	}
 
 	if err := s.db.Model(&combo).Updates(updates).Error; err != nil {
 		return nil, err
@@ -294,8 +383,7 @@ func (s *ComboService) Update(id string, req *UpdateComboRequest) (*ComboRespons
 		Metadata:   updates,
 	})
 
-	result := comboToResponse(combo)
-	return &result, nil
+	return s.comboResponse(combo), nil
 }
 
 // Delete xoá một gói combo.
@@ -341,6 +429,38 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 	if req.PaymentMethod != PaymentMethodBalance {
 		if err := kiemTraPhuongThucThanhToan(s.db, req.PaymentMethod); err != nil {
 			return nil, err
+		}
+	}
+
+	// Món tặng: món nhân viên chọn lúc bán, không chọn thì món mặc định của gói.
+	var monTang *model.OrderItem
+	if combo.GiftQuantity > 0 {
+		monID := ""
+		if combo.GiftProductID != nil {
+			monID = *combo.GiftProductID
+		}
+		if req.GiftProductID != nil {
+			monID = *req.GiftProductID
+		}
+		if monID != "" {
+			mon, err := timMonTang(s.db, monID)
+			if err != nil {
+				return nil, err
+			}
+			monTang = &model.OrderItem{
+				ProductID:   mon.ID,
+				ProductName: mon.Name,
+				Quantity:    combo.GiftQuantity,
+				Options:     "null",
+				// Món đưa tận tay ở quầy lúc bán gói, không qua bếp.
+				Status: "served",
+			}
+			// Kiểm tồn kho TRƯỚC khi tạo tài khoản khách: hết hàng thì dừng ở
+			// đây, không để lại một tài khoản trống không có gói. Phép kiểm thật
+			// vẫn chạy lại dưới khoá trong giao dịch bán.
+			if _, _, err := s.orders.computeDeductions(nil, []model.OrderItem{*monTang}, stockOpDeduct); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -497,6 +617,20 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 		return nil, err
 	}
 
+	// Món tặng ghi trong cùng giao dịch: thiếu hàng thì không bán gói, không
+	// có chuyện thu tiền gói rồi mới phát hiện không có nước để tặng.
+	var donTang *model.Order
+	var khoDaDoi []string
+	if monTang != nil {
+		var err error
+		donTang, khoDaDoi, err = s.orders.taoDonTangKem(payTx, memberID, *monTang, req.PaymentMethod,
+			"Tặng kèm combo "+combo.Name, userID)
+		if err != nil {
+			payTx.Rollback()
+			return nil, err
+		}
+	}
+
 	if err := payTx.Commit().Error; err != nil {
 		return nil, err
 	}
@@ -504,6 +638,12 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 	// Chỉ khi trả bằng số dư mới có gì để báo; trả tiền mặt thì số dư đứng yên.
 	if req.PaymentMethod == PaymentMethodBalance {
 		phatSoDuMoi(s.hub, memberID, balanceAfter, member.BonusBalance)
+	}
+	if donTang != nil {
+		phatTonKhoDoi(s.hub, khoDaDoi...)
+		// Đơn sinh từ route /combos nên middleware chỉ báo "combos"; trang Đơn
+		// hàng phải được báo riêng.
+		s.hub.Changed("orders", nil)
 	}
 
 	auditMetadata := map[string]interface{}{
@@ -514,6 +654,11 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 	}
 	if req.MemberID == "" {
 		auditMetadata["new_member"] = true
+	}
+	if donTang != nil {
+		auditMetadata["gift_product"] = monTang.ProductName
+		auditMetadata["gift_quantity"] = monTang.Quantity
+		auditMetadata["gift_order_code"] = donTang.OrderCode
 	}
 	var uid *string
 	if userID != "" {
@@ -529,6 +674,11 @@ func (s *ComboService) Purchase(comboID string, req *PurchaseComboRequest, userI
 
 	result := purchaseToResponseWithPassword(purchase, combo.Name, generatedPassword)
 	result.MemberUsername = member.Username
+	if donTang != nil {
+		result.GiftProductName = monTang.ProductName
+		result.GiftQuantity = monTang.Quantity
+		result.GiftOrderCode = donTang.OrderCode
+	}
 	return &result, nil
 }
 
@@ -672,7 +822,7 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 }
 
 func comboToResponse(c model.Combo) ComboResponse {
-	return ComboResponse{
+	r := ComboResponse{
 		ID:           c.ID,
 		Name:         c.Name,
 		Description:  c.Description,
@@ -687,7 +837,12 @@ func comboToResponse(c model.Combo) ComboResponse {
 		MemberCount:  c.MemberCount,
 		IsActive:     c.IsActive,
 		CreatedAt:    c.CreatedAt.Format(time.RFC3339),
+		GiftQuantity: c.GiftQuantity,
 	}
+	if c.GiftProductID != nil {
+		r.GiftProductID = *c.GiftProductID
+	}
+	return r
 }
 
 type ComboPurchaseResponse struct {
@@ -707,6 +862,10 @@ type ComboPurchaseResponse struct {
 	// MemberUsername chỉ có khi vừa mua: mã tài khoản khách để quầy tra lại gói
 	// trong "Combo đã mua" lúc kích hoạt.
 	MemberUsername string `json:"member_username,omitempty"`
+	// Món tặng kèm của lượt bán và mã đơn 0đ ghi nó; chỉ có khi vừa mua.
+	GiftProductName string `json:"gift_product_name,omitempty"`
+	GiftQuantity    int    `json:"gift_quantity,omitempty"`
+	GiftOrderCode   string `json:"gift_order_code,omitempty"`
 }
 
 func purchaseToResponse(p model.ComboPurchase, comboName string) ComboPurchaseResponse {

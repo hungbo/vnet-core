@@ -1317,7 +1317,13 @@ func ghiSoKhoHangBanThang(tx *gorm.DB, u itemStockUpdate, loai, orderID, orderCo
 }
 
 func (s *OrderService) deductStockForOrder(tx *gorm.DB, orderID, orderCode, actorID string) ([]string, error) {
-	items := s.loadOrderItems(orderID)
+	return s.truKhoTheoMon(tx, s.loadOrderItems(orderID), orderID, orderCode, actorID)
+}
+
+// truKhoTheoMon là phần trừ kho của deductStockForOrder, nhận sẵn các dòng đơn
+// cho bên gọi vừa ghi chúng trong tx — loadOrderItems đọc bằng kết nối ngoài
+// giao dịch nên không thấy chúng.
+func (s *OrderService) truKhoTheoMon(tx *gorm.DB, items []model.OrderItem, orderID, orderCode, actorID string) ([]string, error) {
 	deductions, stockUpdates, err := s.computeDeductions(tx, items, stockOpDeduct)
 	if err != nil {
 		return nil, err
@@ -1344,6 +1350,52 @@ func (s *OrderService) deductStockForOrder(tx *gorm.DB, orderID, orderCode, acto
 	}
 
 	return daDoi, nil
+}
+
+// taoDonTangKem ghi một món tặng kèm (nước tặng khi mua combo…) thành đơn 0đ đã
+// hoàn tất, trong tx của bên gọi, và trừ kho ngay.
+//
+// Thành đơn thật chứ không chỉ là một dòng ghi chú ở lượt mua: báo cáo bán hàng,
+// sổ kho và kỳ kiểm kê đều đọc từ order_items, món tặng nằm ngoài đó thì kho
+// lệch mà không truy được vì sao. Hoàn tất luôn vì món được đưa tận tay ở quầy.
+// Trừ kho đi đúng đường của đơn bán: thiếu hàng thì lỗi và bên gọi huỷ cả lượt.
+// Trả về id các sản phẩm có tồn kho vừa đổi để phát stock:changed sau commit.
+func (s *OrderService) taoDonTangKem(tx *gorm.DB, memberID string, item model.OrderItem, method, note, actorID string) (*model.Order, []string, error) {
+	now := time.Now()
+	order := model.Order{
+		OrderCode:     s.GenerateOrderCode(tx),
+		Status:        "completed",
+		OrderType:     model.OrderTypeProduct,
+		MemberID:      &memberID,
+		PaymentMethod: method,
+		Note:          note,
+		CreatedBy:     uuidRongThanhNil(&actorID),
+		UpdatedBy:     uuidRongThanhNil(&actorID),
+		CompletedAt:   &now,
+	}
+	if err := tx.Create(&order).Error; err != nil {
+		return nil, nil, err
+	}
+	item.OrderID = order.ID
+	if err := tx.Create(&item).Error; err != nil {
+		return nil, nil, err
+	}
+	khoDaDoi, err := s.truKhoTheoMon(tx, []model.OrderItem{item}, order.ID, order.OrderCode, actorID)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Đơn hoàn tất nào cũng có dòng thanh toán (settleOrder); ở đây là 0đ.
+	payment := model.Payment{
+		OrderID:       order.ID,
+		PaymentMethod: method,
+		Amount:        0,
+		Status:        "completed",
+		PaidAt:        &now,
+	}
+	if err := tx.Create(&payment).Error; err != nil {
+		return nil, nil, err
+	}
+	return &order, khoDaDoi, nil
 }
 
 func (s *OrderService) restoreStockForOrder(tx *gorm.DB, orderID, orderCode, actorID string) ([]string, error) {

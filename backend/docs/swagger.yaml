@@ -554,6 +554,13 @@ definitions:
         type: string
       generated_password:
         type: string
+      gift_order_code:
+        type: string
+      gift_product_name:
+        description: Món tặng kèm của lượt bán và mã đơn 0đ ghi nó; chỉ có khi vừa mua.
+        type: string
+      gift_quantity:
+        type: integer
       id:
         type: string
       member_id:
@@ -580,6 +587,13 @@ definitions:
         type: string
       description:
         type: string
+      gift_product_id:
+        type: string
+      gift_product_name:
+        description: Tên đọc cả sản phẩm đã xoá mềm, để gói vẫn hiện món nó đang trỏ tới.
+        type: string
+      gift_quantity:
+        type: integer
       id:
         type: string
       is_active:
@@ -703,6 +717,11 @@ definitions:
         type: array
       description:
         type: string
+      gift_product_id:
+        description: Món tặng kèm mặc định; bỏ trống = không tặng. Số lượng dưới 1 tính là 1.
+        type: string
+      gift_quantity:
+        type: integer
       is_active:
         description: 'Con trỏ: không gửi = bật như trước nay; gửi false = tạo ở trạng
           thái tắt.'
@@ -1904,6 +1923,9 @@ definitions:
         type: string
       customer_phone:
         type: string
+      gift_product_id:
+        description: "Món tặng nhân viên chọn lúc bán. Không gửi = món mặc định của gói; \"\" = khách không lấy."
+        type: string
       idempotency_key:
         description: |-
           IdempotencyKey do phía gọi sinh ra. Gửi lại cùng một khoá nghĩa là cùng
@@ -2325,6 +2347,11 @@ definitions:
         type: array
       description:
         type: string
+      gift_product_id:
+        description: "Không gửi = giữ món tặng; \"\" = bỏ tặng. gift_quantity chỉ đọc khi có gift_product_id."
+        type: string
+      gift_quantity:
+        type: integer
       is_active:
         type: boolean
       name:
