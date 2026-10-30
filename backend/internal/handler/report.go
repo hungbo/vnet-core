@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/vnet/core/internal/service"
+	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/response"
 )
 
@@ -38,153 +39,63 @@ func (h *ReportHandler) DailyRevenue(c *gin.Context) {
 	response.Success(c, results)
 }
 
-// @Summary Monthly revenue report
-// @Description Get monthly revenue report. date_from/date_to take precedence over year/month.
+// @Summary Report overview
+// @Description Mọi khoản tiền (bán món, nạp tiền, gói cước, hoàn tiền, tiền giờ) theo một bộ lọc chung: thẻ tổng, cộng bảng từng dòng (phân trang) hoặc bảng nhóm theo group_by
 // @Tags Reports
-// @Accept json
 // @Produce json
-// @Param date_from query string false "Start date"
-// @Param date_to query string false "End date"
-// @Param year query int false "Year"
-// @Param month query int false "Month"
-// @Success 200 {object} response.Response{data=[]service.MonthlyRevenueRow}
+// @Param date_from query string false "Từ ngày, YYYY-MM-DD (giờ Việt Nam)"
+// @Param date_to query string false "Đến ngày, YYYY-MM-DD (giờ Việt Nam)"
+// @Param kind query string false "sale | topup | combo | refund | session"
+// @Param employee_id query string false "Mã nhân viên, hoặc none = không có nhân viên"
+// @Param member_id query string false "Mã hội viên"
+// @Param machine_id query string false "Mã máy"
+// @Param payment_method query string false "Mã phương thức thanh toán"
+// @Param product_id query string false "Chỉ đơn có món này"
+// @Param promotion_id query string false "Mã khuyến mãi"
+// @Param search query string false "Mã đơn, hội viên, SĐT, máy, nhân viên, tên món, diễn giải"
+// @Param group_by query string false "Rỗng = từng dòng; day | month | employee | member | machine | payment_method | kind | product | promotion"
+// @Param page query int false "Trang (chỉ khi xem từng dòng)"
+// @Param page_size query int false "Số dòng mỗi trang"
+// @Param sort query string false "at, kind, code, member_name, machine_code, employee_name, payment_method, amount, money_in, discount, minutes"
+// @Param order query string false "asc | desc"
+// @Success 200 {object} response.Response{data=service.ReportOverview}
+// @Failure 400 {object} response.Response
 // @Failure 500 {object} response.Response
-// @Router /api/reports/monthly-revenue [get]
+// @Router /api/reports [get]
 // @Security BearerAuth
-func (h *ReportHandler) MonthlyRevenue(c *gin.Context) {
-	dateFrom, dateTo := c.Query("date_from"), c.Query("date_to")
-	if dateFrom == "" && dateTo == "" {
-		dateFrom, dateTo = service.MonthRange(parseIntSafe(c.Query("year")), parseIntSafe(c.Query("month")))
-	}
-	results, err := h.svc.MonthlyRevenue(dateFrom, dateTo)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch monthly revenue", err)
+func (h *ReportHandler) Overview(c *gin.Context) {
+	var f service.ReportFilter
+	if err := c.ShouldBindQuery(&f); err != nil {
+		handleValidationError(c, err)
 		return
 	}
-	response.Success(c, results)
-}
-
-// @Summary Member report
-// @Description Get report by member
-// @Tags Reports
-// @Accept json
-// @Produce json
-// @Param date_from query string false "Start date"
-// @Param date_to query string false "End date"
-// @Param limit query int false "Limit"
-// @Success 200 {object} response.Response{data=[]service.ByMemberRow}
-// @Failure 500 {object} response.Response
-// @Router /api/reports/by-member [get]
-// @Security BearerAuth
-func (h *ReportHandler) ByMember(c *gin.Context) {
-	params := parseReportParams(c)
-	results, err := h.svc.ByMember(params)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch member report", err)
+	if err := f.Validate(); err != nil {
+		response.BadRequest(c, err.Error())
 		return
 	}
-	response.Success(c, results)
-}
-
-// @Summary Machine report
-// @Description Get report by machine
-// @Tags Reports
-// @Accept json
-// @Produce json
-// @Param date_from query string false "Start date"
-// @Param date_to query string false "End date"
-// @Param limit query int false "Limit"
-// @Success 200 {object} response.Response{data=[]service.ByMachineRow}
-// @Failure 500 {object} response.Response
-// @Router /api/reports/by-machine [get]
-// @Security BearerAuth
-func (h *ReportHandler) ByMachine(c *gin.Context) {
-	params := parseReportParams(c)
-	results, err := h.svc.ByMachine(params)
+	result, err := h.svc.Overview(f, *pagination.GetParams(c))
 	if err != nil {
-		response.InternalError(c, "Failed to fetch machine report", err)
+		response.InternalError(c, "Failed to fetch report", err)
 		return
 	}
-	response.Success(c, results)
+	response.Success(c, result)
 }
 
-// @Summary Employee report
-// @Description Get report by employee
+// @Summary Staff list for the report filter
+// @Description Nhân viên cho ô lọc của trang Báo cáo — người xem báo cáo chưa chắc có quyền xem trang Tài khoản
 // @Tags Reports
-// @Accept json
 // @Produce json
-// @Param date_from query string false "Start date"
-// @Param date_to query string false "End date"
-// @Param limit query int false "Limit"
-// @Success 200 {object} response.Response{data=[]service.ByEmployeeRow}
+// @Success 200 {object} response.Response{data=[]service.ReportEmployee}
 // @Failure 500 {object} response.Response
-// @Router /api/reports/by-employee [get]
+// @Router /api/reports/employees [get]
 // @Security BearerAuth
-func (h *ReportHandler) ByEmployee(c *gin.Context) {
-	params := parseReportParams(c)
-	results, err := h.svc.ByEmployee(params)
+func (h *ReportHandler) Employees(c *gin.Context) {
+	list, err := h.svc.Employees()
 	if err != nil {
-		response.InternalError(c, "Failed to fetch employee report", err)
+		response.InternalError(c, "Failed to fetch staff", err)
 		return
 	}
-	response.Success(c, results)
-}
-
-// @Summary Top products report
-// @Description Get top products report
-// @Tags Reports
-// @Accept json
-// @Produce json
-// @Param date_from query string false "Start date"
-// @Param date_to query string false "End date"
-// @Param limit query int false "Limit"
-// @Success 200 {object} response.Response{data=[]service.TopProductRow}
-// @Failure 500 {object} response.Response
-// @Router /api/reports/top-products [get]
-// @Security BearerAuth
-func (h *ReportHandler) TopProducts(c *gin.Context) {
-	params := parseReportParams(c)
-	results, err := h.svc.TopProducts(params)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch top products", err)
-		return
-	}
-	response.Success(c, results)
-}
-
-// @Summary Promotion usage report
-// @Description Get promotion usage report
-// @Tags Reports
-// @Accept json
-// @Produce json
-// @Param date_from query string false "Start date"
-// @Param date_to query string false "End date"
-// @Param limit query int false "Limit"
-// @Success 200 {object} response.Response{data=[]service.PromotionUsageRow}
-// @Failure 500 {object} response.Response
-// @Router /api/reports/promotion-usage [get]
-// @Security BearerAuth
-func (h *ReportHandler) PromotionUsage(c *gin.Context) {
-	params := parseReportParams(c)
-	results, err := h.svc.PromotionUsage(params)
-	if err != nil {
-		response.InternalError(c, "Failed to fetch promotion usage", err)
-		return
-	}
-	response.Success(c, results)
-}
-
-// Không gửi limit là lấy hết. Trang Báo cáo không phân trang, nên mặc định 20
-// cũ cắt im lặng: quán 30 máy chỉ thấy 20 máy, và chỉ 20 hội viên hiện ra.
-func parseReportParams(c *gin.Context) service.ReportParams {
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	return service.ReportParams{
-		DateFrom: c.Query("date_from"),
-		DateTo:   c.Query("date_to"),
-		Year:     parseIntSafe(c.Query("year")),
-		Month:    parseIntSafe(c.Query("month")),
-		Limit:    limit,
-	}
+	response.Success(c, list)
 }
 
 // @Summary List transactions
@@ -225,15 +136,4 @@ func (h *ReportHandler) ListTransactions(c *gin.Context) {
 		return
 	}
 	response.Paginated(c, results, total, params.Page, params.PageSize)
-}
-
-func parseIntSafe(s string) int {
-	if s == "" {
-		return 0
-	}
-	v, err := strconv.Atoi(s)
-	if err != nil {
-		return 0
-	}
-	return v
 }

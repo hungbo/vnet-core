@@ -528,12 +528,8 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 			reports := protected.Group("/reports", middleware.StaffOnly(), middleware.PermissionRequired("reports.view"))
 			{
 				reports.GET("/daily-revenue", h.Report.DailyRevenue)
-				reports.GET("/monthly-revenue", h.Report.MonthlyRevenue)
-				reports.GET("/by-member", h.Report.ByMember)
-				reports.GET("/by-machine", h.Report.ByMachine)
-				reports.GET("/by-employee", h.Report.ByEmployee)
-				reports.GET("/top-products", h.Report.TopProducts)
-				reports.GET("/promotion-usage", h.Report.PromotionUsage)
+				reports.GET("", h.Report.Overview)
+				reports.GET("/employees", h.Report.Employees)
 			}
 
 			// Mọi màn hình nhận tiền đều cần danh sách này, nên chỉ cần đăng nhập.

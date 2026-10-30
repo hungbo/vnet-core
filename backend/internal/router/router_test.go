@@ -81,7 +81,7 @@ func TestMemberTokenIsRejectedByAdminRoutes(t *testing.T) {
 		{"POST", "/api/backups"},
 		{"GET", "/api/audit-logs"},
 		{"GET", "/api/reports/daily-revenue"},
-		{"GET", "/api/reports/by-member"},
+		{"GET", "/api/reports"},
 		{"GET", "/api/orders"},
 		{"DELETE", "/api/orders/order-1"},
 		{"GET", "/api/machines"},
