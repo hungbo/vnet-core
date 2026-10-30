@@ -8,6 +8,7 @@ import { useAppStore } from '@/store/modules/app';
 import { useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useTodayRange } from '@/hooks/common/today-filter';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { coTheHuy, coTheThanhToan, tongTien, useOrderBatch } from '@/hooks/business/order-batch';
 import { useAuth } from '@/hooks/business/auth';
@@ -31,7 +32,8 @@ function hasMore(row: any) {
 const search = ref('');
 const filterStatus = ref(null);
 const filterType = ref('');
-const dateRange = ref(null);
+// Mặc định hôm nay; xoá ô ngày để xem mọi ngày.
+const { range: dateRange, follow: followToday } = useTodayRange();
 const detailVisible = ref(false);
 const detail = ref<any>(null);
 
@@ -59,8 +61,9 @@ function statusLabel(status: string) {
 }
 
 const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
-  api: ({ page, pageSize, sort, order }) =>
-    client.get('/orders', {
+  api: ({ page, pageSize, sort, order }) => {
+    followToday();
+    return client.get('/orders', {
       params: {
         page,
         page_size: pageSize,
@@ -72,7 +75,8 @@ const { columns, columnChecks, data, getData, loading, mobilePagination, onSortC
         date_from: dateRange.value?.[0] || undefined,
         date_to: dateRange.value?.[1] || undefined
       }
-    }),
+    });
+  },
   transform: vnetTransform,
   columns: () => [
     { prop: 'selection', type: 'selection', width: 48 },

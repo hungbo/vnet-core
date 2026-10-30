@@ -6,6 +6,7 @@ import client from '@/api/client';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { useTransactionTypeLabel } from '@/hooks/business/transaction-types';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useTodayRange } from '@/hooks/common/today-filter';
 import { useFitPageSize } from '@/hooks/common/table';
 import { formatPrice } from '@/utils/money';
 
@@ -28,7 +29,8 @@ const fitter = useFitPageSize({
 const total = ref(0);
 const search = ref('');
 const typeFilter = ref('');
-const dateRange = ref<any>(null);
+// Mặc định hôm nay; xoá ô ngày để xem mọi ngày.
+const { range: dateRange, follow: followToday } = useTodayRange();
 // Sắp xếp phía máy chủ trên toàn bộ sổ: prop của cột bấm và 'asc' | 'desc'.
 const sort = ref<string>();
 const order = ref<'asc' | 'desc'>();
@@ -48,6 +50,7 @@ function onSortChange(e: { prop: string | null; order: 'ascending' | 'descending
 }
 
 async function fetchData() {
+  followToday();
   loading.value = true;
   try {
     const params: any = { page: page.value, page_size: pageSize.value, sort: sort.value, order: order.value };

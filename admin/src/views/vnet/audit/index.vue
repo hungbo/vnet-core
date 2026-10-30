@@ -7,13 +7,15 @@ import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useTodayRange } from '@/hooks/common/today-filter';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
 
 const filterAction = ref(null);
 const filterEntity = ref(null);
-const dateRange = ref(null);
+// Mặc định hôm nay; xoá ô ngày để xem mọi ngày.
+const { range: dateRange, follow: followToday } = useTodayRange();
 
 // Chỉ liệt kê giá trị mà backend thật sự ghi vào audit_logs. 'login', 'logout'
 // và 'export' không có một dòng nào trong mã nguồn — chọn chúng thì bảng luôn
@@ -69,8 +71,9 @@ function entityLabel(entity: string) {
 }
 
 const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
-  api: ({ page, pageSize, sort, order }) =>
-    client.get('/audit-logs', {
+  api: ({ page, pageSize, sort, order }) => {
+    followToday();
+    return client.get('/audit-logs', {
       params: {
         page,
         page_size: pageSize,
@@ -81,7 +84,8 @@ const { columns, columnChecks, data, getData, loading, mobilePagination, onSortC
         sort,
         order
       }
-    }),
+    });
+  },
   transform: vnetTransform,
   columns: () => [
     { prop: 'action', label: $t('vnetPages.audit.action'), width: 100, sortable: 'custom' },

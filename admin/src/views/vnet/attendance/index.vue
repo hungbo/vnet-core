@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useTodayDate } from '@/hooks/common/today-filter';
 import { useFitPageSize } from '@/hooks/common/table';
 import { useAuth } from '@/hooks/business/auth';
 import { moneyInput } from '@/utils/money';
@@ -26,7 +27,8 @@ const fitter = useFitPageSize({
     load();
   }
 });
-const dateFilter = ref('');
+// Mặc định hôm nay; xoá ô ngày để xem mọi ngày.
+const { date: dateFilter, follow: followToday } = useTodayDate();
 // Sắp xếp phía máy chủ trên toàn bộ lượt điểm danh: prop của cột bấm và 'asc' | 'desc'.
 const sort = ref<string>();
 const order = ref<'asc' | 'desc'>();
@@ -52,6 +54,7 @@ function formatMoney(v: number | null | undefined) {
 }
 
 async function load() {
+  followToday();
   loading.value = true;
   try {
     const res: any = await client.get('/attendance', {
