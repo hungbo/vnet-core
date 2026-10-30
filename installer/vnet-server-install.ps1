@@ -259,10 +259,17 @@ try {
     }
 
     # Máy trạm trong quán gọi vào cổng này. Tạo lại mỗi lần để theo SERVER_PORT.
-    Step "Mo cong $port tren tuong lua"
-    Get-NetFirewallRule -Name 'VNET-Server' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-    New-NetFirewallRule -Name 'VNET-Server' -DisplayName 'VNET Server' -Direction Inbound `
-        -Protocol TCP -LocalPort $port -Action Allow -Profile Any | Out-Null
+    # Máy chủ phòng máy hay tắt hẳn dịch vụ tường lửa (MpsSvc): khi đó cổng đã mở
+    # sẵn, còn *-NetFirewallRule ném "There are no more endpoints available from
+    # the endpoint mapper" — làm hỏng một lần cài thực ra đã xong.
+    if ((Get-Service MpsSvc -ErrorAction SilentlyContinue).Status -eq 'Running') {
+        Step "Mo cong $port tren tuong lua"
+        Get-NetFirewallRule -Name 'VNET-Server' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+        New-NetFirewallRule -Name 'VNET-Server' -DisplayName 'VNET Server' -Direction Inbound `
+            -Protocol TCP -LocalPort $port -Action Allow -Profile Any | Out-Null
+    } else {
+        Step "CANH BAO: dich vu tuong lua Windows (MpsSvc) khong chay - bo qua mo cong $port. Bat lai tuong lua thi chay lai bo cai."
+    }
 
     $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |

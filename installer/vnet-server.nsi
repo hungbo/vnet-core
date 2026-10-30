@@ -66,7 +66,7 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "VNET"
 
 Function .onInit
   ${IfNot} ${RunningX64}
-    MessageBox MB_ICONSTOP "${APP} chỉ chạy trên Windows 64-bit."
+    MessageBox MB_ICONSTOP "${APP} chỉ chạy trên Windows 64-bit." /SD IDOK
     Abort
   ${EndIf}
   SetRegView 64
@@ -111,7 +111,7 @@ Section "Install"
   ${If} $0 != 0
   ${AndIf} $0 != 1638
   ${AndIf} $0 != 3010
-    MessageBox MB_ICONSTOP "Cài Visual C++ Runtime thất bại (mã $0)."
+    MessageBox MB_ICONSTOP "Cài Visual C++ Runtime thất bại (mã $0)." /SD IDOK
     Abort
   ${EndIf}
 
@@ -119,7 +119,7 @@ Section "Install"
   nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\setup\vnet-server-install.ps1" -InstallDir "$INSTDIR"'
   Pop $0
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP "Cấu hình máy chủ thất bại. Xem chi tiết trong:$\r$\n$INSTDIR\logs\install.log"
+    MessageBox MB_ICONSTOP "Cấu hình máy chủ thất bại. Xem chi tiết trong:$\r$\n$INSTDIR\logs\install.log" /SD IDOK
     Abort
   ${EndIf}
 
