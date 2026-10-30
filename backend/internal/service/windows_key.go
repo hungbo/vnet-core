@@ -159,7 +159,14 @@ func (s *WindowsKeyService) List(params pagination.Params, f WindowsKeyFilter) (
 	var recs []windowsKeyRecord
 	err := base.Select(`m.id AS machine_id, m.machine_code, m.status AS machine_status, m.win_license, m.win_key_tail,
 			k.id AS key_id, k.key AS full_key, k.edition, k.note, k.updated_at`).
-		Order("m.machine_code asc").
+		Order(pagination.OrderBy(&params, map[string]string{
+			"machine_code":   "m.machine_code",
+			"machine_status": "m.status",
+			"edition":        "k.edition",
+			"note":           "k.note",
+			"win_license":    "m.win_license",
+			"updated_at":     "k.updated_at",
+		}, "m.machine_code asc")).
 		Limit(params.PageSize).Offset((params.Page - 1) * params.PageSize).
 		Scan(&recs).Error
 	if err != nil {

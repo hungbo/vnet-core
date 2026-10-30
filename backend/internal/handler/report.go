@@ -198,6 +198,8 @@ func parseReportParams(c *gin.Context) service.ReportParams {
 // @Param date_to query string false "End date"
 // @Param transaction_type query string false "Filter by type (topup, session_fee, refund, etc)"
 // @Param search query string false "Search by member name/phone/username"
+// @Param sort query string false "Sort column (created_at, member_username, transaction_type, amount, ...)"
+// @Param order query string false "Sort order (asc/desc)"
 // @Success 200 {object} response.Response{data=response.PaginatedData{data=[]service.TransactionLogRow}}
 // @Failure 500 {object} response.Response
 // @Router /api/transactions [get]
@@ -213,6 +215,8 @@ func (h *ReportHandler) ListTransactions(c *gin.Context) {
 		DateTo:          c.Query("date_to"),
 		TransactionType: c.Query("transaction_type"),
 		Search:          c.Query("search"),
+		Sort:            c.Query("sort"),
+		Order:           c.Query("order"),
 	}
 
 	results, total, err := h.svc.ListTransactions(params)

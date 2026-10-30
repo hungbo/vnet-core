@@ -247,3 +247,23 @@ func TestReportService_DailyRevenue_MocNgayTheoGioVietNam(t *testing.T) {
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// Bấm tiêu đề cột trên trang Giao dịch thì sắp theo cột đó trên toàn bộ sổ,
+// mới nhất làm tiêu chí phụ. Truy vấn JOIN nên cột phải ghi rõ tên bảng.
+func TestReportService_ListTransactions_SortedByColumn(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewReportService(db)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "member_transactions" LEFT JOIN members`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`FROM "member_transactions" LEFT JOIN members .* ` +
+		`ORDER BY members\.username asc, member_transactions\.created_at DESC LIMIT \$1$`).
+		WithArgs(20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "member_username"}).AddRow("t1", "kane"))
+
+	rows, total, err := svc.ListTransactions(&TransactionListParams{Sort: "member_username", Order: "asc"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

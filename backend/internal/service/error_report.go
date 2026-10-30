@@ -158,9 +158,20 @@ func (s *ErrorReportService) List(params pagination.Params, f ErrorListParams) (
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, 0, 0, err
 	}
-	params.Sort, params.Order = "last_seen_at", "desc"
+	// Bấm sắp xếp một cột trên trang Nhật ký lỗi thì theo cột đó; mặc định vẫn
+	// gặp gần nhất lên đầu.
+	order := pagination.OrderBy(&params, map[string]string{
+		"source":       "source",
+		"kind":         "kind",
+		"message":      "message",
+		"location":     "location",
+		"count":        "count",
+		"reporter":     "reporter",
+		"last_seen_at": "last_seen_at",
+	}, "last_seen_at desc")
 	var items []model.ErrorEvent
-	if err := pagination.Apply(q, &params).Find(&items).Error; err != nil {
+	offset := (params.Page - 1) * params.PageSize
+	if err := q.Offset(offset).Limit(params.PageSize).Order(order).Find(&items).Error; err != nil {
 		return nil, 0, 0, 0, err
 	}
 	return items, total, params.Page, params.PageSize, nil

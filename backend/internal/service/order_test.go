@@ -793,6 +793,23 @@ func TestOrderService_List_LocTheoTrangThaiVaNgay(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Bấm tiêu đề cột "Phải trả": sắp trên toàn bộ đơn, created_at làm tiêu chí phụ
+// để đơn bằng tiền nhau không nhảy trang.
+func TestOrderService_List_SapXepTheoCot(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "orders" WHERE "orders"\."deleted_at" IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE "orders"\."deleted_at" IS NULL ORDER BY final_amount asc, created_at desc LIMIT \$1 OFFSET \$2`).
+		WithArgs(20, 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, _, _, _, err := svc.List(OrderListFilter{}, pagination.Params{Page: 2, PageSize: 20, Sort: "final_amount", Order: "asc", Sorted: true})
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 // M1: tách đơn có khuyến mãi phải tính lại giảm giá cho CẢ HAI đơn, và giữ
 // total_amount - discount_amount == final_amount trên mỗi đơn. Bản cũ ghi
 // final_amount = tổng mới cho đơn gốc (mất giảm giá nhưng discount_amount cũ

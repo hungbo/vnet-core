@@ -246,6 +246,18 @@ type AttendanceListRequest struct {
 	PageSize int    `form:"page_size"`
 	MemberID string `form:"member_id"`
 	Date     string `form:"date"`
+	// Cột người dùng bấm sắp xếp trên trang Điểm danh (xem attendanceSortColumns).
+	Sort  string `form:"sort"`
+	Order string `form:"order"`
+}
+
+// attendanceSortColumns: cột trang Điểm danh cho bấm sắp xếp (prop của cột →
+// cột SQL). Tên hội viên tra từ bảng members nên không có ở đây.
+var attendanceSortColumns = map[string]string{
+	"checkin_date":  "checkin_date",
+	"checkin_at":    "checkin_at",
+	"streak_days":   "streak_days",
+	"reward_amount": "reward_amount",
 }
 
 type AttendanceRow struct {
@@ -279,9 +291,10 @@ func (s *AttendanceService) List(req *AttendanceListRequest) (*pagination.Result
 	if err := q.Count(&total).Error; err != nil {
 		return nil, err
 	}
+	sorting := &pagination.Params{Sort: req.Sort, Order: req.Order, Sorted: req.Sort != ""}
 	var rows []model.MemberAttendance
-	if err := q.Order("checkin_at desc").Offset((page - 1) * size).Limit(size).
-		Find(&rows).Error; err != nil {
+	if err := q.Order(pagination.OrderBy(sorting, attendanceSortColumns, "checkin_at desc")).
+		Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 

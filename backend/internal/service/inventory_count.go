@@ -349,6 +349,18 @@ type CountListRequest struct {
 	Page     int    `form:"page"`
 	PageSize int    `form:"page_size"`
 	Status   string `form:"status"`
+	Sort     string `form:"sort"`
+	Order    string `form:"order"`
+}
+
+// countSessionSortColumns: cột trang Kiểm kê cho bấm sắp xếp (prop của cột → cột
+// SQL). Số dòng và số dòng lệch đếm từ bảng khác nên không có ở đây.
+var countSessionSortColumns = map[string]string{
+	"code":         "code",
+	"status":       "status",
+	"note":         "note",
+	"opened_at":    "opened_at",
+	"committed_at": "committed_at",
 }
 
 func (s *InventoryCountService) List(req *CountListRequest) (*pagination.Result, error) {
@@ -369,7 +381,8 @@ func (s *InventoryCountService) List(req *CountListRequest) (*pagination.Result,
 		return nil, err
 	}
 	var rows []model.InventoryCountSession
-	if err := q.Order("opened_at desc").Offset((page - 1) * size).Limit(size).
+	sort := &pagination.Params{Sort: req.Sort, Order: req.Order, Sorted: req.Sort != ""}
+	if err := q.Order(pagination.OrderBy(sort, countSessionSortColumns, "opened_at desc")).Offset((page - 1) * size).Limit(size).
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}

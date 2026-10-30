@@ -6,6 +6,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
 )
 
@@ -19,6 +20,23 @@ func TestInventoryService_ListSuppliers(t *testing.T) {
 	result, err := svc.ListSuppliers()
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Bấm tiêu đề cột "Số lượng" ở trang Phiếu kho: sắp trên toàn bộ phiếu,
+// created_at làm tiêu chí phụ.
+func TestInventoryService_ListStockTransactions_SapXepTheoCot(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewInventoryService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "stock_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "stock_transactions" ORDER BY quantity asc, created_at desc LIMIT \$1`).
+		WithArgs(20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err := svc.ListStockTransactions(&pagination.Params{Page: 1, PageSize: 20, Sort: "quantity", Order: "asc", Sorted: true})
+	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

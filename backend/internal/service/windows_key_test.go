@@ -8,6 +8,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vnet/core/pkg/pagination"
 )
 
 const (
@@ -137,6 +138,22 @@ func TestWindowsKeyService_Import_Apply(t *testing.T) {
 	assert.Equal(t, 2, res.Applied)
 	assert.Equal(t, "ok", res.Rows[0].Status)
 	assert.Equal(t, "replaced", res.Rows[1].Status)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Bấm sắp xếp cột Cập nhật: cột của bảng windows_keys đứng trước, mã máy làm tiêu chí phụ.
+func TestWindowsKeyService_List_SapTheoCot(t *testing.T) {
+	svc, mock := importDB(t)
+	mock.ExpectQuery(`SELECT count\(\*\) FROM machines AS m LEFT JOIN windows_keys AS k ON k\.machine_id = m\.id WHERE m\.deleted_at IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`FROM machines AS m LEFT JOIN windows_keys AS k ON k\.machine_id = m\.id WHERE m\.deleted_at IS NULL ORDER BY k\.updated_at desc, m\.machine_code asc LIMIT \$1`).
+		WithArgs(20).
+		WillReturnRows(sqlmock.NewRows([]string{"machine_id", "machine_code"}).AddRow("m1", "M-001"))
+
+	params := pagination.Params{Page: 1, PageSize: 20, Sort: "updated_at", Order: "desc", Sorted: true}
+	res, err := svc.List(params, WindowsKeyFilter{})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), res.Total)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

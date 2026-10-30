@@ -124,6 +124,24 @@ func TestErrorReport_List_DefaultsToOpenNewestFirst(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestErrorReport_List_SortedByColumn(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewErrorReportService(db)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "error_events"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(25))
+	mock.ExpectQuery(`SELECT \* FROM "error_events" ORDER BY count asc, last_seen_at desc LIMIT \$1 OFFSET \$2`).
+		WithArgs(20, 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "source", "message", "count"}).AddRow("e1", "client", "boom", 3))
+
+	_, _, _, _, err := svc.List(
+		pagination.Params{Page: 2, PageSize: 20, Sort: "count", Order: "asc", Sorted: true},
+		ErrorListParams{Status: "all"},
+	)
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestErrorReport_Resolve(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewErrorReportService(db)

@@ -17,6 +17,10 @@ type Params struct {
 	Order     string `form:"order"`
 	Search    string `form:"search"`
 	OrderType string `form:"order_type"`
+	// Sorted: query có tham số sort, tức người dùng đã bấm sắp xếp một cột.
+	// Sort luôn có giá trị (mặc định created_at) nên không phân biệt được nếu
+	// chỉ nhìn Sort.
+	Sorted bool `form:"-"`
 }
 
 type Result struct {
@@ -74,6 +78,7 @@ func GetParams(c *gin.Context) *Params {
 		Order:     SafeOrder(c.DefaultQuery("order", DefaultOrder)),
 		Search:    c.Query("search"),
 		OrderType: c.Query("order_type"),
+		Sorted:    c.Query("sort") != "",
 	}
 
 	if page, err := parseInt(c.Query("page"), DefaultPage); err == nil && page > 0 {
@@ -95,6 +100,24 @@ func Apply(db *gorm.DB, p *Params) *gorm.DB {
 	// Params structs directly.
 	orderClause := SafeSort(p.Sort, DefaultSort) + " " + SafeOrder(p.Order)
 	return db.Offset(offset).Limit(p.PageSize).Order(orderClause)
+}
+
+// OrderBy chọn mệnh đề ORDER BY cho danh sách có thứ tự mặc định riêng.
+//
+// allowed ánh xạ tên cột phía admin (prop của cột bảng, cũng là tên trường
+// JSON) sang biểu thức cột SQL. Chỉ khi người dùng bấm sắp xếp (Sorted) một
+// cột có trong allowed thì mới đổi thứ tự; fallback được giữ làm tiêu chí phụ
+// để các bản ghi bằng nhau không nhảy trang. Không bấm, hoặc cột lạ: trả
+// nguyên fallback, nên câu SQL mặc định của trang không đổi.
+func OrderBy(p *Params, allowed map[string]string, fallback string) string {
+	if p == nil || !p.Sorted {
+		return fallback
+	}
+	col, ok := allowed[p.Sort]
+	if !ok {
+		return fallback
+	}
+	return col + " " + SafeOrder(p.Order) + ", " + fallback
 }
 
 func NewResult(items interface{}, total int64, p *Params) *Result {

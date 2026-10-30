@@ -204,3 +204,25 @@ func TestApply_SanitizesDirectlyBuiltParams(t *testing.T) {
 	assert.Len(t, orderBy.Columns, 1)
 	assert.Equal(t, "created_at desc", orderBy.Columns[0].Column.Name)
 }
+
+func TestGetParams_SortedOnlyWhenSortGiven(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/?page=2", nil)
+	assert.False(t, GetParams(c).Sorted)
+
+	c, _ = gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/?sort=balance&order=asc", nil)
+	assert.True(t, GetParams(c).Sorted)
+}
+
+func TestOrderBy(t *testing.T) {
+	allowed := map[string]string{"balance": "balance", "machine_code": "machines.code"}
+	const fallback = "created_at desc"
+
+	assert.Equal(t, fallback, OrderBy(nil, allowed, fallback))
+	assert.Equal(t, fallback, OrderBy(&Params{Sort: "balance", Order: "asc"}, allowed, fallback), "chưa bấm sắp xếp")
+	assert.Equal(t, fallback, OrderBy(&Params{Sort: "password_hash", Sorted: true}, allowed, fallback), "cột không cho phép")
+	assert.Equal(t, "balance asc, created_at desc", OrderBy(&Params{Sort: "balance", Order: "asc", Sorted: true}, allowed, fallback))
+	assert.Equal(t, "machines.code desc, created_at desc", OrderBy(&Params{Sort: "machine_code", Order: "x", Sorted: true}, allowed, fallback))
+}

@@ -88,9 +88,18 @@ func (s *AuditService) List(params pagination.Params, filters AuditLogParams) ([
 		return nil, 0, 0, 0, err
 	}
 
+	// Cột sắp xếp phải ghi kèm tên bảng vì truy vấn join users (cả hai bảng đều
+	// có created_at). Không bấm cột nào thì giữ thứ tự cũ: theo thời gian ghi.
+	order := pagination.OrderBy(&params, map[string]string{
+		"action":      "audit_logs.action",
+		"entity_type": "audit_logs.entity_type",
+		"description": "audit_logs.description",
+		"user_name":   "users.full_name",
+		"created_at":  "audit_logs.created_at",
+	}, "audit_logs.created_at desc")
 	var logs []AuditLogResponse
-	params.Sort = "audit_logs.created_at"
-	if err := pagination.Apply(query, &params).Find(&logs).Error; err != nil {
+	offset := (params.Page - 1) * params.PageSize
+	if err := query.Offset(offset).Limit(params.PageSize).Order(order).Find(&logs).Error; err != nil {
 		return nil, 0, 0, 0, err
 	}
 

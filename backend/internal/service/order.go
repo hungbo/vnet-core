@@ -172,6 +172,20 @@ func (s *OrderService) ListByMember(memberID string, params pagination.Params) (
 	return s.listOrders(s.db.Model(&model.Order{}).Where("member_id = ?", memberID), params)
 }
 
+// orderSortColumns: cột trang Đơn hàng cho bấm sắp xếp (prop của cột → cột SQL).
+// Hội viên, máy và người thao tác tra từ bảng khác nên không có ở đây.
+var orderSortColumns = map[string]string{
+	"order_code":      "order_code",
+	"status":          "status",
+	"order_type":      "order_type",
+	"total_amount":    "total_amount",
+	"discount_amount": "discount_amount",
+	"final_amount":    "final_amount",
+	"payment_method":  "payment_method",
+	"created_at":      "created_at",
+	"completed_at":    "completed_at",
+}
+
 func (s *OrderService) listOrders(query *gorm.DB, params pagination.Params) ([]OrderResponse, int64, int, int, error) {
 	if params.OrderType != "" {
 		query = query.Where("order_type = ?", params.OrderType)
@@ -189,11 +203,11 @@ func (s *OrderService) listOrders(query *gorm.DB, params pagination.Params) ([]O
 		return nil, 0, 0, 0, err
 	}
 
-	params.Sort = "created_at"
-	params.Order = "desc"
-
+	// Bấm tiêu đề cột ở trang Đơn hàng thì sắp theo cột đó trên toàn bộ đơn,
+	// không bấm thì vẫn đơn mới nhất trước.
 	var orders []model.Order
-	if err := pagination.Apply(query, &params).Find(&orders).Error; err != nil {
+	if err := query.Offset((params.Page - 1) * params.PageSize).Limit(params.PageSize).
+		Order(pagination.OrderBy(&params, orderSortColumns, "created_at desc")).Find(&orders).Error; err != nil {
 		return nil, 0, 0, 0, err
 	}
 

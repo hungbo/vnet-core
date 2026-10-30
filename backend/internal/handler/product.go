@@ -7,6 +7,7 @@ import (
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/jwt"
+	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/response"
 )
 
@@ -27,6 +28,8 @@ func NewProductHandler(svc *service.ProductService) *ProductHandler {
 // @Param category_id query string false "Filter by category ID"
 // @Param supplier_id query string false "Filter by supplier ID"
 // @Param is_active query bool false "Filter by status (staff only; members always get active products)"
+// @Param sort query string false "Column to sort by (name, price, is_retail, is_active); default sort_order, name"
+// @Param order query string false "asc | desc"
 // @Success 200 {object} response.Response{data=[]service.ProductResponse}
 // @Failure 500 {object} response.Response
 // @Router /products [get]
@@ -50,7 +53,10 @@ func (h *ProductHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.Query("page"))
 	pageSize, _ := strconv.Atoi(c.Query("page_size"))
 
-	result, err := h.svc.List(isRetail, isActive, c.Query("category_id"), c.Query("supplier_id"), search, page, pageSize)
+	// Chỉ lấy sort/order từ GetParams: page_size ở đây không bị chặn 100 như
+	// GetParams vì các ô chọn món tải cả nghìn món một lần.
+	result, err := h.svc.List(isRetail, isActive, c.Query("category_id"), c.Query("supplier_id"), search, page, pageSize,
+		pagination.GetParams(c))
 	if err != nil {
 		response.InternalError(c, "Failed to fetch products", err)
 		return

@@ -8,6 +8,7 @@ import (
 	"github.com/vnet/core/internal/model"
 	"gorm.io/gorm"
 
+	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/utils"
 )
 
@@ -98,6 +99,24 @@ type TransactionListParams struct {
 	DateTo          string `form:"date_to"`
 	TransactionType string `form:"transaction_type"`
 	Search          string `form:"search"`
+	// Cột người dùng bấm sắp xếp trên trang Giao dịch (xem transactionSortColumns).
+	Sort  string `form:"sort"`
+	Order string `form:"order"`
+}
+
+// transactionSortColumns: cột trang Giao dịch cho bấm sắp xếp (prop của cột →
+// cột SQL). Truy vấn JOIN members/users nên phải ghi rõ tên bảng.
+var transactionSortColumns = map[string]string{
+	"created_at":       "member_transactions.created_at",
+	"member_username":  "members.username",
+	"transaction_type": "member_transactions.transaction_type",
+	"amount":           "member_transactions.amount",
+	"balance_before":   "member_transactions.balance_before",
+	"balance_after":    "member_transactions.balance_after",
+	"bonus_before":     "member_transactions.bonus_before",
+	"bonus_after":      "member_transactions.bonus_after",
+	"payment_method":   "member_transactions.payment_method",
+	"description":      "member_transactions.description",
 }
 
 type ReportParams struct {
@@ -545,7 +564,9 @@ func (s *ReportService) ListTransactions(params *TransactionListParams) ([]Trans
 
 	var results []TransactionLogRow
 	offset := (params.Page - 1) * params.PageSize
-	if err := query.Offset(offset).Limit(params.PageSize).Order("member_transactions.created_at DESC").Find(&results).Error; err != nil {
+	sorting := &pagination.Params{Sort: params.Sort, Order: params.Order, Sorted: params.Sort != ""}
+	order := pagination.OrderBy(sorting, transactionSortColumns, "member_transactions.created_at DESC")
+	if err := query.Offset(offset).Limit(params.PageSize).Order(order).Find(&results).Error; err != nil {
 		return nil, 0, err
 	}
 

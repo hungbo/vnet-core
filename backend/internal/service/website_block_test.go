@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,4 +42,27 @@ func TestWebsiteBlockService_CreateRule_UrlDaiNhungTenMienNganVanHopLe(t *testin
 		assert.NotContains(t, err.Error(), "quá dài")
 		assert.NotContains(t, err.Error(), "không hợp lệ")
 	}
+}
+
+// Bấm sắp xếp cột Máy: mã máy không có trong bảng vi phạm nên sắp bằng truy vấn con, mới nhất
+// trước làm tiêu chí phụ.
+func TestWebsiteBlockService_ListViolations_SapTheoCot(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewWebsiteBlockService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "website_blocking_violations"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT \* FROM "website_blocking_violations" ORDER BY \(SELECT machine_code FROM machines WHERE machines\.id = website_blocking_violations\.machine_id\) asc, blocked_at desc LIMIT \$1`).
+		WithArgs(20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "domain"}).AddRow("v1", "m1", "facebook.com"))
+	mock.ExpectQuery(`FROM "machines" WHERE id IN \(\$1\)`).
+		WithArgs("m1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_code"}).AddRow("m1", "M-001"))
+
+	res, err := svc.ListViolations(&ViolationListRequest{Sort: "machine_code", Order: "asc"})
+	require.NoError(t, err)
+	rows := res.Items.([]ViolationRow)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "M-001", rows[0].MachineCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

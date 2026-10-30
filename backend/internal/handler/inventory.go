@@ -119,6 +119,8 @@ func (h *InventoryHandler) DeleteSupplier(c *gin.Context) {
 // @Produce json
 // @Param page query int false "Page number"
 // @Param page_size query int false "Page size"
+// @Param sort query string false "Column to sort by (transaction_type, quantity, stock_before, stock_after, total_price, created_at); default newest first"
+// @Param order query string false "asc | desc"
 // @Success 200 {object} response.Response{data=response.PaginatedData{data=[]service.StockTransactionResponse}}
 // @Failure 500 {object} response.Response
 // @Router /api/stock-transactions [get]

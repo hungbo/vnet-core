@@ -56,6 +56,25 @@ func TestAuditService_List_WithFilters(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAuditService_List_SortedByUserName(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuditService(db)
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "audit_logs" LEFT JOIN users ON users.id = audit_logs.user_id::uuid`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(30))
+	mock.ExpectQuery(`SELECT audit_logs\.id.* FROM "audit_logs" LEFT JOIN users ON users.id = audit_logs.user_id::uuid ORDER BY users\.full_name asc, audit_logs\.created_at desc LIMIT \$1 OFFSET \$2`).
+		WithArgs(20, 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "action", "entity_type", "entity_id", "user_id", "user_name", "description", "metadata", "ip_address", "created_at"}).
+			AddRow("a1", "create", "machine", "m1", nil, "An", "Tạo máy", "", "", time.Now()))
+
+	_, _, _, _, err := svc.List(
+		pagination.Params{Page: 2, PageSize: 20, Sort: "user_name", Order: "asc", Sorted: true},
+		AuditLogParams{},
+	)
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAuditService_GetByID_Found(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewAuditService(db)

@@ -182,10 +182,15 @@ func (s *MachineService) ListHardwareChanges(params pagination.Params, f Hardwar
 		return nil, err
 	}
 	// Chưa xác nhận lên đầu rồi mới tới thời gian: việc cần xem không trôi xuống trang sau
-	// chỉ vì một máy khác vừa đổi.
+	// chỉ vì một máy khác vừa đổi. Người dùng bấm sắp xếp một cột thì cột đó đứng trước.
 	var rows []model.MachineHardwareChange
 	err := query.Select("c.*, m.machine_code AS machine_code").
-		Order("(c.acknowledged_at IS NOT NULL) asc, c.detected_at desc").
+		Order(pagination.OrderBy(&params, map[string]string{
+			"detected_at":  "c.detected_at",
+			"machine_code": "m.machine_code",
+			"component":    "c.component",
+			"acknowledged": "c.acknowledged_at",
+		}, "(c.acknowledged_at IS NOT NULL) asc, c.detected_at desc")).
 		Limit(params.PageSize).Offset((params.Page - 1) * params.PageSize).
 		Scan(&rows).Error
 	if err != nil {

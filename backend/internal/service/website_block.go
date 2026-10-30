@@ -584,6 +584,9 @@ type ViolationListRequest struct {
 	PageSize  int    `form:"page_size"`
 	MachineID string `form:"machine_id"`
 	Domain    string `form:"domain"`
+	// Cột người dùng bấm sắp xếp (prop của cột) và chiều asc/desc; rỗng = mới nhất trước.
+	Sort  string `form:"sort"`
+	Order string `form:"order"`
 }
 
 type ViolationRow struct {
@@ -612,8 +615,15 @@ func (s *WebsiteBlockService) ListViolations(req *ViolationListRequest) (*pagina
 	if err := q.Count(&total).Error; err != nil {
 		return nil, err
 	}
+	// Mã máy không nằm trong bảng vi phạm (tra riêng ở dưới): sắp theo nó bằng truy vấn con.
+	sortBy := &pagination.Params{Sort: req.Sort, Order: req.Order, Sorted: req.Sort != ""}
 	var rows []model.WebsiteBlockingViolation
-	if err := q.Order("blocked_at desc").Offset((page - 1) * size).Limit(size).
+	if err := q.Order(pagination.OrderBy(sortBy, map[string]string{
+		"machine_code": "(SELECT machine_code FROM machines WHERE machines.id = website_blocking_violations.machine_id)",
+		"domain":       "domain",
+		"process_name": "process_name",
+		"blocked_at":   "blocked_at",
+	}, "blocked_at desc")).Offset((page - 1) * size).Limit(size).
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}

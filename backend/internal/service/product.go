@@ -107,7 +107,18 @@ type UpdateProductRequest struct {
 	Options      []ProductOptionItem `json:"options"`
 }
 
-func (s *ProductService) List(isRetail, isActive *bool, categoryID, supplierID, search string, page int, pageSize int) (*pagination.Result, error) {
+// productSortColumns: cột trang Sản phẩm cho bấm sắp xếp (prop của cột → cột SQL).
+// Danh mục, đơn vị, nhà cung cấp hiện tên tra từ bảng khác, còn tồn kho của món
+// có công thức tính từ nguyên liệu, nên sắp theo cột trong bảng sẽ sai thứ tự.
+var productSortColumns = map[string]string{
+	"name":      "name",
+	"price":     "price",
+	"is_retail": "is_retail",
+	"is_active": "is_active",
+}
+
+// sort: tham số sắp xếp của trang Sản phẩm; nil thì giữ thứ tự sort_order, tên.
+func (s *ProductService) List(isRetail, isActive *bool, categoryID, supplierID, search string, page int, pageSize int, sort *pagination.Params) (*pagination.Result, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -139,7 +150,7 @@ func (s *ProductService) List(isRetail, isActive *bool, categoryID, supplierID, 
 	query.Model(&model.Product{}).Count(&total)
 
 	var products []model.Product
-	if err := query.Order("sort_order asc, name asc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&products).Error; err != nil {
+	if err := query.Order(pagination.OrderBy(sort, productSortColumns, "sort_order asc, name asc")).Offset((page - 1) * pageSize).Limit(pageSize).Find(&products).Error; err != nil {
 		return nil, err
 	}
 

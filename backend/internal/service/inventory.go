@@ -272,6 +272,17 @@ func (s *InventoryService) DeleteSupplier(id string) error {
 	return nil
 }
 
+// stockTransactionSortColumns: cột trang Phiếu kho cho bấm sắp xếp (prop của cột
+// → cột SQL). Tên sản phẩm và người thực hiện tra từ bảng khác nên không có ở đây.
+var stockTransactionSortColumns = map[string]string{
+	"transaction_type": "transaction_type",
+	"quantity":         "quantity",
+	"stock_before":     "stock_before",
+	"stock_after":      "stock_after",
+	"total_price":      "total_price",
+	"created_at":       "created_at",
+}
+
 func (s *InventoryService) ListStockTransactions(params *pagination.Params) (*pagination.Result, error) {
 	if params.Page < 1 {
 		params.Page = 1
@@ -279,8 +290,6 @@ func (s *InventoryService) ListStockTransactions(params *pagination.Params) (*pa
 	if params.PageSize < 1 {
 		params.PageSize = 20
 	}
-	params.Sort = "created_at"
-	params.Order = "desc"
 
 	var transactions []model.StockTransaction
 	query := s.db
@@ -288,7 +297,10 @@ func (s *InventoryService) ListStockTransactions(params *pagination.Params) (*pa
 	var total int64
 	query.Model(&model.StockTransaction{}).Count(&total)
 
-	if err := pagination.Apply(query, params).Find(&transactions).Error; err != nil {
+	// Bấm tiêu đề cột thì sắp theo cột đó trên toàn bộ phiếu, không bấm thì
+	// phiếu mới nhất trước.
+	if err := query.Offset((params.Page - 1) * params.PageSize).Limit(params.PageSize).
+		Order(pagination.OrderBy(params, stockTransactionSortColumns, "created_at desc")).Find(&transactions).Error; err != nil {
 		return nil, err
 	}
 

@@ -275,6 +275,24 @@ func TestMachineService_ListHardwareChanges_ChuaXacNhanLenDau(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Bấm sắp xếp cột Máy: mã máy (bảng join) đứng trước, thứ tự mặc định làm tiêu chí phụ.
+func TestMachineService_ListHardwareChanges_SapTheoCot(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewMachineService(db, nil, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM machine_hardware_changes AS c LEFT JOIN machines AS m ON m\.id = c\.machine_id`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+	mock.ExpectQuery(`SELECT c\.\*, m\.machine_code AS machine_code FROM machine_hardware_changes AS c LEFT JOIN machines AS m ON m\.id = c\.machine_id ORDER BY m\.machine_code asc, \(c\.acknowledged_at IS NOT NULL\) asc, c\.detected_at desc LIMIT \$1`).
+		WithArgs(20).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "machine_id", "component", "machine_code"}).
+			AddRow("c1", "m1", "ram", "M-001"))
+
+	params := pagination.Params{Page: 1, PageSize: 20, Sort: "machine_code", Order: "asc", Sorted: true}
+	_, err := svc.ListHardwareChanges(params, HardwareChangeFilter{})
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestHeartbeatRequest_AddActivity(t *testing.T) {
 	up := map[string]interface{}{}
 	(&HeartbeatRequest{}).addActivity(up)

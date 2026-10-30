@@ -138,6 +138,17 @@ type FeedbackListRequest struct {
 	DateTo    string `form:"date_to"`
 	// Chỉ lấy đánh giá có viết nhận xét — cái đáng đọc nằm ở đây.
 	WithContent bool `form:"with_content"`
+	// Cột người dùng bấm sắp xếp trên trang Đánh giá (xem feedbackSortColumns).
+	Sort  string `form:"sort"`
+	Order string `form:"order"`
+}
+
+// feedbackSortColumns: cột trang Đánh giá cho bấm sắp xếp (prop của cột → cột
+// SQL). Mã máy, hội viên và mã đơn tra từ bảng khác nên không có ở đây.
+var feedbackSortColumns = map[string]string{
+	"rating":     "rating",
+	"content":    "content",
+	"created_at": "created_at",
 }
 
 func (s *FeedbackService) List(req *FeedbackListRequest) (*pagination.Result, error) {
@@ -173,9 +184,10 @@ func (s *FeedbackService) List(req *FeedbackListRequest) (*pagination.Result, er
 	if err := q.Count(&total).Error; err != nil {
 		return nil, err
 	}
+	sorting := &pagination.Params{Sort: req.Sort, Order: req.Order, Sorted: req.Sort != ""}
 	var rows []model.ServiceFeedback
-	if err := q.Order("created_at desc").Offset((page - 1) * size).Limit(size).
-		Find(&rows).Error; err != nil {
+	if err := q.Order(pagination.OrderBy(sorting, feedbackSortColumns, "created_at desc")).
+		Offset((page - 1) * size).Limit(size).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 

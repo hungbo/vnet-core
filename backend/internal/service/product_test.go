@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
@@ -34,7 +35,7 @@ func TestProductService_List_All(t *testing.T) {
 		WithArgs("p2").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-	result, err := svc.List(nil, nil, "", "", "", 1, 20)
+	result, err := svc.List(nil, nil, "", "", "", 1, 20, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), result.Total)
 	assert.Len(t, result.Items, 2)
@@ -60,7 +61,7 @@ func TestProductService_List_LocTheoDanhMuc(t *testing.T) {
 		WithArgs("p1").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-	result, err := svc.List(nil, nil, "c1", "", "", 1, 20)
+	result, err := svc.List(nil, nil, "c1", "", "", 1, 20, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), result.Total)
 	assert.Len(t, result.Items, 1)
@@ -79,9 +80,25 @@ func TestProductService_List_LocTheoNhaCungCap(t *testing.T) {
 		WithArgs("s1", 20).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-	result, err := svc.List(nil, nil, "", "s1", "", 1, 20)
+	result, err := svc.List(nil, nil, "", "s1", "", 1, 20, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), result.Total)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Bấm tiêu đề cột "Giá": sắp trên toàn bộ món, thứ tự cũ làm tiêu chí phụ.
+func TestProductService_List_SapXepTheoCot(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewProductService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "products" WHERE "products"\."deleted_at" IS NULL`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE "products"\."deleted_at" IS NULL ORDER BY price desc, sort_order asc, name asc LIMIT \$1`).
+		WithArgs(20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err := svc.List(nil, nil, "", "", "", 1, 20, &pagination.Params{Sort: "price", Order: "desc", Sorted: true})
+	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -408,7 +425,7 @@ func TestProductService_List_LocTheoTrangThai(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	dangBan := true
-	result, err := svc.List(nil, &dangBan, "", "", "", 1, 20)
+	result, err := svc.List(nil, &dangBan, "", "", "", 1, 20, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), result.Total)
 	assert.NoError(t, mock.ExpectationsWereMet())

@@ -19,6 +19,7 @@ func NewInventoryCountHandler(svc *service.InventoryCountService) *InventoryCoun
 // @Summary      Danh sách phiên kiểm kê
 // @Tags         InventoryCount
 // @Produce      json
+// @Param        request  query  service.CountListRequest  false  "page, page_size, status, sort (code, status, note, opened_at, committed_at), order"
 // @Success      200  {object}  response.Response
 // @Router       /api/inventory-counts [get]
 func (h *InventoryCountHandler) List(c *gin.Context) {

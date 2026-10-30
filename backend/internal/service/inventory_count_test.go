@@ -57,3 +57,19 @@ func TestInventoryCountService_Open_KhongConPhienMoThiChoQua(t *testing.T) {
 	assert.Equal(t, "KK-00008", phien.Code, "mã phiên phải tăng tiếp theo mã lớn nhất")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// Bấm tiêu đề cột "Mã phiên": sắp trên toàn bộ phiên, opened_at làm tiêu chí phụ.
+func TestInventoryCountService_List_SapXepTheoCot(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewInventoryCountService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "inventory_count_sessions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "inventory_count_sessions" ORDER BY code asc, opened_at desc LIMIT \$1`).
+		WithArgs(20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err := svc.List(&CountListRequest{Sort: "code", Order: "asc"})
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
