@@ -2,6 +2,8 @@
 
 Đọc từ trên xuống, khoảng 30 phút. Cuối bài bạn có một máy chủ đang chạy, một PC khách nối vào đó và một phiên khách thử tính tiền đúng.
 
+**Có video:** [Video hướng dẫn cài VNET](https://www.facebook.com/groups/1475734131291921/posts/1495823275949673/) trong nhóm Facebook VNET, quay trên máy thật với bản Server 1.1.19 và Client 1.0.23: phần 1 là Đường A bên dưới, phần 2 là [Cài máy trạm](#cài-máy-trạm-lên-một-pc-10-phút) tới lúc màn hình khoá hiện ra.
+
 **Cần có**
 - **Một máy làm máy chủ**, bật suốt giờ mở cửa, cùng mạng LAN với các PC khách.
 - **Một PC Windows** để thử làm máy trạm.
@@ -19,8 +21,8 @@ Xong một đường thì nhảy tới [Cài máy trạm](#cài-máy-trạm-lên
 ## Đường A — Máy chủ Windows, bộ cài .exe (10 phút)
 
 1. **Lấy bộ cài** `vnet-server-setup-<phiên bản>.exe`. Tải ở mục **Releases** của repo GitHub nếu đã có bản phát hành. Chưa có thì tự build trên Mac hoặc Linux (cần Go, pnpm 10, `makensis`): `bash scripts/build-server-windows.sh 1.2.0`, ra `dist/vnet-server-setup-1.2.0.exe` — chi tiết ở [HUONG-DAN.md, mục 1.2a](./HUONG-DAN.md#12a-cách-2--bộ-cài-windows-không-cần-docker). Chép tệp sang máy chủ.
-2. **Chạy bộ cài** trên máy chủ: bấm đúp, đồng ý quyền quản trị, giữ thư mục mặc định `C:\VNET`, bấm tiếp tới hết. Nó tự cài cơ sở dữ liệu PostgreSQL, hai dịch vụ Windows chạy mỗi khi bật máy, và mở cổng 20800 trong tường lửa. Chữ trong ô chi tiết **không dấu** — cố ý.
-3. **Chép địa chỉ máy trạm** ở dòng cuối ô chi tiết: `Xong. Dia chi cho may tram: http://192.168.x.x:20800`. Đó chính là `<IP>`.
+2. **Chạy bộ cài** trên máy chủ: bấm đúp, đồng ý quyền quản trị. Windows có thể hiện *Windows protected your PC* vì bộ cài chưa ký số: bấm **More info** rồi **Run anyway**. Bấm **Tiến**, giữ thư mục mặc định `C:\VNET`, bấm **Cài đặt**, khoảng một phút là xong. Nó tự cài cơ sở dữ liệu PostgreSQL, hai dịch vụ Windows chạy mỗi khi bật máy, và mở cổng 20800 trong tường lửa. Chữ trong ô chi tiết **không dấu** — cố ý; vài dòng `The service name is invalid` khi cài lần đầu là bình thường.
+3. **Bấm Hoàn thành**: ô **Mở trang quản trị** tick sẵn nên trang đăng nhập tự mở. Địa chỉ cho máy trạm là `http://<IP>:20800`, với `<IP>` lấy bằng `ipconfig` như ở đầu bài. Bộ cài có in dòng `Xong. Dia chi cho may tram: ...` nhưng chuyển sang trang cuối ngay nên thường không kịp đọc.
 4. **Lấy mật khẩu**: mở `C:\VNET\data\initial-admin-password.txt` (chỉ tài khoản quản trị Windows mở được). Ba dòng `admin`, `manager`, `staff`, **mỗi tài khoản một mật khẩu khác nhau**.
 5. **Đăng nhập**: bấm lối tắt **VNET Quản lý** trên Desktop (hoặc mở `http://<IP>:20800`), tài khoản `admin`. Rồi bấm tên tài khoản ở góc trên phải → **Đổi mật khẩu**, và **xoá tệp mật khẩu** ở bước 4.
 
@@ -64,8 +66,8 @@ Cần cài [Docker](https://docs.docker.com/get-docker/) (Docker Desktop nếu l
 
 Lấy bộ cài `vnet-client-setup-<phiên bản>.exe` ở mục **Releases** của repo GitHub nếu đã có bản phát hành; chưa có thì tự dựng theo [HUONG-DAN.md, mục 2.1](./HUONG-DAN.md#21-tạo-bộ-cài).
 
-1. Chạy bộ cài trên PC với quyền quản trị. Trang **Cấu hình máy trạm** hỏi bốn ô: **Địa chỉ máy chủ** (`http://<IP>:20800`), **Tài khoản quản trị máy trạm** (để `admin`), **Mật khẩu** (ít nhất 6 ký tự) và nhập lại. Tài khoản này là lối vào cho kỹ thuật khi mất mạng, không phải tài khoản trang quản trị.
-2. Cài xong, PC hiện màn hình khoá phủ kín, **tên máy** ngay dưới logo. Mã máy chính là tên máy Windows.
+1. Chạy bộ cài trên PC với quyền quản trị (gặp *Windows protected your PC* thì **More info** → **Run anyway**), giữ thư mục `C:\Program Files\VNET Client`, **Next**. Trang **Cấu hình máy trạm** hỏi bốn ô: **Địa chỉ máy chủ** — ô này điền sẵn một địa chỉ *ví dụ*, xoá đi rồi gõ `http://<IP>:20800`; **Tài khoản quản trị máy trạm** (để `admin`); **Mật khẩu** (ít nhất 6 ký tự) và nhập lại. Tài khoản này là lối vào cho kỹ thuật khi mất mạng, không phải tài khoản trang quản trị. **Next**, **Install**, **Finish**.
+2. Cài xong, PC hiện màn hình khoá phủ kín, **tên máy** ngay dưới logo. Mã máy chính là tên máy Windows. Màn hình khoá chỉ hiện trên **màn hình thật** của PC: cài qua Remote Desktop thì phiên Remote Desktop không thấy nó; nó lên khi có người đăng nhập Windows ngay tại máy, hoặc khi máy khởi động lại và Windows tự đăng nhập ([HUONG-DAN 2.6b](./HUONG-DAN.md#26b-để-windows-tự-đăng-nhập)).
 3. Trên trang quản trị, vào **Quản lý → Máy**. Trong vòng 15 giây PC tự hiện ra ở trạng thái **Sẵn sàng**, kèm nhãn vàng **Chưa gán nhóm — 0₫/giờ** ở cột **Nhóm**.
 4. Bấm **Sửa** ở dòng đó, chọn **Nhóm** rồi **Lưu**. Bước này **không được bỏ**: chưa có nhóm thì khách đăng nhập bị từ chối với câu *"máy chưa được thêm vào hệ thống — báo quầy xếp nhóm cho máy này"*. Dữ liệu mẫu có sẵn nhóm **Thường** (5.000₫/giờ) và **VIP** (15.000₫/giờ); sửa giá ở **Quản lý → Nhóm máy → Bảng giá**. Có nhiều máy thì dùng **Tạo hàng loạt** (tiền tố, khoảng số, nhóm) — mã tạo ra phải trùng tên máy Windows.
 
