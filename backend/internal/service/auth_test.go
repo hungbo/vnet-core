@@ -105,9 +105,59 @@ func TestAuthService_ClientLogin_TenLaThiDiDuongHoiVien(t *testing.T) {
 		WithArgs("khach", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery(`SELECT \* FROM "members" WHERE username = \$1`).
 		WithArgs("khach", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE LOWER\(username\) = LOWER\(\$1\)`).
+		WithArgs("khach", 2).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	_, err := svc.ClientLogin(&MemberLoginRequest{Username: "khach", Password: "bat-ky"})
-	assert.Error(t, err, "không có ở cả hai bảng thì phải báo sai tài khoản")
+	assert.ErrorIs(t, err, ErrBadCredentials, "không có ở cả hai bảng thì phải báo sai tài khoản")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Hội viên chuyển từ FNet quen gõ chữ in hoa ("NHAT12") còn tài khoản lưu "nhat12".
+func TestAuthService_FindMemberForLogin_KhongPhanBietHoaThuong(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE username = \$1`).
+		WithArgs("NHAT12", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE LOWER\(username\) = LOWER\(\$1\)`).
+		WithArgs("NHAT12", 2).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username"}).AddRow("m1", "nhat12"))
+
+	member, err := svc.findMemberForLogin("NHAT12")
+	require.NoError(t, err)
+	assert.Equal(t, "m1", member.ID)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Khớp đúng từng chữ thì dùng luôn, không tra thêm lần nữa.
+func TestAuthService_FindMemberForLogin_KhopDungThiKhongTraLai(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE username = \$1`).
+		WithArgs("Abc", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username"}).AddRow("m1", "Abc"))
+
+	member, err := svc.findMemberForLogin("Abc")
+	require.NoError(t, err)
+	assert.Equal(t, "m1", member.ID)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// "Abc" và "abc" cùng có mà khách gõ "ABC": không đoán là ai.
+func TestAuthService_FindMemberForLogin_HaiTenChiKhacHoaThuongThiTuChoi(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE username = \$1`).
+		WithArgs("ABC", 1).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE LOWER\(username\) = LOWER\(\$1\)`).
+		WithArgs("ABC", 2).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "username"}).AddRow("m1", "Abc").AddRow("m2", "abc"))
+
+	_, err := svc.findMemberForLogin("ABC")
+	assert.ErrorIs(t, err, ErrBadCredentials)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -501,6 +551,8 @@ func TestAuthService_Login_SaiThongTinLaErrBadCredentials(t *testing.T) {
 
 	// Hội viên cũng vậy: ClientLogin đi qua đây khi tên không có trong users.
 	mock.ExpectQuery(`SELECT \* FROM "members"`).WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE LOWER\(username\) = LOWER\(\$1\)`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	_, err = svc.MemberLogin(&MemberLoginRequest{Username: "khong-co", Password: "x"})
 	assert.ErrorIs(t, err, ErrBadCredentials)
 }

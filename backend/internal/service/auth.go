@@ -297,6 +297,30 @@ func (s *AuthService) ClientLogin(req *MemberLoginRequest) (*ClientLoginResponse
 	return &ClientLoginResponse{MemberLoginResponse: res, Kind: "member"}, nil
 }
 
+// findMemberForLogin tìm hội viên theo tên đăng nhập, KHÔNG phân biệt hoa thường:
+// hội viên chuyển từ FNet quen gõ "NHAT12" còn tài khoản lưu "nhat12". Khớp đúng
+// từng chữ vẫn được thử trước, nên tên đang đăng nhập được thì không đổi gì. Cột
+// username chỉ duy nhất theo đúng chữ — có cả "Abc" lẫn "abc" mà khách gõ "ABC" thì
+// không đoán là ai, báo sai tài khoản.
+func (s *AuthService) findMemberForLogin(username string) (model.Member, error) {
+	var member model.Member
+	err := s.db.Where("username = ?", username).First(&member).Error
+	if err == nil {
+		return member, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return member, err
+	}
+	var found []model.Member
+	if err := s.db.Where("LOWER(username) = LOWER(?)", username).Limit(2).Find(&found).Error; err != nil {
+		return member, err
+	}
+	if len(found) != 1 {
+		return member, ErrBadCredentials
+	}
+	return found[0], nil
+}
+
 // machineForLogin tra máy theo mã máy khách tự khai trong phần Cài đặt.
 //
 // Mã máy KHÔNG phải bí mật, nên đây không phải xác thực — nhưng nó chặn được
@@ -381,11 +405,8 @@ func (s *AuthService) openSessionForLogin(member *model.Member, machine *model.M
 }
 
 func (s *AuthService) MemberLogin(req *MemberLoginRequest) (*MemberLoginResponse, error) {
-	var member model.Member
-	if err := s.db.Where("username = ?", req.Username).First(&member).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrBadCredentials
-		}
+	member, err := s.findMemberForLogin(req.Username)
+	if err != nil {
 		return nil, err
 	}
 

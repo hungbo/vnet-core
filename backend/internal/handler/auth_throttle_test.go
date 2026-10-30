@@ -311,6 +311,7 @@ func TestAuthHandler_ClientLogin_ChungBoDemVoiLogin(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		mock.ExpectQuery(usersQuery).WithArgs("admin", 1).WillReturnError(gorm.ErrRecordNotFound)
 		mock.ExpectQuery(`SELECT \* FROM "members"`).WillReturnError(gorm.ErrRecordNotFound)
+		mock.ExpectQuery(`SELECT \* FROM "members" WHERE LOWER\(username\)`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	}
 	for i := 0; i < 5; i++ {
 		require.Equal(t, http.StatusUnauthorized, postAs(router, "/api/auth/login", "192.0.2.10:5555", wrongLogin).Code)
