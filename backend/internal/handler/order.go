@@ -24,12 +24,29 @@ func NewOrderHandler(svc *service.OrderService) *OrderHandler {
 // @Security BearerAuth
 // @Param page query int false "Page number"
 // @Param page_size query int false "Page size"
+// @Param status query string false "pending | confirmed | completed | cancelled (empty = all)"
+// @Param date_from query string false "Created on or after this day, YYYY-MM-DD (Vietnam time)"
+// @Param date_to query string false "Created on or before this day, YYYY-MM-DD (Vietnam time)"
+// @Param sort query string false "Column to sort by (order_code, status, order_type, total_amount, discount_amount, final_amount, payment_method, created_at, completed_at); default newest first"
+// @Param order query string false "asc | desc"
 // @Success 200 {object} response.Response{data=response.PaginatedData{data=[]service.OrderResponse}}
+// @Failure 400 {object} response.Response
 // @Failure 500 {object} response.Response
 // @Router /orders [get]
 func (h *OrderHandler) List(c *gin.Context) {
+	f := service.OrderListFilter{
+		Status:   c.Query("status"),
+		DateFrom: c.Query("date_from"),
+		DateTo:   c.Query("date_to"),
+	}
+	switch f.Status {
+	case "", "pending", "confirmed", "completed", "cancelled":
+	default:
+		response.BadRequest(c, "status chỉ nhận pending, confirmed, completed hoặc cancelled")
+		return
+	}
 	params := pagination.GetParams(c)
-	result, total, page, pageSize, err := h.svc.List(*params)
+	result, total, page, pageSize, err := h.svc.List(f, *params)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch orders", err)
 		return

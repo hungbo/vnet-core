@@ -137,8 +137,33 @@ type PaymentResponse struct {
 	CreatedAt     time.Time  `json:"created_at"`
 }
 
-func (s *OrderService) List(params pagination.Params) ([]OrderResponse, int64, int, int, error) {
-	return s.listOrders(s.db.Model(&model.Order{}), params)
+// OrderListFilter là các bộ lọc trên thanh công cụ trang Đơn hàng. Trang gửi
+// status, date_from, date_to từ đầu nhưng List bỏ qua cả ba, nên chọn trạng
+// thái hay khoảng ngày vẫn ra nguyên danh sách.
+type OrderListFilter struct {
+	Status   string
+	DateFrom string // YYYY-MM-DD, giờ Việt Nam
+	DateTo   string // YYYY-MM-DD, giờ Việt Nam, tính hết ngày
+}
+
+func (s *OrderService) List(f OrderListFilter, params pagination.Params) ([]OrderResponse, int64, int, int, error) {
+	query := s.db.Model(&model.Order{})
+	if f.Status != "" {
+		query = query.Where("status = ?", f.Status)
+	}
+	// Neo theo giờ Việt Nam như audit.go: time.Parse là nửa đêm UTC, lọc
+	// "hôm nay → hôm nay" sẽ cắt mất đơn ca đêm.
+	if f.DateFrom != "" {
+		if t, err := time.ParseInLocation("2006-01-02", f.DateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at >= ?", utils.StartOfDay(t))
+		}
+	}
+	if f.DateTo != "" {
+		if t, err := time.ParseInLocation("2006-01-02", f.DateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at <= ?", utils.EndOfDay(t))
+		}
+	}
+	return s.listOrders(query, params)
 }
 
 // ListByMember trả đơn của MỘT hội viên — máy trạm dùng để khách xem lại các

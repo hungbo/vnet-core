@@ -3,12 +3,14 @@ package service
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
+	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -768,6 +770,26 @@ func TestOrderService_ListByMember_LocTheoHoiVien(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Empty(t, items)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Trang Đơn hàng gửi status, date_from, date_to; trước đây List bỏ qua cả ba
+// nên chọn trạng thái vẫn ra nguyên danh sách.
+func TestOrderService_List_LocTheoTrangThaiVaNgay(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	tu := time.Date(2026, 10, 30, 0, 0, 0, 0, utils.VietnamLocation())
+	den := utils.EndOfDay(tu)
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "orders" WHERE status = \$1 AND created_at >= \$2 AND created_at <= \$3 AND "orders"\."deleted_at" IS NULL`).
+		WithArgs("cancelled", tu, den).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE status = \$1 AND created_at >= \$2 AND created_at <= \$3 AND "orders"\."deleted_at" IS NULL ORDER BY created_at desc LIMIT \$4`).
+		WithArgs("cancelled", tu, den, 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, _, _, _, err := svc.List(OrderListFilter{Status: "cancelled", DateFrom: "2026-10-30", DateTo: "2026-10-30"}, pagination.Params{Page: 1, PageSize: 20})
+	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
