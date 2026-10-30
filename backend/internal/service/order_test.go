@@ -293,6 +293,10 @@ func TestOrderService_Pay_TopupGhiNguoiThucHien(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows(cot).AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(30000), "cash"))
 	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem-1", int64(0)))
+	// Bảng mốc nạp tặng (topup_bonus.go): quán chưa đặt mốc nào.
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).
+		WithArgs(TopupGroup).
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
 	mock.ExpectQuery(`INSERT INTO "member_transactions" \(.*"created_by"\)`).
 		WithArgs("mem-1", "topup", int64(30000), int64(0), int64(30000), int64(0), int64(0), "cash", nil, "Nạp tiền qua đơn hàng ORD-1", nhanVien).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("tx-1"))
@@ -328,6 +332,10 @@ func TestOrderService_processTopupOrder_ThieuPhuongThucLaTienMat(t *testing.T) {
 			AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(10000), ""))
 	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem-1", int64(0)))
+	// Bảng mốc nạp tặng (topup_bonus.go): quán chưa đặt mốc nào.
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).
+		WithArgs(TopupGroup).
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
 	mock.ExpectQuery(`INSERT INTO "member_transactions"`).
 		WithArgs("mem-1", "topup", int64(10000), int64(0), int64(10000), int64(0), int64(0), "cash", nil, "Nạp tiền qua đơn hàng ORD-1", nhanVien).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("tx-1"))

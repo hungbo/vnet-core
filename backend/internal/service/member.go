@@ -625,6 +625,12 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 		return nil, errComboMemberLocked
 	}
 
+	// Nạp tặng chỉ áp cho tiền thật; "Tặng tiền" (bonus_balance) không có mốc.
+	var mocNapTang []TopupBonusTier
+	if req.PaymentMethod != "bonus_balance" {
+		mocNapTang = docMocNapTang(tx)
+	}
+
 	balanceBefore := member.Balance
 	bonusBefore := member.BonusBalance
 	var balanceAfter int64
@@ -659,6 +665,15 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 		return nil, err
 	}
 
+	tienTang, moc := tinhTienTangNap(mocNapTang, req.Amount)
+	if tienTang > 0 {
+		if err := ghiTienTangNap(tx, member.ID, req.Amount, balanceAfter, bonusAfter, moc, tienTang, &userID); err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+		bonusAfter += tienTang
+	}
+
 	if err := tx.Model(&member).Updates(map[string]interface{}{
 		"balance":       balanceAfter,
 		"bonus_balance": bonusAfter,
@@ -677,7 +692,7 @@ func (s *MemberService) Topup(id string, req *TopupRequest, userID string) (*Mem
 		EntityType: "member",
 		EntityID:   id,
 		UserID:     &userID,
-		Metadata:   map[string]interface{}{"amount": req.Amount, "method": req.PaymentMethod},
+		Metadata:   map[string]interface{}{"amount": req.Amount, "method": req.PaymentMethod, "bonus": tienTang},
 	})
 
 	// Nhân viên nạp ở quầy, khách đang nhìn màn hình máy trạm. Không có hai

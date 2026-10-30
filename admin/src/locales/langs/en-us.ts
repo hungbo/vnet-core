@@ -1888,6 +1888,15 @@ const local: App.I18n.Schema = {
       topupHint:
         'The amounts shown on the client top-up screen. Leave the list empty and the client falls back to its built-in defaults.',
       addPreset: 'Add amount',
+      topupBonus: 'Top-up bonus',
+      topupBonusHint:
+        'When a member tops up (at the counter or through a client top-up order) they get extra promotional balance from the highest tier reached. The bonus is not counted as revenue or drawer cash. The "Gift" button never earns a bonus. Leave the table empty to turn it off.',
+      topupBonusMin: 'Top-up from',
+      topupBonusType: 'Bonus type',
+      topupBonusValue: 'Bonus',
+      topupBonusFixed: 'Amount (VND)',
+      topupBonusPercent: 'Percent (%)',
+      addTopupBonus: 'Add tier',
       invoiceHint: 'These three go straight onto the printed receipt. Leave blank to keep the default wording.',
       limitsHint:
         'Zero means no limit. The debt ceiling is how far a balance may go negative and still start a session.',

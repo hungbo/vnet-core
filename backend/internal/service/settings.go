@@ -121,6 +121,15 @@ func (s *SettingsService) Update(groupName string, settings map[string]interface
 			return nil, err
 		}
 	}
+	if groupName == TopupGroup {
+		if raw, ok := settings[TopupBonusTiersKey]; ok {
+			tiers, err := chuanHoaMocNapTang(raw)
+			if err != nil {
+				return nil, err
+			}
+			settings[TopupBonusTiersKey] = tiers
+		}
+	}
 	var settingKeys []string
 	for key, value := range settings {
 		settingKeys = append(settingKeys, key)

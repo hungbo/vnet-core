@@ -1885,6 +1885,15 @@ const local: App.I18n.Schema = {
       topupHint:
         'Các mức tiền hiện lên màn hình nạp của máy khách. Bỏ trống hết thì máy khách dùng danh sách mặc định.',
       addPreset: 'Thêm mệnh giá',
+      topupBonus: 'Nạp tặng',
+      topupBonusHint:
+        'Hội viên nạp tiền (ở quầy hay đơn nạp từ máy trạm) được tặng thêm vào số dư khuyến mãi theo mốc cao nhất đạt tới. Tiền tặng không tính vào doanh thu và tiền két. Nút "Tặng tiền" không được tặng thêm. Bỏ trống hết là tắt.',
+      topupBonusMin: 'Nạp từ',
+      topupBonusType: 'Kiểu tặng',
+      topupBonusValue: 'Tặng',
+      topupBonusFixed: 'Số tiền (đ)',
+      topupBonusPercent: 'Phần trăm (%)',
+      addTopupBonus: 'Thêm mốc',
       invoiceHint: 'Ba ô này in thẳng lên hoá đơn khách cầm. Để trống thì dùng chữ mặc định.',
       limitsHint: 'Để 0 nghĩa là không giới hạn. Trần nợ là số tiền âm tối đa mà khách vẫn được mở máy.',
       printerMoved:

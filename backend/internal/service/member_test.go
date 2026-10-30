@@ -70,6 +70,10 @@ func TestMemberService_Topup_WithoutIdempotencyKeySkipsClaim(t *testing.T) {
 		WithArgs("mem-1", 1).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "balance", "bonus_balance"}).
 			AddRow("mem-1", int64(20000), int64(0)))
+	// Bảng mốc nạp tặng (topup_bonus.go): quán chưa đặt mốc nào.
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).
+		WithArgs(TopupGroup).
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
 	mock.ExpectQuery(`INSERT INTO "member_transactions"`).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("tx-1"))
 	mock.ExpectExec(`UPDATE "members" SET`).

@@ -802,6 +802,7 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 		tx.Rollback()
 		return errors.New("không tìm thấy hội viên")
 	}
+	mocNapTang := docMocNapTang(tx)
 
 	// Nút "Duyệt" ở trang Đơn hàng không chọn phương thức: khách đưa tiền ở
 	// quầy nên mặc định là tiền mặt, như settleOrder của đơn bán hàng. Để trống
@@ -828,10 +829,20 @@ func (s *OrderService) processTopupOrder(order *model.Order, updatedBy string) (
 		tx.Rollback()
 		return e
 	}
-	if e := tx.Model(&member).Updates(map[string]interface{}{
+	capNhat := map[string]interface{}{
 		"balance":    balanceAfter,
 		"updated_at": time.Now(),
-	}).Error; e != nil {
+	}
+	// Nạp tặng, xem topup_bonus.go.
+	if tienTang, moc := tinhTienTangNap(mocNapTang, locked.FinalAmount); tienTang > 0 {
+		if e := ghiTienTangNap(tx, member.ID, locked.FinalAmount, balanceAfter, member.BonusBalance, moc, tienTang, optionalUUID(updatedBy)); e != nil {
+			tx.Rollback()
+			return e
+		}
+		member.BonusBalance += tienTang
+		capNhat["bonus_balance"] = member.BonusBalance
+	}
+	if e := tx.Model(&member).Updates(capNhat).Error; e != nil {
 		tx.Rollback()
 		return e
 	}

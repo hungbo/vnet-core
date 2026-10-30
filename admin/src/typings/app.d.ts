@@ -1312,6 +1312,14 @@ declare namespace App {
           topupPresets: string;
           topupHint: string;
           addPreset: string;
+          topupBonus: string;
+          topupBonusHint: string;
+          topupBonusMin: string;
+          topupBonusType: string;
+          topupBonusValue: string;
+          topupBonusFixed: string;
+          topupBonusPercent: string;
+          addTopupBonus: string;
           invoiceHint: string;
           printerMoved: string;
           invoiceTitle: string;

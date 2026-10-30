@@ -22,6 +22,15 @@ const settings = reactive<Record<string, any>>({});
 // một ô nhập được; giữ riêng thành mảng số rồi đóng/mở gói lúc đọc/ghi.
 const presets = ref<number[]>([]);
 
+// Bảng mốc nạp tặng (khoá `bonus_tiers` của nhóm `topup`); máy chủ kiểm và sắp
+// xếp lại lúc lưu.
+interface BonusTier {
+  min: number;
+  type: 'fixed' | 'percent';
+  value: number;
+}
+const bonusTiers = ref<BonusTier[]>([]);
+
 // Tab "Thanh toán" đọc qua GET /payment-methods thay vì /settings/payment: API
 // đó đã điền sẵn danh sách mặc định khi quán chưa lưu lần nào.
 const paymentMethods = ref<PaymentMethod[]>([]);
@@ -31,7 +40,7 @@ const paymentMethods = ref<PaymentMethod[]>([]);
 let savedForm = '';
 
 function formSnapshot() {
-  return JSON.stringify([settings, presets.value, paymentMethods.value]);
+  return JSON.stringify([settings, presets.value, bonusTiers.value, paymentMethods.value]);
 }
 
 async function markSaved() {
@@ -76,6 +85,32 @@ function parsePresets(raw: unknown): number[] {
   }
 }
 
+function parseBonusTiers(raw: unknown): BonusTier[] {
+  let list: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      list = raw ? JSON.parse(raw) : [];
+    } catch {
+      list = [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  return list.map((t: any) => ({
+    min: Number(t?.min) || 0,
+    type: t?.type === 'percent' ? 'percent' : 'fixed',
+    value: Number(t?.value) || 0
+  }));
+}
+
+function addBonusTier() {
+  const last = bonusTiers.value.at(-1);
+  bonusTiers.value.push({ min: last ? last.min + 50000 : 50000, type: 'fixed', value: 10000 });
+}
+
+function removeBonusTier(idx: number) {
+  bonusTiers.value.splice(idx, 1);
+}
+
 async function fetchSettings() {
   if (activeTab.value === 'payment') {
     await fetchPaymentMethods();
@@ -88,6 +123,7 @@ async function fetchSettings() {
   // lẫn khoá nhóm này sang nhóm kia lúc bấm Lưu.
   Object.keys(settings).forEach(k => Reflect.deleteProperty(settings, k));
   presets.value = [];
+  bonusTiers.value = [];
   try {
     // The API returns a list of {key, value} rows, not an object. Assigning the
     // list straight onto a reactive object produced numeric indices and left
@@ -97,7 +133,10 @@ async function fetchSettings() {
     rows.forEach(row => {
       if (row?.key !== undefined) settings[row.key] = row.value;
     });
-    if (activeTab.value === 'topup') presets.value = parsePresets(settings.presets);
+    if (activeTab.value === 'topup') {
+      presets.value = parsePresets(settings.presets);
+      bonusTiers.value = parseBonusTiers(settings.bonus_tiers);
+    }
     if (activeTab.value === 'limits') coerceNumbers();
     if (activeTab.value === 'features') applyFeatureDefaults();
     if (activeTab.value === 'client') applyClientDefaults();
@@ -199,7 +238,10 @@ async function handleSave() {
   if (activeTab.value === 'topup') {
     // Máy khách đọc đúng khoá `presets` của nhóm `topup`; giữ nguyên dạng
     // {"values": [...]} mà seed đang lưu để không phải chạy lại seed.
-    body = { presets: { values: [...presets.value].sort((a, b) => a - b) } };
+    body = {
+      presets: { values: [...presets.value].sort((a, b) => a - b) },
+      bonus_tiers: bonusTiers.value
+    };
   } else if (activeTab.value === 'payment') {
     body = { methods: paymentMethods.value };
   }
@@ -345,6 +387,55 @@ onMounted(() => {
                   </ElButton>
                 </div>
                 <ElButton @click="addPreset">{{ $t('vnetPages.settings.addPreset') }}</ElButton>
+              </div>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.settings.topupBonus')">
+              <div style="width: 100%">
+                <ElAlert type="info" :closable="false" style="margin-bottom: 8px">
+                  {{ $t('vnetPages.settings.topupBonusHint') }}
+                </ElAlert>
+                <ElTable v-if="bonusTiers.length" :data="bonusTiers" border style="width: 100%; margin-bottom: 8px">
+                  <ElTableColumn :label="$t('vnetPages.settings.topupBonusMin')" min-width="170">
+                    <template #default="{ row }">
+                      <ElInputNumber
+                        v-bind="moneyInput"
+                        v-model="row.min"
+                        :min="1000"
+                        :step="10000"
+                        style="width: 150px"
+                      />
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn :label="$t('vnetPages.settings.topupBonusType')" min-width="150">
+                    <template #default="{ row }">
+                      <ElSelect v-model="row.type" style="width: 140px">
+                        <ElOption value="fixed" :label="$t('vnetPages.settings.topupBonusFixed')" />
+                        <ElOption value="percent" :label="$t('vnetPages.settings.topupBonusPercent')" />
+                      </ElSelect>
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn :label="$t('vnetPages.settings.topupBonusValue')" min-width="170">
+                    <template #default="{ row }">
+                      <ElInputNumber
+                        v-if="row.type === 'fixed'"
+                        v-bind="moneyInput"
+                        v-model="row.value"
+                        :min="1"
+                        :step="10000"
+                        style="width: 150px"
+                      />
+                      <ElInputNumber v-else v-model="row.value" :min="1" :max="1000" :step="10" style="width: 150px" />
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn width="90">
+                    <template #default="{ $index }">
+                      <ElButton type="danger" plain @click="removeBonusTier($index)">
+                        {{ $t('vnetPages.common.delete') }}
+                      </ElButton>
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+                <ElButton @click="addBonusTier">{{ $t('vnetPages.settings.addTopupBonus') }}</ElButton>
               </div>
             </ElFormItem>
           </ElForm>
