@@ -474,6 +474,7 @@ func TestComboService_Activate_Success(t *testing.T) {
 	// Update purchase
 	mock.ExpectExec(`UPDATE "combo_purchases" SET`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	expectDonTheoKhach(mock, "mem1", "m1")
 	mock.ExpectCommit()
 
 	result, err := svc.Activate("p1", &ActivateComboRequest{MachineID: "m1"})

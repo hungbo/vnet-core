@@ -7,7 +7,8 @@ import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useAuth } from '@/hooks/business/auth';
-import { coTheHuy, coTheXacNhan, tongTien, useOrderBatch } from '@/hooks/business/order-batch';
+import { coTheHuy, coTheThanhToan, coTheXacNhan, tongTien, useOrderBatch } from '@/hooks/business/order-batch';
+import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import { formatPrice } from '@/utils/money';
 import MachineRemoteActions from '../machines/modules/machine-remote-actions.vue';
@@ -18,7 +19,8 @@ import MemberTopupDialog from '../members/modules/member-topup-dialog.vue';
 
 const { t: $t } = useI18n();
 // Nút thiếu quyền của API tương ứng thì ẩn: nạp tiền (members.topup), sửa ghi
-// chú máy (machines.update), xác nhận/huỷ đơn (orders.status).
+// chú máy (machines.update), xem đơn (orders.view), xác nhận/huỷ đơn
+// (orders.status), thu tiền đơn (orders.pay).
 const { hasAuth } = useAuth();
 
 const stats = ref([
@@ -74,8 +76,6 @@ function openTopup(row: any) {
   topupVisible.value = true;
 }
 
-// Chỉ đơn còn đang xử lý: chờ duyệt hoặc đã xác nhận nhưng chưa xong.
-const DON_DANG_XU_LY = new Set(['pending', 'confirmed']);
 const ordersVisible = ref(false);
 const ordersLoading = ref(false);
 const ordersRow = ref<any>(null);
@@ -88,6 +88,42 @@ const ordersBusy = ref(false);
 const ordersBatch = useOrderBatch();
 const selectedConfirmable = computed(() => ordersSelected.value.filter(coTheXacNhan));
 const selectedCancellable = computed(() => ordersSelected.value.filter(coTheHuy));
+// Máy khách đã bỏ về thì dòng không còn hội viên: lấy tên từ chính các đơn.
+const ordersMember = computed(
+  () =>
+    ordersRow.value?.member_name ||
+    [...new Set(orders.value.map(o => o.member_name || o.member_username).filter(Boolean))].join(', ') ||
+    '—'
+);
+
+// Thu tiền ngay trong hộp: khách ra quầy trả máy thì thanh toán các đơn đang tích,
+// không tích đơn nào là tất cả — không phải sang trang Đơn hàng dò từng đơn.
+const { enabledMethods } = usePaymentMethods();
+const ordersPayable = computed(() =>
+  (ordersSelected.value.length ? ordersSelected.value : orders.value).filter(coTheThanhToan)
+);
+const payVisible = ref(false);
+// Chốt danh sách lúc mở hộp: chưa tích gì thì bảng vẫn tải lại theo thời gian thực,
+// đơn mới tới giữa chừng không được lẳng lặng gộp vào số tiền đang thu.
+const payList = ref<any[]>([]);
+const payForm = ref({ payment_method: 'cash', reference_code: '' });
+
+function openPay() {
+  payList.value = [...ordersPayable.value];
+  payForm.value = { payment_method: 'cash', reference_code: '' };
+  payVisible.value = true;
+}
+
+async function submitPay() {
+  ordersBusy.value = true;
+  try {
+    await ordersBatch.thanhToan(payList.value, payForm.value);
+    payVisible.value = false;
+    await afterOrdersBatch();
+  } finally {
+    ordersBusy.value = false;
+  }
+}
 
 async function afterOrdersBatch() {
   ordersTableRef.value?.clearSelection();
@@ -137,9 +173,11 @@ async function loadOrders() {
   if (!row) return;
   ordersLoading.value = true;
   try {
-    const res: any = await client.get(`/members/${row.member_id}/orders`, { params: { page_size: 50 } });
-    const list: any[] = Array.isArray(res) ? res : res?.items || [];
-    orders.value = list.filter(o => DON_DANG_XU_LY.has(o.status));
+    // Theo MÁY chứ không theo hội viên: máy khách vừa bỏ về hay đã tắt không còn
+    // phiên, không còn hội viên, mà đơn chưa thu tiền vẫn nằm đó. API chỉ trả đơn
+    // chờ duyệt hoặc đã xác nhận mà chưa thanh toán.
+    const res: any = await client.get(`/machines/${row.machine_id}/open-orders`, { params: { page_size: 100 } });
+    orders.value = Array.isArray(res) ? res : res?.items || [];
   } catch {
     orders.value = [];
   } finally {
@@ -345,7 +383,7 @@ onBeforeUnmount(() => {
                 :machine="{ id: row.machine_id, machine_code: row.machine_code }"
                 :member-id="row.member_id"
               />
-              <!-- Phiên khách vãng lai không có hội viên: không có ví để nạp, không có đơn theo tên. -->
+              <!-- Phiên khách vãng lai không có hội viên: không có ví để nạp. -->
               <ElButton
                 v-if="hasAuth('members.topup')"
                 size="small"
@@ -355,7 +393,7 @@ onBeforeUnmount(() => {
               >
                 {{ $t('vnetPages.dashboard.topUp') }}
               </ElButton>
-              <ElButton size="small" :disabled="!row.member_id" @click="openOrders(row)">
+              <ElButton v-if="hasAuth('orders.view')" size="small" @click="openOrders(row)">
                 {{ $t('vnetPages.dashboard.orders') }}
               </ElButton>
             </div>
@@ -375,7 +413,7 @@ onBeforeUnmount(() => {
       v-model="ordersVisible"
       :title="
         $t('vnetPages.dashboard.ordersTitle', {
-          member: ordersRow?.member_name || '—',
+          member: ordersMember,
           code: ordersRow?.machine_code || ''
         })
       "
@@ -429,6 +467,15 @@ onBeforeUnmount(() => {
             }}
           </span>
           <ElButton
+            v-if="hasAuth('orders.pay')"
+            type="success"
+            :loading="ordersBusy"
+            :disabled="!ordersPayable.length"
+            @click="openPay"
+          >
+            {{ $t('vnetPages.orders.batchPay', { count: ordersPayable.length }) }}
+          </ElButton>
+          <ElButton
             v-if="ordersSelected.length && hasAuth('orders.status')"
             type="primary"
             :loading="ordersBusy"
@@ -449,6 +496,33 @@ onBeforeUnmount(() => {
           </ElButton>
           <ElButton @click="goOrders">{{ $t('vnetPages.dashboard.goOrders') }}</ElButton>
         </div>
+      </template>
+    </ElDialog>
+
+    <ElDialog v-model="payVisible" :title="$t('vnetPages.orders.batchPayTitle')" width="420px" append-to-body>
+      <ElForm label-width="130px">
+        <ElFormItem :label="$t('vnetPages.orders.batchOrderCount')">{{ payList.length }}</ElFormItem>
+        <ElFormItem :label="$t('vnetPages.orders.payAmount')">
+          <strong>{{ formatPrice(tongTien(payList)) }}</strong>
+        </ElFormItem>
+        <ElFormItem :label="$t('vnetPages.orders.payMethod')">
+          <ElSelect v-model="payForm.payment_method" class="w-full">
+            <ElOption v-for="m in enabledMethods" :key="m.code" :label="m.name" :value="m.code" />
+            <ElOption :label="$t('vnetPages.orders.payBalance')" value="balance" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem
+          v-if="payForm.payment_method !== 'cash' && payForm.payment_method !== 'balance'"
+          :label="$t('vnetPages.orders.payReference')"
+        >
+          <ElInput v-model="payForm.reference_code" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="payVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="ordersBusy" @click="submitPay">
+          {{ $t('vnetPages.orders.pay') }}
+        </ElButton>
       </template>
     </ElDialog>
   </div>

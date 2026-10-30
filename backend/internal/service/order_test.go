@@ -46,6 +46,39 @@ func TestOrderService_Create_NoStock(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Quầy gọi món hộ hội viên mà không chọn máy: đơn ghi máy khách đang ngồi, để
+// khách thoát ra đơn vẫn còn máy.
+func TestOrderService_Create_GhiMayKhachDangNgoi(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	mock.ExpectQuery(`SELECT \* FROM "products" WHERE id = \$1 AND "products"\."deleted_at" IS NULL ORDER BY "products"."id" LIMIT \$2`).
+		WithArgs("prod-1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "price", "has_stock", "is_retail", "is_active"}).
+			AddRow("prod-1", "Coke", int64(10000), false, true, true))
+	mock.ExpectQuery(`SELECT "machine_id" FROM "machine_sessions" WHERE member_id = \$1 AND is_active = \$2 ORDER BY started_at DESC,"machine_sessions"."id" LIMIT \$3`).
+		WithArgs("mem-1", true, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"machine_id"}).AddRow("may-07"))
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE order_code LIKE \$1`).
+		WillReturnError(gorm.ErrRecordNotFound)
+	mock.ExpectQuery(`INSERT INTO "orders"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(testUUID))
+	mock.ExpectQuery(`INSERT INTO "order_items"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("item-1", testNow))
+	mock.ExpectCommit()
+
+	result, err := svc.Create(CreateOrderRequest{
+		MemberID: "mem-1",
+		Items:    []OrderItemRequest{{ProductID: "prod-1", Quantity: 1}},
+	}, "user-1")
+	require.NoError(t, err)
+	require.NotNil(t, result.MachineID)
+	assert.Equal(t, "may-07", *result.MachineID)
+}
+
 // Món ngưng bán vẫn có thể nằm trong giỏ của máy trạm mở thực đơn từ trước;
 // backend phải chặn chứ không chỉ trông vào việc ẩn khỏi thực đơn.
 func TestOrderService_Create_NgungBan(t *testing.T) {

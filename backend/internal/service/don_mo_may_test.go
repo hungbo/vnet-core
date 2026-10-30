@@ -44,6 +44,48 @@ func TestDonMoTheoMay_DonDiTheoKhach(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Hộp "Đơn đang gọi" của một máy lấy đúng những đơn làm máy đó đỏ — kể cả đơn
+// gọi ở quầy của khách đã rời máy.
+func TestDonMoCuaMay(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	mock.ExpectQuery(`SELECT "id","status","member_id","machine_id","final_amount" FROM "orders"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "member_id", "machine_id", "final_amount"}).
+			AddRow("o1", "confirmed", "mem-a", nil, 20000).    // gọi ở quầy, khách đã rời MAY35
+			AddRow("o2", "confirmed", "mem-a", "may35", 5000). // gọi trên MAY35
+			AddRow("o3", "confirmed", nil, "may35", 7000).     // khách vãng lai MAY35
+			AddRow("o4", "pending", "mem-b", "may35", 9000))   // gọi ở MAY35 rồi đổi sang MAY40
+	mock.ExpectQuery(`SELECT DISTINCT ON \(member_id\) member_id, machine_id FROM "machine_sessions"`).
+		WithArgs("mem-a", "mem-b").
+		WillReturnRows(sqlmock.NewRows([]string{"member_id", "machine_id"}).
+			AddRow("mem-a", "may35").
+			AddRow("mem-b", "may40"))
+
+	got, err := donMoCuaMay(db, "may35")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"o1", "o2", "o3"}, got)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// expectDonTheoKhach: mở phiên (cả đổi máy) chuyển đơn chưa thu tiền của hội viên
+// sang máy mới. Đơn nạp tiền, đơn đã xong hay đã huỷ thì giữ máy cũ.
+func expectDonTheoKhach(mock sqlmock.Sqlmock, memberID, machineID string) {
+	mock.ExpectExec(`UPDATE "orders" SET "machine_id"=\$1 WHERE \(member_id = \$2 AND status IN \(\$3,\$4\) AND order_type <> \$5\) AND \(machine_id IS NULL OR machine_id <> \$6\) AND "orders"\."deleted_at" IS NULL`).
+		WithArgs(machineID, memberID, "pending", "confirmed", model.OrderTypeTopup, machineID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+}
+
+func TestDonTheoKhach(t *testing.T) {
+	db, mock := newMockDB(t)
+	// Ngoài giao dịch thì GORM tự bọc lệnh UPDATE trong một giao dịch riêng.
+	mock.ExpectBegin()
+	expectDonTheoKhach(mock, "mem-a", "may40")
+	mock.ExpectCommit()
+
+	require.NoError(t, donTheoKhach(db, "mem-a", "may40"))
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestDonMoTheoMay_KhongCoDon(t *testing.T) {
 	db, mock := newMockDB(t)
 	mock.ExpectQuery(`SELECT .* FROM "orders"`).

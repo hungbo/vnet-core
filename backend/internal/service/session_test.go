@@ -152,6 +152,8 @@ func TestSessionService_StartSession_WithCombo(t *testing.T) {
 	// Mở máy ghi lại lần ghé gần nhất của hội viên.
 	mock.ExpectExec(`UPDATE "members" SET "last_visit_at"`).
 		WillReturnResult(sqlmock.NewResult(1, 1))
+	// Đơn chưa thu tiền của khách đi theo máy vừa ngồi.
+	expectDonTheoKhach(mock, "mem1", "m1")
 	mock.ExpectCommit()
 
 	result, err := svc.StartSession(&StartRequest{

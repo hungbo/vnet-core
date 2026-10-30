@@ -29,21 +29,22 @@ func (s *MachineService) DonMoTheoMay() ([]DonMoMay, error) {
 	return donMoTheoMay(s.db)
 }
 
-// donMoTheoMay gom đơn chưa thu tiền theo máy.
+// donMoVaMay đọc mọi đơn chưa thu tiền và máy mà từng đơn được tính cho
+// (order_id → machine_id). Đơn không tính cho máy nào thì không có trong map.
 //
 // Đơn đi theo KHÁCH: đơn của hội viên tính cho máy họ ngồi GẦN NHẤT — máy đang
 // ngồi, hoặc máy vừa bỏ về. Gọi trên máy cũ rồi đổi máy, hay gọi ở quầy, vẫn hiện
 // đúng chỗ khách ngồi; khách trả máy hay tắt máy thì máy đó còn đỏ để quầy thấy.
 // Đơn khách vãng lai, và hội viên chưa ngồi máy nào, thì tính cho máy đã gọi món.
-func donMoTheoMay(db *gorm.DB) ([]DonMoMay, error) {
+func donMoVaMay(db *gorm.DB) ([]model.Order, map[string]string, error) {
 	var dons []model.Order
 	if err := db.Select("id", "status", "member_id", "machine_id", "final_amount").
 		Where("status IN ? AND order_type <> ?", trangThaiDonMo, model.OrderTypeTopup).
 		Find(&dons).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(dons) == 0 {
-		return []DonMoMay{}, nil
+		return nil, map[string]string{}, nil
 	}
 
 	coDon := map[string]bool{}
@@ -64,15 +65,14 @@ func donMoTheoMay(db *gorm.DB) ([]DonMoMay, error) {
 			Where("member_id IN ?", hoiVien).
 			Order("member_id, started_at DESC").
 			Scan(&rows).Error; err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, r := range rows {
 			ganNhat[r.MemberID] = r.MachineID
 		}
 	}
 
-	theoMay := map[string]*DonMoMay{}
-	var thuTu []string
+	mayCuaDon := map[string]string{}
 	for _, d := range dons {
 		may := ""
 		if d.MemberID != nil {
@@ -81,8 +81,26 @@ func donMoTheoMay(db *gorm.DB) ([]DonMoMay, error) {
 		if may == "" && d.MachineID != nil {
 			may = *d.MachineID
 		}
+		if may != "" { // rỗng: gọi ở quầy, khách chưa ngồi máy nào
+			mayCuaDon[d.ID] = may
+		}
+	}
+	return dons, mayCuaDon, nil
+}
+
+// donMoTheoMay gom đơn chưa thu tiền theo máy, máy tính theo donMoVaMay.
+func donMoTheoMay(db *gorm.DB) ([]DonMoMay, error) {
+	dons, mayCuaDon, err := donMoVaMay(db)
+	if err != nil {
+		return nil, err
+	}
+
+	theoMay := map[string]*DonMoMay{}
+	var thuTu []string
+	for _, d := range dons {
+		may := mayCuaDon[d.ID]
 		if may == "" {
-			continue // gọi ở quầy, khách chưa ngồi máy nào: không có máy để tô
+			continue // không có máy để tô
 		}
 		m := theoMay[may]
 		if m == nil {
@@ -103,6 +121,34 @@ func donMoTheoMay(db *gorm.DB) ([]DonMoMay, error) {
 		out = append(out, *theoMay[id])
 	}
 	return out, nil
+}
+
+// donMoCuaMay trả ID các đơn chưa thu tiền đang tính cho một máy — đúng những đơn
+// làm máy đó đỏ, nên hộp "Đơn đang gọi" mở được cả khi khách đã rời máy hay máy đã
+// tắt (không còn phiên, không còn hội viên để tra theo).
+func donMoCuaMay(db *gorm.DB, machineID string) ([]string, error) {
+	dons, mayCuaDon, err := donMoVaMay(db)
+	if err != nil {
+		return nil, err
+	}
+	ids := []string{}
+	for _, d := range dons {
+		if mayCuaDon[d.ID] == machineID {
+			ids = append(ids, d.ID)
+		}
+	}
+	return ids, nil
+}
+
+// donTheoKhach ghi máy hội viên vừa ngồi vào các đơn chưa thu tiền của họ: khách
+// đổi máy (quầy đổi hộ, hay tự đăng xuất rồi đăng nhập máy khác) thì cột Máy ở
+// trang Đơn hàng đi theo khách, không nằm lại máy cũ. Đơn gọi ở quầy lúc khách
+// chưa ngồi máy nào cũng nhận máy ở đây.
+func donTheoKhach(tx *gorm.DB, memberID, machineID string) error {
+	return tx.Model(&model.Order{}).
+		Where("member_id = ? AND status IN ? AND order_type <> ?", memberID, trangThaiDonMo, model.OrderTypeTopup).
+		Where("machine_id IS NULL OR machine_id <> ?", machineID).
+		Update("machine_id", machineID).Error
 }
 
 // baoDonMoTrongVong: mỗi phiên báo động nhiều nhất một lần trong quãng này. Máy

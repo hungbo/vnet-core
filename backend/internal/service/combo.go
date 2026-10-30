@@ -887,6 +887,11 @@ func (s *ComboService) Activate(purchaseID string, req *ActivateComboRequest) (*
 		tx.Rollback()
 		return nil, err
 	}
+	// Mở phiên không qua SessionService.StartSession nên tự chuyển đơn theo khách.
+	if err := donTheoKhach(tx, purchase.MemberID, machine.ID); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 
 	if err := tx.Commit().Error; err != nil {
 		return nil, err

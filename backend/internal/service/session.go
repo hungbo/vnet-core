@@ -723,6 +723,12 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 		return nil, err
 	}
 
+	// Đổi máy cũng qua đây: đơn chưa thu tiền của khách chuyển sang máy mới.
+	if err := donTheoKhach(tx, member.ID, machine.ID); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}

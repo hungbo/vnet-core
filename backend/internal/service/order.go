@@ -172,6 +172,17 @@ func (s *OrderService) ListByMember(memberID string, params pagination.Params) (
 	return s.listOrders(s.db.Model(&model.Order{}).Where("member_id = ?", memberID), params)
 }
 
+// ListOpenByMachine trả đơn chưa thu tiền đang tính cho một máy (xem donMoVaMay) —
+// hộp "Đơn đang gọi" ở Bảng điều khiển. Tra theo máy chứ không theo hội viên, nên
+// máy khách vừa bỏ về hay máy đã tắt vẫn mở xem và thu tiền được.
+func (s *OrderService) ListOpenByMachine(machineID string, params pagination.Params) ([]OrderResponse, int64, int, int, error) {
+	ids, err := donMoCuaMay(s.db, machineID)
+	if err != nil {
+		return nil, 0, 0, 0, err
+	}
+	return s.listOrders(s.db.Model(&model.Order{}).Where("id IN ?", ids), params)
+}
+
 // orderSortColumns: cột trang Đơn hàng cho bấm sắp xếp (prop của cột → cột SQL).
 // Hội viên, máy và người thao tác tra từ bảng khác nên không có ở đây.
 var orderSortColumns = map[string]string{
@@ -466,6 +477,15 @@ func (s *OrderService) Create(req CreateOrderRequest, createdBy string) (*OrderR
 		var machine model.Machine
 		if err := s.db.Where("machine_code = ?", req.MachineCode).First(&machine).Error; err == nil {
 			req.MachineID = machine.ID
+		}
+	}
+	// Quầy gọi món hộ hội viên đang ngồi máy: ghi luôn máy đó. Không ghi thì đơn
+	// chỉ tìm ra máy qua phiên đang chạy, khách thoát ra là đơn mất thông tin máy.
+	if req.MachineID == "" && req.MemberID != "" {
+		var phien model.MachineSession
+		if err := s.db.Select("machine_id").Where("member_id = ? AND is_active = ?", req.MemberID, true).
+			Order("started_at DESC").First(&phien).Error; err == nil {
+			req.MachineID = phien.MachineID
 		}
 	}
 

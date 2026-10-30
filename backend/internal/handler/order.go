@@ -74,6 +74,26 @@ func (h *OrderHandler) ListByMember(c *gin.Context) {
 	response.Paginated(c, result, total, page, pageSize)
 }
 
+// @Summary List open orders of a machine
+// @Description Unpaid (pending/confirmed) product orders counted for a machine — the same ones that colour it on the dashboard, even after the customer left
+// @Tags Orders
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Machine ID"
+// @Param page query int false "Page number"
+// @Param page_size query int false "Page size"
+// @Success 200 {object} response.Response{data=response.PaginatedData{items=[]service.OrderResponse}}
+// @Router /machines/{id}/open-orders [get]
+func (h *OrderHandler) ListOpenByMachine(c *gin.Context) {
+	params := pagination.GetParams(c)
+	result, total, page, pageSize, err := h.svc.ListOpenByMachine(c.Param("id"), *params)
+	if err != nil {
+		response.InternalError(c, "Failed to fetch orders", err)
+		return
+	}
+	response.Paginated(c, result, total, page, pageSize)
+}
+
 // @Summary Get order by ID
 // @Description Get a single order by its ID
 // @Tags Orders

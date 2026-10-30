@@ -229,6 +229,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				machines.DELETE("/:id", middleware.StaffOnly(), middleware.PermissionRequired("machines.delete"), h.Machine.Delete)
 				machines.POST("/:id/heartbeat", middleware.StaffOnly(), middleware.PermissionRequired("machines.update"), h.Machine.Heartbeat)
 				machines.GET("/:id/hardware", middleware.StaffOnly(), middleware.PermissionRequired("machines.view"), h.Machine.GetHardware)
+				machines.GET("/:id/open-orders", middleware.StaffOnly(), middleware.PermissionRequired("orders.view"), h.Order.ListOpenByMachine)
 				machines.POST("/:id/remote/:action", middleware.StaffOnly(), middleware.PermissionRequired("machines.remote"), h.Machine.RemoteAction)
 				machines.POST("/:id/wake", middleware.StaffOnly(), middleware.PermissionRequired("machines.remote"), h.Machine.Wake)
 				machines.GET("/:id/remote-desktop", middleware.StaffOnly(), middleware.PermissionRequired("machines.remote_desktop"), h.Machine.RemoteDesktop)
