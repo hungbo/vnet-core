@@ -75,6 +75,18 @@ const keyLine = computed(() => {
   }
 });
 const isMaster = computed(() => info.value.role === 'master');
+// Chưa bật: ô nào của khung kết nối còn trống (GAME_ROOT trong môi trường cũng tính là đã có thư mục), hoặc đã
+// lưu đủ mà giá trị không còn dùng được.
+const offStatus = computed(() => {
+  const missing = [
+    !info.value.hub_url && $t('vnetPages.games.hubUrl'),
+    !info.value.has_key && $t('vnetPages.games.hubKey'),
+    !info.value.game_root && !info.value.root && $t('vnetPages.games.gameRoot')
+  ]
+    .filter(Boolean)
+    .join(', ');
+  return missing ? $t('vnetPages.games.offMissing', { items: missing }) : $t('vnetPages.games.offSavedInvalid');
+});
 const isCafe = computed(() => info.value.role === 'cafe');
 // Game cục bộ cần biết GAME_ROOT để chọn thư mục và kiểm tệp chạy; master thì phát hành game, không có game cục bộ.
 const canAddLocal = computed(() => isCafe.value && Boolean(info.value.root));
@@ -481,6 +493,7 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
 
       <ElAlert v-if="!info.role" type="info" :closable="false" show-icon style="margin-bottom: 16px">
         {{ $t('vnetPages.games.offHint') }}
+        {{ offStatus }}
       </ElAlert>
       <ElAlert v-else type="info" :closable="false" show-icon style="margin-bottom: 16px">
         {{ isMaster ? $t('vnetPages.games.masterHint') : $t('vnetPages.games.cafeHint') }}

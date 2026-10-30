@@ -715,7 +715,10 @@ const local: App.I18n.Schema = {
       root: 'Thư mục game',
       upstream: 'Máy master',
       offHint:
-        'Máy chủ này chưa bật cập nhật game. Quán dán địa chỉ và key do Hub cấp vào khung "Kết nối cập nhật game" bên dưới. Máy master thì đặt GAME_ROLE=master cùng GAME_ROOT, GAME_PUBLIC_URL và GAME_CATALOG_KEY trong config.env rồi khởi động lại vnet-server.',
+        'Máy chủ này chưa bật cập nhật game. Điền địa chỉ Hub, key do Hub cấp và thư mục game vào khung "Kết nối cập nhật game" bên dưới rồi bấm "Lưu và kết nối": bật ngay, không cần khởi động lại.',
+      offMissing: 'Còn thiếu: {items}.',
+      offSavedInvalid:
+        'Đã lưu đủ nhưng chưa bật được (thư mục game hoặc địa chỉ đã lưu không còn dùng được). Bấm "Lưu và kết nối" để kiểm tra lại.',
       hubTitle: 'Kết nối cập nhật game',
       hubUrl: 'Địa chỉ Hub',
       hubUrlPlaceholder: 'http://địa-chỉ-hub:20800',

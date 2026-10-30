@@ -715,7 +715,10 @@ const local: App.I18n.Schema = {
       root: 'Game folder',
       upstream: 'Master',
       offHint:
-        'Game updates are off on this server. A shop pastes the address and key issued by the Hub into the "Game update connection" box below. A master machine sets GAME_ROLE=master with GAME_ROOT, GAME_PUBLIC_URL and GAME_CATALOG_KEY in config.env, then restarts vnet-server.',
+        'Game updates are off on this server. Fill in the Hub address, the key issued by the Hub and the game folder in the "Game update connection" box below, then click "Save and connect": updates turn on right away, no restart needed.',
+      offMissing: 'Still missing: {items}.',
+      offSavedInvalid:
+        'Everything is saved but updates could not start (the saved game folder or address no longer works). Click "Save and connect" to check again.',
       hubTitle: 'Game update connection',
       hubUrl: 'Hub address',
       hubUrlPlaceholder: 'http://hub-address:20800',

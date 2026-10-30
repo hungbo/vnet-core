@@ -714,7 +714,9 @@ const local: App.I18n.Schema = {
       root: '游戏目录',
       upstream: '主服务器',
       offHint:
-        '本服务器未启用游戏更新。网吧请把 Hub 发放的地址和密钥粘贴到下方“游戏更新连接”中。主服务器则在 config.env 中设置 GAME_ROLE=master 以及 GAME_ROOT、GAME_PUBLIC_URL 和 GAME_CATALOG_KEY，然后重启 vnet-server。',
+        '本服务器未启用游戏更新。请在下方“游戏更新连接”中填写 Hub 地址、Hub 发放的密钥和游戏目录，然后点击“保存并连接”：立即启用，无需重启。',
+      offMissing: '尚缺：{items}。',
+      offSavedInvalid: '已全部保存但未能启用（已保存的游戏目录或地址已不可用）。请点击“保存并连接”重新检查。',
       hubTitle: '游戏更新连接',
       hubUrl: 'Hub 地址',
       hubUrlPlaceholder: 'http://hub地址:20800',
