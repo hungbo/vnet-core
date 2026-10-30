@@ -7,10 +7,12 @@ import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
 import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const saving = ref(false);
 const search = ref('');
@@ -82,12 +84,14 @@ const handoverRules = {
   ]
 };
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/shifts', {
       params: {
         page,
         page_size: pageSize,
+        sort,
+        order,
         search: search.value || undefined,
         status: filterStatus.value || undefined
       }
@@ -105,18 +109,21 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'started_at',
       label: $t('vnetPages.shifts.startTime'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => (row.started_at ? dayjs(row.started_at).format('DD/MM/YYYY HH:mm') : '')
     },
     {
       prop: 'ended_at',
       label: $t('vnetPages.shifts.endTime'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => (row.ended_at ? dayjs(row.ended_at).format('DD/MM/YYYY HH:mm') : '-')
     },
     {
       prop: 'status',
       label: $t('vnetPages.common.status'),
       width: 100,
+      sortable: 'custom',
       formatter: (row: any) =>
         h(ElTag, { type: row.status === 'open' ? 'success' : 'info' }, () =>
           row.status === 'open' ? $t('vnetPages.shifts.open') : $t('vnetPages.shifts.closed')
@@ -126,12 +133,14 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'opening_balance',
       label: $t('vnetPages.shifts.openingCash'),
       width: 120,
+      sortable: 'custom',
       formatter: (row: any) => formatPrice(row.opening_balance)
     },
     {
       prop: 'closing_balance',
       label: $t('vnetPages.shifts.closingCash'),
       width: 120,
+      sortable: 'custom',
       formatter: (row: any) => (row.closing_balance != null ? formatPrice(row.closing_balance) : '-')
     },
     {
@@ -154,6 +163,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'discrepancy',
       label: $t('vnetPages.shifts.discrepancy'),
       width: 130,
+      sortable: 'custom',
       formatter: (row: any) => {
         if (row.discrepancy == null) return '-';
         const type = row.discrepancy === 0 ? 'success' : 'danger';
@@ -247,8 +257,8 @@ async function handleSaveHandover() {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.shifts.title') }}</span>
@@ -277,7 +287,9 @@ async function handleSaveHandover() {
                 style="width: 160px"
                 @input="fetchData"
               />
-              <ElButton type="primary" @click="handleOpenShift">{{ $t('vnetPages.shifts.openShift') }}</ElButton>
+              <ElButton v-if="hasAuth('shifts.open')" type="primary" @click="handleOpenShift">
+                {{ $t('vnetPages.shifts.openShift') }}
+              </ElButton>
             </template>
           </TableHeaderOperation>
         </div>
@@ -289,14 +301,30 @@ async function handleSaveHandover() {
         show-icon
         class="mb-12px"
       />
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="180" fixed="right">
           <template #default="{ row }">
-            <ElButton v-if="row.status === 'open'" size="small" type="warning" @click="handleCloseShift(row)">
+            <ElButton
+              v-if="row.status === 'open' && hasAuth('shifts.close')"
+              size="small"
+              type="warning"
+              @click="handleCloseShift(row)"
+            >
               {{ $t('vnetPages.shifts.closeShift') }}
             </ElButton>
-            <ElButton v-if="row.status === 'open'" size="small" @click="handleHandover(row)">
+            <ElButton
+              v-if="row.status === 'open' && hasAuth('shifts.handover')"
+              size="small"
+              @click="handleHandover(row)"
+            >
               {{ $t('vnetPages.shifts.handover') }}
             </ElButton>
           </template>

@@ -7,10 +7,12 @@ import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
+import { useAuth } from '@/hooks/business/auth';
 import { formatAmount } from '@/utils/money';
 
 const { t: $t } = useI18n();
 const { paymentLabel } = usePaymentMethods();
+const { hasAuth } = useAuth();
 const route = useRoute();
 const memberId = route.params.id as string;
 
@@ -165,7 +167,12 @@ onMounted(() => {
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>{{ $t('vnetPages.members.title') }}: {{ member?.full_name || member?.username }}</span>
           <!-- Tài khoản combo chỉ được đổi mật khẩu (ở danh sách hội viên), không sửa thông tin. -->
-          <ElButton v-if="member?.role !== 'combo'" type="primary" size="small" @click="openEdit">
+          <ElButton
+            v-if="member?.role !== 'combo' && hasAuth('members.update')"
+            type="primary"
+            size="small"
+            @click="openEdit"
+          >
             {{ $t('vnetPages.common.edit') }}
           </ElButton>
         </div>

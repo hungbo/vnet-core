@@ -5,6 +5,7 @@ import { register } from 'vue-advanced-chat';
 import client from '@/api/client';
 import { useAuthStore } from '@/store/modules/auth';
 import { useWebSocketStore } from '@/store/modules/ws';
+import { useAuth } from '@/hooks/business/auth';
 import { useChatRooms } from '@/hooks/chat/useChatRooms';
 import { useChatWs } from '@/hooks/chat/useChatWs';
 import { chatRequestedRoomId, isChatOpen } from '@/hooks/chat/chatState';
@@ -12,6 +13,7 @@ register();
 
 const authStore = useAuthStore();
 const wsStore = useWebSocketStore();
+const { hasAuth } = useAuth();
 const currentUserId = computed(() => authStore.userInfo?.id || '');
 
 // ── UI state ──
@@ -77,7 +79,8 @@ const textMessages = {
 };
 
 // ── Room actions ──
-const roomActions = [{ name: 'deleteRoom', title: 'Xoá' }];
+// Xoá phòng (DELETE /chat/rooms, /chat/rooms/:id) cần chat.moderate.
+const roomActions = computed(() => (hasAuth('chat.moderate') ? [{ name: 'deleteRoom', title: 'Xoá' }] : []));
 function onRoomAction($event: any) {
   const raw = $event?.detail ?? $event;
   const payload = Array.isArray(raw) ? raw[0] : raw;
@@ -221,7 +224,15 @@ async function openNewRoom() {
       <span>Chat hỗ trợ</span>
       <div>
         <ElButton size="small" text title="Tạo hội thoại mới" @click.stop="openNewRoom">＋</ElButton>
-        <ElButton size="small" text title="Xoá tất cả hội thoại" @click.stop="deleteAllRooms">🗑</ElButton>
+        <ElButton
+          v-if="hasAuth('chat.moderate')"
+          size="small"
+          text
+          title="Xoá tất cả hội thoại"
+          @click.stop="deleteAllRooms"
+        >
+          🗑
+        </ElButton>
         <ElButton size="small" text @click.stop="isChatOpen = false">─</ElButton>
       </div>
     </div>

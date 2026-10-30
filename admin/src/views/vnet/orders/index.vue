@@ -58,12 +58,14 @@ function statusLabel(status: string) {
   return statusMap.value[status]?.label || status;
 }
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/orders', {
       params: {
         page,
         page_size: pageSize,
+        sort,
+        order,
         search: search.value || undefined,
         status: filterStatus.value || undefined,
         order_type: filterType.value || undefined,
@@ -78,6 +80,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'order_code',
       label: $t('vnetPages.orders.orderCode'),
       width: 140,
+      sortable: 'custom',
       // Bấm mã đơn để xem chi tiết — thay cho nút "Chi tiết" ở cột thao tác.
       formatter: (row: any) =>
         h(ElLink, { type: 'primary', underline: false, onClick: () => viewDetail(row) }, () => row.order_code)
@@ -86,12 +89,14 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'status',
       label: $t('vnetPages.common.status'),
       width: 120,
+      sortable: 'custom',
       formatter: (row: any) => h(ElTag, { type: statusType(row.status) }, () => statusLabel(row.status))
     },
     {
       prop: 'order_type',
       label: $t('vnetPages.orders.orderType'),
       width: 100,
+      sortable: 'custom',
       formatter: (row: any) => {
         if (row.order_type === 'topup') return $t('vnetPages.orders.topup');
         return $t('vnetPages.orders.product');
@@ -107,6 +112,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'total_amount',
       label: $t('vnetPages.orders.total'),
       width: 130,
+      sortable: 'custom',
       formatter: (row: any) => formatPrice(row.total_amount)
     },
     {
@@ -116,6 +122,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'discount_amount',
       label: $t('vnetPages.orders.discount'),
       width: 150,
+      sortable: 'custom',
       formatter: (row: any) =>
         row.discount_amount > 0
           ? `-${formatPrice(row.discount_amount)}${row.promotion_name ? ` (${row.promotion_name})` : ''}`
@@ -125,12 +132,14 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'final_amount',
       label: $t('vnetPages.orders.finalAmount'),
       width: 130,
+      sortable: 'custom',
       formatter: (row: any) => formatPrice(row.final_amount)
     },
     {
       prop: 'payment_method',
       label: $t('vnetPages.orders.paymentMethod'),
       width: 110,
+      sortable: 'custom',
       formatter: (row: any) => paymentLabel(row.payment_method)
     },
     {
@@ -149,12 +158,14 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'created_at',
       label: $t('vnetPages.orders.createdAt'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => (row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm') : '')
     },
     {
       prop: 'completed_at',
       label: $t('vnetPages.orders.completedAt'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => (row.completed_at ? dayjs(row.completed_at).format('DD/MM/YYYY HH:mm') : '-')
     }
   ]
@@ -702,8 +713,8 @@ watch(
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.orders.title') }}</span>
@@ -786,8 +797,11 @@ watch(
         ref="tableRef"
         v-loading="loading"
         :data="data"
+        class="fill-table"
+        height="100%"
         style="width: 100%"
         @selection-change="checkedRowKeys = $event.map((r: any) => r.id)"
+        @sort-change="onSortChange"
       >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <!--

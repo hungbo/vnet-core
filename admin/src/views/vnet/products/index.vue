@@ -6,11 +6,13 @@ import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
 import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 import ImageUpload from '@/components/common/ImageUpload.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const saving = ref(false);
 const search = ref('');
@@ -91,12 +93,14 @@ function getUnitName(id: string) {
   return u ? u.name : $t('vnetPages.common.deleted');
 }
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/products', {
       params: {
         page,
         page_size: pageSize,
+        sort,
+        order,
         search: search.value || undefined,
         supplier_id: filterSupplier.value || undefined,
         category_id: filterCategory.value || undefined,
@@ -106,7 +110,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'name', label: $t('vnetPages.products.name'), minWidth: 160 },
+    { prop: 'name', label: $t('vnetPages.products.name'), minWidth: 160, sortable: 'custom' },
     {
       prop: 'category_id',
       label: $t('vnetPages.products.category'),
@@ -117,6 +121,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'price',
       label: $t('vnetPages.products.price'),
       width: 120,
+      sortable: 'custom',
       formatter: (row: any) => formatPrice(row.price)
     },
     {
@@ -135,6 +140,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'is_retail',
       label: $t('vnetPages.products.isRetail'),
       width: 90,
+      sortable: 'custom',
       align: 'center',
       formatter: (row: any) =>
         h(ElTag, { type: row.is_retail ? 'success' : 'info', size: 'small' }, () =>
@@ -145,11 +151,13 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'is_active',
       label: $t('vnetPages.common.status'),
       width: 100,
+      sortable: 'custom',
       align: 'center',
       formatter: (row: any) =>
         h(ElSwitch, {
           modelValue: row.is_active,
           loading: row.toggling,
+          disabled: !hasAuth('products.update'),
           onChange: (v: string | number | boolean) => toggleActive(row, Boolean(v))
         })
     },
@@ -550,14 +558,15 @@ async function handleStockSave() {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.products.title') }}</span>
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-add="hasAuth('products.create')"
             :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
@@ -609,7 +618,14 @@ async function handleStockSave() {
           </TableHeaderOperation>
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.products.image')" width="90" align="center">
           <template #default="{ row }">
@@ -626,14 +642,27 @@ async function handleStockSave() {
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.common.action')" width="300" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="handleEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" :disabled="!row.has_stock" @click="handleStockIn(row)">
+            <ElButton v-if="hasAuth('products.update')" size="small" @click="handleEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <!-- Nhập/xuất kho tạo phiếu POST /stock-transactions → stock.create -->
+            <ElButton
+              v-if="hasAuth('stock.create')"
+              size="small"
+              :disabled="!row.has_stock"
+              @click="handleStockIn(row)"
+            >
               {{ $t('vnetPages.products.stockIn') }}
             </ElButton>
-            <ElButton size="small" :disabled="!row.has_stock" @click="handleStockOut(row)">
+            <ElButton
+              v-if="hasAuth('stock.create')"
+              size="small"
+              :disabled="!row.has_stock"
+              @click="handleStockOut(row)"
+            >
               {{ $t('vnetPages.products.stockOut') }}
             </ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('products.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>
@@ -734,13 +763,20 @@ async function handleStockSave() {
                 <ElTableColumn prop="unit_name" :label="$t('vnetPages.products.unit')" width="80" />
                 <ElTableColumn width="80">
                   <template #default="{ row, $index }">
-                    <ElButton size="small" type="danger" link @click="removeIngredient($index)">
+                    <ElButton
+                      v-if="hasAuth('products.ingredients')"
+                      size="small"
+                      type="danger"
+                      link
+                      @click="removeIngredient($index)"
+                    >
                       {{ $t('vnetPages.common.delete') }}
                     </ElButton>
                   </template>
                 </ElTableColumn>
               </ElTable>
-              <div style="display: flex; gap: 8px">
+              <!-- Thêm/xoá nguyên liệu gọi /products/:id/ingredients → products.ingredients -->
+              <div v-if="hasAuth('products.ingredients')" style="display: flex; gap: 8px">
                 <ElSelect
                   v-model="newIngredient.ingredient_id"
                   :placeholder="$t('vnetPages.products.addIngredient')"

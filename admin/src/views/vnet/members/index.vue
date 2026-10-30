@@ -12,6 +12,7 @@ import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { useTransactionTypeLabel } from '@/hooks/business/transaction-types';
+import { useAuth } from '@/hooks/business/auth';
 import { formatAmount, moneyInput } from '@/utils/money';
 import { newIdempotencyKey } from '@/utils/idempotency';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
@@ -21,6 +22,7 @@ const { t: $t } = useI18n();
 const { paymentLabel } = usePaymentMethods();
 const txTypeLabel = useTransactionTypeLabel();
 const appStore = useAppStore();
+const { hasAuth } = useAuth();
 
 const search = ref('');
 // Loại tài khoản: hội viên thường do quầy tạo, hoặc tài khoản combo sinh ra khi
@@ -55,6 +57,17 @@ const detailOrdLoading = ref(false);
 const detailOrdPage = ref(1);
 const detailOrdSize = ref(10);
 const detailOrdTotal = ref(0);
+// Sắp xếp phía máy chủ cho ba bảng phân trang trong hộp chi tiết: gửi kèm sort/order.
+type DetailSort = { sort?: string; order?: 'asc' | 'desc' };
+const detailTxSort = ref<DetailSort>({});
+const detailSesSort = ref<DetailSort>({});
+const detailOrdSort = ref<DetailSort>({});
+
+// ElTable báo 'ascending' | 'descending' | null; bỏ sắp xếp thì cả hai là undefined.
+function toDetailSort({ prop, order }: { prop: string | null; order: string | null }): DetailSort {
+  if (!prop || !order) return {};
+  return { sort: prop, order: order === 'ascending' ? 'asc' : 'desc' };
+}
 
 const formRef = ref<FormInstance>();
 
@@ -104,12 +117,14 @@ const rules: FormRules = {
   ]
 };
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/members', {
       params: {
         page,
         page_size: pageSize,
+        sort,
+        order,
         search: search.value || undefined,
         role: roleFilter.value || undefined
       }
@@ -119,7 +134,8 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     {
       prop: 'username',
       label: $t('vnetPages.members.username'),
-      width: 120,
+      width: 160,
+      sortable: 'custom',
       // Bấm tên đăng nhập để xem chi tiết — thay cho nút "Chi tiết".
       formatter: (row: any) =>
         h(ElLink, { type: 'primary', underline: false, onClick: () => viewDetail(row) }, () => row.username)
@@ -127,19 +143,22 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     {
       prop: 'full_name',
       label: $t('vnetPages.members.fullName'),
-      minWidth: 160
+      minWidth: 160,
+      sortable: 'custom'
     },
-    { prop: 'phone', label: $t('vnetPages.members.phone'), width: 130 },
+    { prop: 'phone', label: $t('vnetPages.members.phone'), width: 130, sortable: 'custom' },
     {
       prop: 'balance',
       label: $t('vnetPages.members.balance'),
       width: 120,
+      sortable: 'custom',
       formatter: (row: any) => formatAmount(row.balance)
     },
     {
       prop: 'bonus_balance',
       label: $t('vnetPages.members.bonus'),
       width: 120,
+      sortable: 'custom',
       formatter: (row: any) => formatAmount(row.bonus_balance)
     },
     {
@@ -152,6 +171,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'is_active',
       label: $t('vnetPages.members.isActive'),
       width: 90,
+      sortable: 'custom',
       formatter: (row: any) =>
         h(ElTag, { type: row.is_active ? 'success' : 'danger', size: 'small' }, () =>
           row.is_active ? $t('vnetPages.common.yes') : $t('vnetPages.common.no')
@@ -352,6 +372,10 @@ function viewDetail(row: any) {
   detailTxPage.value = 1;
   detailSesPage.value = 1;
   detailOrdPage.value = 1;
+  // Hộp destroy-on-close nên bảng mở lại không còn dấu sắp xếp: bỏ luôn ở đây.
+  detailTxSort.value = {};
+  detailSesSort.value = {};
+  detailOrdSort.value = {};
   fetchMemberDetail(row.id);
   fetchDetailTransactions();
   fetchDetailSessions();
@@ -457,7 +481,7 @@ async function fetchDetailTransactions() {
   detailTxLoading.value = true;
   try {
     const res: any = await client.get(`/members/${detailId.value}/transactions`, {
-      params: { page: detailTxPage.value, page_size: detailTxSize.value }
+      params: { page: detailTxPage.value, page_size: detailTxSize.value, ...detailTxSort.value }
     });
     detailTxList.value = res.items || [];
     detailTxTotal.value = res.total || 0;
@@ -468,11 +492,17 @@ async function fetchDetailTransactions() {
   }
 }
 
+function onDetailTxSort(e: { prop: string | null; order: string | null }) {
+  detailTxSort.value = toDetailSort(e);
+  detailTxPage.value = 1;
+  fetchDetailTransactions();
+}
+
 async function fetchDetailOrders() {
   detailOrdLoading.value = true;
   try {
     const res: any = await client.get(`/members/${detailId.value}/orders`, {
-      params: { page: detailOrdPage.value, page_size: detailOrdSize.value }
+      params: { page: detailOrdPage.value, page_size: detailOrdSize.value, ...detailOrdSort.value }
     });
     detailOrders.value = res.items || [];
     detailOrdTotal.value = res.total || 0;
@@ -481,6 +511,12 @@ async function fetchDetailOrders() {
   } finally {
     detailOrdLoading.value = false;
   }
+}
+
+function onDetailOrdSort(e: { prop: string | null; order: string | null }) {
+  detailOrdSort.value = toDetailSort(e);
+  detailOrdPage.value = 1;
+  fetchDetailOrders();
 }
 
 const ORDER_STATUS_TAG: Record<string, 'info' | 'primary' | 'success' | 'danger'> = {
@@ -501,7 +537,7 @@ async function fetchDetailSessions() {
   detailSesLoading.value = true;
   try {
     const res: any = await client.get(`/members/${detailId.value}/sessions`, {
-      params: { page: detailSesPage.value, page_size: detailSesSize.value }
+      params: { page: detailSesPage.value, page_size: detailSesSize.value, ...detailSesSort.value }
     });
     detailSessions.value = res.items || [];
     detailSesTotal.value = res.total || 0;
@@ -510,6 +546,12 @@ async function fetchDetailSessions() {
   } finally {
     detailSesLoading.value = false;
   }
+}
+
+function onDetailSesSort(e: { prop: string | null; order: string | null }) {
+  detailSesSort.value = toDetailSort(e);
+  detailSesPage.value = 1;
+  fetchDetailSessions();
 }
 
 // Bảng hội viên: sửa/nạp/hoàn/xoá (members), đổi tên hạng (member-groups), bán
@@ -574,8 +616,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
         <div class="flex flex-wrap items-center gap-8px">
           <ElInput
@@ -595,19 +637,29 @@ onBeforeUnmount(() => {
         <TableHeaderOperation
           v-model:columns="columnChecks"
           :loading="loading"
+          :show-add="hasAuth('members.create')"
           :show-delete="false"
           @add="openCreate"
           @refresh="getData"
         >
           <template #prefix>
-            <ElButton :loading="refreshingTiers" @click="handleRefreshTiers">
+            <ElButton v-if="hasAuth('members.refresh_tiers')" :loading="refreshingTiers" @click="handleRefreshTiers">
               {{ $t('vnetPages.members.refreshTiers') }}
             </ElButton>
           </template>
         </TableHeaderOperation>
       </div>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <!--
           Các việc với tiền (Nạp, Trừ tiền, Tặng tiền) và Sửa nằm ngoài; đặt lại mật
@@ -617,26 +669,39 @@ onBeforeUnmount(() => {
           <template #default="{ row }">
             <div class="row-actions">
               <!-- Tài khoản combo do hệ thống sinh khi bán gói: chỉ được đặt lại mật khẩu. -->
-              <ElButton v-if="row.role === 'combo'" size="small" @click="handleResetPassword(row)">
+              <ElButton
+                v-if="row.role === 'combo' && hasAuth('members.reset_password')"
+                size="small"
+                @click="handleResetPassword(row)"
+              >
                 {{ $t('vnetPages.members.resetPassword') }}
               </ElButton>
-              <template v-else>
-                <ElButton size="small" type="success" @click="openTopup(row)">
+              <template v-else-if="row.role !== 'combo'">
+                <ElButton v-if="hasAuth('members.topup')" size="small" type="success" @click="openTopup(row)">
                   {{ $t('vnetPages.members.topUp') }}
                 </ElButton>
-                <ElButton size="small" type="warning" plain @click="openRefund(row)">
+                <ElButton v-if="hasAuth('members.refund')" size="small" type="warning" plain @click="openRefund(row)">
                   {{ $t('vnetPages.members.refund') }}
                 </ElButton>
-                <ElButton size="small" type="primary" plain @click="openGift(row)">
+                <!-- Tặng tiền gọi POST /members/:id/topup (payment_method bonus_balance). -->
+                <ElButton v-if="hasAuth('members.topup')" size="small" type="primary" plain @click="openGift(row)">
                   {{ $t('vnetPages.members.gift') }}
                 </ElButton>
-                <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-                <ElDropdown trigger="click" @command="(cmd: string) => onMoreCommand(cmd, row)">
+                <ElButton v-if="hasAuth('members.update')" size="small" @click="openEdit(row)">
+                  {{ $t('vnetPages.common.edit') }}
+                </ElButton>
+                <ElDropdown
+                  v-if="hasAuth(['members.reset_password', 'members.delete'])"
+                  trigger="click"
+                  @command="(cmd: string) => onMoreCommand(cmd, row)"
+                >
                   <ElButton size="small">{{ $t('vnetPages.members.more') }}</ElButton>
                   <template #dropdown>
                     <ElDropdownMenu>
-                      <ElDropdownItem command="reset">{{ $t('vnetPages.members.resetPassword') }}</ElDropdownItem>
-                      <ElDropdownItem command="delete" divided class="danger-item">
+                      <ElDropdownItem v-if="hasAuth('members.reset_password')" command="reset">
+                        {{ $t('vnetPages.members.resetPassword') }}
+                      </ElDropdownItem>
+                      <ElDropdownItem v-if="hasAuth('members.delete')" command="delete" divided class="danger-item">
                         {{ $t('vnetPages.common.delete') }}
                       </ElDropdownItem>
                     </ElDropdownMenu>
@@ -839,22 +904,56 @@ onBeforeUnmount(() => {
             </ElDescriptions>
           </ElTabPane>
           <ElTabPane :label="$t('vnetPages.members.transactions')" name="transactions">
-            <ElTable v-loading="detailTxLoading" :data="detailTxList" border stripe class="w-full">
-              <ElTableColumn :label="$t('vnetPages.members.type')" width="150">
+            <ElTable
+              v-loading="detailTxLoading"
+              :data="detailTxList"
+              border
+              stripe
+              class="w-full"
+              @sort-change="onDetailTxSort"
+            >
+              <ElTableColumn
+                prop="transaction_type"
+                :label="$t('vnetPages.members.type')"
+                width="150"
+                sortable="custom"
+              >
                 <template #default="{ row }">{{ txTypeLabel(row.transaction_type) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.members.amount')" width="110" align="right">
+              <ElTableColumn
+                prop="amount"
+                :label="$t('vnetPages.members.amount')"
+                width="110"
+                align="right"
+                sortable="custom"
+              >
                 <template #default="{ row }">{{ formatAmount(row.amount) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.transactions.balanceAfter')" width="110" align="right">
+              <ElTableColumn
+                prop="balance_after"
+                :label="$t('vnetPages.transactions.balanceAfter')"
+                width="110"
+                align="right"
+                sortable="custom"
+              >
                 <template #default="{ row }">{{ formatAmount(row.balance_after) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.members.method')" width="140">
+              <ElTableColumn
+                prop="payment_method"
+                :label="$t('vnetPages.members.method')"
+                width="140"
+                sortable="custom"
+              >
                 <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
               </ElTableColumn>
               <!-- Mô tả thay cho reference_id: mã UUID của đơn/phiên không ai đọc được. -->
-              <ElTableColumn prop="description" :label="$t('vnetPages.transactions.description')" min-width="200" />
-              <ElTableColumn :label="$t('vnetPages.members.createdAt')" width="140">
+              <ElTableColumn
+                prop="description"
+                :label="$t('vnetPages.transactions.description')"
+                min-width="200"
+                sortable="custom"
+              />
+              <ElTableColumn prop="created_at" :label="$t('vnetPages.members.createdAt')" width="140" sortable="custom">
                 <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
               </ElTableColumn>
             </ElTable>
@@ -870,28 +969,56 @@ onBeforeUnmount(() => {
             </div>
           </ElTabPane>
           <ElTabPane :label="$t('vnetPages.members.sessions')" name="sessions">
-            <ElTable v-loading="detailSesLoading" :data="detailSessions" border stripe class="w-full">
+            <ElTable
+              v-loading="detailSesLoading"
+              :data="detailSessions"
+              border
+              stripe
+              class="w-full"
+              @sort-change="onDetailSesSort"
+            >
               <ElTableColumn :label="$t('vnetPages.sessions.machineCode')" width="110">
                 <template #default="{ row }">{{ row.machine_code || '-' }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.startTime')" width="150">
+              <ElTableColumn
+                prop="started_at"
+                :label="$t('vnetPages.sessions.startTime')"
+                width="150"
+                sortable="custom"
+              >
                 <template #default="{ row }">{{ formatDate(row.started_at) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.endTime')" width="150">
+              <ElTableColumn prop="ended_at" :label="$t('vnetPages.sessions.endTime')" width="150" sortable="custom">
                 <template #default="{ row }">
                   {{ row.ended_at ? formatDate(row.ended_at) : $t('vnetPages.sessions.running') }}
                 </template>
               </ElTableColumn>
               <!-- Phiên đang chơi chưa có duration_minutes: tính từ giờ bắt đầu tới lúc mở hộp. -->
-              <ElTableColumn :label="$t('vnetPages.sessions.duration')" width="110">
+              <ElTableColumn
+                prop="duration_minutes"
+                :label="$t('vnetPages.sessions.duration')"
+                width="110"
+                sortable="custom"
+              >
                 <template #default="{ row }">{{ formatPlayed(sessionMinutes(row)) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.cost')" width="120" align="right">
+              <ElTableColumn
+                prop="total_cost"
+                :label="$t('vnetPages.sessions.cost')"
+                width="120"
+                align="right"
+                sortable="custom"
+              >
                 <template #default="{ row }">
                   {{ typeof row.total_cost === 'number' ? formatAmount(row.total_cost) : '-' }}
                 </template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.sessions.status')" min-width="100">
+              <ElTableColumn
+                prop="is_active"
+                :label="$t('vnetPages.sessions.status')"
+                min-width="100"
+                sortable="custom"
+              >
                 <template #default="{ row }">
                   <ElTag :type="row.is_active ? 'warning' : 'info'" size="small">
                     {{ row.is_active ? $t('vnetPages.sessions.running') : $t('vnetPages.sessions.ended') }}
@@ -911,20 +1038,42 @@ onBeforeUnmount(() => {
             </div>
           </ElTabPane>
           <ElTabPane :label="$t('vnetPages.members.orders')" name="orders">
-            <ElTable v-loading="detailOrdLoading" :data="detailOrders" border stripe class="w-full">
-              <ElTableColumn prop="order_code" :label="$t('vnetPages.orders.orderCode')" width="110" />
+            <ElTable
+              v-loading="detailOrdLoading"
+              :data="detailOrders"
+              border
+              stripe
+              class="w-full"
+              @sort-change="onDetailOrdSort"
+            >
+              <ElTableColumn
+                prop="order_code"
+                :label="$t('vnetPages.orders.orderCode')"
+                width="110"
+                sortable="custom"
+              />
               <ElTableColumn :label="$t('vnetPages.orders.products')" min-width="200">
                 <template #default="{ row }">{{ orderItemsSummary(row) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.finalAmount')" width="110">
+              <ElTableColumn
+                prop="final_amount"
+                :label="$t('vnetPages.orders.finalAmount')"
+                width="110"
+                sortable="custom"
+              >
                 <template #default="{ row }">{{ formatAmount(row.final_amount) }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.paymentMethod')" width="140">
+              <ElTableColumn
+                prop="payment_method"
+                :label="$t('vnetPages.orders.paymentMethod')"
+                width="140"
+                sortable="custom"
+              >
                 <template #default="{ row }">
                   {{ row.payment_method ? paymentLabel(row.payment_method) : '-' }}
                 </template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.status')" width="120">
+              <ElTableColumn prop="status" :label="$t('vnetPages.orders.status')" width="120" sortable="custom">
                 <template #default="{ row }">
                   <ElTag :type="ORDER_STATUS_TAG[row.status] || 'info'" size="small">
                     {{ $t(`vnetPages.orders.statusLabels.${row.status}`) }}
@@ -934,7 +1083,7 @@ onBeforeUnmount(() => {
               <ElTableColumn :label="$t('vnetPages.orders.machineCode')" width="90">
                 <template #default="{ row }">{{ row.machine_code || '-' }}</template>
               </ElTableColumn>
-              <ElTableColumn :label="$t('vnetPages.orders.createdAt')" width="140">
+              <ElTableColumn prop="created_at" :label="$t('vnetPages.orders.createdAt')" width="140" sortable="custom">
                 <template #default="{ row }">{{ formatDate(row.created_at) }}</template>
               </ElTableColumn>
             </ElTable>

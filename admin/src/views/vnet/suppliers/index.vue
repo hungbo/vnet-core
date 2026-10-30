@@ -6,9 +6,11 @@ import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const saving = ref(false);
 
@@ -26,9 +28,9 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
   api: () => client.get('/suppliers', { params: { page_size: 1000 } }),
   transform: vnetSimpleTransform,
   columns: () => [
-    { prop: 'name', label: $t('vnetPages.suppliers.name'), minWidth: 160 },
-    { prop: 'phone', label: $t('vnetPages.suppliers.phone'), width: 130 },
-    { prop: 'email', label: $t('vnetPages.suppliers.email'), minWidth: 180 }
+    { prop: 'name', label: $t('vnetPages.suppliers.name'), minWidth: 160, sortable: true },
+    { prop: 'phone', label: $t('vnetPages.suppliers.phone'), width: 130, sortable: true },
+    { prop: 'email', label: $t('vnetPages.suppliers.email'), minWidth: 180, sortable: true }
   ]
 });
 
@@ -95,26 +97,29 @@ async function handleDelete(row: any) {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.suppliers.title') }}</span>
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-add="hasAuth('suppliers.create')"
             :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
           />
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <ElTable v-loading="loading" :data="data" class="fill-table" height="100%" style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="170" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="handleEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('suppliers.update')" size="small" @click="handleEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('suppliers.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

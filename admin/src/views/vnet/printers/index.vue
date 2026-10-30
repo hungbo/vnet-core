@@ -7,9 +7,11 @@ import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const { columns, columnChecks, data, getData, loading } = useUITable({
   api: async () => {
@@ -18,24 +20,27 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
   },
   transform: vnetSimpleTransform,
   columns: () => [
-    { prop: 'name', label: $t('vnetPages.printers.name'), minWidth: 140 },
-    { prop: 'printer_type', label: $t('vnetPages.printers.type'), width: 110 },
+    { prop: 'name', label: $t('vnetPages.printers.name'), minWidth: 140, sortable: true },
+    { prop: 'printer_type', label: $t('vnetPages.printers.type'), width: 110, sortable: true },
     {
       prop: 'ip_address',
       label: $t('vnetPages.printers.address'),
       minWidth: 150,
+      sortable: true,
       formatter: (row: any) => (row.ip_address ? `${row.ip_address}:${row.port}` : '-')
     },
     {
       prop: 'chars_per_line',
       label: $t('vnetPages.printers.paper'),
       width: 110,
+      sortable: true,
       formatter: (row: any) => (row.chars_per_line >= 48 ? '80mm' : '58mm')
     },
     {
       prop: 'encoding',
       label: $t('vnetPages.printers.encoding'),
       width: 130,
+      sortable: true,
       formatter: (row: any) =>
         row.encoding === 'cp1258' ? $t('vnetPages.printers.encodingVi') : $t('vnetPages.printers.encodingAscii')
     },
@@ -43,6 +48,7 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
       prop: 'is_default',
       label: $t('vnetPages.printers.isDefault'),
       width: 110,
+      sortable: true,
       formatter: (row: any) =>
         row.is_default ? h(ElTag, { type: 'success', size: 'small' }, () => $t('vnetPages.printers.defaultTag')) : '-'
     }
@@ -238,14 +244,15 @@ useRealtimeRefresh(['printers'], getData);
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.printers.hint') }}</span>
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-add="hasAuth('printers.create')"
             :show-delete="false"
             @add="openCreate"
             @refresh="getData"
@@ -253,14 +260,21 @@ useRealtimeRefresh(['printers'], getData);
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <ElTable v-loading="loading" :data="data" border stripe class="fill-table" height="100%" style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="330" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="openMapping(row)">{{ $t('vnetPages.printers.mapping') }}</ElButton>
-            <ElButton size="small" @click="handleTest(row)">{{ $t('vnetPages.printers.test') }}</ElButton>
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <!-- Hộp phân luồng lưu bằng PUT /printers/:id/products → printers.update -->
+            <ElButton v-if="hasAuth('printers.update')" size="small" @click="openMapping(row)">
+              {{ $t('vnetPages.printers.mapping') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('printers.test')" size="small" @click="handleTest(row)">
+              {{ $t('vnetPages.printers.test') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('printers.update')" size="small" @click="openEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('printers.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

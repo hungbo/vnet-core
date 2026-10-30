@@ -5,6 +5,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
@@ -12,6 +13,7 @@ import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const search = ref('');
 
@@ -193,33 +195,38 @@ async function testSpin() {
   }
 }
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/promotions', {
       params: {
         page,
         page_size: pageSize,
-        search: search.value || undefined
+        search: search.value || undefined,
+        sort,
+        order
       }
     }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'name', label: $t('vnetPages.promotions.name'), minWidth: 160 },
+    { prop: 'name', label: $t('vnetPages.promotions.name'), minWidth: 160, sortable: 'custom' },
     {
       prop: 'type',
       label: $t('vnetPages.promotions.type'),
       width: 140,
+      sortable: 'custom',
       formatter: (row: any) => promotionTypeLabel(row.type)
     },
     {
       prop: 'priority',
       label: $t('vnetPages.promotions.priority'),
-      width: 80
+      width: 80,
+      sortable: 'custom'
     },
     {
       prop: 'is_active',
       label: $t('vnetPages.promotions.isActive'),
       width: 90,
+      sortable: 'custom',
       formatter: (row: any) =>
         h(ElTag, { type: row.is_active ? 'success' : 'danger', size: 'small' }, () =>
           row.is_active ? $t('vnetPages.common.yes') : $t('vnetPages.common.no')
@@ -435,8 +442,8 @@ watch(dialogVisible, open => {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
         <div class="flex flex-wrap items-center gap-8px">
           <ElInput
@@ -451,22 +458,37 @@ watch(dialogVisible, open => {
         <TableHeaderOperation
           v-model:columns="columnChecks"
           :loading="loading"
+          :show-add="hasAuth('promotions.create')"
           :show-delete="false"
           @add="openCreate"
           @refresh="getData"
         >
           <template #prefix>
-            <ElButton @click="fetchRewards">{{ $t('vnetPages.promotions.luckySpinRewards') }}</ElButton>
+            <!-- Mở hộp là gọi GET /lucky-spin/rewards ngay. -->
+            <ElButton v-if="hasAuth('lucky_spin.view')" @click="fetchRewards">
+              {{ $t('vnetPages.promotions.luckySpinRewards') }}
+            </ElButton>
           </template>
         </TableHeaderOperation>
       </div>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="200" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('promotions.update')" size="small" @click="openEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('promotions.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>
@@ -597,7 +619,11 @@ watch(dialogVisible, open => {
         }}
       </ElAlert>
 
-      <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center">
+      <!-- Ô nhập chỉ để thêm (POST) hoặc sửa (PUT) ô thưởng. -->
+      <div
+        v-if="hasAuth(['lucky_spin.create', 'lucky_spin.update'])"
+        style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center"
+      >
         <ElInput v-model="rewardForm.name" :placeholder="$t('vnetPages.promotions.rewardName')" style="width: 170px" />
         <ElSelect v-model="rewardForm.reward_type" style="width: 150px">
           <ElOption :label="$t('vnetPages.promotions.rewardTypes.balance')" value="balance" />
@@ -615,27 +641,44 @@ watch(dialogVisible, open => {
           </div>
         </ElTooltip>
         <ElSwitch v-model="rewardForm.is_active" :active-text="$t('vnetPages.promotions.isActive')" />
-        <ElButton type="primary" :loading="savingReward" @click="saveReward">
+        <ElButton
+          v-if="hasAuth(rewardForm.id ? 'lucky_spin.update' : 'lucky_spin.create')"
+          type="primary"
+          :loading="savingReward"
+          @click="saveReward"
+        >
           {{ rewardForm.id ? $t('vnetPages.common.save') : $t('vnetPages.common.add') }}
         </ElButton>
         <ElButton v-if="rewardForm.id" @click="resetRewardForm">{{ $t('vnetPages.common.cancel') }}</ElButton>
       </div>
 
       <ElTable v-loading="rewardsLoading" :data="rewards" border stripe size="small" style="width: 100%">
-        <ElTableColumn prop="name" :label="$t('vnetPages.promotions.name')" min-width="150" />
-        <ElTableColumn :label="$t('vnetPages.promotions.type')" width="130">
+        <ElTableColumn prop="name" :label="$t('vnetPages.promotions.name')" min-width="150" sortable />
+        <ElTableColumn prop="reward_type" :label="$t('vnetPages.promotions.type')" width="130" sortable>
           <template #default="{ row }">{{ $t(`vnetPages.promotions.rewardTypes.${row.reward_type}`) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.promotions.value')" width="120" align="right">
+        <ElTableColumn prop="amount" :label="$t('vnetPages.promotions.value')" width="120" align="right" sortable>
           <template #default="{ row }">{{ formatAmount(row.amount || 0) }}₫</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.promotions.probability')" width="100" align="right">
+        <ElTableColumn
+          prop="probability"
+          :label="$t('vnetPages.promotions.probability')"
+          width="100"
+          align="right"
+          sortable
+        >
           <template #default="{ row }">{{ ((row.probability || 0) * 100).toFixed(2) }}%</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.promotions.maxPerDay')" width="110" align="right">
+        <ElTableColumn
+          prop="max_per_day"
+          :label="$t('vnetPages.promotions.maxPerDay')"
+          width="110"
+          align="right"
+          sortable
+        >
           <template #default="{ row }">{{ row.max_per_day || 0 }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.promotions.isActive')" width="90">
+        <ElTableColumn prop="is_active" :label="$t('vnetPages.promotions.isActive')" width="90" sortable>
           <template #default="{ row }">
             <ElTag :type="row.is_active ? 'success' : 'info'" size="small">
               {{ row.is_active ? $t('vnetPages.common.yes') : $t('vnetPages.common.no') }}
@@ -644,8 +687,10 @@ watch(dialogVisible, open => {
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.common.action')" width="130">
           <template #default="{ row }">
-            <ElButton size="small" @click="editReward(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="deleteReward(row)">
+            <ElButton v-if="hasAuth('lucky_spin.update')" size="small" @click="editReward(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('lucky_spin.delete')" size="small" type="danger" @click="deleteReward(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

@@ -37,18 +37,21 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
             prop: 'date',
             label: $t('vnetPages.reports.date'),
             width: 120,
+            sortable: true,
             formatter: (row: any) => dayjs(row.date).format('DD/MM/YYYY')
           },
           {
             prop: 'revenue',
             label: $t('vnetPages.reports.totalRevenue'),
             minWidth: 150,
+            sortable: true,
             formatter: (row: any) => formatPrice(row.revenue)
           },
           {
             prop: 'total_orders',
             label: $t('vnetPages.reports.orderCount'),
-            width: 120
+            width: 120,
+            sortable: true
           }
         ];
       case 'monthly-revenue':
@@ -57,12 +60,14 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
             prop: 'month',
             label: $t('vnetPages.reports.month'),
             width: 120,
+            sortable: true,
             formatter: (row: any) => dayjs(`${row.month}-01`).format('MM/YYYY')
           },
           {
             prop: 'revenue',
             label: $t('vnetPages.reports.totalRevenue'),
             minWidth: 150,
+            sortable: true,
             formatter: (row: any) => formatPrice(row.revenue)
           },
           {
@@ -70,7 +75,8 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
             // không tồn tại trong phản hồi nên cột này luôn trống.
             prop: 'total_orders',
             label: $t('vnetPages.reports.orderCount'),
-            width: 120
+            width: 120,
+            sortable: true
           }
         ];
       case 'by-member':
@@ -78,7 +84,8 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
           {
             prop: 'member_name',
             label: $t('vnetPages.reports.member'),
-            minWidth: 150
+            minWidth: 150,
+            sortable: true
           },
           {
             // Tiền giờ + đơn hàng + gói cước, trả bằng gì cũng tính. Tiền nạp là
@@ -86,18 +93,21 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
             prop: 'total_spent',
             label: $t('vnetPages.reports.totalSpent'),
             minWidth: 150,
+            sortable: true,
             formatter: (row: any) => formatPrice(row.total_spent)
           },
           {
             prop: 'total_topup',
             label: $t('vnetPages.reports.totalTopup'),
             minWidth: 150,
+            sortable: true,
             formatter: (row: any) => formatPrice(row.total_topup)
           },
           {
             prop: 'visit_count',
             label: $t('vnetPages.reports.visitCount'),
-            width: 110
+            width: 110,
+            sortable: true
           }
         ];
       case 'by-machine':
@@ -110,24 +120,28 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
           {
             prop: 'machine_code',
             label: $t('vnetPages.reports.machine'),
-            minWidth: 140
+            minWidth: 140,
+            sortable: true
           },
           {
             prop: 'total_sales',
             label: $t('vnetPages.reports.revenue'),
             minWidth: 150,
+            sortable: true,
             formatter: (row: any) => formatPrice(row.total_sales)
           },
           {
             prop: 'usage_hours',
             label: $t('vnetPages.reports.hours'),
             width: 100,
+            sortable: true,
             formatter: (row: any) => `${row.usage_hours ?? 0}g`
           },
           {
             prop: 'session_count',
             label: $t('vnetPages.reports.sessionCount'),
-            width: 100
+            width: 100,
+            sortable: true
           }
         ];
       case 'by-employee':
@@ -135,17 +149,20 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
           {
             prop: 'employee_name',
             label: $t('vnetPages.reports.employee'),
-            minWidth: 180
+            minWidth: 180,
+            sortable: true
           },
           {
             prop: 'orders_taken',
             label: $t('vnetPages.reports.ordersTaken'),
-            width: 130
+            width: 130,
+            sortable: true
           },
           {
             prop: 'total_sales',
             label: $t('vnetPages.reports.totalSales'),
             minWidth: 150,
+            sortable: true,
             formatter: (row: any) => formatPrice(row.total_sales)
           }
         ];
@@ -154,17 +171,20 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
           {
             prop: 'product_name',
             label: $t('vnetPages.reports.product'),
-            minWidth: 200
+            minWidth: 200,
+            sortable: true
           },
           {
             prop: 'quantity',
             label: $t('vnetPages.reports.quantitySold'),
-            width: 130
+            width: 130,
+            sortable: true
           },
           {
             prop: 'total_sales',
             label: $t('vnetPages.reports.totalSales'),
             minWidth: 150,
+            sortable: true,
             formatter: (row: any) => formatPrice(row.total_sales)
           }
         ];
@@ -174,6 +194,7 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
             prop: 'promotion_name',
             label: $t('vnetPages.reports.promotion'),
             minWidth: 200,
+            sortable: true,
             // Đơn được giảm mà khuyến mãi đã bị xoá vẫn phải hiện ra, nếu không
             // tổng tiền giảm trên báo cáo sẽ không khớp với sổ sách.
             formatter: (row: any) => row.promotion_name || $t('vnetPages.reports.promotionDeleted')
@@ -181,12 +202,14 @@ const { columns, columnChecks, data, getData, loading, reloadColumns } = useUITa
           {
             prop: 'usage_count',
             label: $t('vnetPages.reports.usageCount'),
-            width: 130
+            width: 130,
+            sortable: true
           },
           {
             prop: 'discount_given',
             label: $t('vnetPages.reports.discountGiven'),
             minWidth: 150,
+            sortable: true,
             formatter: (row: any) => formatPrice(row.discount_given)
           }
         ];

@@ -50,30 +50,45 @@ async function getSummary() {
 
 // ---- Bảng ----------------------------------------------------------------
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  // Hook gọi api({ page, pageSize }) nhưng khai kiểu là () => …; tham số tuỳ chọn khớp được cả hai.
-  api: (p?: { page: number; pageSize: number }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  // Hook gọi api({ page, pageSize, sort, order }) nhưng khai kiểu là () => …; tham số tuỳ chọn khớp được cả hai.
+  api: (p?: { page: number; pageSize: number; sort?: string; order?: string }) =>
     client.get('/windows-keys', {
       params: {
         page: p?.page,
         page_size: p?.pageSize,
+        sort: p?.sort,
+        order: p?.order,
         search: search.value.trim() || undefined,
         filter: filter.value || undefined
       }
     }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'machine_code', label: $t('vnetPages.windowsKeys.machine'), width: 150 },
-    { prop: 'machine_status', label: $t('vnetPages.windowsKeys.machineStatus'), width: 110 },
+    { prop: 'machine_code', label: $t('vnetPages.windowsKeys.machine'), width: 150, sortable: 'custom' },
+    { prop: 'machine_status', label: $t('vnetPages.windowsKeys.machineStatus'), width: 110, sortable: 'custom' },
     { prop: 'key_masked', label: $t('vnetPages.windowsKeys.key'), minWidth: 260 },
-    { prop: 'edition', label: $t('vnetPages.windowsKeys.edition'), width: 150, showOverflowTooltip: true },
-    { prop: 'note', label: $t('vnetPages.windowsKeys.note'), minWidth: 160, showOverflowTooltip: true },
-    { prop: 'win_license', label: $t('vnetPages.windowsKeys.license'), width: 150 },
+    {
+      prop: 'edition',
+      label: $t('vnetPages.windowsKeys.edition'),
+      width: 150,
+      showOverflowTooltip: true,
+      sortable: 'custom'
+    },
+    {
+      prop: 'note',
+      label: $t('vnetPages.windowsKeys.note'),
+      minWidth: 160,
+      showOverflowTooltip: true,
+      sortable: 'custom'
+    },
+    { prop: 'win_license', label: $t('vnetPages.windowsKeys.license'), width: 150, sortable: 'custom' },
     { prop: 'match', label: $t('vnetPages.windowsKeys.match'), width: 130 },
     {
       prop: 'updated_at',
       label: $t('vnetPages.windowsKeys.updatedAt'),
       width: 150,
+      sortable: 'custom',
       formatter: (row: any) => formatTime(row.updated_at)
     },
     { prop: 'actions', label: '', width: 220, fixed: 'right' }
@@ -229,8 +244,8 @@ function importTagType(status: string): any {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex flex-wrap items-center justify-between gap-8px">
           <span>{{ $t('vnetPages.windowsKeys.title') }}</span>
@@ -287,7 +302,15 @@ function importTagType(status: string): any {
         </TableHeaderOperation>
       </div>
 
-      <ElTable v-loading="loading" :data="data" row-key="machine_id" style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        row-key="machine_id"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col">
           <template v-if="col.prop === 'machine_status'" #default="{ row }">
             <ElTag :type="statusType(row.machine_status)" size="small">{{ statusLabel(row.machine_status) }}</ElTag>

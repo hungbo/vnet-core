@@ -4,12 +4,14 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const creating = ref(false);
 
@@ -43,46 +45,53 @@ function statusLabel(status: string) {
   return map[status] || status;
 }
 
-const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) => client.get('/backups', { params: { page, page_size: pageSize } }),
-  transform: vnetTransform,
-  columns: () => [
-    {
-      prop: 'file_name',
-      label: $t('vnetPages.backups.fileName'),
-      minWidth: 200
-    },
-    {
-      prop: 'file_size',
-      label: $t('vnetPages.backups.size'),
-      width: 120,
-      formatter: (row: any) => formatFileSize(row.file_size)
-    },
-    {
-      prop: 'status',
-      label: $t('vnetPages.backups.status'),
-      width: 120,
-      // title mang lý do hỏng: "Thất bại" trơ trọi không cho người trực biết
-      // phải sửa gì. Chuỗi lý do do backend ghi vào notes.
-      formatter: (row: any) =>
-        h(ElTag, { type: statusType(row.status), title: row.notes || undefined }, () => statusLabel(row.status))
-    },
-    {
-      // model.BackupLog KHÔNG có created_at, chỉ có started_at — cột cũ đọc một
-      // khoá không tồn tại nên luôn trống.
-      prop: 'started_at',
-      label: $t('vnetPages.backups.createdAt'),
-      width: 160,
-      formatter: (row: any) => (row.started_at ? dayjs(row.started_at).format('DD/MM/YYYY HH:mm') : '-')
-    },
-    {
-      prop: 'completed_at',
-      label: $t('vnetPages.backups.completed'),
-      width: 160,
-      formatter: (row: any) => (row.completed_at ? dayjs(row.completed_at).format('DD/MM/YYYY HH:mm') : '-')
-    }
-  ]
-});
+const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagination, onSortChange } =
+  useUIPaginatedTable({
+    api: ({ page, pageSize, sort, order }) =>
+      client.get('/backups', { params: { page, page_size: pageSize, sort, order } }),
+    transform: vnetTransform,
+    columns: () => [
+      {
+        prop: 'file_name',
+        label: $t('vnetPages.backups.fileName'),
+        minWidth: 200,
+        sortable: 'custom'
+      },
+      {
+        prop: 'file_size',
+        label: $t('vnetPages.backups.size'),
+        width: 120,
+        sortable: 'custom',
+        formatter: (row: any) => formatFileSize(row.file_size)
+      },
+      {
+        prop: 'status',
+        label: $t('vnetPages.backups.status'),
+        width: 120,
+        sortable: 'custom',
+        // title mang lý do hỏng: "Thất bại" trơ trọi không cho người trực biết
+        // phải sửa gì. Chuỗi lý do do backend ghi vào notes.
+        formatter: (row: any) =>
+          h(ElTag, { type: statusType(row.status), title: row.notes || undefined }, () => statusLabel(row.status))
+      },
+      {
+        // model.BackupLog KHÔNG có created_at, chỉ có started_at — cột cũ đọc một
+        // khoá không tồn tại nên luôn trống.
+        prop: 'started_at',
+        label: $t('vnetPages.backups.createdAt'),
+        width: 160,
+        sortable: 'custom',
+        formatter: (row: any) => (row.started_at ? dayjs(row.started_at).format('DD/MM/YYYY HH:mm') : '-')
+      },
+      {
+        prop: 'completed_at',
+        label: $t('vnetPages.backups.completed'),
+        width: 160,
+        sortable: 'custom',
+        formatter: (row: any) => (row.completed_at ? dayjs(row.completed_at).format('DD/MM/YYYY HH:mm') : '-')
+      }
+    ]
+  });
 
 // Tạo/phục hồi/xoá đi qua /backups; bản sao lưu chạy nền xong ("running" →
 // "completed"/"failed") thì BackupService tự phát "backups:changed".
@@ -150,8 +159,8 @@ async function handleDelete(row: any) {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.backups.title') }}</span>
@@ -162,20 +171,37 @@ async function handleDelete(row: any) {
             :show-delete="false"
             @refresh="getData"
           >
-            <ElButton type="primary" :loading="creating" @click="handleCreateBackup">
+            <ElButton v-if="hasAuth('backups.create')" type="primary" :loading="creating" @click="handleCreateBackup">
               {{ $t('vnetPages.backups.createBackup') }}
             </ElButton>
           </TableHeaderOperation>
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="160" fixed="right">
           <template #default="{ row }">
-            <ElButton v-if="row.status === 'completed'" size="small" type="warning" @click="handleRestore(row)">
+            <ElButton
+              v-if="row.status === 'completed' && hasAuth('backups.restore')"
+              size="small"
+              type="warning"
+              @click="handleRestore(row)"
+            >
               {{ $t('vnetPages.backups.restore') }}
             </ElButton>
-            <ElButton v-if="row.status !== 'running'" size="small" type="danger" @click="handleDelete(row)">
+            <ElButton
+              v-if="row.status !== 'running' && hasAuth('backups.delete')"
+              size="small"
+              type="danger"
+              @click="handleDelete(row)"
+            >
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

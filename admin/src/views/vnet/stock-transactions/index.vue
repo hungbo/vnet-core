@@ -7,10 +7,12 @@ import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
 import { formatPrice, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const saving = ref(false);
 
@@ -41,10 +43,10 @@ const rules = {
   ]
 };
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/stock-transactions', {
-      params: { page, page_size: pageSize }
+      params: { page, page_size: pageSize, sort, order }
     }),
   transform: vnetTransform,
   columns: () => [
@@ -58,6 +60,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'transaction_type',
       label: $t('vnetPages.stockTransactions.transactionType'),
       width: 100,
+      sortable: 'custom',
       // "adjustment" do chốt kiểm kê sinh ra (số lượng là phần lệch, có thể dương)
       // — gộp nó vào "Xuất" thì kiểm thấy dư 2 lại hiện thành "Xuất 2".
       formatter: (row: any) => {
@@ -71,22 +74,26 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     {
       prop: 'quantity',
       label: $t('vnetPages.stockTransactions.quantity'),
-      width: 90
+      width: 90,
+      sortable: 'custom'
     },
     {
       prop: 'stock_before',
       label: $t('vnetPages.stockTransactions.before'),
-      width: 80
+      width: 80,
+      sortable: 'custom'
     },
     {
       prop: 'stock_after',
       label: $t('vnetPages.stockTransactions.after'),
-      width: 80
+      width: 80,
+      sortable: 'custom'
     },
     {
       prop: 'total_price',
       label: $t('vnetPages.stockTransactions.totalPrice'),
       width: 130,
+      sortable: 'custom',
       formatter: (row: any) => formatPrice(row.total_price)
     },
     {
@@ -99,6 +106,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'created_at',
       label: $t('vnetPages.stockTransactions.createdAt'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => (row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm') : '')
     }
   ]
@@ -149,21 +157,29 @@ async function handleSave() {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.stockTransactions.title') }}</span>
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-add="hasAuth('stock.create')"
             :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
           />
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
       </ElTable>
       <div class="mt-16px flex justify-end">

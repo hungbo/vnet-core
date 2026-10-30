@@ -1,0 +1,44 @@
+/*
+ * Trang danh sách giãn đầy vùng nội dung: thẻ chứa bảng cao hết phần còn lại,
+ * tiêu đề cột đứng yên, dòng cuộn trong bảng, phân trang luôn ở đáy.
+ *
+ * Gắn ba chỗ trong trang:
+ *   <div class="page-fill">                  thẻ gốc của trang
+ *     <ElCard class="fill-card">             thẻ chứa bảng chính
+ *       <ElTable class="fill-table" height="100%">
+ *
+ * Dưới 640px (điện thoại, xem mobile.css) giữ cách cũ: bảng cao theo số dòng,
+ * cả trang cuộn.
+ */
+@media (min-width: 640px) {
+  .page-fill {
+    display: flex;
+    flex-direction: column;
+    min-height: 480px;
+    overflow: hidden;
+  }
+
+  .page-fill > .fill-card {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .page-fill > .fill-card > .el-card__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    height: auto;
+  }
+
+  .page-fill .fill-table {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 639.98px) {
+  .page-fill .fill-table {
+    height: auto !important;
+  }
+}

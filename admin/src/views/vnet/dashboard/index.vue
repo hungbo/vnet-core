@@ -271,7 +271,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div>
+  <div class="page-fill">
     <ElRow :gutter="20" class="stat-cards mb-16px">
       <ElCol v-for="stat in stats" :key="stat.label" :span="6" :xs="12">
         <ElCard shadow="hover" class="h-full">
@@ -291,7 +291,7 @@ onBeforeUnmount(() => {
     </ElRow>
     <!-- Máy đang hoạt động chiếm trọn chiều ngang: đây là bảng nhân viên nhìn
          nhiều nhất, cột hẹp thì mã máy dài như DESKTOP-TA2SVLV bị cắt. -->
-    <ElCard>
+    <ElCard class="fill-card">
       <template #header>
         <span>{{ $t('vnetPages.dashboard.activeMachines') }}</span>
       </template>
@@ -301,10 +301,12 @@ onBeforeUnmount(() => {
         :data="activeMachines"
         row-key="machine_id"
         :row-class-name="({ row }: any) => (row.open_orders ? OPEN_ORDERS_ROW_CLASS : '')"
+        class="fill-table"
+        height="100%"
         style="width: 100%"
       >
-        <ElTableColumn prop="machine_code" :label="$t('vnetPages.dashboard.machine')" min-width="160" />
-        <ElTableColumn :label="$t('vnetPages.common.status')" min-width="170">
+        <ElTableColumn prop="machine_code" :label="$t('vnetPages.dashboard.machine')" min-width="160" sortable />
+        <ElTableColumn prop="status" :label="$t('vnetPages.common.status')" min-width="170" sortable>
           <template #default="{ row }">
             <div class="machine-status">
               <ElTag :type="statusTags[row.status]?.type ?? 'info'" size="small">
@@ -314,19 +316,19 @@ onBeforeUnmount(() => {
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="member_name" :label="$t('vnetPages.dashboard.member')" min-width="180" />
-        <ElTableColumn :label="$t('vnetPages.dashboard.startTime')" min-width="140">
+        <ElTableColumn prop="member_name" :label="$t('vnetPages.dashboard.member')" min-width="180" sortable />
+        <ElTableColumn prop="started_at" :label="$t('vnetPages.dashboard.startTime')" min-width="140" sortable>
           <template #default="{ row }">{{ formatTime(row.started_at) }}</template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.dashboard.duration')" min-width="120">
           <template #default="{ row }">{{ row.started_at ? formatPlayed(row.started_at, null, now) : '-' }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.dashboard.remaining')" min-width="120">
+        <ElTableColumn prop="affordable_until" :label="$t('vnetPages.dashboard.remaining')" min-width="120" sortable>
           <template #default="{ row }">
             {{ row.status === 'in_use' ? formatRemainingHMS(row.affordable_until, now) : '-' }}
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.machines.noteCol')" min-width="220">
+        <ElTableColumn prop="note" :label="$t('vnetPages.machines.noteCol')" min-width="220" sortable>
           <template #default="{ row }">
             <MachineNoteCell
               :machine-id="row.machine_id"
@@ -388,8 +390,8 @@ onBeforeUnmount(() => {
         @selection-change="onOrdersSelection"
       >
         <ElTableColumn type="selection" width="40" />
-        <ElTableColumn prop="order_code" :label="$t('vnetPages.orders.orderCode')" width="120" />
-        <ElTableColumn :label="$t('vnetPages.dashboard.orderTime')" width="110">
+        <ElTableColumn prop="order_code" :label="$t('vnetPages.orders.orderCode')" width="120" sortable />
+        <ElTableColumn prop="created_at" :label="$t('vnetPages.dashboard.orderTime')" width="110" sortable>
           <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.dashboard.orderItems')" min-width="180">
@@ -397,10 +399,16 @@ onBeforeUnmount(() => {
             <div v-for="it in row.items || []" :key="it.id">{{ it.quantity }}× {{ it.product_name }}</div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.dashboard.orderTotal')" width="100" align="right">
+        <ElTableColumn
+          prop="final_amount"
+          :label="$t('vnetPages.dashboard.orderTotal')"
+          width="100"
+          align="right"
+          sortable
+        >
           <template #default="{ row }">{{ formatMoney(row.final_amount) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.common.status')" width="120" align="center">
+        <ElTableColumn prop="status" :label="$t('vnetPages.common.status')" width="120" align="center" sortable>
           <template #default="{ row }">
             <ElTag :type="orderStatusType(row.status)" size="small">
               {{ $t(`vnetPages.orders.statusLabels.${row.status}`) }}

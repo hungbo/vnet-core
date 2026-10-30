@@ -8,10 +8,12 @@ import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
+import { useAuth } from '@/hooks/business/auth';
 import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const search = ref('');
 
@@ -51,12 +53,13 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
     }),
   transform: vnetSimpleTransform,
   columns: () => [
-    { prop: 'name', label: $t('vnetPages.memberGroups.name'), minWidth: 150 },
+    { prop: 'name', label: $t('vnetPages.memberGroups.name'), minWidth: 150, sortable: true },
     {
       prop: 'min_spent',
       label: $t('vnetPages.memberGroups.minSpent'),
       width: 130,
       align: 'right',
+      sortable: true,
       formatter: (row: any) => formatAmount(row.min_spent)
     },
     {
@@ -64,6 +67,7 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
       label: $t('vnetPages.memberGroups.discountPercent'),
       width: 130,
       align: 'center',
+      sortable: true,
       formatter: (row: any) => (row.discount_percent != null ? `${row.discount_percent}%` : '')
     },
     {
@@ -71,6 +75,7 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
       label: $t('vnetPages.memberGroups.isDefault'),
       width: 100,
       align: 'center',
+      sortable: true,
       formatter: (row: any) =>
         row.is_default
           ? h(ElTag, { type: 'success', size: 'small' }, () => $t('vnetPages.common.yes'))
@@ -80,6 +85,7 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
       prop: 'created_at',
       label: $t('vnetPages.memberGroups.createdAt'),
       width: 180,
+      sortable: true,
       formatter: (row: any) => formatDate(row.created_at)
     }
   ]
@@ -168,8 +174,8 @@ watch(dialogVisible, open => {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
         <div class="flex flex-wrap items-center gap-8px">
           <ElInput
@@ -184,18 +190,21 @@ watch(dialogVisible, open => {
         <TableHeaderOperation
           v-model:columns="columnChecks"
           :loading="loading"
+          :show-add="hasAuth('member_groups.create')"
           :show-delete="false"
           @add="openCreate"
           @refresh="getData"
         />
       </div>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <ElTable v-loading="loading" :data="data" border stripe class="fill-table" height="100%" style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="180" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('member_groups.update')" size="small" @click="openEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('member_groups.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

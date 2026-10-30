@@ -4,9 +4,11 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const ASSET_TYPES = ['monitor', 'keyboard', 'mouse', 'headset', 'chair', 'pc', 'other'];
 const STATUSES = ['good', 'worn', 'broken', 'missing'];
@@ -176,8 +178,8 @@ useRealtimeRefresh(['machine-assets', 'machines'], load);
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
           <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.assets.hint') }}</span>
@@ -192,16 +194,23 @@ useRealtimeRefresh(['machine-assets', 'machines'], load);
             >
               <ElOption v-for="m in machines" :key="m.id" :label="m.machine_code" :value="m.id" />
             </ElSelect>
-            <ElButton type="primary" @click="openCreate">{{ $t('vnetPages.assets.add') }}</ElButton>
+            <ElButton v-if="hasAuth('machine_assets.create')" type="primary" @click="openCreate">
+              {{ $t('vnetPages.assets.add') }}
+            </ElButton>
           </div>
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="rows" border stripe style="width: 100%">
-        <ElTableColumn :label="$t('vnetPages.assets.machine')" width="120">
+      <ElTable v-loading="loading" :data="rows" border stripe class="fill-table" height="100%" style="width: 100%">
+        <ElTableColumn
+          :label="$t('vnetPages.assets.machine')"
+          width="120"
+          sortable
+          :sort-by="(row: any) => machineCode(row.machine_id)"
+        >
           <template #default="{ row }">{{ machineCode(row.machine_id) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.assets.type')" width="130">
+        <ElTableColumn prop="asset_type" :label="$t('vnetPages.assets.type')" width="130" sortable>
           <!--
  row rỗng: el-table vẫn dựng ô mẫu một lần khi bảng chưa có dữ liệu, và
                $t('...types.undefined') in thẳng khoá thô ra ô. 
@@ -210,15 +219,20 @@ useRealtimeRefresh(['machine-assets', 'machines'], load);
             {{ row.asset_type ? $t(`vnetPages.assets.types.${row.asset_type}`) : '-' }}
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.assets.brandModel')" min-width="180">
+        <ElTableColumn
+          :label="$t('vnetPages.assets.brandModel')"
+          min-width="180"
+          sortable
+          :sort-by="['brand', 'model']"
+        >
           <template #default="{ row }">{{ [row.brand, row.model].filter(Boolean).join(' ') || '-' }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.assets.serial')" min-width="140">
+        <ElTableColumn prop="serial" :label="$t('vnetPages.assets.serial')" min-width="140" sortable>
           <template #default="{ row }">
             <span style="font-family: ui-monospace, Menlo, Consolas, monospace">{{ row.serial || '-' }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.assets.statusLabel')" width="120">
+        <ElTableColumn prop="status" :label="$t('vnetPages.assets.statusLabel')" width="120" sortable>
           <template #default="{ row }"><component :is="statusTag(row.status)" /></template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.assets.photos')" width="110">
@@ -227,15 +241,23 @@ useRealtimeRefresh(['machine-assets', 'machines'], load);
             <span v-else style="color: #909399">-</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.assets.checkedAt')" width="160">
+        <ElTableColumn prop="checked_at" :label="$t('vnetPages.assets.checkedAt')" width="160" sortable>
           <template #default="{ row }">
             {{ row.checked_at ? dayjs(row.checked_at).format('DD/MM/YYYY HH:mm') : '-' }}
           </template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.common.action')" width="150" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.assets.check') }}</ElButton>
-            <ElButton size="small" type="danger" plain @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('machine_assets.update')" size="small" @click="openEdit(row)">
+              {{ $t('vnetPages.assets.check') }}
+            </ElButton>
+            <ElButton
+              v-if="hasAuth('machine_assets.delete')"
+              size="small"
+              type="danger"
+              plain
+              @click="handleDelete(row)"
+            >
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>
@@ -289,7 +311,12 @@ useRealtimeRefresh(['machine-assets', 'machines'], load);
                 </ElButton>
               </div>
             </div>
-            <ElUpload :show-file-list="false" :before-upload="uploadPhoto" accept="image/*">
+            <ElUpload
+              v-if="hasAuth('upload.file')"
+              :show-file-list="false"
+              :before-upload="uploadPhoto"
+              accept="image/*"
+            >
               <ElButton size="small" :loading="uploading">{{ $t('vnetPages.assets.addPhoto') }}</ElButton>
             </ElUpload>
           </div>

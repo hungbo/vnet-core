@@ -4,9 +4,11 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const loading = ref(false);
 const rows = ref<any[]>([]);
@@ -14,6 +16,11 @@ const rows = ref<any[]>([]);
 function formatSize(v: number) {
   if (!v) return '-';
   return `${(v / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// Cột Phiên bản so theo số từng phần: so chuỗi thì 1.0.9 đứng sau 1.0.10.
+function byVersion(a: any, b: any) {
+  return String(a.version).localeCompare(String(b.version), undefined, { numeric: true });
 }
 
 async function load() {
@@ -113,25 +120,33 @@ useRealtimeRefresh(['app-updates'], load);
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.appUpdates.hint') }}</span>
-          <ElButton type="primary" @click="openCreate">{{ $t('vnetPages.appUpdates.publish') }}</ElButton>
+          <ElButton v-if="hasAuth('app_updates.create')" type="primary" @click="openCreate">
+            {{ $t('vnetPages.appUpdates.publish') }}
+          </ElButton>
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="rows" border stripe style="width: 100%">
-        <ElTableColumn :label="$t('vnetPages.appUpdates.version')" width="110">
+      <ElTable v-loading="loading" :data="rows" border stripe class="fill-table" height="100%" style="width: 100%">
+        <ElTableColumn
+          prop="version"
+          :label="$t('vnetPages.appUpdates.version')"
+          width="110"
+          sortable
+          :sort-method="byVersion"
+        >
           <template #default="{ row }">
             <span style="font-family: ui-monospace, Menlo, Consolas, monospace">{{ row.version }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.appUpdates.platform')" width="150">
+        <ElTableColumn prop="platform" :label="$t('vnetPages.appUpdates.platform')" width="150" sortable>
           <template #default="{ row }">{{ row.platform }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.appUpdates.size')" width="100">
+        <ElTableColumn prop="file_size" :label="$t('vnetPages.appUpdates.size')" width="100" sortable>
           <template #default="{ row }">{{ formatSize(row.file_size) }}</template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.appUpdates.checksum')" min-width="180">
@@ -141,7 +156,7 @@ useRealtimeRefresh(['app-updates'], load);
             </span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.appUpdates.required')" width="110">
+        <ElTableColumn prop="is_required" :label="$t('vnetPages.appUpdates.required')" width="110" sortable>
           <template #default="{ row }">
             <component
               :is="
@@ -152,17 +167,21 @@ useRealtimeRefresh(['app-updates'], load);
             />
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.appUpdates.active')" width="100">
+        <ElTableColumn prop="is_active" :label="$t('vnetPages.appUpdates.active')" width="100" sortable>
           <template #default="{ row }">
-            <ElSwitch :model-value="row.is_active" @change="toggleActive(row)" />
+            <ElSwitch
+              :model-value="row.is_active"
+              :disabled="!hasAuth('app_updates.update')"
+              @change="toggleActive(row)"
+            />
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.appUpdates.publishedAt')" width="160">
+        <ElTableColumn prop="created_at" :label="$t('vnetPages.appUpdates.publishedAt')" width="160" sortable>
           <template #default="{ row }">{{ dayjs(row.created_at).format('DD/MM/YYYY HH:mm') }}</template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.common.action')" width="90" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" type="danger" plain @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('app_updates.delete')" size="small" type="danger" plain @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

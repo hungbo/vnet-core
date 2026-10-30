@@ -6,9 +6,11 @@ import client from '@/api/client';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const saving = ref(false);
 const search = ref('');
@@ -61,9 +63,9 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
     }),
   transform: vnetSimpleTransform,
   columns: () => [
-    { prop: 'name', label: $t('vnetPages.categories.name'), minWidth: 200 },
+    { prop: 'name', label: $t('vnetPages.categories.name'), minWidth: 200, sortable: true },
     { prop: 'icon', label: $t('vnetPages.categories.icon'), width: 100 },
-    { prop: 'sort_order', label: $t('vnetPages.categories.order'), width: 80 }
+    { prop: 'sort_order', label: $t('vnetPages.categories.order'), width: 80, sortable: true }
   ]
 });
 
@@ -139,14 +141,15 @@ async function handleDelete(row: any) {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.categories.title') }}</span>
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-add="hasAuth('categories.create')"
             :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
@@ -169,13 +172,17 @@ async function handleDelete(row: any) {
         row-key="id"
         :tree-props="{ children: 'children', hasChildren: 'has_children' }"
         default-expand-all
+        class="fill-table"
+        height="100%"
         style="width: 100%"
       >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="200" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="handleEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('categories.update')" size="small" @click="handleEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('categories.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

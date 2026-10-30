@@ -5,6 +5,7 @@ import type { FormInstance, FormRules } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
@@ -15,6 +16,7 @@ import TableHeaderOperation from '@/components/advanced/table-header-operation.v
 
 const { t: $t } = useI18n();
 const { enabledMethods } = usePaymentMethods();
+const { hasAuth } = useAuth();
 
 const search = ref('');
 
@@ -126,22 +128,25 @@ const rules: FormRules = {
   ]
 };
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/combos', {
       params: {
         page,
         page_size: pageSize,
+        sort,
+        order,
         search: search.value || undefined
       }
     }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'name', label: $t('vnetPages.combos.name'), minWidth: 160 },
+    { prop: 'name', label: $t('vnetPages.combos.name'), minWidth: 160, sortable: 'custom' },
     {
       prop: 'type',
       label: $t('vnetPages.combos.type'),
       width: 110,
+      sortable: 'custom',
       formatter: (row: any) =>
         h(
           ElTag,
@@ -156,6 +161,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'price',
       label: $t('vnetPages.combos.price'),
       width: 110,
+      sortable: 'custom',
       formatter: (row: any) => formatAmount(row.price)
     },
     {
@@ -175,6 +181,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'is_active',
       label: $t('vnetPages.combos.isActive'),
       width: 90,
+      sortable: 'custom',
       formatter: (row: any) =>
         h(ElTag, { type: row.is_active ? 'success' : 'danger', size: 'small' }, () =>
           row.is_active ? $t('vnetPages.common.yes') : $t('vnetPages.common.no')
@@ -487,8 +494,8 @@ useRealtimeRefresh(
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
         <div class="flex flex-wrap items-center gap-8px">
           <ElInput
@@ -504,19 +511,33 @@ useRealtimeRefresh(
         <TableHeaderOperation
           v-model:columns="columnChecks"
           :loading="loading"
+          :show-add="hasAuth('combos.create')"
           :show-delete="false"
           @add="openCreate"
           @refresh="getData"
         />
       </div>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="270" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="openPurchase(row)">{{ $t('vnetPages.combos.purchase') }}</ElButton>
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('combos.sell')" size="small" @click="openPurchase(row)">
+              {{ $t('vnetPages.combos.purchase') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('combos.update')" size="small" @click="openEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('combos.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>
@@ -570,16 +591,22 @@ useRealtimeRefresh(
       </div>
 
       <ElTable v-loading="purchasesLoading" :data="purchases" border stripe size="small" style="width: 100%">
-        <ElTableColumn prop="combo_name" :label="$t('vnetPages.combos.name')" min-width="160" />
-        <ElTableColumn :label="$t('vnetPages.combos.purchasedAt')" width="150">
+        <ElTableColumn prop="combo_name" :label="$t('vnetPages.combos.name')" min-width="160" sortable />
+        <ElTableColumn prop="created_at" :label="$t('vnetPages.combos.purchasedAt')" width="150" sortable>
           <template #default="{ row }">
             {{ row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm') : '-' }}
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.combos.remainingMinutes')" width="100" align="center">
+        <ElTableColumn
+          prop="remaining_minutes"
+          :label="$t('vnetPages.combos.remainingMinutes')"
+          width="100"
+          align="center"
+          sortable
+        >
           <template #default="{ row }">{{ row.remaining_minutes ?? 0 }}p</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.combos.status')" width="130">
+        <ElTableColumn prop="activated" :label="$t('vnetPages.combos.status')" width="130" sortable>
           <template #default="{ row }">
             <ElTag :type="row.activated ? 'success' : 'warning'" size="small">
               {{ row.activated ? $t('vnetPages.combos.activated') : $t('vnetPages.combos.pending') }}
@@ -589,7 +616,7 @@ useRealtimeRefresh(
         <ElTableColumn :label="$t('vnetPages.common.action')" width="120">
           <template #default="{ row }">
             <ElButton
-              v-if="!row.activated"
+              v-if="!row.activated && hasAuth('combos.sell')"
               size="small"
               type="primary"
               :loading="activatingId === row.id"

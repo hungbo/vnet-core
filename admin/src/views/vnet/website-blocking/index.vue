@@ -4,9 +4,11 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const tab = ref<'rules' | 'violations'>('rules');
 
@@ -194,12 +196,15 @@ const vLoading = ref(false);
 const violations = ref<any[]>([]);
 const vTotal = ref(0);
 const vPage = ref(1);
+// Sắp xếp phía máy chủ (bảng phân trang): cột bấm và chiều; undefined = mới nhất trước.
+const vSort = ref<string>();
+const vOrder = ref<'asc' | 'desc'>();
 
 async function loadViolations() {
   vLoading.value = true;
   try {
     const res: any = await client.get('/website-violations', {
-      params: { page: vPage.value, page_size: 20 }
+      params: { page: vPage.value, page_size: 20, sort: vSort.value, order: vOrder.value }
     });
     violations.value = res?.items || [];
     vTotal.value = res?.total || 0;
@@ -209,6 +214,13 @@ async function loadViolations() {
   } finally {
     vLoading.value = false;
   }
+}
+
+function onViolationSort({ prop, order }: { prop: string | null; order: 'ascending' | 'descending' | null }) {
+  vSort.value = order && prop ? prop : undefined;
+  vOrder.value = order ? ({ ascending: 'asc', descending: 'desc' } as const)[order] : undefined;
+  vPage.value = 1;
+  loadViolations();
 }
 
 function switchTab(v: any) {
@@ -225,8 +237,8 @@ useRealtimeRefresh(['website-rules', 'machine-groups'], () => (tab.value === 'vi
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
           <ElRadioGroup :model-value="tab" @change="switchTab">
@@ -243,18 +255,34 @@ useRealtimeRefresh(['website-rules', 'machine-groups'], () => (tab.value === 'vi
               @clear="load"
             />
             <ElButton @click="load">{{ $t('vnetPages.common.search') }}</ElButton>
-            <ElButton type="primary" @click="openCreate">{{ $t('vnetPages.webblock.addRule') }}</ElButton>
+            <!-- Thêm luật = POST rồi PUT lịch/phạm vi máy, nên cần cả create lẫn update -->
+            <ElButton
+              v-if="hasAuth('website_rules.create') && hasAuth('website_rules.update')"
+              type="primary"
+              @click="openCreate"
+            >
+              {{ $t('vnetPages.webblock.addRule') }}
+            </ElButton>
           </div>
         </div>
       </template>
 
-      <ElTable v-if="tab === 'rules'" v-loading="loading" :data="rules" border stripe style="width: 100%">
-        <ElTableColumn :label="$t('vnetPages.webblock.pattern')" min-width="180">
+      <ElTable
+        v-if="tab === 'rules'"
+        v-loading="loading"
+        :data="rules"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+      >
+        <ElTableColumn prop="pattern" :label="$t('vnetPages.webblock.pattern')" min-width="180" sortable>
           <template #default="{ row }">
             <span style="font-family: ui-monospace, Menlo, Consolas, monospace">{{ row.pattern }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.webblock.ruleType')" width="110">
+        <ElTableColumn prop="rule_type" :label="$t('vnetPages.webblock.ruleType')" width="110" sortable>
           <template #default="{ row }">
             <component
               :is="
@@ -270,7 +298,7 @@ useRealtimeRefresh(['website-rules', 'machine-groups'], () => (tab.value === 'vi
             />
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.webblock.category')" width="130">
+        <ElTableColumn prop="category" :label="$t('vnetPages.webblock.category')" width="130" sortable>
           <template #default="{ row }">{{ row.category || '-' }}</template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.webblock.schedule')" min-width="220">
@@ -279,15 +307,27 @@ useRealtimeRefresh(['website-rules', 'machine-groups'], () => (tab.value === 'vi
         <ElTableColumn :label="$t('vnetPages.webblock.scope')" min-width="150">
           <template #default="{ row }">{{ groupText(row) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.webblock.active')" width="100">
+        <ElTableColumn prop="is_active" :label="$t('vnetPages.webblock.active')" width="100" sortable>
           <template #default="{ row }">
-            <ElSwitch :model-value="row.is_active" @change="toggleActive(row)" />
+            <ElSwitch
+              :model-value="row.is_active"
+              :disabled="!hasAuth('website_rules.update')"
+              @change="toggleActive(row)"
+            />
           </template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.common.action')" width="150" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" plain @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('website_rules.update')" size="small" @click="openEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton
+              v-if="hasAuth('website_rules.delete')"
+              size="small"
+              type="danger"
+              plain
+              @click="handleDelete(row)"
+            >
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>
@@ -295,19 +335,28 @@ useRealtimeRefresh(['website-rules', 'machine-groups'], () => (tab.value === 'vi
       </ElTable>
 
       <template v-else>
-        <ElTable v-loading="vLoading" :data="violations" border stripe style="width: 100%">
-          <ElTableColumn :label="$t('vnetPages.webblock.machine')" width="140">
+        <ElTable
+          v-loading="vLoading"
+          :data="violations"
+          border
+          stripe
+          class="fill-table"
+          height="100%"
+          style="width: 100%"
+          @sort-change="onViolationSort"
+        >
+          <ElTableColumn prop="machine_code" :label="$t('vnetPages.webblock.machine')" width="140" sortable="custom">
             <template #default="{ row }">{{ row.machine_code || '-' }}</template>
           </ElTableColumn>
-          <ElTableColumn :label="$t('vnetPages.webblock.domain')" min-width="200">
+          <ElTableColumn prop="domain" :label="$t('vnetPages.webblock.domain')" min-width="200" sortable="custom">
             <template #default="{ row }">
               <span style="font-family: ui-monospace, Menlo, Consolas, monospace">{{ row.domain }}</span>
             </template>
           </ElTableColumn>
-          <ElTableColumn :label="$t('vnetPages.webblock.process')" width="150">
+          <ElTableColumn prop="process_name" :label="$t('vnetPages.webblock.process')" width="150" sortable="custom">
             <template #default="{ row }">{{ row.process_name || '-' }}</template>
           </ElTableColumn>
-          <ElTableColumn :label="$t('vnetPages.webblock.at')" width="170">
+          <ElTableColumn prop="blocked_at" :label="$t('vnetPages.webblock.at')" width="170" sortable="custom">
             <template #default="{ row }">{{ dayjs(row.blocked_at).format('DD/MM/YYYY HH:mm:ss') }}</template>
           </ElTableColumn>
         </ElTable>

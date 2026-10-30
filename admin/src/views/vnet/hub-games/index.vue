@@ -175,7 +175,39 @@ const filtered = computed(() => {
   });
 });
 
-const pageRows = computed(() => filtered.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value));
+// Sắp xếp CẢ danh sách đã lọc rồi mới cắt trang. Cột khai sortable="custom": để ElTable tự sắp
+// thì nó chỉ sắp được các dòng của trang đang xem.
+const sortProp = ref<string>();
+const sortOrder = ref<'asc' | 'desc'>();
+
+function onSortChange({ prop, order }: { prop: string | null; order: 'ascending' | 'descending' | null }) {
+  sortProp.value = order && prop ? prop : undefined;
+  sortOrder.value = order ? ({ ascending: 'asc', descending: 'desc' } as const)[order] : undefined;
+  resetPage();
+}
+
+// Giá trị dùng để so của từng cột: kích thước như ô hiển thị (ước lượng khi Hub chưa có số đo),
+// cột Tại quán theo trạng thái, đúng/sai thành 1/0.
+function sortValue(r: CatalogRow, prop: string): string | number {
+  if (prop === 'size_bytes') return r.size_bytes > 0 ? r.size_bytes : r.approx_size_mb * 1024 * 1024;
+  if (prop === 'state') return stateOf(r);
+  if (prop === 'auto_update') return Number(Boolean(r.local?.auto_update));
+  const v = (r as any)[prop];
+  return typeof v === 'boolean' ? Number(v) : (v ?? '');
+}
+
+const sorted = computed(() => {
+  const prop = sortProp.value;
+  if (!prop || !sortOrder.value) return filtered.value;
+  const dir = sortOrder.value === 'asc' ? 1 : -1;
+  return [...filtered.value].sort((a, b) => {
+    const x = sortValue(a, prop);
+    const y = sortValue(b, prop);
+    return dir * (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'vi'));
+  });
+});
+
+const pageRows = computed(() => sorted.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value));
 
 function resetPage() {
   page.value = 1;
@@ -314,7 +346,7 @@ const downloadable = computed(() => selection.value.filter(r => r.available).map
 </script>
 
 <template>
-  <div class="flex-col-stretch gap-16px">
+  <div class="page-fill flex-col-stretch gap-16px">
     <ElCard>
       <template #header>
         <div class="flex flex-wrap items-center justify-between gap-8px">
@@ -367,7 +399,7 @@ const downloadable = computed(() => selection.value.filter(r => r.available).map
       </div>
     </ElCard>
 
-    <ElCard>
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex flex-wrap items-center justify-between gap-8px">
           <span>{{ $t('vnetPages.hubGames.title') }}</span>
@@ -429,36 +461,69 @@ const downloadable = computed(() => selection.value.filter(r => r.available).map
         </ElButton>
       </div>
 
-      <ElTable v-loading="loading" :data="pageRows" row-key="name" style="width: 100%" @selection-change="onSelectionChange">
+      <ElTable
+        v-loading="loading"
+        :data="pageRows"
+        row-key="name"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @selection-change="onSelectionChange"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn type="selection" width="44" :selectable="() => canEdit" />
-        <ElTableColumn :label="$t('vnetPages.hubGames.game')" min-width="240" show-overflow-tooltip>
+        <ElTableColumn
+          prop="display_name"
+          :label="$t('vnetPages.hubGames.game')"
+          min-width="240"
+          show-overflow-tooltip
+          sortable="custom"
+        >
           <template #default="{ row }">
             <span class="font-medium">{{ row.display_name }}</span>
             <ElTag v-if="row.mandatory" size="small" type="info" class="ml-6px">{{ $t('vnetPages.hubGames.mandatory') }}</ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="category" :label="$t('vnetPages.hubGames.category')" width="130" show-overflow-tooltip />
-        <ElTableColumn :label="$t('vnetPages.hubGames.source')" width="120">
+        <ElTableColumn
+          prop="category"
+          :label="$t('vnetPages.hubGames.category')"
+          width="130"
+          show-overflow-tooltip
+          sortable="custom"
+        />
+        <ElTableColumn prop="source_type" :label="$t('vnetPages.hubGames.source')" width="120" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.source_type">{{ $t(`vnetPages.hubGames.sources.${row.source_type}` as any) }}</span>
             <span v-else>-</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.hubGames.size')" width="100" align="right">
+        <ElTableColumn
+          prop="size_bytes"
+          :label="$t('vnetPages.hubGames.size')"
+          width="100"
+          align="right"
+          sortable="custom"
+        >
           <template #default="{ row }">{{ formatSize(row.size_bytes, row.approx_size_mb) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.hubGames.hubStatus')" width="150">
+        <ElTableColumn prop="available" :label="$t('vnetPages.hubGames.hubStatus')" width="150" sortable="custom">
           <template #default="{ row }">
             <ElTag v-if="row.available" type="success" size="small">{{ $t('vnetPages.hubGames.available', { v: row.version }) }}</ElTag>
             <ElTag v-else type="warning" size="small">{{ $t('vnetPages.hubGames.unavailable') }}</ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.hubGames.selected')" width="90" align="center">
+        <ElTableColumn
+          prop="selected"
+          :label="$t('vnetPages.hubGames.selected')"
+          width="90"
+          align="center"
+          sortable="custom"
+        >
           <template #default="{ row }">
             <ElTag :type="row.selected ? 'success' : 'info'" size="small">{{ row.selected ? $t('vnetPages.common.yes') : $t('vnetPages.common.no') }}</ElTag>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.hubGames.atCafe')" width="180">
+        <ElTableColumn prop="state" :label="$t('vnetPages.hubGames.atCafe')" width="180" sortable="custom">
           <template #default="{ row }">
             <ElTag :type="stateType(stateOf(row))" size="small">{{ $t(`vnetPages.hubGames.states.${stateOf(row)}` as any) }}</ElTag>
             <span v-if="row.local?.status === 'downloading'" class="ml-6px text-12px">{{ row.local.progress }}%</span>
@@ -467,7 +532,13 @@ const downloadable = computed(() => selection.value.filter(r => r.available).map
             </ElTooltip>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.hubGames.autoUpdate')" width="110" align="center">
+        <ElTableColumn
+          prop="auto_update"
+          :label="$t('vnetPages.hubGames.autoUpdate')"
+          width="110"
+          align="center"
+          sortable="custom"
+        >
           <template #default="{ row }">
             <ElSwitch
               v-if="row.local"

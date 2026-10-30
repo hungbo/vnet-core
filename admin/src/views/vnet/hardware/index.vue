@@ -229,13 +229,15 @@ function changeText(row: any) {
   return `${show(row.old_value)} → ${show(row.new_value)}`;
 }
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  // Hook gọi api({ page, pageSize }) nhưng khai kiểu là () => …; tham số tuỳ chọn khớp được cả hai.
-  api: (p?: { page: number; pageSize: number }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  // Hook gọi api({ page, pageSize, sort, order }) nhưng khai kiểu là () => …; tham số tuỳ chọn khớp được cả hai.
+  api: (p?: { page: number; pageSize: number; sort?: string; order?: string }) =>
     client.get('/machine-hardware/changes', {
       params: {
         page: p?.page,
         page_size: p?.pageSize,
+        sort: p?.sort,
+        order: p?.order,
         unacknowledged: onlyPending.value ? 'true' : undefined,
         component: filterComponent.value || undefined,
         search: machineSearch.value.trim() || undefined
@@ -247,17 +249,19 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'detected_at',
       label: $t('vnetPages.hardware.detectedAt'),
       width: 170,
+      sortable: 'custom',
       formatter: (row: any) => formatTime(row.detected_at)
     },
-    { prop: 'machine_code', label: $t('vnetPages.hardware.machine'), width: 150 },
+    { prop: 'machine_code', label: $t('vnetPages.hardware.machine'), width: 150, sortable: 'custom' },
     {
       prop: 'component',
       label: $t('vnetPages.hardware.component'),
       width: 150,
+      sortable: 'custom',
       formatter: (row: any) => componentLabel(row.component)
     },
     { prop: 'change', label: $t('vnetPages.hardware.change'), minWidth: 280, showOverflowTooltip: true },
-    { prop: 'acknowledged', label: $t('vnetPages.hardware.acknowledged'), width: 190 },
+    { prop: 'acknowledged', label: $t('vnetPages.hardware.acknowledged'), width: 190, sortable: 'custom' },
     { prop: 'actions', label: '', width: 110, fixed: 'right' }
   ]
 });
@@ -319,8 +323,8 @@ onBeforeUnmount(() => {
           </div>
           <ElAlert type="info" :closable="false" class="mb-12px" :title="$t('vnetPages.hardware.vanguardHint')" />
           <ElTable v-loading="rowsLoading" :data="shownRows" row-key="id" style="width: 100%">
-            <ElTableColumn prop="machine_code" :label="$t('vnetPages.hardware.machine')" width="150" fixed />
-            <ElTableColumn :label="$t('vnetPages.hardware.status')" width="110">
+            <ElTableColumn prop="machine_code" :label="$t('vnetPages.hardware.machine')" width="150" fixed sortable />
+            <ElTableColumn prop="status" :label="$t('vnetPages.hardware.status')" width="110" sortable>
               <template #default="{ row }">
                 <ElTag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</ElTag>
               </template>
@@ -339,27 +343,37 @@ onBeforeUnmount(() => {
                 <ElTag v-else type="info" size="small">{{ $t('vnetPages.hardware.unknown') }}</ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.components.boot_mode')" width="110">
+            <ElTableColumn prop="boot_mode" :label="$t('vnetPages.hardware.components.boot_mode')" width="110" sortable>
               <template #default="{ row }">
                 <ElTag :type="flagType(row.boot_mode, 'uefi')" size="small">{{ flagText(row.boot_mode) }}</ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.components.secure_boot')" width="120">
+            <ElTableColumn
+              prop="secure_boot"
+              :label="$t('vnetPages.hardware.components.secure_boot')"
+              width="120"
+              sortable
+            >
               <template #default="{ row }">
                 <ElTag :type="flagType(row.secure_boot, 'on')" size="small">{{ flagText(row.secure_boot) }}</ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.components.tpm')" width="100">
+            <ElTableColumn prop="tpm" :label="$t('vnetPages.hardware.components.tpm')" width="100" sortable>
               <template #default="{ row }">
                 <ElTag :type="tpmType(row.tpm)" size="small">{{ flagText(row.tpm) }}</ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.components.hvci')" width="120">
+            <ElTableColumn prop="hvci" :label="$t('vnetPages.hardware.components.hvci')" width="120" sortable>
               <template #default="{ row }">
                 <ElTag type="info" size="small">{{ flagText(row.hvci) }}</ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.components.virtualization')" width="120">
+            <ElTableColumn
+              prop="virtualization"
+              :label="$t('vnetPages.hardware.components.virtualization')"
+              width="120"
+              sortable
+            >
               <template #default="{ row }">
                 <ElTag type="info" size="small">{{ flagText(row.virtualization) }}</ElTag>
               </template>
@@ -369,9 +383,16 @@ onBeforeUnmount(() => {
               :label="$t('vnetPages.hardware.components.bios')"
               width="140"
               show-overflow-tooltip
+              sortable
             />
-            <ElTableColumn prop="display_mode" :label="$t('vnetPages.hardware.display')" width="150" />
-            <ElTableColumn :label="$t('vnetPages.hardware.pending')" width="120" fixed="right">
+            <ElTableColumn prop="display_mode" :label="$t('vnetPages.hardware.display')" width="150" sortable />
+            <ElTableColumn
+              prop="pending_changes"
+              :label="$t('vnetPages.hardware.pending')"
+              width="120"
+              fixed="right"
+              sortable
+            >
               <template #default="{ row }">
                 <ElButton v-if="row.pending_changes" size="small" type="warning" plain @click="tab = 'changes'">
                   {{ row.pending_changes }}
@@ -394,33 +415,39 @@ onBeforeUnmount(() => {
           </div>
           <ElAlert type="info" :closable="false" class="mb-12px" :title="$t('vnetPages.hardware.activityHint')" />
           <ElTable v-loading="activityLoading && !activity.length" :data="shownActivity" row-key="id" style="width: 100%">
-            <ElTableColumn prop="machine_code" :label="$t('vnetPages.hardware.machine')" width="150" fixed />
-            <ElTableColumn :label="$t('vnetPages.hardware.status')" width="110">
+            <ElTableColumn prop="machine_code" :label="$t('vnetPages.hardware.machine')" width="150" fixed sortable />
+            <ElTableColumn prop="status" :label="$t('vnetPages.hardware.status')" width="110" sortable>
               <template #default="{ row }">
                 <ElTag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</ElTag>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.app')" min-width="220" show-overflow-tooltip>
+            <ElTableColumn
+              prop="active_app"
+              :label="$t('vnetPages.hardware.app')"
+              min-width="220"
+              show-overflow-tooltip
+              sortable
+            >
               <template #default="{ row }">{{ live(row) && row.active_app ? row.active_app : '-' }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.temp')" width="150">
+            <ElTableColumn prop="cpu_temp" :label="$t('vnetPages.hardware.temp')" width="150" sortable>
               <template #default="{ row }">
                 {{ live(row) && (row.cpu_temp || row.gpu_temp) ? `${row.cpu_temp}° / ${row.gpu_temp}°` : '-' }}
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.cpuLoad')" width="100">
+            <ElTableColumn prop="cpu_usage" :label="$t('vnetPages.hardware.cpuLoad')" width="100" sortable>
               <template #default="{ row }">
                 <ElTag v-if="live(row)" :type="usageType(row.cpu_usage)" size="small">{{ Math.round(row.cpu_usage) }}%</ElTag>
                 <span v-else>-</span>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.ramLoad')" width="100">
+            <ElTableColumn prop="ram_usage" :label="$t('vnetPages.hardware.ramLoad')" width="100" sortable>
               <template #default="{ row }">
                 <ElTag v-if="live(row)" :type="usageType(row.ram_usage)" size="small">{{ Math.round(row.ram_usage) }}%</ElTag>
                 <span v-else>-</span>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.diskLoad')" width="100">
+            <ElTableColumn prop="disk_usage" :label="$t('vnetPages.hardware.diskLoad')" width="100" sortable>
               <template #default="{ row }">
                 <ElTag v-if="live(row)" :type="usageType(row.disk_usage)" size="small">
                   {{ Math.round(row.disk_usage) }}%
@@ -428,19 +455,19 @@ onBeforeUnmount(() => {
                 <span v-else>-</span>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.down')" width="120">
+            <ElTableColumn prop="net_down_bps" :label="$t('vnetPages.hardware.down')" width="120" sortable>
               <template #default="{ row }">{{ live(row) ? bitRate(row.net_down_bps) : '-' }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.up')" width="120">
+            <ElTableColumn prop="net_up_bps" :label="$t('vnetPages.hardware.up')" width="120" sortable>
               <template #default="{ row }">{{ live(row) ? bitRate(row.net_up_bps) : '-' }}</template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.ping')" width="140">
+            <ElTableColumn prop="ping_ms" :label="$t('vnetPages.hardware.ping')" width="140" sortable>
               <template #default="{ row }">
                 <ElTag v-if="live(row) && row.ping_ms" :type="pingType(row.ping_ms)" size="small">{{ row.ping_ms }} ms</ElTag>
                 <span v-else>-</span>
               </template>
             </ElTableColumn>
-            <ElTableColumn :label="$t('vnetPages.hardware.lastSeen')" width="170">
+            <ElTableColumn prop="last_heartbeat" :label="$t('vnetPages.hardware.lastSeen')" width="170" sortable>
               <template #default="{ row }">{{ formatTime(row.last_heartbeat || undefined) || '-' }}</template>
             </ElTableColumn>
           </ElTable>
@@ -491,7 +518,7 @@ onBeforeUnmount(() => {
               </template>
             </TableHeaderOperation>
           </div>
-          <ElTable v-loading="loading" :data="data" row-key="id" style="width: 100%">
+          <ElTable v-loading="loading" :data="data" row-key="id" style="width: 100%" @sort-change="onSortChange">
             <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col">
               <template v-if="col.prop === 'change'" #default="{ row }">
                 <ElTag

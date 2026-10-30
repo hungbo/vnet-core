@@ -4,9 +4,11 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const loading = ref(false);
 const rows = ref<any[]>([]);
@@ -440,8 +442,8 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
           <div style="display: flex; align-items: center; gap: 8px">
@@ -457,8 +459,10 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
           </div>
           <div style="display: flex; gap: 8px">
             <ElButton @click="load()">{{ $t('common.refresh') }}</ElButton>
-            <ElButton v-if="isMaster" type="primary" @click="openCreate">{{ $t('vnetPages.games.add') }}</ElButton>
-            <ElButton v-if="canAddLocal" type="primary" @click="openCreateLocal">
+            <ElButton v-if="isMaster && hasAuth('games.create')" type="primary" @click="openCreate">
+              {{ $t('vnetPages.games.add') }}
+            </ElButton>
+            <ElButton v-if="canAddLocal && hasAuth('games.create')" type="primary" @click="openCreateLocal">
               {{ $t('vnetPages.games.addLocal') }}
             </ElButton>
           </div>
@@ -525,10 +529,14 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
                 clearable
               />
             </div>
-            <ElButton type="primary" :loading="hubSaving" @click="saveHub">
+            <ElButton v-if="hasAuth('games.hub')" type="primary" :loading="hubSaving" @click="saveHub">
               {{ $t('vnetPages.games.hubConnect') }}
             </ElButton>
-            <ElButton v-if="info.hub_url || info.has_key" :loading="hubClearing" @click="clearHub">
+            <ElButton
+              v-if="(info.hub_url || info.has_key) && hasAuth('games.hub')"
+              :loading="hubClearing"
+              @click="clearHub"
+            >
               {{ $t('vnetPages.games.hubDisconnect') }}
             </ElButton>
           </div>
@@ -559,21 +567,31 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
       <div v-if="info.role" class="mb-16px flex flex-wrap items-center gap-8px">
         <span>{{ $t('vnetPages.games.clientRoot') }}</span>
         <ElInput v-model="clientRoot" placeholder="D:\Games" class="w-240px" clearable />
-        <ElButton :loading="clientRootSaving" @click="saveClientRoot">{{ $t('vnetPages.common.save') }}</ElButton>
+        <!-- Lưu vào PUT /settings/games → quyền settings.edit -->
+        <ElButton v-if="hasAuth('settings.edit')" :loading="clientRootSaving" @click="saveClientRoot">
+          {{ $t('vnetPages.common.save') }}
+        </ElButton>
         <span class="text-12px text-gray-500">{{ $t('vnetPages.games.clientRootHint') }}</span>
       </div>
 
       <div v-if="isCafe" style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px">
         <span>{{ $t('vnetPages.games.updateWindow') }}</span>
         <ElInput v-model="updateWindow" placeholder="02:00-08:00" style="width: 160px" clearable />
-        <ElButton :loading="windowSaving" @click="saveWindow">{{ $t('vnetPages.common.save') }}</ElButton>
+        <ElButton v-if="hasAuth('settings.edit')" :loading="windowSaving" @click="saveWindow">
+          {{ $t('vnetPages.common.save') }}
+        </ElButton>
         <span style="color: var(--el-text-color-secondary); font-size: 12px">
           {{ $t('vnetPages.games.updateWindowHint') }}
         </span>
       </div>
 
-      <ElTable v-loading="loading" :data="rows" border stripe style="width: 100%">
-        <ElTableColumn :label="$t('vnetPages.games.name')" min-width="200">
+      <ElTable v-loading="loading" :data="rows" border stripe class="fill-table" height="100%" style="width: 100%">
+        <ElTableColumn
+          :label="$t('vnetPages.games.name')"
+          min-width="200"
+          sortable
+          :sort-by="(row: any) => row.custom?.display_name || row.display_name"
+        >
           <template #default="{ row }">
             <div style="font-weight: 600">
               {{ row.custom?.display_name || row.display_name }}
@@ -587,23 +605,29 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
             <div style="color: var(--el-text-color-secondary); font-size: 12px">{{ row.name }}</div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.games.category')" width="120">
+        <ElTableColumn prop="category" :label="$t('vnetPages.games.category')" width="120" sortable>
           <template #default="{ row }">{{ row.category || '-' }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.games.version')" width="120">
+        <ElTableColumn prop="version" :label="$t('vnetPages.games.version')" width="120" sortable>
           <template #default="{ row }">
             <span>{{ row.version || '-' }}</span>
             <span v-if="outdated(row)" style="color: var(--el-color-warning)">→ {{ row.remote_version }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.games.size')" width="100">
+        <ElTableColumn prop="size_bytes" :label="$t('vnetPages.games.size')" width="100" sortable>
           <template #default="{ row }">{{ formatSize(row.size_bytes) }}</template>
         </ElTableColumn>
         <!-- Số lượt khách bấm "Chơi" trên menu máy trạm (từ client 1.0.19). -->
-        <ElTableColumn :label="$t('vnetPages.games.launchCount')" width="100" align="right">
+        <ElTableColumn
+          prop="launch_count"
+          :label="$t('vnetPages.games.launchCount')"
+          width="100"
+          align="right"
+          sortable
+        >
           <template #default="{ row }">{{ (row.launch_count || 0).toLocaleString('vi-VN') }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.games.status')" min-width="190">
+        <ElTableColumn prop="status" :label="$t('vnetPages.games.status')" min-width="190" sortable>
           <template #default="{ row }">
             <ElTag :type="statusType[row.status] || 'info'" size="small">
               {{ $t(`vnetPages.games.status_${row.status || 'not_installed'}`) }}
@@ -617,29 +641,39 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.games.autoUpdate')" width="110">
+        <ElTableColumn prop="auto_update" :label="$t('vnetPages.games.autoUpdate')" width="110" sortable>
           <template #default="{ row }">
             <span v-if="isLocal(row)" style="color: var(--el-text-color-secondary)">-</span>
-            <ElSwitch v-else :model-value="row.auto_update" @change="(v: any) => patch(row, { auto_update: v })" />
+            <ElSwitch
+              v-else
+              :model-value="row.auto_update"
+              :disabled="!hasAuth('games.update')"
+              @change="(v: any) => patch(row, { auto_update: v })"
+            />
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.games.enabled')" width="90">
+        <ElTableColumn prop="enabled" :label="$t('vnetPages.games.enabled')" width="90" sortable>
           <template #default="{ row }">
-            <ElSwitch :model-value="row.enabled" @change="(v: any) => patch(row, { enabled: v })" />
+            <ElSwitch
+              :model-value="row.enabled"
+              :disabled="!hasAuth('games.update')"
+              @change="(v: any) => patch(row, { enabled: v })"
+            />
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.games.priority')" width="120">
+        <ElTableColumn prop="priority" :label="$t('vnetPages.games.priority')" width="120" sortable>
           <template #default="{ row }">
             <ElInputNumber
               :model-value="row.priority"
               size="small"
               controls-position="right"
               style="width: 90px"
+              :disabled="!hasAuth('games.update')"
               @change="(v: any) => patch(row, { priority: Number(v) || 0 })"
             />
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.games.lastUpdated')" width="150">
+        <ElTableColumn prop="last_updated_at" :label="$t('vnetPages.games.lastUpdated')" width="150" sortable>
           <template #default="{ row }">
             {{ row.last_updated_at ? dayjs(row.last_updated_at).format('DD/MM/YYYY HH:mm') : '-' }}
           </template>
@@ -647,27 +681,38 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
         <ElTableColumn :label="$t('vnetPages.common.action')" width="250" fixed="right">
           <template #default="{ row }">
             <template v-if="isMaster">
-              <ElButton size="small" @click="openEdit(row)">
+              <ElButton v-if="hasAuth('games.update')" size="small" @click="openEdit(row)">
                 {{ $t('vnetPages.common.edit') }}
               </ElButton>
-              <ElButton size="small" type="primary" plain :loading="row.publishing" :disabled="row.status === 'publishing'" @click="publish(row)">
+              <ElButton
+                v-if="hasAuth('games.update')"
+                size="small"
+                type="primary"
+                plain
+                :loading="row.publishing"
+                :disabled="row.status === 'publishing'"
+                @click="publish(row)"
+              >
                 {{ $t('vnetPages.games.publishNow') }}
               </ElButton>
-              <ElButton size="small" type="danger" plain @click="handleDelete(row)">
+              <ElButton v-if="hasAuth('games.delete')" size="small" type="danger" plain @click="handleDelete(row)">
                 {{ $t('vnetPages.common.delete') }}
               </ElButton>
             </template>
             <template v-else-if="isCafe && isLocal(row)">
-              <ElButton size="small" @click="openEdit(row)">
+              <ElButton v-if="hasAuth('games.update')" size="small" @click="openEdit(row)">
                 {{ $t('vnetPages.common.edit') }}
               </ElButton>
-              <ElButton size="small" type="danger" plain @click="handleDelete(row)">
+              <ElButton v-if="hasAuth('games.delete')" size="small" type="danger" plain @click="handleDelete(row)">
                 {{ $t('vnetPages.common.delete') }}
               </ElButton>
             </template>
             <template v-else-if="isCafe">
-              <ElButton size="small" @click="openCustom(row)">{{ $t('vnetPages.games.customize') }}</ElButton>
+              <ElButton v-if="hasAuth('games.update')" size="small" @click="openCustom(row)">
+                {{ $t('vnetPages.games.customize') }}
+              </ElButton>
               <ElButton
+                v-if="hasAuth('games.update')"
                 size="small"
                 type="primary"
                 plain

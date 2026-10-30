@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useUITable } from '@/hooks/common/table';
 import { vnetSimpleTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
@@ -11,6 +12,7 @@ import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const search = ref('');
 
@@ -177,7 +179,7 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
     }),
   transform: vnetSimpleTransform,
   columns: () => [
-    { prop: 'name', label: $t('vnetPages.machineGroups.name'), minWidth: 150 },
+    { prop: 'name', label: $t('vnetPages.machineGroups.name'), minWidth: 150, sortable: true },
     {
       prop: 'color',
       label: $t('vnetPages.machineGroups.color'),
@@ -192,18 +194,21 @@ const { columns, columnChecks, data, getData, loading } = useUITable({
       label: $t('vnetPages.machineGroups.pricePerHour'),
       width: 130,
       align: 'center',
+      sortable: true,
       formatter: (row: any) => (row.price_per_hour != null ? `${formatAmount(row.price_per_hour)}đ/h` : '-')
     },
     {
       prop: 'sort_order',
       label: $t('vnetPages.machineGroups.sortOrder'),
       width: 100,
-      align: 'center'
+      align: 'center',
+      sortable: true
     },
     {
       prop: 'description',
       label: $t('vnetPages.machineGroups.description'),
-      minWidth: 200
+      minWidth: 200,
+      sortable: true
     }
   ]
 });
@@ -297,8 +302,8 @@ async function handleDelete(row: any) {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
         <div class="flex flex-wrap items-center gap-8px">
           <ElInput
@@ -313,21 +318,25 @@ async function handleDelete(row: any) {
         <TableHeaderOperation
           v-model:columns="columnChecks"
           :loading="loading"
+          :show-add="hasAuth('machine_groups.create')"
           :show-delete="false"
           @add="openCreate"
           @refresh="getData"
         />
       </div>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <ElTable v-loading="loading" :data="data" border stripe class="fill-table" height="100%" style="width: 100%">
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="270" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" type="primary" plain @click="openPricing(row)">
+            <!-- Hộp bảng giá đọc /machine-prices, /time-pricing → pricing.view -->
+            <ElButton v-if="hasAuth('pricing.view')" size="small" type="primary" plain @click="openPricing(row)">
               {{ $t('vnetPages.machineGroups.pricing') }}
             </ElButton>
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('machine_groups.update')" size="small" @click="openEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('machine_groups.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>
@@ -439,7 +448,7 @@ async function handleDelete(row: any) {
               :placeholder="$t('vnetPages.machineGroups.noEnd')"
               style="width: 150px"
             />
-            <ElButton type="primary" :loading="savingPrice" @click="addTierPrice">
+            <ElButton v-if="hasAuth('pricing.create')" type="primary" :loading="savingPrice" @click="addTierPrice">
               {{ $t('vnetPages.common.add') }}
             </ElButton>
           </div>
@@ -470,7 +479,13 @@ async function handleDelete(row: any) {
             </ElTableColumn>
             <ElTableColumn :label="$t('vnetPages.common.action')" width="80">
               <template #default="{ row }">
-                <ElButton size="small" type="danger" plain @click="removePrice('tier', row)">
+                <ElButton
+                  v-if="hasAuth('pricing.delete')"
+                  size="small"
+                  type="danger"
+                  plain
+                  @click="removePrice('tier', row)"
+                >
                   {{ $t('vnetPages.common.delete') }}
                 </ElButton>
               </template>
@@ -496,7 +511,7 @@ async function handleDelete(row: any) {
               :step="1000"
               style="width: 150px"
             />
-            <ElButton type="primary" :loading="savingPrice" @click="addTimePrice">
+            <ElButton v-if="hasAuth('pricing.create')" type="primary" :loading="savingPrice" @click="addTimePrice">
               {{ $t('vnetPages.common.add') }}
             </ElButton>
           </div>
@@ -517,7 +532,13 @@ async function handleDelete(row: any) {
             </ElTableColumn>
             <ElTableColumn :label="$t('vnetPages.common.action')" width="80">
               <template #default="{ row }">
-                <ElButton size="small" type="danger" plain @click="removePrice('time', row)">
+                <ElButton
+                  v-if="hasAuth('pricing.delete')"
+                  size="small"
+                  type="danger"
+                  plain
+                  @click="removePrice('time', row)"
+                >
                   {{ $t('vnetPages.common.delete') }}
                 </ElButton>
               </template>

@@ -7,10 +7,12 @@ import client from '@/api/client';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useAuth } from '@/hooks/business/auth';
 import { formatPlayed, formatRemainingHMS } from '@/utils/remaining';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 // Cột "Còn lại" phải nhúc nhích, nếu không nhân viên tưởng số bị treo.
 const now = ref(Date.now());
@@ -32,12 +34,14 @@ function formatMoney(v: number | null | undefined) {
   return `${new Intl.NumberFormat('vi-VN').format(v || 0)}₫`;
 }
 
-const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const sessionsTable = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/sessions', {
       params: {
         page,
         page_size: pageSize,
+        sort,
+        order,
         status: filterStatus.value === 'all' ? undefined : filterStatus.value,
         machine: filterMachine.value.trim() || undefined,
         member: filterMember.value.trim() || undefined
@@ -59,18 +63,21 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
       prop: 'started_at',
       label: $t('vnetPages.sessions.startTime'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => formatDate(row.started_at)
     },
     {
       prop: 'ended_at',
       label: $t('vnetPages.sessions.endTime'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => (row.ended_at ? formatDate(row.ended_at) : '—')
     },
     {
       prop: 'duration_minutes',
       label: $t('vnetPages.sessions.duration'),
       width: 100,
+      sortable: 'custom',
       formatter: (row: any) => formatPlayed(row.started_at, row.ended_at, now.value)
     },
     {
@@ -78,6 +85,7 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
       prop: 'affordable_until',
       label: $t('vnetPages.sessions.remaining'),
       width: 110,
+      sortable: 'custom',
       formatter: (row: any) => (row.is_active ? formatRemainingHMS(row.affordable_until, now.value) : '—')
     },
     {
@@ -85,12 +93,14 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
       prop: 'total_cost',
       label: $t('vnetPages.sessions.cost'),
       width: 110,
+      sortable: 'custom',
       formatter: (row: any) => formatMoney(row.total_cost ?? row.charged_amount)
     },
     {
       prop: 'is_active',
       label: $t('vnetPages.sessions.status'),
       width: 110,
+      sortable: 'custom',
       formatter: (row: any) =>
         h(ElTag, { type: row.is_active ? 'warning' : 'info', size: 'small' }, () =>
           row.is_active ? $t('vnetPages.sessions.running') : $t('vnetPages.sessions.ended')
@@ -98,6 +108,7 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
     }
   ]
 });
+const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagination, onSortChange } = sessionsTable;
 
 function searchData() {
   getDataByPage(1);
@@ -329,8 +340,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <div class="flex flex-wrap items-center gap-8px">
@@ -358,7 +369,9 @@ onBeforeUnmount(() => {
             <ElButton type="primary" @click="searchData">{{ $t('vnetPages.common.search') }}</ElButton>
           </div>
           <div style="display: flex; gap: 8px; align-items: center">
-            <ElButton type="primary" @click="openStart">{{ $t('vnetPages.sessions.start') }}</ElButton>
+            <ElButton v-if="hasAuth('sessions.start')" type="primary" @click="openStart">
+              {{ $t('vnetPages.sessions.start') }}
+            </ElButton>
             <TableHeaderOperation
               v-model:columns="columnChecks"
               :loading="loading"
@@ -370,17 +383,35 @@ onBeforeUnmount(() => {
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="data" row-key="id" border stripe style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        row-key="id"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="200" fixed="right">
           <template #default="{ row }">
             <template v-if="row.is_active">
-              <ElButton size="small" @click="openSwitch(row)">{{ $t('vnetPages.sessions.switchMachine') }}</ElButton>
-              <ElButton size="small" type="danger" @click="handleEnd(row)">
+              <ElButton v-if="hasAuth('sessions.switch')" size="small" @click="openSwitch(row)">
+                {{ $t('vnetPages.sessions.switchMachine') }}
+              </ElButton>
+              <ElButton v-if="hasAuth('sessions.end')" size="small" type="danger" @click="handleEnd(row)">
                 {{ $t('vnetPages.sessions.end') }}
               </ElButton>
             </template>
-            <ElButton v-else size="small" type="danger" plain @click="handleDelete(row)">
+            <ElButton
+              v-else-if="hasAuth('sessions.delete')"
+              size="small"
+              type="danger"
+              plain
+              @click="handleDelete(row)"
+            >
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

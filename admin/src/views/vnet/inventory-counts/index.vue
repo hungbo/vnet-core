@@ -5,14 +5,36 @@ import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useFitPageSize } from '@/hooks/common/table';
+import { useAuth } from '@/hooks/business/auth';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const loading = ref(false);
 const sessions = ref<any[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
+// Số dòng/trang vừa khít chiều cao bảng (xem useFitPageSize).
+const fitter = useFitPageSize({
+  getPageSize: () => pageSize.value,
+  setPageSize: size => {
+    pageSize.value = size;
+    page.value = 1;
+    load();
+  }
+});
+// Sắp xếp phía server: bấm tiêu đề cột thì sắp trên toàn bộ phiên, không chỉ trang đang xem.
+const sort = ref<string>();
+const order = ref<'asc' | 'desc'>();
+
+function onSortChange({ prop, order: o }: { prop: string | null; order: 'ascending' | 'descending' | null }) {
+  sort.value = o && prop ? prop : undefined;
+  order.value = o ? ({ ascending: 'asc', descending: 'desc' } as const)[o] : undefined;
+  page.value = 1;
+  load();
+}
 
 function formatDate(v: string | null | undefined) {
   return v ? dayjs(v).format('DD/MM/YYYY HH:mm') : '-';
@@ -31,10 +53,11 @@ async function load() {
   loading.value = true;
   try {
     const res: any = await client.get('/inventory-counts', {
-      params: { page: page.value, page_size: pageSize.value }
+      params: { page: page.value, page_size: pageSize.value, sort: sort.value, order: order.value }
     });
     sessions.value = res?.items || [];
     total.value = res?.total || 0;
+    await fitter.afterLoad();
   } catch (e: any) {
     ElMessage.error(e?.message || $t('vnetPages.common.error'));
     sessions.value = [];
@@ -195,26 +218,39 @@ async function cancelSession() {
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  if (!fitter.fit()) load();
+});
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.counts.hint') }}</span>
-          <ElButton type="primary" @click="openSession">{{ $t('vnetPages.counts.open') }}</ElButton>
+          <ElButton v-if="hasAuth('inventory_counts.open')" type="primary" @click="openSession">
+            {{ $t('vnetPages.counts.open') }}
+          </ElButton>
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="sessions" border stripe style="width: 100%">
-        <ElTableColumn :label="$t('vnetPages.counts.code')" width="140">
+      <ElTable
+        v-loading="loading"
+        :data="sessions"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
+        <ElTableColumn prop="code" :label="$t('vnetPages.counts.code')" width="140" sortable="custom">
           <template #default="{ row }">
             <span style="font-family: ui-monospace, Menlo, Consolas, monospace">{{ row.code }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.counts.statusLabel')" width="130">
+        <ElTableColumn prop="status" :label="$t('vnetPages.counts.statusLabel')" width="130" sortable="custom">
           <template #default="{ row }"><component :is="statusTag(row.status)" /></template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.counts.lines')" width="110">
@@ -225,13 +261,13 @@ onMounted(load);
             <span :style="row.diff_count ? 'color:#e6a23c;font-weight:600' : ''">{{ row.diff_count }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.counts.note')" min-width="180">
+        <ElTableColumn prop="note" :label="$t('vnetPages.counts.note')" min-width="180" sortable="custom">
           <template #default="{ row }">{{ row.note || '-' }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.counts.openedAt')" width="160">
+        <ElTableColumn prop="opened_at" :label="$t('vnetPages.counts.openedAt')" width="160" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.opened_at) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.counts.committedAt')" width="160">
+        <ElTableColumn prop="committed_at" :label="$t('vnetPages.counts.committedAt')" width="160" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.committed_at) }}</template>
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.common.action')" width="110" fixed="right">
@@ -261,7 +297,7 @@ onMounted(load);
       width="760px"
     >
       <div v-loading="detailLoading">
-        <div v-if="isOpen" style="display: flex; gap: 8px; margin-bottom: 16px">
+        <div v-if="isOpen && hasAuth('inventory_counts.count')" style="display: flex; gap: 8px; margin-bottom: 16px">
           <ElSelect v-model="pickProduct" filterable :placeholder="$t('vnetPages.counts.pickProduct')" style="flex: 1">
             <ElOption
               v-for="p in products"
@@ -275,14 +311,14 @@ onMounted(load);
         </div>
 
         <ElTable :data="detail?.lines || []" border stripe size="small" style="width: 100%">
-          <ElTableColumn prop="product_name" :label="$t('vnetPages.counts.product')" min-width="180" />
-          <ElTableColumn :label="$t('vnetPages.counts.expected')" width="110">
+          <ElTableColumn prop="product_name" :label="$t('vnetPages.counts.product')" min-width="180" sortable />
+          <ElTableColumn prop="expected_qty" :label="$t('vnetPages.counts.expected')" width="110" sortable>
             <template #default="{ row }">{{ row.expected_qty }}</template>
           </ElTableColumn>
-          <ElTableColumn :label="$t('vnetPages.counts.actual')" width="110">
+          <ElTableColumn prop="actual_qty" :label="$t('vnetPages.counts.actual')" width="110" sortable>
             <template #default="{ row }">{{ row.actual_qty }}</template>
           </ElTableColumn>
-          <ElTableColumn :label="$t('vnetPages.counts.difference')" width="120">
+          <ElTableColumn prop="difference_qty" :label="$t('vnetPages.counts.difference')" width="120" sortable>
             <template #default="{ row }">
               <span v-if="row.difference_qty === 0" style="color: #909399">0</span>
               <span v-else :style="`color:${row.difference_qty < 0 ? '#f56c6c' : '#67c23a'};font-weight:600`">
@@ -292,7 +328,13 @@ onMounted(load);
           </ElTableColumn>
           <ElTableColumn v-if="isOpen" :label="$t('vnetPages.common.action')" width="90">
             <template #default="{ row }">
-              <ElButton size="small" type="danger" plain @click="removeLine(row)">
+              <ElButton
+                v-if="hasAuth('inventory_counts.count')"
+                size="small"
+                type="danger"
+                plain
+                @click="removeLine(row)"
+              >
                 {{ $t('vnetPages.counts.remove') }}
               </ElButton>
             </template>
@@ -314,11 +356,13 @@ onMounted(load);
         </ElAlert>
       </div>
       <template #footer>
-        <ElButton v-if="isOpen" type="danger" plain @click="cancelSession">
+        <ElButton v-if="isOpen && hasAuth('inventory_counts.cancel')" type="danger" plain @click="cancelSession">
           {{ $t('vnetPages.counts.cancelSession') }}
         </ElButton>
         <ElButton @click="detailVisible = false">{{ $t('common.close') }}</ElButton>
-        <ElButton v-if="isOpen" type="primary" @click="commit">{{ $t('vnetPages.counts.commit') }}</ElButton>
+        <ElButton v-if="isOpen && hasAuth('inventory_counts.commit')" type="primary" @click="commit">
+          {{ $t('vnetPages.counts.commit') }}
+        </ElButton>
       </template>
     </ElDialog>
   </div>

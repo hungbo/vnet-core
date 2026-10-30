@@ -6,6 +6,7 @@ import client from '@/api/client';
 import { usePaymentMethods } from '@/hooks/business/payment-methods';
 import { useTransactionTypeLabel } from '@/hooks/business/transaction-types';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useFitPageSize } from '@/hooks/common/table';
 import { formatPrice } from '@/utils/money';
 
 const { t: $t } = useI18n();
@@ -15,17 +16,41 @@ const list = ref<any[]>([]);
 const loading = ref(false);
 const page = ref(1);
 const pageSize = ref(20);
+// Số dòng/trang vừa khít chiều cao bảng (xem useFitPageSize).
+const fitter = useFitPageSize({
+  getPageSize: () => pageSize.value,
+  setPageSize: size => {
+    pageSize.value = size;
+    page.value = 1;
+    fetchData();
+  }
+});
 const total = ref(0);
 const search = ref('');
 const typeFilter = ref('');
 const dateRange = ref<any>(null);
+// Sắp xếp phía máy chủ trên toàn bộ sổ: prop của cột bấm và 'asc' | 'desc'.
+const sort = ref<string>();
+const order = ref<'asc' | 'desc'>();
 
 const typeLabel = useTransactionTypeLabel();
+
+function onSortChange(e: { prop: string | null; order: 'ascending' | 'descending' | null }) {
+  if (e.order && e.prop) {
+    sort.value = e.prop;
+    order.value = e.order === 'ascending' ? 'asc' : 'desc';
+  } else {
+    sort.value = undefined;
+    order.value = undefined;
+  }
+  page.value = 1;
+  fetchData();
+}
 
 async function fetchData() {
   loading.value = true;
   try {
-    const params: any = { page: page.value, page_size: pageSize.value };
+    const params: any = { page: page.value, page_size: pageSize.value, sort: sort.value, order: order.value };
     if (search.value) params.search = search.value;
     if (typeFilter.value) params.transaction_type = typeFilter.value;
     if (dateRange.value) {
@@ -35,6 +60,7 @@ async function fetchData() {
     const res: any = await client.get('/transactions', { params });
     list.value = res.items || [];
     total.value = res.total || 0;
+    await fitter.afterLoad();
   } catch (e: any) {
     ElMessage.error(e?.message || $t('vnetPages.transactions.messages.loadError'));
   } finally {
@@ -43,7 +69,7 @@ async function fetchData() {
 }
 
 onMounted(() => {
-  fetchData();
+  if (!fitter.fit()) fetchData();
 });
 
 // Sổ giao dịch không có route ghi nào của riêng nó: mỗi dòng do một nghiệp vụ
@@ -61,8 +87,8 @@ useRealtimeRefresh(
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>{{ $t('vnetPages.transactions.title') }}</span>
@@ -102,21 +128,53 @@ useRealtimeRefresh(
           </div>
         </div>
       </template>
-      <ElTable v-loading="loading" :data="list" border stripe style="width: 100%">
-        <ElTableColumn prop="created_at" :label="$t('vnetPages.transactions.date')" width="160" />
-        <ElTableColumn :label="$t('vnetPages.transactions.member')" min-width="140">
+      <ElTable
+        v-loading="loading"
+        :data="list"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
+        <ElTableColumn prop="created_at" :label="$t('vnetPages.transactions.date')" width="160" sortable="custom" />
+        <ElTableColumn
+          prop="member_username"
+          :label="$t('vnetPages.transactions.member')"
+          min-width="140"
+          sortable="custom"
+        >
           <template #default="{ row }">{{ row.member_username || row.member_name }}</template>
         </ElTableColumn>
-        <ElTableColumn prop="transaction_type" :label="$t('vnetPages.transactions.type')" width="120">
+        <ElTableColumn prop="transaction_type" :label="$t('vnetPages.transactions.type')" width="120" sortable="custom">
           <template #default="{ row }">{{ typeLabel(row.transaction_type) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.transactions.amount')" width="140" align="right">
+        <ElTableColumn
+          prop="amount"
+          :label="$t('vnetPages.transactions.amount')"
+          width="140"
+          align="right"
+          sortable="custom"
+        >
           <template #default="{ row }">{{ formatPrice(row.amount) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.transactions.balanceBefore')" width="130" align="right">
+        <ElTableColumn
+          prop="balance_before"
+          :label="$t('vnetPages.transactions.balanceBefore')"
+          width="130"
+          align="right"
+          sortable="custom"
+        >
           <template #default="{ row }">{{ formatPrice(row.balance_before) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.transactions.balanceAfter')" width="130" align="right">
+        <ElTableColumn
+          prop="balance_after"
+          :label="$t('vnetPages.transactions.balanceAfter')"
+          width="130"
+          align="right"
+          sortable="custom"
+        >
           <template #default="{ row }">{{ formatPrice(row.balance_after) }}</template>
         </ElTableColumn>
         <!--
@@ -125,13 +183,30 @@ useRealtimeRefresh(
              cạnh "số dư trước = số dư sau" và sổ sách không đối chiếu được —
              API đã trả sẵn bonus_before/bonus_after từ trước. 
 -->
-        <ElTableColumn :label="$t('vnetPages.transactions.bonusBefore')" width="130" align="right">
+        <ElTableColumn
+          prop="bonus_before"
+          :label="$t('vnetPages.transactions.bonusBefore')"
+          width="130"
+          align="right"
+          sortable="custom"
+        >
           <template #default="{ row }">{{ formatPrice(row.bonus_before) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.transactions.bonusAfter')" width="130" align="right">
+        <ElTableColumn
+          prop="bonus_after"
+          :label="$t('vnetPages.transactions.bonusAfter')"
+          width="130"
+          align="right"
+          sortable="custom"
+        >
           <template #default="{ row }">{{ formatPrice(row.bonus_after) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.transactions.paymentMethod')" width="110">
+        <ElTableColumn
+          prop="payment_method"
+          :label="$t('vnetPages.transactions.paymentMethod')"
+          width="110"
+          sortable="custom"
+        >
           <template #default="{ row }">{{ paymentLabel(row.payment_method) }}</template>
         </ElTableColumn>
         <ElTableColumn
@@ -139,6 +214,7 @@ useRealtimeRefresh(
           :label="$t('vnetPages.transactions.description')"
           min-width="200"
           show-overflow-tooltip
+          sortable="custom"
         />
         <ElTableColumn :label="$t('vnetPages.transactions.createdBy')" width="130">
           <template #default="{ row }">{{ row.created_by_name || row.created_by }}</template>

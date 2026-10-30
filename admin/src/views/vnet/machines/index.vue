@@ -148,16 +148,18 @@ async function fetchGroups() {
   }
 }
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
   // Danh sách máy không kèm phiên, nên lấy song song các phiên đang chạy rồi
   // ghép theo machine_id: máy đang dùng thì nhân viên thấy ngay ai ngồi, đã
   // chơi bao lâu và còn bao lâu. Đơn chưa thu tiền cũng ghép như vậy.
-  api: async ({ page, pageSize }) => {
+  api: async ({ page, pageSize, sort, order }) => {
     const [res, active, donMo]: any[] = await Promise.all([
       client.get('/machines', {
         params: {
           page,
           page_size: pageSize,
+          sort,
+          order,
           search: search.value || undefined,
           warning: onlyWarnings.value ? 1 : undefined
         }
@@ -177,7 +179,8 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     {
       prop: 'machine_code',
       label: $t('vnetPages.machines.code'),
-      width: 130
+      width: 130,
+      sortable: 'custom'
     },
     {
       prop: 'group',
@@ -199,12 +202,14 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'ip_address',
       label: $t('vnetPages.machines.ip'),
       width: 130,
+      sortable: 'custom',
       formatter: (row: any) => row.ip_address || '—'
     },
     {
       prop: 'status',
       label: $t('vnetPages.common.status'),
       width: 170,
+      sortable: 'custom',
       // Máy tạm ngừng vẫn nằm trong danh sách (List không lọc is_active) nên
       // phải nhìn ra được, nếu không nhân viên tưởng máy hỏng. Máy còn đơn chưa
       // thu tiền có thêm nhãn đỏ ngay dưới, cùng màu nền dòng.
@@ -220,6 +225,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'note',
       label: $t('vnetPages.machines.noteCol'),
       minWidth: 200,
+      sortable: 'custom',
       // Đặt ngay sau trạng thái để thấy mà không phải cuộn ngang. Nhấn để sửa tại
       // chỗ; onSaved cập nhật dòng ngay, không đợi tải lại bảng.
       formatter: (row: any) =>
@@ -279,6 +285,7 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'last_heartbeat',
       label: $t('vnetPages.machines.lastHeartbeat'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => formatDate(row.last_heartbeat)
     }
   ]
@@ -490,8 +497,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
         <div class="flex flex-wrap items-center gap-8px">
           <ElInput
@@ -530,7 +537,10 @@ onBeforeUnmount(() => {
         :row-class-name="({ row }: any) => (row.open_orders ? OPEN_ORDERS_ROW_CLASS : '')"
         border
         stripe
+        class="fill-table"
+        height="100%"
         style="width: 100%"
+        @sort-change="onSortChange"
       >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <!--
@@ -581,27 +591,27 @@ onBeforeUnmount(() => {
         {{ $t('vnetPages.machines.hardwareHint') }}
       </ElAlert>
       <ElTable v-loading="hwLoading" :data="hwRows" border stripe size="small" style="width: 100%" max-height="420">
-        <ElTableColumn :label="$t('vnetPages.machines.recordedAt')" width="160">
+        <ElTableColumn prop="created_at" :label="$t('vnetPages.machines.recordedAt')" width="160" sortable>
           <template #default="{ row }">
             {{ row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm') : '-' }}
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.machines.cpuTemp')" width="110" align="right">
+        <ElTableColumn prop="cpu_temp" :label="$t('vnetPages.machines.cpuTemp')" width="110" align="right" sortable>
           <template #default="{ row }">{{ temp(row.cpu_temp) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.machines.gpuTemp')" width="110" align="right">
+        <ElTableColumn prop="gpu_temp" :label="$t('vnetPages.machines.gpuTemp')" width="110" align="right" sortable>
           <template #default="{ row }">{{ temp(row.gpu_temp) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.machines.cpuUsage')" width="100" align="right">
+        <ElTableColumn prop="cpu_usage" :label="$t('vnetPages.machines.cpuUsage')" width="100" align="right" sortable>
           <template #default="{ row }">{{ pct(row.cpu_usage) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.machines.ramUsage')" width="100" align="right">
+        <ElTableColumn prop="ram_usage" :label="$t('vnetPages.machines.ramUsage')" width="100" align="right" sortable>
           <template #default="{ row }">{{ pct(row.ram_usage) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.machines.diskUsage')" width="100" align="right">
+        <ElTableColumn prop="disk_usage" :label="$t('vnetPages.machines.diskUsage')" width="100" align="right" sortable>
           <template #default="{ row }">{{ pct(row.disk_usage) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.machines.uptime')" width="110" align="right">
+        <ElTableColumn prop="uptime" :label="$t('vnetPages.machines.uptime')" width="110" align="right" sortable>
           <template #default="{ row }">{{ uptime(row.uptime) }}</template>
         </ElTableColumn>
         <template #empty>

@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useFitPageSize } from '@/hooks/common/table';
 
 const { t: $t } = useI18n();
 
@@ -13,11 +14,35 @@ const rows = ref<any[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
+// Số dòng/trang vừa khít chiều cao bảng (xem useFitPageSize).
+const fitter = useFitPageSize({
+  getPageSize: () => pageSize.value,
+  setPageSize: size => {
+    pageSize.value = size;
+    page.value = 1;
+    load();
+  }
+});
 
 const machines = ref<any[]>([]);
 const machineFilter = ref('');
 const ratingFilter = ref<number | ''>('');
 const onlyWithContent = ref(false);
+// Sắp xếp phía máy chủ trên toàn bộ đánh giá: prop của cột bấm và 'asc' | 'desc'.
+const sort = ref<string>();
+const order = ref<'asc' | 'desc'>();
+
+function onSortChange(e: { prop: string | null; order: 'ascending' | 'descending' | null }) {
+  if (e.order && e.prop) {
+    sort.value = e.prop;
+    order.value = e.order === 'ascending' ? 'asc' : 'desc';
+  } else {
+    sort.value = undefined;
+    order.value = undefined;
+  }
+  page.value = 1;
+  load();
+}
 
 const summary = ref<any>({
   total: 0,
@@ -45,6 +70,8 @@ async function load() {
     const params: any = {
       page: page.value,
       page_size: pageSize.value,
+      sort: sort.value,
+      order: order.value,
       machine_id: machineFilter.value || undefined,
       with_content: onlyWithContent.value || undefined
     };
@@ -60,6 +87,7 @@ async function load() {
     ]);
     rows.value = list?.items || [];
     total.value = list?.total || 0;
+    await fitter.afterLoad();
     summary.value = sum || summary.value;
   } catch (e: any) {
     ElMessage.error(e?.message || $t('vnetPages.common.error'));
@@ -81,7 +109,7 @@ async function loadMachines() {
 }
 
 onMounted(() => {
-  load();
+  if (!fitter.fit()) load();
   loadMachines();
 });
 
@@ -93,7 +121,7 @@ useRealtimeRefresh(['machines'], loadMachines, { delay: 2000 });
 </script>
 
 <template>
-  <div>
+  <div class="page-fill">
     <ElCard style="margin-bottom: 16px">
       <div style="display: flex; gap: 40px; align-items: center; flex-wrap: wrap">
         <div style="text-align: center; min-width: 120px">
@@ -146,7 +174,7 @@ useRealtimeRefresh(['machines'], loadMachines, { delay: 2000 });
       </div>
     </ElCard>
 
-    <ElCard>
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end">
           <ElSelect
@@ -186,8 +214,17 @@ useRealtimeRefresh(['machines'], loadMachines, { delay: 2000 });
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="rows" border stripe style="width: 100%">
-        <ElTableColumn :label="$t('vnetPages.feedback.rating')" width="110">
+      <ElTable
+        v-loading="loading"
+        :data="rows"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
+        <ElTableColumn prop="rating" :label="$t('vnetPages.feedback.rating')" width="110" sortable="custom">
           <template #default="{ row }">
             <span :style="`color:${starColor(row.rating)};font-weight:600`">{{ row.rating }} ★</span>
           </template>
@@ -212,13 +249,13 @@ useRealtimeRefresh(['machines'], loadMachines, { delay: 2000 });
             <span v-else style="color: #909399">-</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.feedback.content')" min-width="260">
+        <ElTableColumn prop="content" :label="$t('vnetPages.feedback.content')" min-width="260" sortable="custom">
           <template #default="{ row }">
             <span v-if="row.content">{{ row.content }}</span>
             <span v-else style="color: #909399">{{ $t('vnetPages.feedback.noComment') }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.feedback.at')" width="160">
+        <ElTableColumn prop="created_at" :label="$t('vnetPages.feedback.at')" width="160" sortable="custom">
           <template #default="{ row }">{{ dayjs(row.created_at).format('DD/MM/YYYY HH:mm') }}</template>
         </ElTableColumn>
       </ElTable>

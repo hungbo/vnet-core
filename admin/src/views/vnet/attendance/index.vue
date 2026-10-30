@@ -5,16 +5,43 @@ import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
+import { useFitPageSize } from '@/hooks/common/table';
+import { useAuth } from '@/hooks/business/auth';
 import { moneyInput } from '@/utils/money';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const loading = ref(false);
 const rows = ref<any[]>([]);
 const total = ref(0);
 const page = ref(1);
 const pageSize = ref(20);
+// Số dòng/trang vừa khít chiều cao bảng (xem useFitPageSize).
+const fitter = useFitPageSize({
+  getPageSize: () => pageSize.value,
+  setPageSize: size => {
+    pageSize.value = size;
+    page.value = 1;
+    load();
+  }
+});
 const dateFilter = ref('');
+// Sắp xếp phía máy chủ trên toàn bộ lượt điểm danh: prop của cột bấm và 'asc' | 'desc'.
+const sort = ref<string>();
+const order = ref<'asc' | 'desc'>();
+
+function onSortChange(e: { prop: string | null; order: 'ascending' | 'descending' | null }) {
+  if (e.order && e.prop) {
+    sort.value = e.prop;
+    order.value = e.order === 'ascending' ? 'asc' : 'desc';
+  } else {
+    sort.value = undefined;
+    order.value = undefined;
+  }
+  page.value = 1;
+  load();
+}
 
 function formatDate(v: string | null | undefined) {
   return v ? dayjs(v).format('DD/MM/YYYY HH:mm') : '-';
@@ -31,11 +58,14 @@ async function load() {
       params: {
         page: page.value,
         page_size: pageSize.value,
+        sort: sort.value,
+        order: order.value,
         date: dateFilter.value || undefined
       }
     });
     rows.value = res?.items || [];
     total.value = res?.total || 0;
+    await fitter.afterLoad();
   } catch (e: any) {
     ElMessage.error(e?.message || $t('vnetPages.common.error'));
     rows.value = [];
@@ -101,13 +131,13 @@ async function saveConfig() {
 }
 
 onMounted(() => {
-  load();
+  if (!fitter.fit()) load();
   loadConfig();
 });
 </script>
 
 <template>
-  <div>
+  <div class="page-fill">
     <ElCard style="margin-bottom: 16px">
       <template #header>
         <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.attendance.configHint') }}</span>
@@ -131,13 +161,14 @@ onMounted(() => {
           </div>
           <ElInputNumber v-bind="moneyInput" v-model="cfg.streak_bonus" :min="0" :step="1000" />
         </div>
-        <ElButton type="primary" :loading="savingCfg" @click="saveConfig">
+        <!-- Lưu cấu hình thưởng = PUT /settings/attendance. -->
+        <ElButton v-if="hasAuth('settings.edit')" type="primary" :loading="savingCfg" @click="saveConfig">
           {{ $t('vnetPages.common.save') }}
         </ElButton>
       </div>
     </ElCard>
 
-    <ElCard>
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.attendance.listHint') }}</span>
@@ -158,27 +189,36 @@ onMounted(() => {
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="rows" border stripe style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="rows"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn :label="$t('vnetPages.attendance.member')" min-width="180">
           <template #default="{ row }">
             {{ row.member_name || '-' }}
             <span style="color: #909399">({{ row.member_username }})</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.attendance.date')" width="130">
+        <ElTableColumn prop="checkin_date" :label="$t('vnetPages.attendance.date')" width="130" sortable="custom">
           <template #default="{ row }">{{ dayjs(row.checkin_date).format('DD/MM/YYYY') }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.attendance.at')" width="160">
+        <ElTableColumn prop="checkin_at" :label="$t('vnetPages.attendance.at')" width="160" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.checkin_at) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.attendance.streak')" width="120">
+        <ElTableColumn prop="streak_days" :label="$t('vnetPages.attendance.streak')" width="120" sortable="custom">
           <template #default="{ row }">
             <span :style="row.streak_days >= cfg.streak_every ? 'color:#e6a23c;font-weight:600' : ''">
               {{ row.streak_days }}
             </span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.attendance.reward')" width="140">
+        <ElTableColumn prop="reward_amount" :label="$t('vnetPages.attendance.reward')" width="140" sortable="custom">
           <template #default="{ row }">
             {{ row.reward_amount ? formatMoney(row.reward_amount) : '-' }}
           </template>

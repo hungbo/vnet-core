@@ -4,12 +4,14 @@ import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
 import { type PaymentMethod, usePaymentMethods } from '@/hooks/business/payment-methods';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { moneyInput } from '@/utils/money';
 import ImageUpload from '@/components/common/ImageUpload.vue';
 
 const { t: $t } = useI18n();
 const { reload: reloadPaymentMethods } = usePaymentMethods();
+const { hasAuth } = useAuth();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -235,7 +237,9 @@ onMounted(() => {
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>{{ $t('vnetPages.settings.title') }}</span>
-          <ElButton type="primary" :loading="saving" @click="handleSave">{{ $t('vnetPages.common.save') }}</ElButton>
+          <ElButton v-if="hasAuth('settings.edit')" type="primary" :loading="saving" @click="handleSave">
+            {{ $t('vnetPages.common.save') }}
+          </ElButton>
         </div>
       </template>
       <ElTabs v-model="activeTab" @tab-change="fetchSettings">

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox, ElNotification } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
@@ -12,6 +13,7 @@ import { formatAmount, moneyInput } from '@/utils/money';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const search = ref('');
 const filterStatus = ref('');
@@ -79,14 +81,16 @@ function formatDate(date: string | null | undefined) {
   return dayjs(date).format('DD/MM/YYYY HH:mm');
 }
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/bookings', {
       params: {
         page,
         page_size: pageSize,
         search: search.value || undefined,
-        status: filterStatus.value || undefined
+        status: filterStatus.value || undefined,
+        sort,
+        order
       }
     }),
   transform: vnetTransform,
@@ -94,7 +98,8 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
     {
       prop: 'customer_name',
       label: $t('vnetPages.bookings.customer'),
-      minWidth: 160
+      minWidth: 160,
+      sortable: 'custom'
     },
     {
       prop: 'machine_code',
@@ -105,24 +110,28 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'booked_from',
       label: $t('vnetPages.bookings.from'),
       width: 150,
+      sortable: 'custom',
       formatter: (row: any) => formatDate(row.booked_from)
     },
     {
       prop: 'booked_to',
       label: $t('vnetPages.bookings.to'),
       width: 150,
+      sortable: 'custom',
       formatter: (row: any) => formatDate(row.booked_to)
     },
     {
       prop: 'status',
       label: $t('vnetPages.common.status'),
       width: 110,
+      sortable: 'custom',
       formatter: (row: any) => h(ElTag, { type: statusType(row.status), size: 'small' }, () => statusLabel(row.status))
     },
     {
       prop: 'deposit_amount',
       label: $t('vnetPages.bookings.deposit'),
       width: 110,
+      sortable: 'custom',
       formatter: (row: any) => formatAmount(row.deposit_amount)
     }
   ]
@@ -379,8 +388,8 @@ watch(dialogVisible, open => {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <div class="flex flex-wrap items-center justify-between gap-8px" style="margin-bottom: 16px">
         <div class="flex flex-wrap items-center gap-8px">
           <ElSelect
@@ -404,29 +413,60 @@ watch(dialogVisible, open => {
         <TableHeaderOperation
           v-model:columns="columnChecks"
           :loading="loading"
+          :show-add="hasAuth('bookings.create')"
           :show-delete="false"
           @add="openCreate"
           @refresh="getData"
         />
       </div>
 
-      <ElTable v-loading="loading" :data="data" border stripe style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        border
+        stripe
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="360" fixed="right">
           <template #default="{ row }">
-            <ElButton v-if="canCheckIn(row)" size="small" type="success" @click="handleCheckIn(row)">
+            <ElButton
+              v-if="canCheckIn(row) && hasAuth('bookings.checkin')"
+              size="small"
+              type="success"
+              @click="handleCheckIn(row)"
+            >
               {{ $t('vnetPages.bookings.checkIn') }}
             </ElButton>
-            <ElButton v-if="canCheckIn(row)" size="small" type="warning" @click="handleNoShow(row)">
+            <ElButton
+              v-if="canCheckIn(row) && hasAuth('bookings.update')"
+              size="small"
+              type="warning"
+              @click="handleNoShow(row)"
+            >
               {{ $t('vnetPages.bookings.noShow') }}
             </ElButton>
-            <ElButton v-if="canCancel(row)" size="small" @click="openEdit(row)">
+            <ElButton v-if="canCancel(row) && hasAuth('bookings.update')" size="small" @click="openEdit(row)">
               {{ $t('vnetPages.common.edit') }}
             </ElButton>
-            <ElButton v-if="canCancel(row)" size="small" type="danger" plain @click="handleCancel(row)">
+            <ElButton
+              v-if="canCancel(row) && hasAuth('bookings.update')"
+              size="small"
+              type="danger"
+              plain
+              @click="handleCancel(row)"
+            >
               {{ $t('vnetPages.common.cancel') }}
             </ElButton>
-            <ElButton v-if="canDelete(row)" size="small" type="danger" @click="handleDelete(row)">
+            <ElButton
+              v-if="canDelete(row) && hasAuth('bookings.delete')"
+              size="small"
+              type="danger"
+              @click="handleDelete(row)"
+            >
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

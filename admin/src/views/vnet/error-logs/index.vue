@@ -4,12 +4,14 @@ import { ElMessage } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 // Mỗi dòng là MỘT LOẠI lỗi (server gộp các lần giống nhau), không phải một lần
 // xảy ra — cột "Số lần" cho biết nó lặp bao nhiêu.
@@ -26,35 +28,51 @@ function formatTime(v?: string) {
   return v ? dayjs(v).format('DD/MM/YYYY HH:mm:ss') : '';
 }
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  // Hook gọi api({ page, pageSize }) (hooks/common/table.ts) nhưng khai kiểu là
-  // () => …; tham số tuỳ chọn khớp được cả hai.
-  api: (p?: { page: number; pageSize: number }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  // Hook gọi api({ page, pageSize, sort, order }) (hooks/common/table.ts) nhưng
+  // khai kiểu là () => …; tham số tuỳ chọn khớp được cả hai.
+  api: (p?: { page: number; pageSize: number; sort?: string; order?: string }) =>
     client.get('/error-reports', {
       params: {
         page: p?.page,
         page_size: p?.pageSize,
         source: filterSource.value || undefined,
-        status: filterStatus.value
+        status: filterStatus.value,
+        sort: p?.sort,
+        order: p?.order
       }
     }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'source', label: $t('vnetPages.errorLogs.source'), width: 110 },
+    { prop: 'source', label: $t('vnetPages.errorLogs.source'), width: 110, sortable: 'custom' },
     {
       prop: 'kind',
       label: $t('vnetPages.errorLogs.kind'),
       width: 90,
+      sortable: 'custom',
       formatter: (row: any) => $t(`vnetPages.errorLogs.kinds.${row.kind}` as any)
     },
-    { prop: 'message', label: $t('vnetPages.errorLogs.message'), minWidth: 320, showOverflowTooltip: true },
-    { prop: 'location', label: $t('vnetPages.errorLogs.location'), width: 180, showOverflowTooltip: true },
-    { prop: 'count', label: $t('vnetPages.errorLogs.count'), width: 90, align: 'right' },
-    { prop: 'reporter', label: $t('vnetPages.errorLogs.reporter'), width: 120 },
+    {
+      prop: 'message',
+      label: $t('vnetPages.errorLogs.message'),
+      minWidth: 320,
+      showOverflowTooltip: true,
+      sortable: 'custom'
+    },
+    {
+      prop: 'location',
+      label: $t('vnetPages.errorLogs.location'),
+      width: 180,
+      showOverflowTooltip: true,
+      sortable: 'custom'
+    },
+    { prop: 'count', label: $t('vnetPages.errorLogs.count'), width: 90, align: 'right', sortable: 'custom' },
+    { prop: 'reporter', label: $t('vnetPages.errorLogs.reporter'), width: 120, sortable: 'custom' },
     {
       prop: 'last_seen_at',
       label: $t('vnetPages.errorLogs.lastSeen'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => formatTime(row.last_seen_at)
     },
     // Ghim bên phải: bảng rộng hơn màn hình thường, nút nằm sau thanh cuộn ngang
@@ -81,8 +99,8 @@ async function resolve(row: any) {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.errorLogs.title') }}</span>
@@ -120,7 +138,15 @@ async function resolve(row: any) {
           </TableHeaderOperation>
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" row-key="id" style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        row-key="id"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn type="expand">
           <template #default="{ row }">
             <div class="px-12px text-12px leading-20px">
@@ -144,10 +170,18 @@ async function resolve(row: any) {
             </ElTag>
           </template>
           <template v-else-if="col.prop === 'actions'" #default="{ row }">
-            <ElButton v-if="!row.resolved_at" size="small" type="success" plain @click="resolve(row)">
+            <ElButton
+              v-if="!row.resolved_at && hasAuth('errors.resolve')"
+              size="small"
+              type="success"
+              plain
+              @click="resolve(row)"
+            >
               {{ $t('vnetPages.errorLogs.resolve') }}
             </ElButton>
-            <ElTag v-else type="success" size="small">{{ $t('vnetPages.errorLogs.statuses.resolved') }}</ElTag>
+            <ElTag v-else-if="row.resolved_at" type="success" size="small">
+              {{ $t('vnetPages.errorLogs.statuses.resolved') }}
+            </ElTag>
           </template>
         </ElTableColumn>
       </ElTable>

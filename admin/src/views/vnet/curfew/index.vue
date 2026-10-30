@@ -4,9 +4,11 @@ import { ElMessage, ElMessageBox, ElNotification, ElTag } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 const DAYS = [0, 1, 2, 3, 4, 5, 6];
 
@@ -152,30 +154,32 @@ useRealtimeRefresh(['curfew'], load);
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div style="display: flex; align-items: center; justify-content: space-between">
           <span style="color: #909399; font-size: 14px">{{ $t('vnetPages.curfew.hint') }}</span>
-          <ElButton type="primary" @click="openCreate">{{ $t('vnetPages.curfew.add') }}</ElButton>
+          <ElButton v-if="hasAuth('curfew.create')" type="primary" @click="openCreate">
+            {{ $t('vnetPages.curfew.add') }}
+          </ElButton>
         </div>
       </template>
 
-      <ElTable v-loading="loading" :data="rows" border stripe style="width: 100%">
-        <ElTableColumn :label="$t('vnetPages.curfew.day')" width="140">
+      <ElTable v-loading="loading" :data="rows" border stripe class="fill-table" height="100%" style="width: 100%">
+        <ElTableColumn prop="day_of_week" :label="$t('vnetPages.curfew.day')" width="140" sortable>
           <template #default="{ row }">{{ dayLabel(row.day_of_week) }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.curfew.window')" width="180">
+        <ElTableColumn prop="curfew_start" :label="$t('vnetPages.curfew.window')" width="180" sortable>
           <template #default="{ row }">
             <span style="font-family: ui-monospace, Menlo, Consolas, monospace">
               {{ clock(row.curfew_start) }} – {{ clock(row.curfew_end) }}
             </span>
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.curfew.maxHours')" width="160">
+        <ElTableColumn prop="max_minor_hours" :label="$t('vnetPages.curfew.maxHours')" width="160" sortable>
           <template #default="{ row }">{{ row.max_minor_hours }}h</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.curfew.active')" width="110">
+        <ElTableColumn prop="is_active" :label="$t('vnetPages.curfew.active')" width="110" sortable>
           <template #default="{ row }">
             <component
               :is="
@@ -186,7 +190,7 @@ useRealtimeRefresh(['curfew'], load);
             />
           </template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.curfew.overrideCol')" min-width="240">
+        <ElTableColumn prop="override_at" :label="$t('vnetPages.curfew.overrideCol')" min-width="240" sortable>
           <template #default="{ row }">
             <div v-if="row.override_at">
               <div style="color: #e6a23c; font-weight: 600">
@@ -201,11 +205,13 @@ useRealtimeRefresh(['curfew'], load);
         </ElTableColumn>
         <ElTableColumn :label="$t('vnetPages.common.action')" width="220" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" @click="openEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="warning" plain @click="handleOverride(row)">
+            <ElButton v-if="hasAuth('curfew.update')" size="small" @click="openEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('curfew.override')" size="small" type="warning" plain @click="handleOverride(row)">
               {{ $t('vnetPages.curfew.override') }}
             </ElButton>
-            <ElButton size="small" type="danger" plain @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('curfew.delete')" size="small" type="danger" plain @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

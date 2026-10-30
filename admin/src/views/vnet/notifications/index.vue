@@ -4,12 +4,14 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import dayjs from 'dayjs';
 import { useI18n } from 'vue-i18n';
 import client from '@/api/client';
+import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
+const { hasAuth } = useAuth();
 
 // Bốn giá trị này là enum của cột notifications.type ở backend. Bảng và ô chọn
 // phải đọc chung một danh sách, nếu không giao diện lại hiện mã thô "promotion".
@@ -40,10 +42,10 @@ const rules = {
   ]
 };
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }: { page: number; pageSize: number }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }: { page: number; pageSize: number; sort?: string; order?: string }) =>
     client.get('/admin/notifications', {
-      params: { page, page_size: pageSize }
+      params: { page, page_size: pageSize, sort, order }
     }),
   transform: vnetTransform,
   columns: () => [
@@ -51,24 +53,28 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
       prop: 'type',
       label: $t('vnetPages.notifications.type'),
       width: 120,
+      sortable: 'custom',
       formatter: (row: any) =>
         (TYPES as readonly string[]).includes(row.type) ? $t(`vnetPages.notifications.types.${row.type}`) : row.type
     },
     {
       prop: 'title',
       label: $t('vnetPages.notifications.title'),
-      minWidth: 200
+      minWidth: 200,
+      sortable: 'custom'
     },
     {
       prop: 'content',
       label: $t('vnetPages.notifications.content'),
       minWidth: 300,
-      showOverflowTooltip: true
+      showOverflowTooltip: true,
+      sortable: 'custom'
     },
     {
       prop: 'created_at',
       label: $t('vnetPages.notifications.createdAt'),
       width: 180,
+      sortable: 'custom',
       formatter: (row: any) => (row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm') : '-')
     }
   ]
@@ -161,29 +167,39 @@ watch(dialogVisible, open => {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.notifications.pageTitle') }}</span>
           <TableHeaderOperation
             v-model:columns="columnChecks"
             :loading="loading"
+            :show-add="hasAuth('notifications.create')"
             :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
           ></TableHeaderOperation>
         </div>
       </template>
-      <ElTable v-loading="loading" :data="data" style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <ElTableColumn :label="$t('vnetPages.common.action')" width="280" fixed="right">
           <template #default="{ row }">
-            <ElButton size="small" type="primary" @click="handleDispatch(row)">
+            <ElButton v-if="hasAuth('notifications.dispatch')" size="small" type="primary" @click="handleDispatch(row)">
               {{ $t('vnetPages.notifications.dispatch') }}
             </ElButton>
-            <ElButton size="small" @click="handleEdit(row)">{{ $t('vnetPages.common.edit') }}</ElButton>
-            <ElButton size="small" type="danger" @click="handleDelete(row)">
+            <ElButton v-if="hasAuth('notifications.update')" size="small" @click="handleEdit(row)">
+              {{ $t('vnetPages.common.edit') }}
+            </ElButton>
+            <ElButton v-if="hasAuth('notifications.delete')" size="small" type="danger" @click="handleDelete(row)">
               {{ $t('vnetPages.common.delete') }}
             </ElButton>
           </template>

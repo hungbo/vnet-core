@@ -68,8 +68,8 @@ function entityLabel(entity: string) {
   return $t(`vnetPages.audit.entityLabels.${entity}` as any) || entity;
 }
 
-const { columns, columnChecks, data, getData, loading, mobilePagination } = useUIPaginatedTable({
-  api: ({ page, pageSize }) =>
+const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+  api: ({ page, pageSize, sort, order }) =>
     client.get('/audit-logs', {
       params: {
         page,
@@ -77,29 +77,34 @@ const { columns, columnChecks, data, getData, loading, mobilePagination } = useU
         action: filterAction.value || undefined,
         entity_type: filterEntity.value || undefined,
         date_from: dateRange.value?.[0] || undefined,
-        date_to: dateRange.value?.[1] || undefined
+        date_to: dateRange.value?.[1] || undefined,
+        sort,
+        order
       }
     }),
   transform: vnetTransform,
   columns: () => [
-    { prop: 'action', label: $t('vnetPages.audit.action'), width: 100 },
-    { prop: 'entity_type', label: $t('vnetPages.audit.target'), width: 100 },
+    { prop: 'action', label: $t('vnetPages.audit.action'), width: 100, sortable: 'custom' },
+    { prop: 'entity_type', label: $t('vnetPages.audit.target'), width: 100, sortable: 'custom' },
     {
       prop: 'description',
       label: $t('vnetPages.audit.description'),
       minWidth: 300,
+      sortable: 'custom',
       formatter: (row: any) => row.description || `${actionLabel(row.action)} ${entityLabel(row.entity_type)}`
     },
     {
       prop: 'user_name',
       label: $t('vnetPages.audit.user'),
       width: 140,
+      sortable: 'custom',
       formatter: (row: any) => row.user_name || row.user_id || '-'
     },
     {
       prop: 'created_at',
       label: $t('vnetPages.audit.time'),
       width: 160,
+      sortable: 'custom',
       formatter: (row: any) => (row.created_at ? dayjs(row.created_at).format('DD/MM/YYYY HH:mm:ss') : '')
     }
   ]
@@ -158,8 +163,8 @@ function fetchData() {
 </script>
 
 <template>
-  <div>
-    <ElCard>
+  <div class="page-fill">
+    <ElCard class="fill-card">
       <template #header>
         <div class="flex items-center justify-between">
           <span>{{ $t('vnetPages.audit.title') }}</span>
@@ -203,7 +208,15 @@ function fetchData() {
         </div>
       </template>
       <!-- row-key: dòng đang mở xem chi tiết vẫn mở sau mỗi lần tự tải lại. -->
-      <ElTable v-loading="loading" :data="data" row-key="id" style="width: 100%">
+      <ElTable
+        v-loading="loading"
+        :data="data"
+        row-key="id"
+        class="fill-table"
+        height="100%"
+        style="width: 100%"
+        @sort-change="onSortChange"
+      >
         <ElTableColumn type="expand">
           <template #default="{ row }">
             <pre

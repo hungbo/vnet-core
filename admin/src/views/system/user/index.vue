@@ -99,7 +99,7 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
       prop: 'operate',
       label: $t('common.operate'),
       align: 'center',
-      width: 130,
+      width: 190,
       formatter: row => (
         <div class="flex-center">
           <ElButton type="primary" plain size="small" onClick={() => edit(row.id)}>
