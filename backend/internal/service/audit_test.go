@@ -18,7 +18,7 @@ func TestAuditService_List(t *testing.T) {
 	mock.ExpectQuery(`SELECT count\(\*\) FROM "audit_logs" LEFT JOIN users ON users.id = audit_logs.user_id::uuid`).
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 
-	mock.ExpectQuery(`SELECT audit_logs.id, audit_logs.action, audit_logs.entity_type, audit_logs.entity_id, audit_logs.user_id, COALESCE\(users.full_name, ''\) as user_name, audit_logs.description, audit_logs.metadata, audit_logs.ip_address, audit_logs.created_at FROM "audit_logs" LEFT JOIN users ON users.id = audit_logs.user_id::uuid ORDER BY audit_logs.created_at desc LIMIT \$1`).
+	mock.ExpectQuery(`SELECT audit_logs.id, audit_logs.action, audit_logs.entity_type, audit_logs.entity_id, audit_logs.user_id, COALESCE\(NULLIF\(users.full_name, ''\), users.username, ''\) as user_name, audit_logs.description, audit_logs.metadata, audit_logs.ip_address, audit_logs.created_at FROM "audit_logs" LEFT JOIN users ON users.id = audit_logs.user_id::uuid ORDER BY audit_logs.created_at desc LIMIT \$1`).
 		WithArgs(20).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "action", "entity_type", "entity_id", "user_id", "user_name", "description", "metadata", "ip_address", "created_at"}).
 			AddRow("a1", "create", "machine", "m1", nil, "", "Tạo máy", "", "", time.Now()).
@@ -41,7 +41,7 @@ func TestAuditService_List_WithFilters(t *testing.T) {
 		WithArgs("create", "machine").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
 
-	mock.ExpectQuery(`SELECT audit_logs.id, audit_logs.action, audit_logs.entity_type, audit_logs.entity_id, audit_logs.user_id, COALESCE\(users.full_name, ''\) as user_name, audit_logs.description, audit_logs.metadata, audit_logs.ip_address, audit_logs.created_at FROM "audit_logs" LEFT JOIN users ON users.id = audit_logs.user_id::uuid WHERE audit_logs.action = \$1 AND audit_logs.entity_type = \$2 ORDER BY audit_logs.created_at desc LIMIT \$3`).
+	mock.ExpectQuery(`SELECT audit_logs.id, audit_logs.action, audit_logs.entity_type, audit_logs.entity_id, audit_logs.user_id, COALESCE\(NULLIF\(users.full_name, ''\), users.username, ''\) as user_name, audit_logs.description, audit_logs.metadata, audit_logs.ip_address, audit_logs.created_at FROM "audit_logs" LEFT JOIN users ON users.id = audit_logs.user_id::uuid WHERE audit_logs.action = \$1 AND audit_logs.entity_type = \$2 ORDER BY audit_logs.created_at desc LIMIT \$3`).
 		WithArgs("create", "machine", 20).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "action", "entity_type", "entity_id", "user_id", "user_name", "description", "metadata", "ip_address", "created_at"}).
 			AddRow("a1", "create", "machine", "m1", nil, "", "Tạo máy", "", "", time.Now()))

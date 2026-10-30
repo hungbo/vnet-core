@@ -748,11 +748,16 @@ func stockTransactionToResponse(db *gorm.DB, t model.StockTransaction) StockTran
 		}
 	}
 
+	// Như OrderService/ShiftService: nhân viên đã xoá vẫn hiện tên (Unscoped), và
+	// tài khoản chưa điền họ tên thì hiện tên đăng nhập thay vì "-".
 	createdByName := ""
 	if t.CreatedBy != nil {
 		var user model.User
-		if err := db.Where("id = ?", *t.CreatedBy).First(&user).Error; err == nil {
+		if err := db.Unscoped().Where("id = ?", *t.CreatedBy).First(&user).Error; err == nil {
 			createdByName = user.FullName
+			if createdByName == "" {
+				createdByName = user.Username
+			}
 		}
 	}
 

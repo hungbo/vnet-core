@@ -56,7 +56,7 @@ type AuditLogResponse struct {
 func (s *AuditService) List(params pagination.Params, filters AuditLogParams) ([]AuditLogResponse, int64, int, int, error) {
 	query := s.db.Table("audit_logs").
 		Select(`audit_logs.id, audit_logs.action, audit_logs.entity_type, audit_logs.entity_id,
-			audit_logs.user_id, COALESCE(users.full_name, '') as user_name,
+			audit_logs.user_id, COALESCE(NULLIF(users.full_name, ''), users.username, '') as user_name,
 			audit_logs.description, audit_logs.metadata, audit_logs.ip_address, audit_logs.created_at`).
 		Joins("LEFT JOIN users ON users.id = audit_logs.user_id::uuid")
 
