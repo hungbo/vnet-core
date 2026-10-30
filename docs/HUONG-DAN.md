@@ -219,7 +219,7 @@ Bấm đúp tệp; Windows hỏi quyền quản trị vì bộ cài cần. Bộ 
 
 Cài lần đầu trên máy chưa từng có VNET, ô chi tiết in thêm vài dòng `The service name is invalid` / `NET HELPMSG 2185`: đó là bước 1 không tìm thấy dịch vụ cũ, bình thường.
 
-Dòng cuối ghi địa chỉ cho máy trạm, dạng `Xong. Dia chi cho may tram: http://192.168.x.x:20800`, nhưng bộ cài chuyển sang trang **Đã cài xong** ngay khi chạy xong nên thường không kịp đọc. Mọi máy trạm cần địa chỉ này: nó là `http://<IP máy chủ>:20800`, IP xem bằng `ipconfig` (dòng IPv4). Cài thất bại thì hiện hộp thoại trỏ tới `C:\VNET\logs\install.log` (xem [D.3](#bộ-cài-máy-chủ-windows-báo-lỗi-hoặc-máy-chủ-không-lên)).
+Dòng cuối ghi địa chỉ cho máy trạm, dạng `Xong. Dia chi cho may tram: http://192.168.x.x:20800`. Ô chi tiết chuyển sang trang **Đã cài xong** ngay khi chạy xong, nên trang đó ghi lại địa chỉ ở dòng đầu: **Máy trạm trỏ về: ...** — chép lại, mọi máy trạm cần nó. Bộ cài chọn địa chỉ của card mạng có default gateway, nên card ảo của VMware hay Hyper-V không lẫn vào; không card nào có gateway thì liệt kê mọi IPv4. Bộ cài 1.1.19 trở về trước không ghi dòng này trên trang cuối: địa chỉ là `http://<IP máy chủ>:20800`, IP xem bằng `ipconfig` (dòng IPv4). Cài thất bại thì hiện hộp thoại trỏ tới `C:\VNET\logs\install.log` (xem [D.3](#bộ-cài-máy-chủ-windows-báo-lỗi-hoặc-máy-chủ-không-lên)).
 
 Trang **Đã cài xong** có ô **Mở trang quản trị** tick sẵn: bấm **Hoàn thành** là trình duyệt mở trang đăng nhập. Cài xong có lối tắt **VNET Quản lý** trên Desktop (mở `http://localhost:20800`) và thư mục **VNET Server** trong Start Menu: *VNET Quản lý*, *Thư mục dữ liệu*, *Nhật ký*, *Gỡ cài đặt*.
 

@@ -271,10 +271,19 @@ try {
         Step "CANH BAO: dich vu tuong lua Windows (MpsSvc) khong chay - bo qua mo cong $port. Bat lai tuong lua thi chay lai bo cai."
     }
 
-    $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
-        ForEach-Object { "http://$($_.IPAddress):$port" }
+    # Địa chỉ cho máy trạm: ưu tiên card mạng có default gateway. Card ảo (VMware, Hyper-V) không có gateway,
+    # và in hết mọi IPv4 thì chủ quán không biết chép địa chỉ nào.
+    $lan = @(Get-NetIPConfiguration -ErrorAction SilentlyContinue | Where-Object { $_.IPv4DefaultGateway } |
+        ForEach-Object { $_.IPv4Address.IPAddress })
+    if ($lan.Count -eq 0) {
+        $lan = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } |
+            ForEach-Object { $_.IPAddress })
+    }
+    $ips = $lan | ForEach-Object { "http://$($_):$port" }
     Step "Xong. Dia chi cho may tram: $($ips -join ', ')"
+    # vnet-server.nsi đọc tệp này để in địa chỉ lên trang cuối: ô chi tiết qua nhanh, không kịp đọc dòng trên.
+    [IO.File]::WriteAllText((Join-Path $InstallDir 'setup\dia-chi-may-tram.txt'), ($ips -join ', '))
     $exitCode = 0
 } catch {
     Write-Host "LOI: $($_.Exception.Message)"

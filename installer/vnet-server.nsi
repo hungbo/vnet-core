@@ -42,6 +42,9 @@ VIAddVersionKey /LANG=0 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=0 "ProductVersion" "${VERSION}"
 VIAddVersionKey /LANG=0 "LegalCopyright" "VNET"
 
+; Địa chỉ cho máy trạm, đọc từ setup\dia-chi-may-tram.txt mà vnet-server-install.ps1 ghi ra.
+Var LanUrls
+
 !define MUI_ICON   "${ICON}"
 !define MUI_UNICON "${ICON}"
 !define MUI_ABORTWARNING
@@ -51,7 +54,9 @@ VIAddVersionKey /LANG=0 "LegalCopyright" "VNET"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_TITLE "Đã cài xong ${APP}"
-!define MUI_FINISHPAGE_TEXT "Mở trang quản trị tại ${ADMINURL} (có lối tắt VNET Quản lý trên màn hình).$\r$\n$\r$\nCài lần đầu: mật khẩu ngẫu nhiên của admin / manager / staff nằm trong $INSTDIR\data\initial-admin-password.txt (chỉ quản trị viên Windows mở được). Đăng nhập, đổi mật khẩu rồi xoá tệp đó. Cập nhật thì giữ nguyên mật khẩu cũ.$\r$\n$\r$\nMáy trạm trỏ về http://<IP máy này>:20800 — các địa chỉ IP nằm ở dòng cuối trong ô chi tiết."
+; Khung chữ chỉ khoảng 7 dòng × 48 ký tự (60u × 195u); chữ dài hơn bị cắt mất, không cuộn. Địa chỉ máy trạm
+; đứng đầu vì chủ quán cần chép nó; bản cũ để nó ở đoạn thứ ba nên không bao giờ hiện ra.
+!define MUI_FINISHPAGE_TEXT "Máy trạm trỏ về: $LanUrls$\r$\n$\r$\nTrang quản trị: ${ADMINURL}, có lối tắt VNET Quản lý trên màn hình.$\r$\nMật khẩu lần đầu: $INSTDIR\data\initial-admin-password.txt"
 ; Đoạn chữ ở trên dài hơn mặc định; không có dòng này nó đè lên ô "Mở trang quản trị".
 !define MUI_FINISHPAGE_TEXT_LARGE
 !define MUI_FINISHPAGE_RUN
@@ -121,6 +126,17 @@ Section "Install"
   ${If} $0 != 0
     MessageBox MB_ICONSTOP "Cấu hình máy chủ thất bại. Xem chi tiết trong:$\r$\n$INSTDIR\logs\install.log" /SD IDOK
     Abort
+  ${EndIf}
+
+  StrCpy $LanUrls "http://<IP máy này>:20800 (xem IP bằng lệnh ipconfig)"
+  ClearErrors
+  FileOpen $1 "$INSTDIR\setup\dia-chi-may-tram.txt" r
+  ${IfNot} ${Errors}
+    FileRead $1 $2
+    FileClose $1
+    ${If} $2 != ""
+      StrCpy $LanUrls $2
+    ${EndIf}
   ${EndIf}
 
   ; Lối tắt mở trang quản trị trong trình duyệt mặc định, mang icon VNET.
