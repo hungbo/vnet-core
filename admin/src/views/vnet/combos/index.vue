@@ -12,6 +12,7 @@ import { useUIPaginatedTable } from '@/hooks/common/table';
 import { vnetTransform } from '@/hooks/common/vnet-table';
 import { newIdempotencyKey } from '@/utils/idempotency';
 import { formatAmount, moneyInput } from '@/utils/money';
+import { escapeHtml, printTicket } from '@/utils/print-ticket';
 import TableHeaderOperation from '@/components/advanced/table-header-operation.vue';
 
 const { t: $t } = useI18n();
@@ -307,6 +308,59 @@ async function handlePrintPurchase() {
   } finally {
     printingReceipt.value = false;
   }
+}
+
+// In qua hộp thoại in của trình duyệt: máy in quầy cắm USB (không có IP) vẫn in
+// được, còn handlePrintPurchase ở trên chỉ tới được máy in mạng đã khai.
+async function settingValues(group: string): Promise<Record<string, string>> {
+  try {
+    const rows: any = await client.get(`/settings/${group}`);
+    return Object.fromEntries((Array.isArray(rows) ? rows : []).map((r: any) => [r.key, r.value || '']));
+  } catch {
+    return {};
+  }
+}
+
+async function handleBrowserPrint() {
+  const r = purchaseResult.value;
+  if (!r) return;
+  const [general, invoice] = await Promise.all([settingValues('general'), settingValues('invoice')]);
+  const row = (label: string, value: unknown) =>
+    `<div class="row"><span>${escapeHtml(label)}</span><span>${escapeHtml(value)}</span></div>`;
+
+  const parts: string[] = [];
+  if (general.store_name) parts.push(`<div class="center shop">${escapeHtml(general.store_name)}</div>`);
+  if (general.store_address) parts.push(`<div class="center">${escapeHtml(general.store_address)}</div>`);
+  if (general.store_phone) parts.push(`<div class="center">${escapeHtml(general.store_phone)}</div>`);
+  parts.push(`<div class="center title">${escapeHtml($t('vnetPages.combos.ticketTitle'))}</div>`);
+  parts.push(row($t('vnetPages.combos.ticketDate'), dayjs(r.created_at).format('DD/MM/YYYY HH:mm')));
+  parts.push('<div class="sep"></div>');
+  parts.push(`<div class="center label">${escapeHtml($t('vnetPages.combos.account'))}</div>`);
+  parts.push(`<div class="center big">${escapeHtml(r.member_username || '-')}</div>`);
+  if (r.generated_password) {
+    parts.push(`<div class="center label">${escapeHtml($t('vnetPages.combos.password'))}</div>`);
+    parts.push(`<div class="center big">${escapeHtml(r.generated_password)}</div>`);
+  }
+  parts.push('<div class="sep"></div>');
+  parts.push(row($t('vnetPages.combos.name'), r.combo_name));
+  if (r.combo?.type === 'fixed_slot') {
+    parts.push(
+      row($t('vnetPages.combos.slot'), `${r.combo.slot_start?.slice(0, 5)} - ${r.combo.slot_end?.slice(0, 5)}`)
+    );
+  } else {
+    parts.push(row($t('vnetPages.combos.minutes'), r.remaining_minutes));
+  }
+  if (r.expires_at) parts.push(row($t('vnetPages.combos.expiresAt'), dayjs(r.expires_at).format('DD/MM/YYYY')));
+  if (r.gift_product_name)
+    parts.push(row($t('vnetPages.combos.giftProduct'), `${r.gift_product_name} × ${r.gift_quantity}`));
+  parts.push(row($t('vnetPages.combos.price'), formatAmount(r.price)));
+  const method = enabledMethods.value.find((m: any) => m.code === r.payment_method);
+  if (r.payment_method) parts.push(row($t('vnetPages.combos.paymentMethod'), method?.name || r.payment_method));
+  parts.push(
+    `<div class="center foot">${escapeHtml(invoice.invoice_footer || $t('vnetPages.combos.ticketThanks'))}</div>`
+  );
+
+  printTicket(`${r.combo_name} ${r.member_username || ''}`, parts.join(''));
 }
 
 // --- Gói đã bán & kích hoạt ---------------------------------------------------
@@ -777,8 +831,11 @@ useRealtimeRefresh(
       <p style="margin-top: 12px; color: #909399">{{ $t('vnetPages.combos.messages.purchaseHint') }}</p>
       <template #footer>
         <ElButton @click="purchaseResultVisible = false">{{ $t('common.close') }}</ElButton>
-        <ElButton type="primary" :loading="printingReceipt" @click="handlePrintPurchase">
-          {{ $t('vnetPages.combos.printReceipt') }}
+        <ElButton :loading="printingReceipt" @click="handlePrintPurchase">
+          {{ $t('vnetPages.combos.printNetwork') }}
+        </ElButton>
+        <ElButton type="primary" @click="handleBrowserPrint">
+          {{ $t('vnetPages.combos.printTicket') }}
         </ElButton>
       </template>
     </ElDialog>
