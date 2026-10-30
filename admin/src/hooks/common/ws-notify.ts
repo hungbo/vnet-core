@@ -1,6 +1,9 @@
-import { onBeforeUnmount, onMounted } from 'vue';
+import { onBeforeUnmount, onMounted, watch } from 'vue';
 import { ElNotification } from 'element-plus';
+import type { NotificationHandle } from 'element-plus';
+import client from '@/api/client';
 import { useWebSocketStore } from '@/store/modules/ws';
+import { useAuth } from '@/hooks/business/auth';
 import { useRouterPush } from '@/hooks/common/router';
 import { formatPrice } from '@/utils/money';
 import { $t } from '@/locales';
@@ -24,6 +27,7 @@ import { $t } from '@/locales';
  */
 export function useWsNotify() {
   const wsStore = useWebSocketStore();
+  const { hasAuth } = useAuth();
   const { routerPushByKey } = useRouterPush();
 
   function play(src: string) {
@@ -51,7 +55,92 @@ export function useWsNotify() {
         routerPushByKey('vnet_orders');
       }
     });
+    // Lượt nhắc đầu sau 5 giây: tiếng và thông báo của chính đơn này vừa phát xong.
+    henNhac();
   }
+
+  // Đơn chờ duyệt (khách gọi món, khách xin nạp tiền) chỉ kêu một lần lúc đơn tới
+  // thì nhân viên không đứng ở quầy là lỡ. Còn đơn "pending" thì cứ 5 giây kêu lại
+  // và giữ một thông báo không tự tắt, tới khi không còn đơn nào chờ.
+  //
+  // Mỗi lượt đếm lại bằng API chứ không cộng trừ theo sự kiện WebSocket: nhân viên
+  // khác duyệt ở máy khác, hay rớt mạng lỡ sự kiện, thì vẫn tắt đúng lúc. Hết đơn
+  // chờ thì thôi hỏi; đơn mới tới hay WebSocket nối lại thì hỏi lại.
+  const NHAC_DON_CHO_MS = 5000;
+  let nhacTimer: ReturnType<typeof setTimeout> | null = null;
+  let nhacHop: NotificationHandle | null = null;
+  let nhacChu = '';
+  let dangMo = false;
+
+  function henNhac() {
+    if (dangMo && !nhacTimer) nhacTimer = setTimeout(() => nhacDonCho(true), NHAC_DON_CHO_MS);
+  }
+
+  // Kiểm ngay, không kêu (lúc mở trang, lúc nối lại). Đã có lượt hẹn thì để lượt đó lo.
+  function kiemNgay() {
+    if (!nhacTimer) nhacDonCho(false);
+  }
+
+  function dongNhac() {
+    nhacHop?.close();
+    nhacHop = null;
+    nhacChu = '';
+  }
+
+  async function nhacDonCho(keu: boolean) {
+    nhacTimer = null;
+    if (!dangMo || !hasAuth('orders.view')) return;
+    let data: any;
+    try {
+      data = await client.get('/orders', { params: { status: 'pending', page: 1, page_size: 100 } });
+    } catch {
+      henNhac();
+      return;
+    }
+    if (!dangMo) return;
+    const tong: number = data?.total ?? 0;
+    if (!tong) {
+      dongNhac();
+      return;
+    }
+    const napTien = (data?.items ?? []).filter((o: any) => o.order_type === 'topup').length;
+    const goiMon = tong - napTien;
+    if (keu) play(napTien ? '/audio/deposit.mp3' : '/audio/order.mp3');
+
+    const chu = [
+      goiMon ? $t('vnetPages.realtime.pendingOrders', { count: goiMon }) : '',
+      napTien ? $t('vnetPages.realtime.pendingTopups', { count: napTien }) : ''
+    ]
+      .filter(Boolean)
+      .join(' ');
+    // Nhân viên đóng thông báo mà đơn vẫn chờ thì lượt sau hiện lại.
+    if (chu !== nhacChu || !nhacHop) {
+      nhacHop?.close();
+      nhacChu = chu;
+      const hop = ElNotification({
+        title: $t('vnetPages.realtime.pendingTitle'),
+        message: chu,
+        type: 'warning',
+        duration: 0,
+        onClose: () => {
+          if (nhacHop === hop) nhacHop = null;
+        },
+        onClick: () => {
+          hop.close();
+          routerPushByKey('vnet_orders');
+        }
+      });
+      nhacHop = hop;
+    }
+    henNhac();
+  }
+
+  watch(
+    () => wsStore.connected,
+    now => {
+      if (now && dangMo) kiemNgay();
+    }
+  );
 
   function onSessionAutoEnded(data: any) {
     ElNotification({
@@ -115,6 +204,8 @@ export function useWsNotify() {
     wsStore.on('session:auto-ended', onSessionAutoEnded);
     wsStore.on('curfew:enforced', onCurfewEnforced);
     wsStore.on('order:unpaid-left', onUnpaidLeft);
+    dangMo = true;
+    kiemNgay();
   });
 
   onBeforeUnmount(() => {
@@ -122,5 +213,9 @@ export function useWsNotify() {
     wsStore.off('session:auto-ended', onSessionAutoEnded);
     wsStore.off('curfew:enforced', onCurfewEnforced);
     wsStore.off('order:unpaid-left', onUnpaidLeft);
+    dangMo = false;
+    if (nhacTimer) clearTimeout(nhacTimer);
+    nhacTimer = null;
+    dongNhac();
   });
 }

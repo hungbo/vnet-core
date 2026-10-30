@@ -1436,6 +1436,9 @@ declare namespace App {
           unpaidLeftEnded: string;
           unpaidLeftOffline: string;
           guest: string;
+          pendingTitle: string;
+          pendingOrders: string;
+          pendingTopups: string;
           reasons: {
             slot_ended: string;
             minutes_exhausted: string;

@@ -2347,6 +2347,9 @@ const local: App.I18n.Schema = {
       unpaidLeftEnded: '{member} just ended the session with {count} unpaid order(s) ({amount}).',
       unpaidLeftOffline: '{member} just shut down or lost connection with {count} unpaid order(s) ({amount}).',
       guest: 'Walk-in guest',
+      pendingTitle: 'Orders waiting for approval',
+      pendingOrders: '{count} order(s) waiting for approval.',
+      pendingTopups: '{count} top-up request(s) waiting for approval.',
       reasons: {
         slot_ended: 'the booked slot is over',
         minutes_exhausted: 'prepaid minutes ran out',

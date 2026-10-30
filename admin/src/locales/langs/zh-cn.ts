@@ -2315,6 +2315,9 @@ const local: App.I18n.Schema = {
       unpaidLeftEnded: '{member} 刚刚下机，还有 {count} 个订单未付款（{amount}）。',
       unpaidLeftOffline: '{member} 刚刚关机或断开连接，还有 {count} 个订单未付款（{amount}）。',
       guest: '散客',
+      pendingTitle: '有待审核的订单',
+      pendingOrders: '还有 {count} 个点单待审核。',
+      pendingTopups: '还有 {count} 个充值请求待审核。',
       reasons: {
         slot_ended: '预约时段已结束',
         minutes_exhausted: '预付分钟已用完',

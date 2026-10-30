@@ -2342,6 +2342,9 @@ const local: App.I18n.Schema = {
       unpaidLeftEnded: '{member} vừa trả máy, còn {count} đơn chưa thanh toán ({amount}).',
       unpaidLeftOffline: '{member} vừa tắt máy hoặc mất kết nối, còn {count} đơn chưa thanh toán ({amount}).',
       guest: 'Khách vãng lai',
+      pendingTitle: 'Có đơn đang chờ duyệt',
+      pendingOrders: 'Còn {count} đơn gọi món chờ duyệt.',
+      pendingTopups: 'Còn {count} yêu cầu nạp tiền chờ duyệt.',
       reasons: {
         slot_ended: 'hết khung giờ đã đặt',
         minutes_exhausted: 'hết số phút trả trước',
