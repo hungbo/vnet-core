@@ -15,6 +15,7 @@ import MachineRemoteActions from '../machines/modules/machine-remote-actions.vue
 import MachineNoteCell from '../machines/modules/machine-note-cell.vue';
 import MachineOpenOrdersTag from '../machines/modules/machine-open-orders-tag.vue';
 import { OPEN_ORDERS_ROW_CLASS, fetchOpenOrders } from '../machines/modules/machine-open-orders';
+import MemberDetailDialog from '../members/modules/member-detail-dialog.vue';
 import MemberTopupDialog from '../members/modules/member-topup-dialog.vue';
 
 const { t: $t } = useI18n();
@@ -74,6 +75,15 @@ const topupRow = ref<any>(null);
 function openTopup(row: any) {
   topupRow.value = row;
   topupVisible.value = true;
+}
+
+// Bấm tên hội viên: cùng hộp chi tiết như trang Hội viên.
+const detailVisible = ref(false);
+const detailMemberId = ref<string | null>(null);
+
+function openMemberDetail(row: any) {
+  detailMemberId.value = row.member_id;
+  detailVisible.value = true;
 }
 
 const ordersVisible = ref(false);
@@ -354,7 +364,14 @@ onBeforeUnmount(() => {
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn prop="member_name" :label="$t('vnetPages.dashboard.member')" min-width="180" sortable />
+        <ElTableColumn prop="member_name" :label="$t('vnetPages.dashboard.member')" min-width="180" sortable>
+          <template #default="{ row }">
+            <ElLink v-if="row.member_id" type="primary" :underline="false" @click="openMemberDetail(row)">
+              {{ row.member_name || '-' }}
+            </ElLink>
+            <span v-else>{{ row.member_name }}</span>
+          </template>
+        </ElTableColumn>
         <ElTableColumn prop="started_at" :label="$t('vnetPages.dashboard.startTime')" min-width="140" sortable>
           <template #default="{ row }">{{ formatTime(row.started_at) }}</template>
         </ElTableColumn>
@@ -408,6 +425,8 @@ onBeforeUnmount(() => {
       :member-name="topupRow?.member_name"
       @success="refreshStats"
     />
+
+    <MemberDetailDialog v-model:visible="detailVisible" :member-id="detailMemberId" />
 
     <ElDialog
       v-model="ordersVisible"
