@@ -59,6 +59,9 @@ type BackupLog struct {
 	CreatedBy   *string    `gorm:"type:uuid" json:"created_by"`
 	StartedAt   time.Time  `gorm:"default:now()" json:"started_at"`
 	CompletedAt *time.Time `gorm:"type:timestamptz" json:"completed_at"`
+	// Auto: bản do lịch sao lưu tự động tạo. Chỉ những bản này bị tự dọn khi vượt
+	// số bản giữ lại; bản tạo tay không bao giờ tự xoá.
+	Auto bool `gorm:"default:false" json:"auto"`
 }
 
 type EInvoiceConfig struct {

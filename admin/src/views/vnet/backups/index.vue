@@ -15,6 +15,39 @@ const { hasAuth } = useAuth();
 
 const creating = ref(false);
 
+// --- Lịch sao lưu tự động --------------------------------------------------
+// Lưu ở nhóm cài đặt "backup". Chưa lưu gì thì máy chủ dùng mặc định: mỗi 1 giờ,
+// giữ 48 bản tự động — form hiện đúng các giá trị đó.
+const autoForm = ref({ auto_enabled: true, auto_every: 1, auto_unit: 'hour', auto_keep: 48 });
+const savingAuto = ref(false);
+
+async function loadAutoBackup() {
+  try {
+    const rows: any = await client.get('/settings/backup');
+    const m = Object.fromEntries((Array.isArray(rows) ? rows : []).map((r: any) => [r.key, r.value]));
+    if (m.auto_enabled !== undefined) autoForm.value.auto_enabled = String(m.auto_enabled) !== 'false';
+    if (Number(m.auto_every) >= 1) autoForm.value.auto_every = Number(m.auto_every);
+    if (['minute', 'hour', 'day'].includes(m.auto_unit)) autoForm.value.auto_unit = m.auto_unit;
+    if (m.auto_keep !== undefined && Number(m.auto_keep) >= 0) autoForm.value.auto_keep = Number(m.auto_keep);
+  } catch {
+    // Đọc hỏng thì giữ mặc định trên form; lưu lại sẽ ghi đè.
+  }
+}
+
+async function saveAutoBackup() {
+  savingAuto.value = true;
+  try {
+    await client.put('/settings/backup', { ...autoForm.value });
+    ElMessage.success($t('vnetPages.backups.messages.autoSaved'));
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  } finally {
+    savingAuto.value = false;
+  }
+}
+
+loadAutoBackup();
+
 function formatFileSize(bytes: number) {
   if (!bytes) return '-';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -56,6 +89,16 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
         label: $t('vnetPages.backups.fileName'),
         minWidth: 200,
         sortable: 'custom'
+      },
+      {
+        // Chỉ bản tự động bị dọn khi vượt số bản giữ lại, nên phải phân biệt được.
+        prop: 'auto',
+        label: $t('vnetPages.backups.type'),
+        width: 110,
+        formatter: (row: any) =>
+          h(ElTag, { type: row.auto ? 'info' : 'primary' }, () =>
+            row.auto ? $t('vnetPages.backups.typeAuto') : $t('vnetPages.backups.typeManual')
+          )
       },
       {
         prop: 'file_size',
@@ -176,6 +219,49 @@ async function handleDelete(row: any) {
             </ElButton>
           </TableHeaderOperation>
         </div>
+        <div class="mt-12px flex flex-wrap items-center gap-8px">
+          <span class="font-medium">{{ $t('vnetPages.backups.autoBackup') }}</span>
+          <ElSwitch v-model="autoForm.auto_enabled" :disabled="!hasAuth('settings.edit')" />
+          <span>{{ $t('vnetPages.backups.every') }}</span>
+          <ElInputNumber
+            v-model="autoForm.auto_every"
+            class="w-110px!"
+            size="small"
+            :min="1"
+            :precision="0"
+            :disabled="!autoForm.auto_enabled || !hasAuth('settings.edit')"
+          />
+          <ElSelect
+            v-model="autoForm.auto_unit"
+            class="w-90px!"
+            size="small"
+            :disabled="!autoForm.auto_enabled || !hasAuth('settings.edit')"
+          >
+            <ElOption value="minute" :label="$t('vnetPages.backups.unitMinute')" />
+            <ElOption value="hour" :label="$t('vnetPages.backups.unitHour')" />
+            <ElOption value="day" :label="$t('vnetPages.backups.unitDay')" />
+          </ElSelect>
+          <span>{{ $t('vnetPages.backups.keep') }}</span>
+          <ElInputNumber
+            v-model="autoForm.auto_keep"
+            class="w-110px!"
+            size="small"
+            :min="0"
+            :precision="0"
+            :disabled="!autoForm.auto_enabled || !hasAuth('settings.edit')"
+          />
+          <span>{{ $t('vnetPages.backups.keepUnit') }}</span>
+          <ElButton
+            v-if="hasAuth('settings.edit')"
+            size="small"
+            type="primary"
+            :loading="savingAuto"
+            @click="saveAutoBackup"
+          >
+            {{ $t('vnetPages.common.save') }}
+          </ElButton>
+        </div>
+        <div class="mt-4px text-12px text-gray-400">{{ $t('vnetPages.backups.autoHint') }}</div>
       </template>
       <ElTable
         v-loading="loading"

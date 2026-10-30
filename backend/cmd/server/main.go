@@ -166,6 +166,15 @@ func main() {
 
 	sched := scheduler.New()
 	scheduler.Register(sched, db, wsHub, sessionSvc, curfewSvc, memberSvc, cfg.Server.HardwareHistoryDays)
+	// Mỗi phút xem đã tới hạn sao lưu chưa; chu kỳ thật (mặc định 1 giờ) nằm
+	// trong cài đặt "backup" nên đổi trên trang Sao lưu là có hiệu lực ngay.
+	backupSvc := h.Backup.Service()
+	sched.Add(scheduler.Job{
+		Name:       "backup:auto",
+		Interval:   time.Minute,
+		RunAtStart: true,
+		Run:        func(ctx context.Context) error { return backupSvc.RunAuto(time.Now()) },
+	})
 	sched.Start(ctx)
 
 	// Cập nhật game chạy nền cho tới khi tắt máy chủ; không làm gì nếu GAME_ROLE trống.

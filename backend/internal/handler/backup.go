@@ -20,6 +20,9 @@ func NewBackupHandler(svc *service.BackupService) *BackupHandler {
 	return &BackupHandler{svc: svc}
 }
 
+// Service cho main.go chạy lịch sao lưu tự động trên cùng đối tượng mà các route dùng.
+func (h *BackupHandler) Service() *service.BackupService { return h.svc }
+
 // @Summary List backups
 // @Description Get a paginated list of database backups
 // @Tags Backups
