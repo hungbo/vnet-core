@@ -945,7 +945,6 @@ const local: App.I18n.Schema = {
       stats: {
         members: 'Hội viên',
         onlineMachines: 'Máy online / Tổng số máy',
-        playing: 'Đang chơi',
         revenueToday: 'Tiền thu hôm nay'
       }
     },

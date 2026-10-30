@@ -935,7 +935,6 @@ const local: App.I18n.Schema = {
       stats: {
         members: '会员数',
         onlineMachines: '在线 / 机器总数',
-        playing: '游戏中',
         revenueToday: '今日进账'
       }
     },

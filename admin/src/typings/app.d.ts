@@ -764,7 +764,6 @@ declare namespace App {
           stats: {
             members: string;
             onlineMachines: string;
-            playing: string;
             revenueToday: string;
           };
         };

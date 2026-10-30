@@ -24,31 +24,12 @@ const { t: $t } = useI18n();
 // (orders.status), thu tiền đơn (orders.pay).
 const { hasAuth } = useAuth();
 
-const stats = ref([
-  {
-    label: 'vnetPages.dashboard.stats.members',
-    value: 0,
-    icon: 'User',
-    color: '#409eff'
-  },
-  {
-    label: 'vnetPages.dashboard.stats.onlineMachines',
-    value: 0,
-    icon: 'Monitor',
-    color: '#67c23a'
-  },
-  {
-    label: 'vnetPages.dashboard.stats.playing',
-    value: 0,
-    icon: 'Timer',
-    color: '#e6a23c'
-  },
-  {
-    label: 'vnetPages.dashboard.stats.revenueToday',
-    value: '0₫',
-    icon: 'Money',
-    color: '#f56c6c'
-  }
+// Ba số nằm bên phải tiêu đề bảng chứ không thành hàng thẻ riêng: nhường chỗ cho
+// bảng máy. Bỏ số "Đang chơi" — đếm dòng "Đang sử dụng" trong bảng là ra.
+const stats = ref<{ label: string; value: number | string }[]>([
+  { label: 'vnetPages.dashboard.stats.members', value: 0 },
+  { label: 'vnetPages.dashboard.stats.onlineMachines', value: 0 },
+  { label: 'vnetPages.dashboard.stats.revenueToday', value: '0₫' }
 ]);
 
 const activeSessions = ref<any[]>([]);
@@ -238,7 +219,7 @@ async function fetchAllMachines(): Promise<{ items: any[]; total: number } | nul
 }
 
 async function refreshStats() {
-  // Cả bốn thẻ đều lấy số thật. Trước đây thẻ hội viên và doanh thu là số 0
+  // Cả ba số đều lấy số thật. Trước đây thẻ hội viên và doanh thu là số 0
   // cứng, còn thẻ "máy online" đếm toàn bộ máy kể cả máy đang tắt.
   // Ngày theo giờ máy (giờ Việt Nam). toISOString() là ngày UTC: từ 0h tới 7h
   // sáng nó còn là hôm qua, nên ca đêm thấy "Tiền thu hôm nay" của ngày trước.
@@ -263,7 +244,6 @@ async function refreshStats() {
   stats.value[1].value = `${online}/${machines?.total ?? machineList.length}`;
 
   activeSessions.value = Array.isArray(sessions) ? sessions : sessions?.items || [];
-  stats.value[2].value = activeSessions.value.length;
 
   const playing = new Set(activeSessions.value.map(r => r.machine_id));
   // Ghi chú nằm ở máy chứ không ở phiên, nên tra từ danh sách máy vừa tải.
@@ -278,14 +258,14 @@ async function refreshStats() {
   ].map(r => ({ ...r, open_orders: donMo.get(r.machine_id) }));
 
   const rows: any[] = Array.isArray(revenue) ? revenue : revenue?.items || [];
-  stats.value[3].value = formatMoney(rows.reduce((sum, r) => sum + (r.revenue || 0), 0));
+  stats.value[2].value = formatMoney(rows.reduce((sum, r) => sum + (r.revenue || 0), 0));
 }
 
 // Cột "Còn lại" phải nhúc nhích mỗi giây, nếu không nhân viên tưởng số bị treo.
 const now = ref(Date.now());
 let tick: ReturnType<typeof setInterval> | null = null;
 
-// Bốn thẻ và bảng máy đổi theo: hội viên thêm/xoá, nạp/hoàn tiền ("members"),
+// Ba số và bảng máy đổi theo: hội viên thêm/xoá, nạp/hoàn tiền ("members"),
 // máy bật/tắt ("machines", machine:status), mở/trả máy và tiền giờ trừ mỗi phút
 // ("sessions"), đơn thu tiền mặt ("orders") và gói cước bán tiền mặt ("combos")
 // — doanh thu hôm nay cộng cả ba nguồn sau. Gộp 2 giây: trang này mở cả ngày.
@@ -320,28 +300,19 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="page-fill">
-    <ElRow :gutter="20" class="stat-cards mb-16px">
-      <ElCol v-for="stat in stats" :key="stat.label" :span="6" :xs="12">
-        <ElCard shadow="hover" class="h-full">
-          <div style="display: flex; justify-content: space-between; align-items: center">
-            <div>
-              <div style="font-size: 13px; color: #909399">
-                {{ $t(stat.label) }}
-              </div>
-              <div style="font-size: 24px; font-weight: bold; margin-top: 8px">
-                {{ stat.value }}
-              </div>
-            </div>
-            <ElIcon :size="40" :color="stat.color" class="lt-sm:hidden"><component :is="stat.icon" /></ElIcon>
-          </div>
-        </ElCard>
-      </ElCol>
-    </ElRow>
     <!-- Máy đang hoạt động chiếm trọn chiều ngang: đây là bảng nhân viên nhìn
          nhiều nhất, cột hẹp thì mã máy dài như DESKTOP-TA2SVLV bị cắt. -->
     <ElCard class="fill-card">
       <template #header>
-        <span>{{ $t('vnetPages.dashboard.activeMachines') }}</span>
+        <div class="card-header">
+          <span>{{ $t('vnetPages.dashboard.activeMachines') }}</span>
+          <div class="header-stats">
+            <span v-for="stat in stats" :key="stat.label">
+              {{ $t(stat.label) }}:
+              <strong>{{ stat.value }}</strong>
+            </span>
+          </div>
+        </div>
       </template>
       <!-- row-key: tải lại theo thời gian thực đổi thứ tự dòng; khoá theo vị trí thì
            hộp thoại điều khiển từ xa đang mở của một dòng nhảy sang máy khác. -->
@@ -548,9 +519,27 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* Điện thoại xếp 2×2 (:xs="12"): cần khoảng cách giữa hai hàng thẻ. */
-.stat-cards {
-  row-gap: 12px;
+/* Màn hẹp: ba số xuống dòng dưới tiêu đề thay vì đè lên nhau. */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.header-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.header-stats strong {
+  margin-left: 4px;
+  font-size: 16px;
+  color: var(--el-text-color-primary);
 }
 
 .machine-status {
