@@ -273,3 +273,54 @@ func (h *AuthHandler) GetPermissions(c *gin.Context) {
 
 	response.Success(c, permissions)
 }
+
+// UnlockUserLoginRequest là nội dung POST /api/systemManage/unlockUser.
+type UnlockUserLoginRequest struct {
+	ID string `json:"id" binding:"required"`
+}
+
+// UnlockUser
+// @Summary      Mở khoá đăng nhập nhân viên
+// @Description  Xoá khoá tạm do nhập sai mật khẩu (bộ đếm về 0, bỏ mốc khoá, xoá bộ chặn theo tên). Tài khoản đã khoá hẳn thì kích hoạt lại ở Sửa.
+// @Tags         SystemManage
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        body  body  UnlockUserLoginRequest  true  "ID nhân viên"
+// @Success      200   {object}  response.Response
+// @Failure      400   {object}  response.Response
+// @Router       /api/systemManage/unlockUser [post]
+func (h *AuthHandler) UnlockUser(c *gin.Context) {
+	var req UnlockUserLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	username, err := h.svc.UnlockUserLogin(req.ID, middleware.GetUserID(c))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	h.throttle.clearUser(username)
+	response.Success(c, nil)
+}
+
+// UnlockMember
+// @Summary      Mở khoá đăng nhập hội viên
+// @Description  Xoá khoá tạm do nhập sai mật khẩu (bộ đếm về 0, bỏ mốc khoá, xoá bộ chặn theo tên). Tài khoản đã khoá hẳn thì kích hoạt lại ở Sửa.
+// @Tags         Members
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id  path  string  true  "Member ID"
+// @Success      200   {object}  response.Response
+// @Failure      400   {object}  response.Response
+// @Router       /api/members/{id}/unlock-login [post]
+func (h *AuthHandler) UnlockMember(c *gin.Context) {
+	username, err := h.svc.UnlockMemberLogin(c.Param("id"), middleware.GetUserID(c))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	h.throttle.clearUser(username)
+	response.Success(c, nil)
+}

@@ -138,6 +138,8 @@ type MemberResponse struct {
 	// Role "combo" là tài khoản sinh khi bán gói — trang quản trị chỉ cho đổi mật khẩu.
 	Role        string     `json:"role"`
 	LastVisitAt *time.Time `json:"last_visit_at"`
+	// LockedUntil: đang bị khoá tạm vì nhập sai mật khẩu tới mốc này (trang hiện nút "Mở khoá"). Hết khoá thì rỗng.
+	LockedUntil *time.Time `json:"locked_until,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }
@@ -228,6 +230,7 @@ func toMemberResponse(m *model.Member, groupResp *GroupResponse) *MemberResponse
 		IsActive:             m.IsActive,
 		Role:                 m.Role,
 		LastVisitAt:          m.LastVisitAt,
+		LockedUntil:          conKhoaTam(m.LockedUntil),
 		CreatedAt:            m.CreatedAt,
 		UpdatedAt:            m.UpdatedAt,
 	}

@@ -85,6 +85,19 @@ func (t *loginThrottle) clear(key string) {
 	t.mu.Unlock()
 }
 
+// clearUser xoá bộ đếm của một tên đăng nhập trên MỌI máy: nút "Mở khoá" ở trang quản trị không biết khách
+// đã gõ sai từ máy nào.
+func (t *loginThrottle) clearUser(username string) {
+	prefix := loginKey(username, "")
+	t.mu.Lock()
+	for key := range t.attempts {
+		if strings.HasPrefix(key, prefix) {
+			delete(t.attempts, key)
+		}
+	}
+	t.mu.Unlock()
+}
+
 // sweep gỡ những khoá đã im quá một cửa sổ, nếu không bản đồ phình mãi theo số
 // tên đăng nhập mà kẻ dò đã thử. Gọi khi đang giữ khoá.
 func (t *loginThrottle) sweep(now time.Time) {

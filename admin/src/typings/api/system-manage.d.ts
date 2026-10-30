@@ -58,6 +58,8 @@ declare namespace Api {
       userEmail: string;
       /** user role code collection */
       userRoles: string[];
+      /** đang tạm khoá vì nhập sai mật khẩu tới mốc này (RFC3339); không có khi không bị khoá */
+      lockedUntil?: string;
     }>;
 
     /** user search params */

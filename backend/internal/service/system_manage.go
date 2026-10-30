@@ -81,6 +81,8 @@ type UserManageResponse struct {
 	// last_login_at ĐƯỢC ghi ở AuthService.Login nhưng chưa API nào trả ra, nên
 	// không cách nào biết tài khoản nào lâu rồi không ai dùng.
 	LastLoginTime string `json:"lastLoginTime,omitempty"`
+	// LockedUntil: đang bị khoá tạm vì nhập sai mật khẩu tới mốc này (trang hiện nút "Mở khoá"). Hết khoá thì rỗng.
+	LockedUntil string `json:"lockedUntil,omitempty"`
 }
 
 type RoleManageResponse struct {
@@ -195,6 +197,9 @@ func toUserManageResponse(user *model.User) *UserManageResponse {
 	}
 	if user.LastLoginAt != nil {
 		resp.LastLoginTime = user.LastLoginAt.Format(time.RFC3339)
+	}
+	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
+		resp.LockedUntil = user.LockedUntil.Format(time.RFC3339)
 	}
 	return resp
 }

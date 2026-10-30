@@ -237,6 +237,16 @@ function openEdit(row: any) {
 // hàm đó có chạy hay không.
 const refreshingTiers = ref(false);
 
+async function handleUnlockLogin(row: any) {
+  try {
+    await client.post(`/members/${row.id}/unlock-login`);
+    ElMessage.success($t('vnetPages.members.unlockLoginSuccess'));
+    getData();
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+  }
+}
+
 async function handleRefreshTiers() {
   try {
     await ElMessageBox.confirm($t('vnetPages.members.refreshTiersConfirm'), $t('vnetPages.common.confirm'), {
@@ -668,6 +678,16 @@ onBeforeUnmount(() => {
         <ElTableColumn :label="$t('vnetPages.common.action')" width="400" fixed="right" align="center">
           <template #default="{ row }">
             <div class="row-actions">
+              <!-- Chỉ hiện khi đang bị tạm khoá vì nhập sai mật khẩu (locked_until còn hiệu lực). -->
+              <ElButton
+                v-if="row.locked_until && hasAuth('members.update')"
+                size="small"
+                type="warning"
+                :title="$t('vnetPages.members.lockedUntil', { time: dayjs(row.locked_until).format('HH:mm:ss') })"
+                @click="handleUnlockLogin(row)"
+              >
+                {{ $t('vnetPages.members.unlockLogin') }}
+              </ElButton>
               <!-- Tài khoản combo do hệ thống sinh khi bán gói: chỉ được đặt lại mật khẩu. -->
               <ElButton
                 v-if="row.role === 'combo' && hasAuth('members.reset_password')"

@@ -125,6 +125,47 @@ func (k khoaDangNhap) khoaTam(db *gorm.DB, until time.Time) error {
 	return &LoginLockedError{Until: until}
 }
 
+// UnlockUserLogin và UnlockMemberLogin là nút "Mở khoá" ở trang quản trị: bộ đếm sai về 0 và bỏ mốc khoá
+// tạm, khỏi phải chờ hết 1–5 phút. Tài khoản đã khoá hẳn (is_active = false) không mở ở đây — quản lý kích
+// hoạt lại như cũ. Trả tên đăng nhập để handler xoá luôn bộ chặn theo tên + IP trong bộ nhớ.
+func (s *AuthService) UnlockUserLogin(id, byUserID string) (string, error) {
+	return s.moKhoaDangNhap("users", "user", id, byUserID)
+}
+
+func (s *AuthService) UnlockMemberLogin(id, byUserID string) (string, error) {
+	return s.moKhoaDangNhap("members", "member", id, byUserID)
+}
+
+// conKhoaTam trả mốc khoá tạm nếu còn hiệu lực, nil nếu đã hết hoặc chưa từng khoá.
+func conKhoaTam(until *time.Time) *time.Time {
+	if until != nil && until.After(time.Now()) {
+		return until
+	}
+	return nil
+}
+
+func (s *AuthService) moKhoaDangNhap(bang, entity, id, byUserID string) (string, error) {
+	var row struct{ Username string }
+	if err := s.db.Table(bang).Select("username").Where("id = ?", id).Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("không tìm thấy tài khoản")
+		}
+		return "", err
+	}
+	if err := s.db.Table(bang).Where("id = ?", id).
+		Updates(map[string]interface{}{"failed_logins": 0, "locked_until": nil}).Error; err != nil {
+		return "", err
+	}
+	s.audit.Log(&LogAuditRequest{
+		Action:     "unlock_login",
+		EntityType: entity,
+		EntityID:   id,
+		UserID:     optionalUUID(byUserID),
+		Metadata:   map[string]string{"username": row.Username},
+	})
+	return row.Username, nil
+}
+
 // sauKhiDung xoá bộ đếm khi đăng nhập đúng. Không tốn truy vấn nếu chưa sai lần nào.
 func (k khoaDangNhap) sauKhiDung(db *gorm.DB) {
 	if k.failed == 0 && k.lockedUntil == nil {

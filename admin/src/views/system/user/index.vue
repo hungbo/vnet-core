@@ -2,7 +2,7 @@
 import { ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { enableStatusRecord, userGenderRecord } from '@/constants/business';
-import { fetchBatchDeleteUser, fetchDeleteUser, fetchGetUserList } from '@/service/api';
+import { fetchBatchDeleteUser, fetchDeleteUser, fetchGetUserList, fetchUnlockUser } from '@/service/api';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { $t } from '@/locales';
@@ -102,6 +102,13 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
       width: 190,
       formatter: row => (
         <div class="flex-center">
+          {row.lockedUntil && (
+            <span title={$t('page.manage.user.lockedUntil', { time: dayjs(row.lockedUntil).format('HH:mm:ss') })}>
+              <ElButton type="warning" plain size="small" onClick={() => handleUnlock(row.id as unknown as string)}>
+                {$t('page.manage.user.unlock')}
+              </ElButton>
+            </span>
+          )}
           <ElButton type="primary" plain size="small" onClick={() => edit(row.id)}>
             {$t('common.edit')}
           </ElButton>
@@ -152,6 +159,13 @@ async function handleBatchDelete() {
   const { error } = await fetchBatchDeleteUser(checkedRowKeys.value.map(String));
   if (error) return;
   onBatchDeleted();
+}
+
+async function handleUnlock(id: string) {
+  const { error } = await fetchUnlockUser(String(id));
+  if (error) return;
+  window.$message?.success($t('page.manage.user.unlockSuccess'));
+  getData();
 }
 
 async function handleDelete(id: string) {

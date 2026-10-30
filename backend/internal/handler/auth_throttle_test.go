@@ -383,3 +383,25 @@ func TestAuthHandler_Login_PhanHoiCoMustChangePassword(t *testing.T) {
 	assert.True(t, raw.Data.MustChangePassword)
 	assert.True(t, raw.Data.User.MustChangePassword)
 }
+
+// Nút "Mở khoá" không biết khách gõ sai từ máy nào: xoá bộ đếm của tên đó trên mọi máy, tên khác giữ nguyên.
+func TestLoginThrottle_ClearUserXoaMoiMay(t *testing.T) {
+	th, _ := newClockedThrottle()
+	for _, ip := range []string{"10.0.0.5", "10.0.0.6"} {
+		for i := 0; i < loginMaxAttempts; i++ {
+			th.begin(loginKey("Lan", ip))
+		}
+	}
+	for i := 0; i < loginMaxAttempts; i++ {
+		th.begin(loginKey("minh", "10.0.0.5"))
+	}
+
+	th.clearUser("lan")
+
+	for _, ip := range []string{"10.0.0.5", "10.0.0.6"} {
+		_, ok := th.begin(loginKey("lan", ip))
+		assert.True(t, ok, ip)
+	}
+	_, ok := th.begin(loginKey("minh", "10.0.0.5"))
+	assert.False(t, ok, "tên khác giữ nguyên bộ đếm")
+}

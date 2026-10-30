@@ -165,3 +165,52 @@ func TestAuthService_Login_SaiLanThuBaKhoaMotPhut(t *testing.T) {
 	assert.Contains(t, err.Error(), "1 phút")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+// Nút "Mở khoá" ở trang quản trị: đọc tên đăng nhập, đưa bộ đếm về 0, bỏ mốc khoá và ghi nhật ký.
+func TestAuthService_UnlockMemberLogin(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT "username" FROM "members" WHERE id = \$1 LIMIT \$2`).
+		WithArgs("id1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"username"}).AddRow("khach1"))
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "members" SET "failed_logins"=\$1,"locked_until"=\$2 WHERE id = \$3`).
+		WithArgs(0, nil, "id1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "audit_logs"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow("a1", time.Now()))
+	mock.ExpectCommit()
+
+	name, err := svc.UnlockMemberLogin("id1", "")
+
+	require.NoError(t, err)
+	assert.Equal(t, "khach1", name)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Không có tài khoản: báo lỗi, không ghi gì.
+func TestAuthService_UnlockUserLogin_KhongTimThay(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT "username" FROM "users" WHERE id = \$1 LIMIT \$2`).
+		WithArgs("id1", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"username"}))
+
+	_, err := svc.UnlockUserLogin("id1", "")
+
+	require.Error(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Mốc khoá chỉ trả ra khi còn hiệu lực: trang quản trị dựa vào đó để hiện nút "Mở khoá".
+func TestConKhoaTam(t *testing.T) {
+	sau := time.Now().Add(time.Minute)
+	truoc := time.Now().Add(-time.Minute)
+	assert.Equal(t, &sau, conKhoaTam(&sau))
+	assert.Nil(t, conKhoaTam(&truoc))
+	assert.Nil(t, conKhoaTam(nil))
+}

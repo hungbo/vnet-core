@@ -195,6 +195,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				members.PUT("/:id", middleware.StaffOnly(), middleware.PermissionRequired("members.update"), h.Member.Update)
 				members.DELETE("/:id", middleware.StaffOnly(), middleware.PermissionRequired("members.delete"), h.Member.Delete)
 				members.POST("/:id/reset-password", middleware.StaffOnly(), middleware.PermissionRequired("members.reset_password"), h.Member.ResetPassword)
+				members.POST("/:id/unlock-login", middleware.StaffOnly(), middleware.PermissionRequired("members.update"), h.Auth.UnlockMember)
 				members.POST("/:id/topup", middleware.StaffOnly(), middleware.PermissionRequired("members.topup"), h.Member.Topup)
 				members.POST("/:id/refund", middleware.StaffOnly(), middleware.PermissionRequired("members.refund"), h.Member.Refund)
 
@@ -605,6 +606,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				systemManage.GET("/getUserList", middleware.PermissionRequired("system.users.view"), h.SystemManage.GetUserList)
 				systemManage.POST("/addUser", middleware.PermissionRequired("system.users.create"), h.SystemManage.AddUser)
 				systemManage.POST("/updateUser", middleware.PermissionRequired("system.users.update"), h.SystemManage.UpdateUser)
+				systemManage.POST("/unlockUser", middleware.PermissionRequired("system.users.update"), h.Auth.UnlockUser)
 				systemManage.DELETE("/deleteUser", middleware.PermissionRequired("system.users.delete"), h.SystemManage.DeleteUser)
 				systemManage.DELETE("/batchDeleteUser", middleware.PermissionRequired("system.users.delete"), h.SystemManage.BatchDeleteUser)
 

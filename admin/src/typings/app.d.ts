@@ -603,6 +603,9 @@ declare namespace App {
             password: string;
             lastLogin: string;
             neverLoggedIn: string;
+            unlock: string;
+            unlockSuccess: string;
+            lockedUntil: string;
             form: {
               userName: string;
               userGender: string;

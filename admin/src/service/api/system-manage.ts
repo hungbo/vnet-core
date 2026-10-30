@@ -88,6 +88,11 @@ export function fetchDeleteUser(id: string) {
   return request({ url: '/systemManage/deleteUser', method: 'delete', data: { id } });
 }
 
+/** Mở khoá tạm do nhập sai mật khẩu (bộ đếm về 0). */
+export function fetchUnlockUser(id: string) {
+  return request({ url: '/systemManage/unlockUser', method: 'post', data: { id } });
+}
+
 export function fetchBatchDeleteUser(ids: string[]) {
   return request({ url: '/systemManage/batchDeleteUser', method: 'delete', data: { ids } });
 }
