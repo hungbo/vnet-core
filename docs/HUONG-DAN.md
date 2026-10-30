@@ -182,6 +182,8 @@ docker compose down -v            # dừng và XOÁ SẠCH database
 
 ## 1.2a. Cách 2 — Bộ cài Windows (không cần Docker)
 
+Xem cả quá trình trong [video hướng dẫn](https://www.facebook.com/groups/1475734131291921/posts/1495823275949673/) (phần 1, bản 1.1.19).
+
 Một tệp `vnet-server-setup-<phiên bản>.exe` (khoảng 64 MB) cài trọn máy chủ lên Windows 64-bit: `vnet-server.exe` (API cùng trang quản trị nhúng sẵn) chạy như **dịch vụ Windows**, PostgreSQL 16 bản portable đi kèm (có `pg_dump` và `pg_restore` cho sao lưu), `vnet-migrate.exe`, `vnet-seed.exe`, và bộ thư viện Visual C++ mà PostgreSQL cần. Bật máy lên là chạy, không ai phải đăng nhập Windows.
 
 ### Bước 1: lấy bộ cài
@@ -202,7 +204,7 @@ Chép tệp sang máy chủ Windows.
 
 ### Bước 2: chạy bộ cài
 
-Bấm đúp tệp; Windows hỏi quyền quản trị vì bộ cài cần. Các trang: **Welcome** → chọn thư mục → cài → **Finish**. Thư mục mặc định là **`C:\VNET`** (ổ C gốc, không phải Program Files, để bạn dễ tìm dữ liệu và bản sao lưu và đường dẫn không có khoảng trắng).
+Bấm đúp tệp; Windows hỏi quyền quản trị vì bộ cài cần. Bộ cài chưa ký số nên SmartScreen có thể chặn với *Windows protected your PC*: bấm **More info** rồi **Run anyway** (muốn chắc tệp đúng bản thì so SHA-256 với trang Releases). Các trang, chữ tiếng Việt: **Chào mừng** → **Chọn thư mục cài đặt** → **Cài đặt** (khoảng một phút) → **Đã cài xong**. Thư mục mặc định là **`C:\VNET`** (ổ C gốc, không phải Program Files, để bạn dễ tìm dữ liệu và bản sao lưu và đường dẫn không có khoảng trắng).
 
 Ô chi tiết khi cài hiện từng việc bộ cài làm, bằng chữ **không dấu** — cố ý, vì Windows hiển thị chữ có dấu ở đó thành rác:
 
@@ -215,9 +217,11 @@ Bấm đúp tệp; Windows hỏi quyền quản trị vì bộ cài cần. Các 
 7. Tạo ba tài khoản `admin`, `manager`, `staff`, **mỗi tài khoản một mật khẩu ngẫu nhiên** — chỉ ở lần cài đầu.
 8. Mở cổng TCP 20800 trong tường lửa Windows (luật `VNET-Server`, mọi profile mạng).
 
-Dòng cuối ghi địa chỉ cho máy trạm, dạng `Xong. Dia chi cho may tram: http://192.168.x.x:20800` — chép lại, mọi máy trạm cần nó. Cài thất bại thì hiện hộp thoại trỏ tới `C:\VNET\logs\install.log` (xem [D.3](#bộ-cài-máy-chủ-windows-báo-lỗi-hoặc-máy-chủ-không-lên)).
+Cài lần đầu trên máy chưa từng có VNET, ô chi tiết in thêm vài dòng `The service name is invalid` / `NET HELPMSG 2185`: đó là bước 1 không tìm thấy dịch vụ cũ, bình thường.
 
-Cài xong có lối tắt **VNET Quản lý** trên Desktop (mở `http://localhost:20800`) và thư mục **VNET Server** trong Start Menu: *VNET Quản lý*, *Thư mục dữ liệu*, *Nhật ký*, *Gỡ cài đặt*.
+Dòng cuối ghi địa chỉ cho máy trạm, dạng `Xong. Dia chi cho may tram: http://192.168.x.x:20800`, nhưng bộ cài chuyển sang trang **Đã cài xong** ngay khi chạy xong nên thường không kịp đọc. Mọi máy trạm cần địa chỉ này: nó là `http://<IP máy chủ>:20800`, IP xem bằng `ipconfig` (dòng IPv4). Cài thất bại thì hiện hộp thoại trỏ tới `C:\VNET\logs\install.log` (xem [D.3](#bộ-cài-máy-chủ-windows-báo-lỗi-hoặc-máy-chủ-không-lên)).
+
+Trang **Đã cài xong** có ô **Mở trang quản trị** tick sẵn: bấm **Hoàn thành** là trình duyệt mở trang đăng nhập. Cài xong có lối tắt **VNET Quản lý** trên Desktop (mở `http://localhost:20800`) và thư mục **VNET Server** trong Start Menu: *VNET Quản lý*, *Thư mục dữ liệu*, *Nhật ký*, *Gỡ cài đặt*.
 
 ### Bước 3: đăng nhập và đổi mật khẩu
 
@@ -245,7 +249,7 @@ Mở **`C:\VNET\data\initial-admin-password.txt`** (chỉ tài khoản quản tr
 - **Chạy lại bộ cài sau một lần cài hỏng được.** Nó kiểm database thật chứ không tin dấu vết lần trước: chưa có database thì tạo, bảng người dùng còn trống thì mới tạo tài khoản và sinh mật khẩu.
 - **Đã chạy trong dịch vụ, không có cửa sổ lệnh.** Mọi dòng nhật ký, kể cả lý do máy chủ từ chối khởi động (`Refusing to start:` — xem [1.5](#15-ba-luật-khiến-máy-chủ-từ-chối-khởi-động)), nằm trong `logs\server.log`.
 
-> **Đã kiểm khi viết mục này:** cấu trúc bộ cài (mở bộ cài bản 1.1.15 bằng 7-Zip: ba tệp `.exe`, `pgsql\` có `pg_dump`/`pg_restore`/`psql`/`pg_ctl`, `setup\vc_redist.x64.exe` và `setup\vnet-server-install.ps1`), lệnh build trên macOS, và cơ chế mật khẩu ngẫu nhiên từng tài khoản (`SEED_PASSWORD_<TÊN>`, đăng nhập đúng, không bị ép đổi). **Đọc từ mã, chưa chạy thật trên Windows:** toàn bộ phần chạy bộ cài, tạo dịch vụ và luật tường lửa, thư mục `C:\VNET`, sao lưu bằng `pg_dump`, nâng cấp và gỡ cài đặt.
+> **Đã kiểm khi viết mục này:** cấu trúc bộ cài (mở bộ cài bản 1.1.15 bằng 7-Zip: ba tệp `.exe`, `pgsql\` có `pg_dump`/`pg_restore`/`psql`/`pg_ctl`, `setup\vc_redist.x64.exe` và `setup\vnet-server-install.ps1`), lệnh build trên macOS, và cơ chế mật khẩu ngẫu nhiên từng tài khoản (`SEED_PASSWORD_<TÊN>`, đăng nhập đúng, không bị ép đổi). **Đã chạy thật ngày 30/10/2026** trên Windows Server 2019 với bản phát hành 1.1.19, cài mới vào máy chưa có VNET: SmartScreen, các trang bộ cài, hai dịch vụ, tệp mật khẩu ba tài khoản, đăng nhập và đổi mật khẩu, máy khác trong mạng mở được `http://<IP>:20800` (tường lửa đúng); gỡ im lặng (`uninstall.exe /S`) xoá dịch vụ, luật tường lửa, chương trình và giữ `data\`. **Chưa chạy thật:** sao lưu bằng `pg_dump` qua bộ cài này, nâng cấp bằng bộ cài, hộp hỏi xoá dữ liệu khi gỡ bằng tay.
 
 ## 1.3. Cách 3 — Tệp thực thi tự build
 
@@ -468,11 +472,11 @@ Một lần tạo tối đa **500 máy**.
 
 ## 2.3. Cài bằng bộ cài
 
-Chạy `vnet-client-setup-*.exe` với quyền quản trị. Trình cài hỏi:
+Có [video](https://www.facebook.com/groups/1475734131291921/posts/1495823275949673/) (phần 2, bản 1.0.23). Chạy `vnet-client-setup-*.exe` với quyền quản trị. Gặp *Windows protected your PC* thì bấm **More info** → **Run anyway**. Trang đầu chọn thư mục, giữ `C:\Program Files\VNET Client` và bấm **Next**; trang **Cấu hình máy trạm** hỏi:
 
 | Ô | Điền gì |
 |---|---|
-| **Địa chỉ máy chủ** | `http://192.168.1.10:20800` — đúng địa chỉ và cổng máy chủ trong mạng LAN |
+| **Địa chỉ máy chủ** | Ô điền sẵn ví dụ `http://192.168.1.10:20800`: xoá đi, gõ đúng địa chỉ và cổng máy chủ trong mạng LAN |
 | **Tài khoản quản trị máy trạm** | Tên đăng nhập cho nhân viên kỹ thuật, mặc định `admin` |
 | **Mật khẩu**, **Nhập lại mật khẩu** | Ít nhất 6 ký tự, không có dấu nháy kép. Đặt chung một mật khẩu cho cả quán |
 
@@ -483,6 +487,8 @@ Mã máy không hỏi: máy trạm dùng tên máy Windows (mục 2.2).
 **Đổi tài khoản cho cả quán** ở trang quản trị, **Cài đặt → Máy trạm**. Mọi máy nhận tài khoản mới ở nhịp tim kế tiếp, khoảng 15 giây, và bỏ tài khoản đặt lúc cài. Xoá tên tài khoản ở đó thì các máy quay về tài khoản đặt lúc cài.
 
 Trình cài làm ba việc, theo thứ tự: ghi tệp cấu hình, băm mật khẩu rồi lưu, đăng ký dịch vụ Windows. Tệp `config.json` chỉ chứa băm, không chứa mật khẩu.
+
+**Màn hình khoá chỉ mở trên phiên console**, tức màn hình thật của máy: dịch vụ mở giao diện vào phiên đang ngồi trước máy. Cài qua Remote Desktop thì dịch vụ chạy và máy vẫn hiện **Sẵn sàng** trên trang Máy, nhưng phiên Remote Desktop không thấy màn hình khoá. Nó lên khi có người đăng nhập Windows tại máy, hoặc khi máy khởi động lại và Windows tự đăng nhập (mục 2.6b). Đang ở phiên Remote Desktop mà muốn thấy ngay thì chuyển phiên đó về console: PowerShell quản trị, `tscon <ID phiên> /dest:console` (ID xem bằng `quser`), rồi nối Remote Desktop lại.
 
 ## 2.4. Cài tay
 
