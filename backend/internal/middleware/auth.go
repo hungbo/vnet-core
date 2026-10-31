@@ -120,6 +120,30 @@ func SelfOrStaff(param string) gin.HandlerFunc {
 	}
 }
 
+// LivePermissions thay danh sách quyền trong token nhân viên bằng quyền đang có
+// trong database (lookup = AuthService.CurrentPermissions), nên PermissionRequired,
+// menu (/route/getUserRoutes) và mọi chỗ đọc ContextKeyPermissions theo đúng vai
+// trò vừa sửa — không phải đăng nhập lại. Token hội viên giữ nguyên: quyền của nó
+// cố định ("member.access").
+func LivePermissions(lookup func(userID string) ([]string, error)) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if GetKind(c) != jwt.KindStaff {
+			c.Next()
+			return
+		}
+
+		perms, err := lookup(GetUserID(c))
+		if err != nil {
+			response.InternalError(c, "Failed to load permissions", err)
+			c.Abort()
+			return
+		}
+
+		c.Set(ContextKeyPermissions, perms)
+		c.Next()
+	}
+}
+
 func PermissionRequired(permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		perms, exists := c.Get(ContextKeyPermissions)

@@ -23,12 +23,19 @@ import (
 
 // newTestRouter builds the real route table over a mock database. Authorization
 // runs before any handler touches the database, so the middleware decision is
-// observable without a live PostgreSQL.
+// observable without a live PostgreSQL. Staff permissions are the one exception:
+// they are read from the database on every request (see expectStaffPerms).
 func newTestRouter(t *testing.T) (*gin.Engine, *jwt.Manager) {
+	t.Helper()
+	r, jwtManager, _ := newTestRouterWithMock(t)
+	return r, jwtManager
+}
+
+func newTestRouterWithMock(t *testing.T) (*gin.Engine, *jwt.Manager, sqlmock.Sqlmock) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	mockDB, _, err := sqlmock.New()
+	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { mockDB.Close() })
 
@@ -44,7 +51,17 @@ func newTestRouter(t *testing.T) (*gin.Engine, *jwt.Manager) {
 	r := gin.New()
 	Register(r, db, jwtManager, hub.New(nil), cfg)
 
-	return r, jwtManager
+	return r, jwtManager, mock
+}
+
+// expectStaffPerms queues the answer to one staff request's permission lookup
+// (middleware.LivePermissions): what the database says, not what the token says.
+func expectStaffPerms(mock sqlmock.Sqlmock, userID string, perms ...string) {
+	rows := sqlmock.NewRows([]string{"code"})
+	for _, p := range perms {
+		rows.AddRow(p)
+	}
+	mock.ExpectQuery(`SELECT DISTINCT "permissions"."code" FROM "permissions"`).WithArgs(userID).WillReturnRows(rows)
 }
 
 func memberToken(t *testing.T, m *jwt.Manager, memberID string) string {
@@ -233,15 +250,16 @@ func TestRefreshTokenIsNotAccepted(t *testing.T) {
 }
 
 func TestStaffWithoutClientAdminIsRejectedByAdminOnlyRoutes(t *testing.T) {
-	r, jwtManager := newTestRouter(t)
+	r, jwtManager, mock := newTestRouterWithMock(t)
 
-	// A staff token that carries no client.admin permission.
+	// A staff account that has no client.admin permission.
 	token, err := jwtManager.GenerateAccessToken("u1", "cashier", "staff", "r1", jwt.KindStaff,
 		[]string{"members.view", "orders.view"})
 	require.NoError(t, err)
 
 	for _, path := range []string{"/api/backups", "/api/audit-logs", "/api/admin/notifications", "/api/systemManage/getUserList"} {
 		t.Run(path, func(t *testing.T) {
+			expectStaffPerms(mock, "u1", "members.view", "orders.view")
 			assert.Equal(t, http.StatusForbidden, do(r, "GET", path, token).Code)
 		})
 	}
@@ -251,7 +269,7 @@ func TestStaffWithoutClientAdminIsRejectedByAdminOnlyRoutes(t *testing.T) {
 // chưa đủ. Menu (service.RouteService) đòi y như vậy; hai bên lệch thì vai trò
 // chỉ có backups.view thấy mục Sao lưu rồi mở ra bị 403.
 func TestBackOfficeNeedsClientAdminAsWellAsOwnCode(t *testing.T) {
-	r, jwtManager := newTestRouter(t)
+	r, jwtManager, mock := newTestRouterWithMock(t)
 
 	routes := []struct{ path, own string }{
 		{"/api/backups", "backups.view"},
@@ -263,19 +281,47 @@ func TestBackOfficeNeedsClientAdminAsWellAsOwnCode(t *testing.T) {
 		t.Run(tc.path, func(t *testing.T) {
 			ownOnly, err := jwtManager.GenerateAccessToken("u1", "custom", "custom", "r1", jwt.KindStaff, []string{tc.own})
 			require.NoError(t, err)
+			expectStaffPerms(mock, "u1", tc.own)
 			assert.Equal(t, http.StatusForbidden, do(r, "GET", tc.path, ownOnly).Code, "thiếu client.admin")
 
 			gateOnly, err := jwtManager.GenerateAccessToken("u1", "custom", "custom", "r1", jwt.KindStaff, []string{"client.admin"})
 			require.NoError(t, err)
+			expectStaffPerms(mock, "u1", "client.admin")
 			assert.Equal(t, http.StatusForbidden, do(r, "GET", tc.path, gateOnly).Code, "thiếu %s", tc.own)
 
 			both, err := jwtManager.GenerateAccessToken("u1", "custom", "custom", "r1", jwt.KindStaff, []string{"client.admin", tc.own})
 			require.NoError(t, err)
+			expectStaffPerms(mock, "u1", "client.admin", tc.own)
 			// Qua cổng quyền rồi mới tới handler; DB giả có thể làm nó lỗi 500
 			// nhưng không được là 403.
 			assert.NotEqual(t, http.StatusForbidden, do(r, "GET", tc.path, both).Code)
 		})
 	}
+}
+
+// Quyền theo database chứ không theo token: sửa vai trò có hiệu lực ngay cho cả
+// API lẫn menu, không phải đăng nhập lại. Token sống 24 giờ, nên trước đây quyền
+// vừa cấp vẫn bị 403 và không hiện trong menu cho tới khi đăng nhập lại.
+func TestStaffPermissionsFollowDatabaseNotToken(t *testing.T) {
+	r, jwtManager, mock := newTestRouterWithMock(t)
+
+	// Quyền vừa gỡ: token còn ghi, database đã bỏ.
+	oldToken, err := jwtManager.GenerateAccessToken("u1", "cashier", "staff", "r1", jwt.KindStaff,
+		[]string{"client.admin", "backups.view"})
+	require.NoError(t, err)
+	expectStaffPerms(mock, "u1", "members.view")
+	assert.Equal(t, http.StatusForbidden, do(r, "GET", "/api/backups", oldToken).Code)
+
+	// Quyền vừa cấp: token chưa có, database đã có.
+	newToken, err := jwtManager.GenerateAccessToken("u1", "cashier", "staff", "r1", jwt.KindStaff, nil)
+	require.NoError(t, err)
+	expectStaffPerms(mock, "u1", "client.admin", "backups.view")
+	assert.NotEqual(t, http.StatusForbidden, do(r, "GET", "/api/backups", newToken).Code)
+
+	expectStaffPerms(mock, "u1", "client.admin", "backups.view")
+	w := do(r, "GET", "/api/route/getUserRoutes", newToken)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"vnet_backups"`)
 }
 
 func TestUnauthenticatedRequestsAreRejected(t *testing.T) {

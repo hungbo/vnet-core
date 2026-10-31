@@ -5,6 +5,7 @@ import type { LayoutMode } from '@sa/materials';
 import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
 import { useWsNotify } from '@/hooks/common/ws-notify';
+import { usePermissionSync } from '@/hooks/common/permission-sync';
 import ChatWidget from '@/components/ChatWidget.vue';
 import GlobalHeader from '../modules/global-header/index.vue';
 import GlobalSider from '../modules/global-sider/index.vue';
@@ -24,6 +25,8 @@ const { childLevelMenus, isActiveFirstLevelMenuHasChildren } = setupMixMenuConte
 // Thông báo nổi cho đơn hàng / nạp tiền / phiên tự đóng / giới nghiêm. Gắn vào
 // layout để chạy ở mọi trang, không chỉ trang liên quan.
 useWsNotify();
+// Quyền vừa sửa ở trang Phân quyền: tải lại nút bấm và menu tại chỗ.
+usePermissionSync();
 
 const GlobalMenu = defineAsyncComponent(() => import('../modules/global-menu/index.vue'));
 

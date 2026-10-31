@@ -157,6 +157,15 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     return false;
   }
 
+  /** Tải lại quyền sau khi trang Phân quyền ghi. Trả về true nếu quyền đã khác, để tải lại menu theo. */
+  async function refreshPermissions() {
+    const before = [...userInfo.permissions].sort().join(',');
+
+    if (!(await getUserInfo())) return false;
+
+    return [...userInfo.permissions].sort().join(',') !== before;
+  }
+
   async function initUserInfo() {
     const hasToken = getToken();
 
@@ -178,6 +187,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     loginLoading,
     resetStore,
     login,
-    initUserInfo
+    initUserInfo,
+    refreshPermissions
   };
 });

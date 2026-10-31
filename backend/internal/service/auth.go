@@ -560,6 +560,23 @@ func (s *AuthService) GetCurrentMember(memberID string) (*UserResponse, error) {
 	}, nil
 }
 
+// CurrentPermissions là quyền nhân viên ĐANG có trong database, đọc lại ở mỗi yêu
+// cầu (middleware.LivePermissions). Danh sách chép vào token lúc đăng nhập sống tới
+// 24 giờ: sửa vai trò xong, người đang đăng nhập vẫn mang quyền cũ — menu thiếu
+// trang vừa cấp, API trả 403 — cho tới khi đăng nhập lại. Tài khoản bị khoá hay
+// đã xoá thì không còn quyền nào.
+func (s *AuthService) CurrentPermissions(userID string) ([]string, error) {
+	var codes []string
+	err := s.db.Table("permissions").
+		Joins("JOIN role_permissions ON role_permissions.permission_id = permissions.id").
+		Joins("JOIN user_roles ON user_roles.role_id = role_permissions.role_id").
+		Joins("JOIN users ON users.id = user_roles.user_id").
+		Where("user_roles.user_id = ? AND users.is_active AND users.deleted_at IS NULL", userID).
+		Distinct().
+		Pluck("permissions.code", &codes).Error
+	return codes, err
+}
+
 func (s *AuthService) GetCurrentUser(userID string) (*UserResponse, error) {
 	var user model.User
 	if err := s.db.Where("id = ?", userID).Preload("Roles").Preload("Roles.Permissions").First(&user).Error; err != nil {

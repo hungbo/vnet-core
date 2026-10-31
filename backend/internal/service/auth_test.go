@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"regexp"
 	"testing"
 	"time"
 
@@ -650,5 +651,26 @@ func TestAuthService_LogLogin(t *testing.T) {
 	mock.ExpectCommit()
 	svc.LogLogin("lan", "", "10.0.0.9", errors.New("sai mật khẩu"))
 
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Quyền đọc thẳng từ vai trò hiện tại, không từ token: tài khoản bị khoá hay đã xoá
+// thì không còn quyền nào.
+func TestAuthService_CurrentPermissions_DocTuVaiTroHienTai(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), nil)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT DISTINCT "permissions"."code" FROM "permissions" ` +
+		`JOIN role_permissions ON role_permissions.permission_id = permissions.id ` +
+		`JOIN user_roles ON user_roles.role_id = role_permissions.role_id ` +
+		`JOIN users ON users.id = user_roles.user_id ` +
+		`WHERE user_roles.user_id = $1 AND users.is_active AND users.deleted_at IS NULL`)).
+		WithArgs("u1").
+		WillReturnRows(sqlmock.NewRows([]string{"code"}).AddRow("client.admin").AddRow("members.view"))
+
+	perms, err := svc.CurrentPermissions("u1")
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"client.admin", "members.view"}, perms)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

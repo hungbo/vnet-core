@@ -168,6 +168,9 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 
 		protected := api.Group("")
 		protected.Use(middleware.AuthRequired(jwtManager))
+		// Quyền đọc lại từ database ở mỗi yêu cầu, không tin danh sách chép vào
+		// token lúc đăng nhập: sửa vai trò là có hiệu lực ngay.
+		protected.Use(middleware.LivePermissions(service.NewAuthService(db, jwtManager, nil).CurrentPermissions))
 		// Mọi thao tác thay đổi dữ liệu của nhân viên vào nhật ký hoạt động, kèm
 		// người làm và IP — ghi ở MỘT chỗ thay vì trông vào từng service.
 		staffAudit := service.NewAuditService(db)

@@ -288,3 +288,45 @@ func TestSelfOrStaff_StaffCanReadAnyRecord(t *testing.T) {
 	w := selfOrStaffRequest(t, jwt.KindStaff, "u1", "member-2")
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+// Token nhân viên mang quyền chép lúc đăng nhập; LivePermissions thay bằng quyền
+// hiện có trong database, nên quyền vừa cấp dùng được ngay và quyền vừa gỡ mất ngay.
+func TestLivePermissions_StaffUsesCurrentPermissions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	newRouter := func(need string) *gin.Engine {
+		router := gin.New()
+		router.GET("/test", func(c *gin.Context) {
+			c.Set(ContextKeyKind, jwt.KindStaff)
+			c.Set(ContextKeyUserID, "u1")
+			c.Set(ContextKeyPermissions, []string{"members.view"}) // quyền cũ trong token
+		}, LivePermissions(func(userID string) ([]string, error) {
+			assert.Equal(t, "u1", userID)
+			return []string{"orders.view"}, nil
+		}), PermissionRequired(need), func(c *gin.Context) {
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+		})
+		return router
+	}
+
+	assert.Equal(t, http.StatusOK, performRequest(newRouter("orders.view").ServeHTTP, "GET", "/test", nil).Code, "quyền vừa cấp")
+	assert.Equal(t, http.StatusForbidden, performRequest(newRouter("members.view").ServeHTTP, "GET", "/test", nil).Code, "quyền vừa gỡ")
+}
+
+// Token hội viên không đổi: quyền của nó cố định, không tra database.
+func TestLivePermissions_MemberKeepsTokenPermissions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.GET("/test", func(c *gin.Context) {
+		c.Set(ContextKeyKind, jwt.KindMember)
+		c.Set(ContextKeyPermissions, []string{"member.access"})
+	}, LivePermissions(func(string) ([]string, error) {
+		t.Fatal("không được tra quyền cho hội viên")
+		return nil, nil
+	}), PermissionRequired("member.access"), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	assert.Equal(t, http.StatusOK, performRequest(router.ServeHTTP, "GET", "/test", nil).Code)
+}
