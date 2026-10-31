@@ -55,6 +55,16 @@ func tepTonTai(root, game, rel string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
+// lienKetToiThuMuc: mục là junction hay symlink trỏ tới một thư mục. Từ Go 1.23, junction trên Windows mang
+// ModeIrregular chứ không ModeDir, nên e.IsDir() bỏ sót thư mục game quán dẫn bằng junction sang chỗ khác.
+func lienKetToiThuMuc(p string, t fs.FileMode) bool {
+	if t&(fs.ModeSymlink|fs.ModeIrregular) == 0 {
+		return false
+	}
+	fi, err := os.Stat(p)
+	return err == nil && fi.IsDir()
+}
+
 // CreateLocal thêm một game cục bộ. Thư mục GAME_ROOT/<tên> và tệp chạy phải có sẵn trên máy chủ.
 func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 	c := s.conf()
@@ -170,7 +180,10 @@ func (s *GameService) LocalFolders() ([]string, error) {
 	out := []string{}
 	for _, e := range entries {
 		n := e.Name()
-		if !e.IsDir() || thuMucAn(n) || !tenGameDungDuoc(n) || taken[strings.ToLower(n)] {
+		if thuMucAn(n) || !tenGameDungDuoc(n) || taken[strings.ToLower(n)] {
+			continue
+		}
+		if !e.IsDir() && !lienKetToiThuMuc(filepath.Join(c.Root, n), e.Type()) {
 			continue
 		}
 		out = append(out, n)
@@ -183,7 +196,8 @@ func (s *GameService) LocalFolders() ([]string, error) {
 }
 
 // LocalLaunchers liệt kê tệp chạy (.exe, .bat, .cmd, .lnk) trong một thư mục game, đường dẫn tương đối kiểu "Bin/Game.exe".
-// Tệp ở cấp nông trước. Không đi theo liên kết, bỏ thư mục ẩn và thư mục của hệ thống phân phối.
+// Tệp ở cấp nông trước. Không đi theo liên kết bên trong thư mục game (chính thư mục game là junction thì vẫn dò),
+// bỏ thư mục ẩn và thư mục của hệ thống phân phối.
 func (s *GameService) LocalLaunchers(folder string) ([]string, error) {
 	c := s.conf()
 	if c.Role == config.GameRoleMaster {
@@ -201,15 +215,17 @@ func (s *GameService) LocalLaunchers(folder string) ([]string, error) {
 		return nil, fmt.Errorf("không thấy thư mục %s", base)
 	}
 	out := []string{}
-	_ = filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+	// fs.WalkDir trên os.DirFS lấy gốc "." bằng Stat (đi theo junction/symlink của thư mục game), còn các mục bên
+	// trong đến từ ReadDir nên liên kết lồng bên trong không được đi theo. filepath.WalkDir dùng Lstat cho gốc nên
+	// gặp thư mục game là junction thì không dò gì.
+	_ = fs.WalkDir(os.DirFS(base), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // thư mục không đọc được thì bỏ qua, không dừng cả lượt dò
 		}
-		rel, rerr := filepath.Rel(base, p)
-		if rerr != nil || rel == "." {
+		if rel == "." {
 			return nil
 		}
-		depth := strings.Count(filepath.ToSlash(rel), "/")
+		depth := strings.Count(rel, "/")
 		if d.IsDir() {
 			if thuMucAn(d.Name()) || depth >= maxLocalDepth {
 				return fs.SkipDir
@@ -217,7 +233,7 @@ func (s *GameService) LocalLaunchers(folder string) ([]string, error) {
 			return nil
 		}
 		if d.Type().IsRegular() && laTepChay(d.Name()) {
-			out = append(out, filepath.ToSlash(rel))
+			out = append(out, rel)
 			if len(out) >= maxLocalLaunchers {
 				return fs.SkipAll
 			}

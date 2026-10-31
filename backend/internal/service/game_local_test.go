@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -87,6 +89,53 @@ func TestLocalLaunchers(t *testing.T) {
 	master := NewGameService(nil, config.GameConfig{Role: config.GameRoleMaster, Root: root})
 	_, err = master.LocalLaunchers("Game")
 	assert.ErrorIs(t, err, ErrGameLocalOnMaster)
+}
+
+// lienKet tạo symlink; máy Windows không có quyền tạo symlink thì bỏ qua test.
+func lienKet(t *testing.T, target, link string) {
+	t.Helper()
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("không tạo được symlink: %v", err)
+	}
+}
+
+func TestLocalFoldersVaLaunchers_ThuMucGameLaLienKet(t *testing.T) {
+	root, kho := t.TempDir(), t.TempDir() // kho: thư mục game của phần mềm khác (Kzone…), nằm ngoài gốc game
+	writeEmpty(t, kho, "CSGO/KZ_CSGO.exe", "CSGO/bin/cs2.exe", "CSGO/_kz/x.exe", "Khac/inner.exe", "tep.exe")
+	lienKet(t, filepath.Join(kho, "CSGO"), filepath.Join(root, "CSGO"))
+	lienKet(t, filepath.Join(kho, "tep.exe"), filepath.Join(root, "TepLe"))         // trỏ tới tệp
+	lienKet(t, filepath.Join(kho, "KhongCo"), filepath.Join(root, "Hong"))          // trỏ tới chỗ không có
+	lienKet(t, filepath.Join(kho, "Khac"), filepath.Join(kho, "CSGO", "LongTrong")) // liên kết bên trong thư mục game
+	svc, mock := cafeWithRoot(t, root)
+	mock.ExpectQuery(`SELECT "name" FROM "games"`).WillReturnRows(sqlmock.NewRows([]string{"name"}))
+
+	got, err := svc.LocalFolders()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"CSGO"}, got, "liên kết tới thư mục là thư mục game; trỏ tới tệp hay chỗ không có thì không")
+	assert.NoError(t, mock.ExpectationsWereMet())
+
+	got, err = svc.LocalLaunchers("CSGO")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"KZ_CSGO.exe", "bin/cs2.exe"}, got, "dò bên trong thư mục game là liên kết, vẫn bỏ _kz và không đi theo liên kết lồng bên trong")
+}
+
+func TestLocalFoldersVaLaunchers_JunctionWindows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("junction chỉ có trên Windows")
+	}
+	root, kho := t.TempDir(), t.TempDir()
+	writeEmpty(t, kho, "Game/KZ_Game.exe")
+	out, err := exec.Command("cmd", "/c", "mklink", "/J", filepath.Join(root, "Game"), filepath.Join(kho, "Game")).CombinedOutput()
+	require.NoError(t, err, string(out))
+	svc, mock := cafeWithRoot(t, root)
+	mock.ExpectQuery(`SELECT "name" FROM "games"`).WillReturnRows(sqlmock.NewRows([]string{"name"}))
+
+	got, err := svc.LocalFolders()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Game"}, got)
+	got, err = svc.LocalLaunchers("Game")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"KZ_Game.exe"}, got)
 }
 
 func TestCreateLocal_KiemTraTruocKhiChamDB(t *testing.T) {
