@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/modules/auth';
 import { useRouterPush } from '@/hooks/common/router';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { $t } from '@/locales';
+import TwoFactorDialog from './two-factor-dialog.vue';
 
 defineOptions({ name: 'UserAvatar' });
 
@@ -21,7 +22,7 @@ function loginOrRegister() {
 // 'user-center' đã bỏ khỏi menu: views/user-center/index.vue chỉ render
 // <LookForward /> — một trang trống ghi "Sắp ra mắt". Giữ lại khoá trong kiểu
 // này thì nhánh xử lý bên dưới cũng phải giữ, mà không còn đường nào gọi tới.
-type DropdownKey = 'change-password' | 'logout';
+type DropdownKey = 'change-password' | 'two-factor' | 'logout';
 
 type DropdownOption = {
   key: DropdownKey;
@@ -35,6 +36,11 @@ const options = computed(() => {
       label: $t('common.changePassword'),
       key: 'change-password',
       icon: SvgIconVNode({ icon: 'ph:key', fontSize: 18 })
+    },
+    {
+      label: $t('common.twoFactor.title'),
+      key: 'two-factor',
+      icon: SvgIconVNode({ icon: 'ph:shield-check', fontSize: 18 })
     },
     {
       label: $t('common.logout'),
@@ -100,11 +106,16 @@ async function submitChangePassword() {
   pwdVisible.value = false;
 }
 
+// Xác thực 2 bước của chính tài khoản này (two-factor-dialog.vue).
+const twoFactorVisible = ref(false);
+
 function handleDropdown(key: DropdownKey) {
   if (key === 'logout') {
     logout();
   } else if (key === 'change-password') {
     openChangePassword();
+  } else if (key === 'two-factor') {
+    twoFactorVisible.value = true;
   } else {
     // If your other options are jumps from other routes, they will be directly supported here
     routerPushByKey(key);
@@ -156,6 +167,8 @@ function handleDropdown(key: DropdownKey) {
       </ElButton>
     </template>
   </ElDialog>
+
+  <TwoFactorDialog v-model:visible="twoFactorVisible" />
 </template>
 
 <style scoped></style>

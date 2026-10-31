@@ -2,7 +2,13 @@
 import { ref, watch } from 'vue';
 import dayjs from 'dayjs';
 import { enableStatusRecord, userGenderRecord } from '@/constants/business';
-import { fetchBatchDeleteUser, fetchDeleteUser, fetchGetUserList, fetchUnlockUser } from '@/service/api';
+import {
+  fetchBatchDeleteUser,
+  fetchDeleteUser,
+  fetchGetUserList,
+  fetchResetUserTwoFactor,
+  fetchUnlockUser
+} from '@/service/api';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { defaultTransform, useTableOperate, useUIPaginatedTable } from '@/hooks/common/table';
 import { $t } from '@/locales';
@@ -99,7 +105,7 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
       prop: 'operate',
       label: $t('common.operate'),
       align: 'center',
-      width: 190,
+      width: 260,
       formatter: row => (
         <div class="flex-center">
           {row.lockedUntil && (
@@ -108,6 +114,23 @@ const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagi
                 {$t('page.manage.user.unlock')}
               </ElButton>
             </span>
+          )}
+          {row.twoFactor && (
+            <ElPopconfirm
+              title={$t('common.twoFactor.resetConfirm')}
+              width={260}
+              onConfirm={() => handleResetTwoFactor(row.id as unknown as string)}
+            >
+              {{
+                reference: () => (
+                  <span title={$t('common.twoFactor.tagTip')}>
+                    <ElButton type="warning" plain size="small">
+                      {$t('common.twoFactor.reset')}
+                    </ElButton>
+                  </span>
+                )
+              }}
+            </ElPopconfirm>
           )}
           <ElButton type="primary" plain size="small" onClick={() => edit(row.id)}>
             {$t('common.edit')}
@@ -165,6 +188,13 @@ async function handleUnlock(id: string) {
   const { error } = await fetchUnlockUser(String(id));
   if (error) return;
   window.$message?.success($t('page.manage.user.unlockSuccess'));
+  getData();
+}
+
+async function handleResetTwoFactor(id: string) {
+  const { error } = await fetchResetUserTwoFactor(String(id));
+  if (error) return;
+  window.$message?.success($t('common.twoFactor.resetSuccess'));
   getData();
 }
 

@@ -41,6 +41,12 @@ func TestMoiRouteNhanVienDeuCoQuyen(t *testing.T) {
 	ngoaiLe := map[string]bool{
 		"/getUserRoutes": true, // menu của chính người đang đăng nhập
 		"/permissions":   true, // danh sách quyền của chính người đang đăng nhập
+		// Xác thực 2 bước của chính tài khoản đang đăng nhập: ai đăng nhập được
+		// cũng phải tự bật/tắt được cho mình.
+		"/2fa":         true,
+		"/2fa/setup":   true,
+		"/2fa/enable":  true,
+		"/2fa/disable": true,
 		// Lỗi JS của chính trang đang dùng: ai dùng được admin cũng phải gửi được,
 		// gác quyền thì lỗi của đúng người thiếu quyền sẽ không bao giờ tới dev.
 		"/error-reports": true,

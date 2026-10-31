@@ -249,6 +249,19 @@ func TestRefreshTokenIsNotAccepted(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+// Vé giữa hai bước đăng nhập (mật khẩu đúng, chưa nhập mã 2 bước) không phải
+// token truy cập: không được gọi API nào.
+func TestTwoFactorChallengeIsNotAccepted(t *testing.T) {
+	r, jwtManager := newTestRouter(t)
+
+	challenge, err := jwtManager.GenerateTwoFactorToken("u1", time.Minute)
+	require.NoError(t, err)
+
+	for _, path := range []string{"/api/members", "/api/auth/me", "/api/route/getUserRoutes"} {
+		assert.Equal(t, http.StatusUnauthorized, do(r, "GET", path, challenge).Code, path)
+	}
+}
+
 func TestStaffWithoutClientAdminIsRejectedByAdminOnlyRoutes(t *testing.T) {
 	r, jwtManager, mock := newTestRouterWithMock(t)
 

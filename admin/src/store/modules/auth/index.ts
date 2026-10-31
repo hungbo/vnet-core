@@ -2,7 +2,7 @@ import { computed, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { defineStore } from 'pinia';
 import { useLoading } from '@sa/hooks';
-import { fetchGetUserInfo, fetchLogin } from '@/service/api';
+import { fetchGetUserInfo, fetchLogin, fetchLoginTotp } from '@/service/api';
 import { useRouterPush } from '@/hooks/common/router';
 import { localStg } from '@/utils/storage';
 import { SetupStoreId } from '@/enum';
@@ -22,6 +22,9 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
   const { loading: loginLoading, startLoading, endLoading } = useLoading();
 
   const token = ref(getToken());
+
+  /** Vé của bước nhập mã 2 bước; rỗng là đang ở bước mật khẩu. */
+  const totpChallenge = ref('');
 
   const userInfo: Api.Auth.UserInfo = reactive({
     id: '',
@@ -103,30 +106,56 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     const { data: loginToken, error } = await fetchLogin(userName, password);
 
     if (!error) {
-      const pass = await loginByToken(loginToken);
-
-      if (pass) {
-        // Check if the tab needs to be cleared
-        const isClear = checkTabClear();
-        let needRedirect = redirect;
-
-        if (isClear) {
-          // If the tab needs to be cleared,it means we don't need to redirect.
-          needRedirect = false;
-        }
-        await redirectFromLogin(needRedirect);
-
-        window.$notification?.success({
-          title: $t('page.login.common.loginSuccess'),
-          message: $t('page.login.common.welcomeBack', { userName: userInfo.username }),
-          duration: 4500
-        });
+      // Tài khoản bật xác thực 2 bước: trang đăng nhập chuyển sang ô nhập mã.
+      if (loginToken.need_totp && loginToken.challenge) {
+        totpChallenge.value = loginToken.challenge;
+      } else {
+        await finishLogin(loginToken, redirect);
       }
     } else {
       window.$message?.error(error?.message || 'Login failed');
     }
 
     endLoading();
+  }
+
+  async function loginTotp(code: string, redirect = true) {
+    startLoading();
+
+    const { data: loginToken, error } = await fetchLoginTotp(totpChallenge.value, code);
+
+    if (!error) {
+      totpChallenge.value = '';
+      await finishLogin(loginToken, redirect);
+    }
+
+    endLoading();
+  }
+
+  function cancelTotp() {
+    totpChallenge.value = '';
+  }
+
+  async function finishLogin(loginToken: Api.Auth.LoginToken, redirect: boolean) {
+    const pass = await loginByToken(loginToken);
+
+    if (pass) {
+      // Check if the tab needs to be cleared
+      const isClear = checkTabClear();
+      let needRedirect = redirect;
+
+      if (isClear) {
+        // If the tab needs to be cleared,it means we don't need to redirect.
+        needRedirect = false;
+      }
+      await redirectFromLogin(needRedirect);
+
+      window.$notification?.success({
+        title: $t('page.login.common.loginSuccess'),
+        message: $t('page.login.common.welcomeBack', { userName: userInfo.username }),
+        duration: 4500
+      });
+    }
   }
 
   async function loginByToken(loginToken: Api.Auth.LoginToken) {
@@ -187,6 +216,9 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     loginLoading,
     resetStore,
     login,
+    totpChallenge,
+    loginTotp,
+    cancelTotp,
     initUserInfo,
     refreshPermissions
   };

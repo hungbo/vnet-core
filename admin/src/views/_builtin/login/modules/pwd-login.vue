@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useAuthStore } from '@/store/modules/auth';
 import { useForm, useFormRules } from '@/hooks/common/form';
 import { $t } from '@/locales';
@@ -34,10 +34,61 @@ async function handleSubmit() {
   await validate();
   await authStore.login(model.value.userName, model.value.password);
 }
+
+// Bước 2 khi tài khoản bật xác thực 2 bước: mã 6 số, hoặc một mã dự phòng "abcd-efgh".
+const code = ref('');
+const codeInput = ref<{ focus: () => void } | null>(null);
+
+watch(
+  () => authStore.totpChallenge,
+  async v => {
+    code.value = '';
+    if (v) {
+      await nextTick();
+      codeInput.value?.focus();
+    }
+  }
+);
+
+async function handleCode() {
+  if (!code.value.trim()) return;
+  await authStore.loginTotp(code.value.trim());
+}
 </script>
 
 <template>
-  <ElForm ref="formRef" :model="model" :rules="rules" size="large" :show-label="false" @keyup.enter="handleSubmit">
+  <div v-if="authStore.totpChallenge">
+    <p class="mb-16px text-14px text-gray-500">{{ $t('common.twoFactor.loginTip') }}</p>
+    <ElForm size="large" :show-label="false" @submit.prevent="handleCode">
+      <ElFormItem>
+        <ElInput
+          ref="codeInput"
+          v-model="code"
+          autocomplete="one-time-code"
+          inputmode="numeric"
+          maxlength="9"
+          :placeholder="$t('common.twoFactor.codePlaceholder')"
+        />
+      </ElFormItem>
+      <ElSpace direction="vertical" :size="16" class="w-full" fill>
+        <ElButton type="primary" size="large" round block :loading="authStore.loginLoading" @click="handleCode">
+          {{ $t('common.confirm') }}
+        </ElButton>
+        <ElButton size="large" round block @click="authStore.cancelTotp()">
+          {{ $t('page.login.common.back') }}
+        </ElButton>
+      </ElSpace>
+    </ElForm>
+  </div>
+  <ElForm
+    v-else
+    ref="formRef"
+    :model="model"
+    :rules="rules"
+    size="large"
+    :show-label="false"
+    @keyup.enter="handleSubmit"
+  >
     <ElFormItem prop="userName">
       <ElInput v-model="model.userName" :placeholder="$t('page.login.common.userNamePlaceholder')" />
     </ElFormItem>

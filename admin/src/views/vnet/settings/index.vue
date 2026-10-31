@@ -178,6 +178,10 @@ function applyFeatureDefaults() {
   ['attendance_enabled', 'feedback_enabled'].forEach(k => {
     if (settings[k] !== 'true' && settings[k] !== 'false') settings[k] = 'true';
   });
+  // Xác thực 2 bước thì ngược lại: backend mặc định TẮT.
+  if (settings.two_factor_enabled !== 'true' && settings.two_factor_enabled !== 'false') {
+    settings.two_factor_enabled = 'false';
+  }
 }
 
 // Nhóm "client" cũng chưa tồn tại cho tới lần Lưu đầu tiên; máy chủ dùng mặc
@@ -512,6 +516,17 @@ onMounted(() => {
                 inactive-value="false"
                 @update:model-value="(v: any) => (settings.feedback_enabled = v)"
               />
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.settings.twoFactorEnabled')">
+              <div>
+                <ElSwitch
+                  :model-value="settings.two_factor_enabled ?? 'false'"
+                  active-value="true"
+                  inactive-value="false"
+                  @update:model-value="(v: any) => (settings.two_factor_enabled = v)"
+                />
+                <div class="text-12px text-gray-500 leading-18px">{{ $t('vnetPages.settings.twoFactorHint') }}</div>
+              </div>
             </ElFormItem>
           </ElForm>
         </ElTabPane>

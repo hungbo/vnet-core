@@ -129,6 +129,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		auth := api.Group("/auth")
 		{
 			auth.POST("/login", h.Auth.Login)
+			auth.POST("/login/totp", h.Auth.LoginTOTP)
 			auth.POST("/refresh", h.Auth.Refresh)
 			auth.POST("/qr-login", h.Auth.QRLogin)
 			auth.POST("/member-login", h.Auth.MemberLogin)
@@ -188,6 +189,10 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				protectedAuth.GET("/me", h.Auth.Me)
 				protectedAuth.PUT("/change-password", h.Auth.ChangePassword)
 				protectedAuth.GET("/permissions", middleware.StaffOnly(), h.Auth.GetPermissions)
+				protectedAuth.GET("/2fa", middleware.StaffOnly(), h.Auth.TwoFactorStatus)
+				protectedAuth.POST("/2fa/setup", middleware.StaffOnly(), h.Auth.TwoFactorSetup)
+				protectedAuth.POST("/2fa/enable", middleware.StaffOnly(), h.Auth.TwoFactorEnable)
+				protectedAuth.POST("/2fa/disable", middleware.StaffOnly(), h.Auth.TwoFactorDisable)
 			}
 
 			members := protected.Group("/members")
@@ -607,6 +612,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				systemManage.POST("/addUser", middleware.PermissionRequired("system.users.create"), h.SystemManage.AddUser)
 				systemManage.POST("/updateUser", middleware.PermissionRequired("system.users.update"), h.SystemManage.UpdateUser)
 				systemManage.POST("/unlockUser", middleware.PermissionRequired("system.users.update"), h.Auth.UnlockUser)
+				systemManage.POST("/resetUserTwoFactor", middleware.PermissionRequired("system.users.update"), h.Auth.ResetUserTwoFactor)
 				systemManage.DELETE("/deleteUser", middleware.PermissionRequired("system.users.delete"), h.SystemManage.DeleteUser)
 				systemManage.DELETE("/batchDeleteUser", middleware.PermissionRequired("system.users.delete"), h.SystemManage.BatchDeleteUser)
 

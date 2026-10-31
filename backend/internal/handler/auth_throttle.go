@@ -144,8 +144,9 @@ func (h *AuthHandler) allowLogin(c *gin.Context, username string) (string, bool)
 // chối vì lý do khác, như khách hết tiền) thì xoá, để khách nạp tiền xong đăng
 // nhập lại không dính 429.
 func (h *AuthHandler) settleLogin(key string, err error) {
-	// Tài khoản bị khoá vì gõ sai cũng là một lượt dò: không xoá bộ đếm.
-	if !errors.Is(err, service.ErrBadCredentials) && !service.IsLoginLocked(err) {
+	// Tài khoản bị khoá vì gõ sai cũng là một lượt dò: không xoá bộ đếm. Sai mã 2
+	// bước cũng vậy — không thì dò được mã 6 số không giới hạn.
+	if !errors.Is(err, service.ErrBadCredentials) && !errors.Is(err, service.ErrBadTOTP) && !service.IsLoginLocked(err) {
 		h.throttle.clear(key)
 	}
 }

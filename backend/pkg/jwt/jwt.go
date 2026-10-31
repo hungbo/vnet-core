@@ -12,6 +12,10 @@ import (
 const (
 	TypeAccess  = "access"
 	TypeRefresh = "refresh"
+	// TypeTwoFactor: vé ngắn hạn giữa bước mật khẩu và bước mã xác thực 2 bước.
+	// Không phải access nên AuthRequired từ chối, không phải refresh nên không đổi
+	// được ra phiên — chỉ /auth/login/totp nhận nó.
+	TypeTwoFactor = "2fa"
 )
 
 // Subject kinds. Staff tokens come from the admin login flows; member tokens
@@ -74,6 +78,21 @@ func (m *Manager) GenerateRefreshToken(userID, kind string) (string, error) {
 		Kind:      kind,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.refreshTTL)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    m.issuer,
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(m.secret))
+}
+
+func (m *Manager) GenerateTwoFactorToken(userID string, ttl time.Duration) (string, error) {
+	claims := &Claims{
+		UserID:    userID,
+		TokenType: TypeTwoFactor,
+		Kind:      KindStaff,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    m.issuer,
 		},

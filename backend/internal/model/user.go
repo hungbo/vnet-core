@@ -25,6 +25,15 @@ type User struct {
 	// PasswordChangedAt: lần đổi mật khẩu gần nhất (rỗng = chưa đổi lần nào). Refresh
 	// token cấp TRƯỚC mốc này không làm mới được phiên nữa — xem AuthService.RefreshToken.
 	PasswordChangedAt *time.Time `gorm:"type:timestamptz" json:"-"`
+	// Xác thực 2 bước bằng ứng dụng (TOTP), xem service/two_factor.go. TOTPEnabledAt
+	// rỗng là chưa bật. TOTPPending: khoá vừa tạo khi đang quét QR, chưa xác nhận mã.
+	// TOTPLastStep: bước 30 giây của mã dùng gần nhất — một mã không dùng được hai lần.
+	// TOTPRecovery: băm SHA-256 của các mã dự phòng còn dùng được, nối bằng dấu phẩy.
+	TOTPSecret    string     `gorm:"type:varchar(64)" json:"-"`
+	TOTPPending   string     `gorm:"type:varchar(64)" json:"-"`
+	TOTPEnabledAt *time.Time `gorm:"type:timestamptz" json:"-"`
+	TOTPLastStep  int64      `gorm:"default:0" json:"-"`
+	TOTPRecovery  string     `gorm:"type:text" json:"-"`
 	CreatedAt    time.Time      `gorm:"default:now()" json:"created_at,omitempty"`
 	UpdatedAt    time.Time      `gorm:"default:now()" json:"updated_at,omitempty"`
 	DeletedAt    gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`

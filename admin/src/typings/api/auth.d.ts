@@ -4,6 +4,24 @@ declare namespace Api {
       access_token: string;
       refresh_token: string;
       user: UserInfo;
+      /** Mật khẩu đúng nhưng tài khoản bật xác thực 2 bước: chưa có token, hỏi mã rồi gửi kèm challenge. */
+      need_totp?: boolean;
+      challenge?: string;
+    }
+
+    interface TwoFactorStatus {
+      /** Chủ quán đã bật tính năng ở Cài đặt > Tính năng. */
+      feature_enabled: boolean;
+      enabled: boolean;
+      enabled_at?: string;
+      recovery_left: number;
+    }
+
+    interface TwoFactorSetup {
+      secret: string;
+      otpauth_url: string;
+      /** Ảnh QR dạng data URL. */
+      qr: string;
     }
 
     interface UserInfo {

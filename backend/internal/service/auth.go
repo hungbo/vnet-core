@@ -72,6 +72,10 @@ type LoginResponse struct {
 	// MustChangePassword: vừa đăng nhập bằng mật khẩu mặc định của cmd/seed. Chỉ
 	// giao diện bị chặn; token vẫn gọi API bình thường để script cũ chạy tiếp.
 	MustChangePassword bool `json:"must_change_password"`
+	// NeedTOTP: mật khẩu đúng nhưng tài khoản bật xác thực 2 bước — chưa có token
+	// nào, giao diện hỏi mã rồi gửi kèm Challenge tới /auth/login/totp.
+	NeedTOTP  bool   `json:"need_totp,omitempty"`
+	Challenge string `json:"challenge,omitempty"`
 }
 
 type UserResponse struct {
@@ -100,16 +104,7 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 		return nil, err
 	}
 
-	sieuQuyen := false
-	for _, role := range user.Roles {
-		for _, perm := range role.Permissions {
-			if perm.Code == "*" {
-				sieuQuyen = true
-			}
-		}
-	}
-	khoa := khoaDangNhap{bang: "users", id: user.ID, isActive: user.IsActive,
-		failed: user.FailedLogins, lockedUntil: user.LockedUntil, sieuQuyen: sieuQuyen}
+	khoa := khoaCuaNhanVien(&user)
 	now := time.Now()
 	if err := khoa.truocKhiKiem(s.db, now); err != nil {
 		return nil, err
@@ -122,11 +117,25 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
 		return nil, khoa.sauKhiSai(s.db, now)
 	}
+	// Tài khoản bật xác thực 2 bước: chưa cấp phiên, chỉ trả vé để hỏi mã. Bộ đếm sai
+	// cũng chưa xoá — LoginTOTP xoá khi mã đúng; xoá ở đây thì sai mã rồi gõ lại mật khẩu
+	// là bộ đếm về 0, dò được mã 6 số mãi.
+	if s.canMaHaiBuoc(&user) {
+		challenge, err := s.jwtManager.GenerateTwoFactorToken(user.ID, twoFactorChallengeTTL)
+		if err != nil {
+			return nil, err
+		}
+		return &LoginResponse{NeedTOTP: true, Challenge: challenge}, nil
+	}
 	khoa.sauKhiDung(s.db)
 	// Mật khẩu vừa gõ đã khớp băm, nên so thẳng chuỗi là đủ — không tốn thêm một
 	// lần bcrypt.
-	mustChange := req.Password == DefaultSeedPassword
+	return s.capPhienNhanVien(&user, req.Password == DefaultSeedPassword)
+}
 
+// capPhienNhanVien cấp access + refresh token cho nhân viên đã qua mọi bước đăng
+// nhập (mật khẩu, và mã 2 bước nếu có). user phải đã Preload Roles.Permissions.
+func (s *AuthService) capPhienNhanVien(user *model.User, mustChange bool) (*LoginResponse, error) {
 	var permissions []string
 	var roleName string
 	var roleID string
@@ -151,7 +160,7 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 		return nil, err
 	}
 
-	s.db.Model(&user).Update("last_login_at", time.Now())
+	s.db.Model(user).Update("last_login_at", time.Now())
 	// Cột "Đăng nhập lần cuối" của trang Người dùng.
 	s.hub.Changed("systemManage", nil)
 
@@ -276,6 +285,10 @@ func (s *AuthService) ClientLogin(req *MemberLoginRequest) (*ClientLoginResponse
 		res, err := s.Login(&LoginRequest{Username: req.Username, Password: req.Password})
 		if err != nil {
 			return nil, err
+		}
+		// Máy trạm không có bước nhập mã: tài khoản bật 2 bước chỉ vào trang quản trị.
+		if res.NeedTOTP {
+			return nil, ErrTwoFactorWebOnly
 		}
 		return &ClientLoginResponse{
 			MemberLoginResponse: &MemberLoginResponse{

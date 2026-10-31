@@ -93,6 +93,11 @@ export function fetchUnlockUser(id: string) {
   return request({ url: '/systemManage/unlockUser', method: 'post', data: { id } });
 }
 
+/** Tắt xác thực 2 bước của một nhân viên (mất điện thoại, hết mã dự phòng). */
+export function fetchResetUserTwoFactor(id: string) {
+  return request({ url: '/systemManage/resetUserTwoFactor', method: 'post', data: { id } });
+}
+
 export function fetchBatchDeleteUser(ids: string[]) {
   return request({ url: '/systemManage/batchDeleteUser', method: 'delete', data: { ids } });
 }

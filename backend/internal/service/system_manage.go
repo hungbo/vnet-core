@@ -83,6 +83,8 @@ type UserManageResponse struct {
 	LastLoginTime string `json:"lastLoginTime,omitempty"`
 	// LockedUntil: đang bị khoá tạm vì nhập sai mật khẩu tới mốc này (trang hiện nút "Mở khoá"). Hết khoá thì rỗng.
 	LockedUntil string `json:"lockedUntil,omitempty"`
+	// TwoFactor: tài khoản đã bật xác thực 2 bước (trang hiện nút "Tắt 2FA").
+	TwoFactor bool `json:"twoFactor"`
 }
 
 type RoleManageResponse struct {
@@ -198,6 +200,7 @@ func toUserManageResponse(user *model.User) *UserManageResponse {
 	if user.LastLoginAt != nil {
 		resp.LastLoginTime = user.LastLoginAt.Format(time.RFC3339)
 	}
+	resp.TwoFactor = user.TOTPEnabledAt != nil
 	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
 		resp.LockedUntil = user.LockedUntil.Format(time.RFC3339)
 	}
