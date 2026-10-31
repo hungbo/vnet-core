@@ -57,7 +57,24 @@ export function useChatWs(
     }
   }
 
+  // Tin vừa tới (của khách hay của quầy) đẩy phòng lên đầu danh sách và thay
+  // dòng tin cuối dưới tên phòng, không đợi tải lại danh sách.
+  function dayPhongLenDau(msg: any) {
+    const room = rooms.value.find((r: any) => r.roomId === msg.room_id);
+    if (!room) return;
+    room.index = dayjs(msg.created_at).valueOf();
+    room.lastMessage = {
+      content: msg.message,
+      senderId: msg.sender_id,
+      timestamp: dayjs(msg.created_at).format('HH:mm'),
+      saved: true,
+      distributed: msg.status === 'delivered' || msg.status === 'read',
+      seen: msg.status === 'read'
+    };
+  }
+
   const wsChatHandler = async (msg: any) => {
+    dayPhongLenDau(msg);
     // Tin do CHÍNH tài khoản này gửi, vọng về từ một thiết bị khác của mình.
     //
     // Máy chủ không còn bỏ qua người gửi khi phát tin (bỏ qua thì lọc theo tài

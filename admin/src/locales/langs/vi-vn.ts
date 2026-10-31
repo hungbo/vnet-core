@@ -1103,6 +1103,27 @@ const local: App.I18n.Schema = {
         messagePrompt: 'Nội dung thông báo hiện trên màn hình máy (khách không trả lời được):',
         messageRequired: 'Nhập nội dung thông báo'
       },
+      bulk: {
+        selected: 'Đã chọn {n} máy',
+        notifyOnline: 'Thông báo tất cả máy đang bật ({n})',
+        notifyOnlineAll: 'Thông báo tất cả máy đang bật',
+        message: 'Thông báo',
+        restart: 'Khởi động lại',
+        shutdown: 'Tắt máy',
+        wake: 'Bật máy',
+        setGroup: 'Gán nhóm',
+        clear: 'Bỏ chọn',
+        messageTitle: 'Thông báo tới {n} máy',
+        confirmPower: '{action} {n} máy: {codes}?',
+        inUseWarn: '{n} máy đang có khách chơi: phiên của họ kết thúc và tính tiền ngay.',
+        wakeConfirm: 'Gửi lệnh bật {n} máy: {codes}? Máy cần bật Wake-on-LAN trong BIOS và card mạng.',
+        done: 'Đã gửi tới {ok}/{total} máy',
+        offlineList: 'Chưa kết nối: {codes}',
+        alreadyOnList: 'Đang bật sẵn: {codes}',
+        failedList: 'Lỗi: {list}',
+        setGroupTitle: 'Gán nhóm cho {n} máy',
+        groupDone: 'Đã gán nhóm cho {ok}/{total} máy'
+      },
       asset: {
         name: 'Tên',
         type: 'Loại',

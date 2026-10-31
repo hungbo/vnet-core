@@ -1091,6 +1091,27 @@ const local: App.I18n.Schema = {
         messagePrompt: '要显示在机器屏幕上的通知（客人无法回复）：',
         messageRequired: '请输入通知内容'
       },
+      bulk: {
+        selected: '已选 {n} 台机器',
+        notifyOnline: '通知所有开机的机器 ({n})',
+        notifyOnlineAll: '通知所有开机的机器',
+        message: '通知',
+        restart: '重启',
+        shutdown: '关机',
+        wake: '开机',
+        setGroup: '设置分组',
+        clear: '取消选择',
+        messageTitle: '通知 {n} 台机器',
+        confirmPower: '{action} {n} 台机器：{codes}？',
+        inUseWarn: '{n} 台机器有顾客在玩：其会话将立即结束并计费。',
+        wakeConfirm: '向 {n} 台机器发送开机指令：{codes}？需在 BIOS 和网卡中启用网络唤醒。',
+        done: '已发送到 {ok}/{total} 台机器',
+        offlineList: '未连接：{codes}',
+        alreadyOnList: '已开机：{codes}',
+        failedList: '错误：{list}',
+        setGroupTitle: '为 {n} 台机器设置分组',
+        groupDone: '已为 {ok}/{total} 台机器设置分组'
+      },
       asset: {
         name: '名称',
         type: '类型',

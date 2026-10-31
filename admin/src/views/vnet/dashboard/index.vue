@@ -17,6 +17,8 @@ import MachineOpenOrdersTag from '../machines/modules/machine-open-orders-tag.vu
 import { OPEN_ORDERS_ROW_CLASS, fetchOpenOrders } from '../machines/modules/machine-open-orders';
 import MemberDetailDialog from '../members/modules/member-detail-dialog.vue';
 import MemberTopupDialog from '../members/modules/member-topup-dialog.vue';
+import MachineBatchActions from '../machines/modules/machine-batch-actions.vue';
+import { fetchAllMachines } from '../machines/modules/all-machines';
 
 const { t: $t } = useI18n();
 // Nút thiếu quyền của API tương ứng thì ẩn: nạp tiền (members.topup), sửa ghi
@@ -196,26 +198,23 @@ function formatMoney(v: number) {
   return `${new Intl.NumberFormat('vi-VN').format(v || 0)}₫`;
 }
 
-// Toàn bộ máy: API trả tối đa 100 máy một trang, quán lớn hơn thì tải nốt các
-// trang còn lại, nếu không thẻ online/tổng và bảng máy sẵn sàng thiếu máy.
-async function fetchAllMachines(): Promise<{ items: any[]; total: number } | null> {
-  const pageSize = 100;
-  const first: any = await (
-    client.get('/machines', { params: { page: 1, page_size: pageSize } }) as Promise<any>
-  ).catch(() => null);
-  if (!first) return null;
-  const items: any[] = Array.isArray(first) ? first : first.items || [];
-  const total: number = first.total ?? items.length;
-  const pages = Math.ceil(total / pageSize);
-  if (pages > 1) {
-    const rest = await Promise.all(
-      Array.from({ length: pages - 1 }, (_, i) =>
-        (client.get('/machines', { params: { page: i + 2, page_size: pageSize } }) as Promise<any>).catch(() => null)
-      )
-    );
-    for (const r of rest) items.push(...(r?.items || []));
-  }
-  return { items, total };
+// --- Lệnh cho nhiều máy ---------------------------------------------------------
+// Tích nhiều máy để thông báo, khởi động lại hay tắt một lần; chưa tích máy nào thì
+// nút trên tiêu đề thông báo tới mọi máy đang bật. Máy đã tắt (còn ở bảng vì đơn
+// chưa thu tiền) không tích được: lệnh không tới nơi.
+// reserve-selection giữ ô đã tích khi bảng tải lại theo thời gian thực (khoá theo
+// machine_id); lấy trạng thái mới nhất của máy từ bảng, không từ lúc tích.
+const tableRef = ref<any>(null);
+const selectedRows = ref<any[]>([]);
+const toMayChon = (r: any) => ({ id: r.machine_id, machine_code: r.machine_code, status: r.status });
+const selectedMachines = computed(() => {
+  const byId = new Map(activeMachines.value.map(r => [r.machine_id, r]));
+  return selectedRows.value.map(r => toMayChon(byId.get(r.machine_id) || r));
+});
+const onlineMachines = computed(() => activeMachines.value.filter(r => r.status !== 'offline').map(toMayChon));
+
+function clearSelection() {
+  tableRef.value?.clearSelection();
 }
 
 async function refreshStats() {
@@ -305,7 +304,15 @@ onBeforeUnmount(() => {
     <ElCard class="fill-card">
       <template #header>
         <div class="card-header">
-          <span>{{ $t('vnetPages.dashboard.activeMachines') }}</span>
+          <div class="header-left">
+            <span>{{ $t('vnetPages.dashboard.activeMachines') }}</span>
+            <MachineBatchActions
+              :selected="selectedMachines"
+              :online="onlineMachines"
+              @clear="clearSelection"
+              @done="clearSelection"
+            />
+          </div>
           <div class="header-stats">
             <span v-for="stat in stats" :key="stat.label">
               {{ $t(stat.label) }}:
@@ -317,13 +324,22 @@ onBeforeUnmount(() => {
       <!-- row-key: tải lại theo thời gian thực đổi thứ tự dòng; khoá theo vị trí thì
            hộp thoại điều khiển từ xa đang mở của một dòng nhảy sang máy khác. -->
       <ElTable
+        ref="tableRef"
         :data="activeMachines"
         row-key="machine_id"
         :row-class-name="({ row }: any) => (row.open_orders ? OPEN_ORDERS_ROW_CLASS : '')"
         class="fill-table"
         height="100%"
         style="width: 100%"
+        @selection-change="(rows: any[]) => (selectedRows = rows)"
       >
+        <ElTableColumn
+          v-if="hasAuth('machines.remote')"
+          type="selection"
+          width="40"
+          reserve-selection
+          :selectable="(row: any) => row.status !== 'offline'"
+        />
         <ElTableColumn prop="machine_code" :label="$t('vnetPages.dashboard.machine')" min-width="160" sortable />
         <ElTableColumn prop="status" :label="$t('vnetPages.common.status')" min-width="170" sortable>
           <template #default="{ row }">
@@ -526,6 +542,13 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 24px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
 }
 
 .header-stats {

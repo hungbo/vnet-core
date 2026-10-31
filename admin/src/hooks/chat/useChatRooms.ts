@@ -33,6 +33,9 @@ export function useChatRooms(messages: Ref<any[]>, currentRoomId: Ref<string>, m
     return {
       roomId: room.id,
       roomName,
+      // vue-advanced-chat xếp phòng theo index giảm dần: phòng có tin mới nhất
+      // lên đầu, phòng chưa có tin theo lúc tạo. useChatWs nâng index khi tin tới.
+      index: dayjs(room.last_message?.created_at || room.created_at).valueOf(),
       unreadCount: room.unread_count || 0,
       lastMessage: room.last_message
         ? {

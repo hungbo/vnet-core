@@ -100,8 +100,12 @@ func (s *ChatService) ListRooms(participantID string, participantType string, pa
 		return nil, 0, 0, 0, err
 	}
 
+	// Phòng có tin mới nhất đứng đầu; phòng chưa có tin xếp theo lúc tạo. Xếp
+	// theo lúc tạo phòng như trước thì khách cũ nhắn lại bị chìm xuống cuối, và
+	// quá một trang (20 phòng) là biến khỏi khung chat của quầy.
 	var rooms []model.ChatRoom
-	if err := pagination.Apply(query.Order("created_at DESC"), &params).Find(&rooms).Error; err != nil {
+	moiNhat := "COALESCE((SELECT MAX(m.created_at) FROM chat_messages m WHERE m.room_id = chat_rooms.id), chat_rooms.created_at) DESC"
+	if err := pagination.Apply(query.Order(moiNhat), &params).Find(&rooms).Error; err != nil {
 		return nil, 0, 0, 0, err
 	}
 

@@ -847,6 +847,27 @@ declare namespace App {
             notificationSent: string;
             notificationError: string;
           };
+          bulk: {
+            selected: string;
+            notifyOnline: string;
+            notifyOnlineAll: string;
+            message: string;
+            restart: string;
+            shutdown: string;
+            wake: string;
+            setGroup: string;
+            clear: string;
+            messageTitle: string;
+            confirmPower: string;
+            inUseWarn: string;
+            wakeConfirm: string;
+            done: string;
+            offlineList: string;
+            alreadyOnList: string;
+            failedList: string;
+            setGroupTitle: string;
+            groupDone: string;
+          };
           asset: {
             name: string;
             type: string;

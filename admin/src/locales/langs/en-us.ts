@@ -1103,6 +1103,27 @@ const local: App.I18n.Schema = {
         messagePrompt: 'Notice to show on the machine screen (the customer cannot reply):',
         messageRequired: 'Enter the notice'
       },
+      bulk: {
+        selected: '{n} machines selected',
+        notifyOnline: 'Notify all running machines ({n})',
+        notifyOnlineAll: 'Notify all running machines',
+        message: 'Notify',
+        restart: 'Restart',
+        shutdown: 'Shut down',
+        wake: 'Power on',
+        setGroup: 'Set group',
+        clear: 'Clear selection',
+        messageTitle: 'Notify {n} machines',
+        confirmPower: '{action} {n} machines: {codes}?',
+        inUseWarn: '{n} machines have a customer playing: their sessions end and are charged now.',
+        wakeConfirm: 'Send power-on to {n} machines: {codes}? Wake-on-LAN must be enabled in BIOS and on the network card.',
+        done: 'Sent to {ok}/{total} machines',
+        offlineList: 'Not connected: {codes}',
+        alreadyOnList: 'Already on: {codes}',
+        failedList: 'Errors: {list}',
+        setGroupTitle: 'Set group for {n} machines',
+        groupDone: 'Group set on {ok}/{total} machines'
+      },
       asset: {
         name: 'Name',
         type: 'Type',

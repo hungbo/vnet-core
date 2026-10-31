@@ -17,6 +17,8 @@ import MachineRemoteActions from './modules/machine-remote-actions.vue';
 import MachineNoteCell from './modules/machine-note-cell.vue';
 import MachineOpenOrdersTag from './modules/machine-open-orders-tag.vue';
 import { OPEN_ORDERS_ROW_CLASS, fetchOpenOrders } from './modules/machine-open-orders';
+import MachineBatchActions from './modules/machine-batch-actions.vue';
+import { fetchAllMachines } from './modules/all-machines';
 
 const { t: $t } = useI18n();
 const { hasAuth } = useAuth();
@@ -176,6 +178,11 @@ const { columns, columnChecks, data, getData, loading, mobilePagination, onSortC
   },
   transform: vnetTransform,
   columns: () => [
+    // Tích nhiều máy cho lệnh hàng loạt và gán nhóm. reserve-selection giữ ô đã
+    // tích khi bảng tải lại theo thời gian thực hay sang trang khác (khoá theo id).
+    ...(hasAuth('machines.remote') || hasAuth('machines.update')
+      ? [{ prop: 'selection', type: 'selection', width: 48, reserveSelection: true }]
+      : []),
     {
       prop: 'machine_code',
       label: $t('vnetPages.machines.code'),
@@ -292,6 +299,57 @@ const { columns, columnChecks, data, getData, loading, mobilePagination, onSortC
 });
 
 function searchData() {
+  getData();
+}
+
+// --- Lệnh và gán nhóm cho nhiều máy -------------------------------------------
+const tableRef = ref<any>(null);
+const selectedRows = ref<any[]>([]);
+const selectedMachines = computed(() =>
+  selectedRows.value.map((r: any) => ({ id: r.id, machine_code: r.machine_code, status: r.status }))
+);
+
+function clearSelection() {
+  tableRef.value?.clearSelection();
+}
+
+// Bảng chỉ giữ một trang, nên "mọi máy đang bật" phải tải đủ danh sách lúc bấm.
+async function loadOnlineMachines() {
+  const all = await fetchAllMachines();
+  return (all?.items || [])
+    .filter((m: any) => m.status && m.status !== 'offline')
+    .map((m: any) => ({ id: m.id, machine_code: m.machine_code, status: m.status }));
+}
+
+// Máy mới cài chưa có nhóm thì khách không đăng nhập được và phiên tính 0₫/giờ;
+// quán vài chục máy mà mở Sửa từng máy để chọn nhóm thì rất lâu. Mỗi máy đi qua
+// PUT /machines/:id như hộp Sửa, chỉ gửi group_id.
+const groupVisible = ref(false);
+const groupSaving = ref(false);
+const groupTarget = ref<string | null>(null);
+
+function openBatchGroup() {
+  groupTarget.value = null;
+  groupVisible.value = true;
+}
+
+async function submitBatchGroup() {
+  if (!groupTarget.value) return;
+  const list = selectedMachines.value;
+  groupSaving.value = true;
+  const kq = await Promise.allSettled(list.map(m => client.put(`/machines/${m.id}`, { group_id: groupTarget.value })));
+  groupSaving.value = false;
+  const loi = kq
+    .map((r, i) => (r.status === 'rejected' ? `${list[i].machine_code}: ${(r.reason as any)?.message || ''}` : ''))
+    .filter(Boolean);
+  const tom = $t('vnetPages.machines.bulk.groupDone', { ok: list.length - loi.length, total: list.length });
+  if (loi.length) {
+    ElMessageBox.alert(loi.join('\n'), tom, { type: 'warning', customStyle: { whiteSpace: 'pre-line' } });
+  } else {
+    ElNotification({ type: 'success', title: $t('vnetPages.common.success'), message: tom });
+  }
+  groupVisible.value = false;
+  clearSelection();
   getData();
 }
 
@@ -512,6 +570,17 @@ onBeforeUnmount(() => {
           <ElCheckbox v-model="onlyWarnings" style="margin-left: 8px" @change="searchData">
             {{ $t('vnetPages.machines.onlyWarnings') }}
           </ElCheckbox>
+          <MachineBatchActions
+            :selected="selectedMachines"
+            :online="loadOnlineMachines"
+            wake
+            @clear="clearSelection"
+            @done="clearSelection"
+          >
+            <ElButton v-if="hasAuth('machines.update')" size="small" @click="openBatchGroup">
+              {{ $t('vnetPages.machines.bulk.setGroup') }}
+            </ElButton>
+          </MachineBatchActions>
         </div>
         <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
           <ElButton v-if="hasAuth('machines.create')" @click="openBatch">
@@ -531,6 +600,7 @@ onBeforeUnmount(() => {
       <!-- row-key: bảng tự tải lại theo thời gian thực; khoá theo vị trí thì hộp thoại
            điều khiển từ xa đang mở của một dòng nhảy sang máy khác khi thứ tự đổi. -->
       <ElTable
+        ref="tableRef"
         v-loading="loading"
         :data="data"
         row-key="id"
@@ -541,6 +611,7 @@ onBeforeUnmount(() => {
         height="100%"
         style="width: 100%"
         @sort-change="onSortChange"
+        @selection-change="(rows: any[]) => (selectedRows = rows)"
       >
         <ElTableColumn v-for="col in columns" :key="col.prop" v-bind="col" />
         <!--
@@ -729,6 +800,23 @@ onBeforeUnmount(() => {
         <ElButton @click="batchVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
         <ElButton type="primary" :loading="batchSubmitting" :disabled="!batchOK()" @click="submitBatch">
           {{ $t('vnetPages.machines.batch.submit') }}
+        </ElButton>
+      </template>
+    </ElDialog>
+
+    <ElDialog
+      v-model="groupVisible"
+      :title="$t('vnetPages.machines.bulk.setGroupTitle', { n: selectedMachines.length })"
+      width="420px"
+    >
+      <div class="mb-12px text-13px">{{ selectedMachines.map(m => m.machine_code).join(', ') }}</div>
+      <ElSelect v-model="groupTarget" filterable class="w-full" :placeholder="$t('vnetPages.machines.group')">
+        <ElOption v-for="g in groups" :key="g.id" :label="g.name" :value="g.id" />
+      </ElSelect>
+      <template #footer>
+        <ElButton @click="groupVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
+        <ElButton type="primary" :loading="groupSaving" :disabled="!groupTarget" @click="submitBatchGroup">
+          {{ $t('vnetPages.common.save') }}
         </ElButton>
       </template>
     </ElDialog>
