@@ -150,6 +150,10 @@ html .el-collapse {
   .cell {
     padding: 0;
   }
+  // Tiêu đề cột một dòng; độ rộng cột tự nới cho vừa (plugins/ui.ts).
+  th.el-table__cell > .cell {
+    white-space: nowrap;
+  }
 }
 
 .el-tabs {

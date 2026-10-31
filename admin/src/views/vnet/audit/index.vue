@@ -201,7 +201,7 @@ function fetchData() {
               <ElDatePicker
                 v-model="dateRange"
                 type="daterange"
-                range-separator="->"
+                range-separator="→"
                 :start-placeholder="$t('vnetPages.audit.from')"
                 :end-placeholder="$t('vnetPages.audit.to')"
                 value-format="YYYY-MM-DD"

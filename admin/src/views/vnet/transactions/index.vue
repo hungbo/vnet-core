@@ -99,7 +99,7 @@ useRealtimeRefresh(
             <ElDatePicker
               v-model="dateRange"
               type="daterange"
-              range-separator="->"
+              range-separator="→"
               :start-placeholder="$t('vnetPages.transactions.from')"
               :end-placeholder="$t('vnetPages.transactions.to')"
               value-format="YYYY-MM-DD"

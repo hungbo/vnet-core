@@ -750,7 +750,7 @@ watch(
               <ElDatePicker
                 v-model="dateRange"
                 type="daterange"
-                range-separator="->"
+                range-separator="→"
                 :start-placeholder="$t('vnetPages.reports.from')"
                 :end-placeholder="$t('vnetPages.reports.to')"
                 value-format="YYYY-MM-DD"
