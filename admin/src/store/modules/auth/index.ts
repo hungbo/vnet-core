@@ -25,6 +25,11 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
 
   /** Vé của bước nhập mã 2 bước; rỗng là đang ở bước mật khẩu. */
   const totpChallenge = ref('');
+  /** Quán bắt buộc 2 bước mà tài khoản chưa cài: mã QR để quét ngay ở trang đăng nhập. */
+  const totpSetup = ref<Api.Auth.TwoFactorSetup | null>(null);
+  /** Vừa cài xong lúc đăng nhập: mã dự phòng hiện trước, bấm "Đã lưu mã" mới vào trong. */
+  const recoveryCodes = ref<string[]>([]);
+  let pendingLogin: { token: Api.Auth.LoginToken; redirect: boolean } | null = null;
 
   const userInfo: Api.Auth.UserInfo = reactive({
     id: '',
@@ -106,9 +111,11 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     const { data: loginToken, error } = await fetchLogin(userName, password);
 
     if (!error) {
-      // Tài khoản bật xác thực 2 bước: trang đăng nhập chuyển sang ô nhập mã.
-      if (loginToken.need_totp && loginToken.challenge) {
+      // Tài khoản bật xác thực 2 bước (hoặc quán bắt buộc mà chưa cài): trang đăng nhập
+      // chuyển sang ô nhập mã, kèm mã QR nếu chưa cài.
+      if ((loginToken.need_totp || loginToken.need_setup) && loginToken.challenge) {
         totpChallenge.value = loginToken.challenge;
+        totpSetup.value = loginToken.need_setup ? (loginToken.setup ?? null) : null;
       } else {
         await finishLogin(loginToken, redirect);
       }
@@ -126,14 +133,28 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
 
     if (!error) {
       totpChallenge.value = '';
-      await finishLogin(loginToken, redirect);
+      totpSetup.value = null;
+      if (loginToken.recovery_codes?.length) {
+        recoveryCodes.value = loginToken.recovery_codes;
+        pendingLogin = { token: loginToken, redirect };
+      } else {
+        await finishLogin(loginToken, redirect);
+      }
     }
 
     endLoading();
   }
 
+  async function confirmRecovery() {
+    const p = pendingLogin;
+    pendingLogin = null;
+    recoveryCodes.value = [];
+    if (p) await finishLogin(p.token, p.redirect);
+  }
+
   function cancelTotp() {
     totpChallenge.value = '';
+    totpSetup.value = null;
   }
 
   async function finishLogin(loginToken: Api.Auth.LoginToken, redirect: boolean) {
@@ -217,7 +238,10 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     resetStore,
     login,
     totpChallenge,
+    totpSetup,
+    recoveryCodes,
     loginTotp,
+    confirmRecovery,
     cancelTotp,
     initUserInfo,
     refreshPermissions

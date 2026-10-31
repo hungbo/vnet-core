@@ -25,8 +25,6 @@ func TestAuthHandler_Login_MatKhauDungConBuocMaThiKhongXoaBoChan(t *testing.T) {
 		sqlmock.NewRows([]string{"id", "username", "password_hash", "is_active", "totp_secret", "totp_enabled_at"}).
 			AddRow("u1", "admin", hash, true, "JBSWY3DPEHPK3PXP", time.Now()))
 	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
-	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs(service.FeaturesGroup).
-		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}).AddRow(service.FeaturesGroup, service.TwoFactorFeatureKey, `"true"`))
 
 	// Các lượt sai mã trước đó đã đẩy bộ chặn tới sát ngưỡng.
 	key := loginKey("admin", "192.0.2.10")
@@ -40,4 +38,35 @@ func TestAuthHandler_Login_MatKhauDungConBuocMaThiKhongXoaBoChan(t *testing.T) {
 
 	_, ok := handler.throttle.begin(key)
 	assert.False(t, ok, "lượt mật khẩu đúng nhưng chưa qua mã vẫn phải tính, không xoá bộ chặn")
+}
+
+// Quán bắt buộc 2 bước, tài khoản chưa cài: mật khẩu đúng chỉ mới tới bước quét QR,
+// bộ chặn cũng phải giữ nguyên như trên.
+func TestAuthHandler_Login_MatKhauDungConBuocCaiThiKhongXoaBoChan(t *testing.T) {
+	db, mock := newTestDB(t)
+	handler, _ := setupAuthHandler(db)
+	router := newLoginRouter(handler)
+
+	hash, _ := utils.HashPassword("matkhau-dung")
+	mock.ExpectQuery(usersQuery).WithArgs("admin", 1).WillReturnRows(
+		sqlmock.NewRows([]string{"id", "username", "password_hash", "is_active"}).AddRow("u1", "admin", hash, true))
+	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs(service.FeaturesGroup).
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}).AddRow(service.FeaturesGroup, service.TwoFactorRequiredKey, `"true"`))
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "totp_pending"`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	key := loginKey("admin", "192.0.2.11")
+	for i := 0; i < loginMaxAttempts-1; i++ {
+		handler.throttle.begin(key)
+	}
+
+	w := postAs(router, "/api/auth/login", "192.0.2.11:5555", `{"username":"admin","password":"matkhau-dung"}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"need_setup":true`)
+
+	_, ok := handler.throttle.begin(key)
+	assert.False(t, ok, "mật khẩu đúng nhưng chưa quét QR xong vẫn phải tính, không xoá bộ chặn")
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

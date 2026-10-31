@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Tự bật / tắt xác thực 2 bước cho tài khoản đang đăng nhập (mở từ menu tài khoản).
 // Bật: tạo mã QR → quét bằng ứng dụng xác thực → gõ mã 6 số để xác nhận → hiện 10
-// mã dự phòng đúng một lần. Tắt: gõ lại mật khẩu.
+// mã dự phòng đúng một lần. Tắt: gõ lại mật khẩu — trừ khi quán bắt buộc 2 bước.
 import { ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import dayjs from 'dayjs';
@@ -105,29 +105,21 @@ async function closeRecovery() {
             })
           }}
         </p>
-        <ElAlert
-          v-if="!status.feature_enabled"
-          class="mb-12px"
-          type="info"
-          :closable="false"
-          :title="$t('common.twoFactor.featureOffKept')"
-        />
-        <ElInput
-          v-model="password"
-          type="password"
-          show-password
-          :placeholder="$t('common.twoFactor.disablePassword')"
-          @keyup.enter="disable"
-        />
-        <div class="mt-12px flex justify-end">
-          <ElButton type="danger" plain :disabled="!password" @click="disable">
-            {{ $t('common.twoFactor.disable') }}
-          </ElButton>
-        </div>
-      </template>
-
-      <template v-else-if="status && !status.feature_enabled">
-        <ElAlert type="info" :closable="false" show-icon :title="$t('common.twoFactor.featureOff')" />
+        <ElAlert v-if="status.required" type="info" :closable="false" :title="$t('common.twoFactor.required')" />
+        <template v-else>
+          <ElInput
+            v-model="password"
+            type="password"
+            show-password
+            :placeholder="$t('common.twoFactor.disablePassword')"
+            @keyup.enter="disable"
+          />
+          <div class="mt-12px flex justify-end">
+            <ElButton type="danger" plain :disabled="!password" @click="disable">
+              {{ $t('common.twoFactor.disable') }}
+            </ElButton>
+          </div>
+        </template>
       </template>
 
       <template v-else-if="setup">

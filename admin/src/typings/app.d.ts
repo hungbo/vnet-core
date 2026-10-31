@@ -337,8 +337,8 @@ declare namespace App {
           title: string;
           codePlaceholder: string;
           loginTip: string;
-          featureOff: string;
-          featureOffKept: string;
+          setupLoginTip: string;
+          required: string;
           enabledSince: string;
           disabledTip: string;
           start: string;
@@ -1367,7 +1367,7 @@ declare namespace App {
           featuresHint: string;
           attendanceEnabled: string;
           feedbackEnabled: string;
-          twoFactorEnabled: string;
+          twoFactorRequired: string;
           twoFactorHint: string;
           title: string;
           general: string;

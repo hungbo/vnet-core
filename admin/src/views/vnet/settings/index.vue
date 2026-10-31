@@ -179,8 +179,8 @@ function applyFeatureDefaults() {
     if (settings[k] !== 'true' && settings[k] !== 'false') settings[k] = 'true';
   });
   // Xác thực 2 bước thì ngược lại: backend mặc định TẮT.
-  if (settings.two_factor_enabled !== 'true' && settings.two_factor_enabled !== 'false') {
-    settings.two_factor_enabled = 'false';
+  if (settings.two_factor_required !== 'true' && settings.two_factor_required !== 'false') {
+    settings.two_factor_required = 'false';
   }
 }
 
@@ -517,13 +517,13 @@ onMounted(() => {
                 @update:model-value="(v: any) => (settings.feedback_enabled = v)"
               />
             </ElFormItem>
-            <ElFormItem :label="$t('vnetPages.settings.twoFactorEnabled')">
+            <ElFormItem :label="$t('vnetPages.settings.twoFactorRequired')">
               <div>
                 <ElSwitch
-                  :model-value="settings.two_factor_enabled ?? 'false'"
+                  :model-value="settings.two_factor_required ?? 'false'"
                   active-value="true"
                   inactive-value="false"
-                  @update:model-value="(v: any) => (settings.two_factor_enabled = v)"
+                  @update:model-value="(v: any) => (settings.two_factor_required = v)"
                 />
                 <div class="text-12px text-gray-500 leading-18px">{{ $t('vnetPages.settings.twoFactorHint') }}</div>
               </div>

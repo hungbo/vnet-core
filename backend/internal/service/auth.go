@@ -76,6 +76,11 @@ type LoginResponse struct {
 	// nào, giao diện hỏi mã rồi gửi kèm Challenge tới /auth/login/totp.
 	NeedTOTP  bool   `json:"need_totp,omitempty"`
 	Challenge string `json:"challenge,omitempty"`
+	// NeedSetup: quán bắt buộc 2 bước mà tài khoản chưa cài — Setup là mã QR để quét,
+	// mã đúng gửi tới /auth/login/totp là cài xong, kèm RecoveryCodes (chỉ lần này).
+	NeedSetup     bool                    `json:"need_setup,omitempty"`
+	Setup         *TwoFactorSetupResponse `json:"setup,omitempty"`
+	RecoveryCodes []string                `json:"recovery_codes,omitempty"`
 }
 
 type UserResponse struct {
@@ -96,6 +101,12 @@ type UserResponse struct {
 }
 
 func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
+	return s.login(req, true)
+}
+
+// login kiểm mật khẩu nhân viên. web false là máy trạm: không có bước nhập mã, nên
+// nhân viên phải qua 2 bước bị chặn luôn, không sinh mã QR.
+func (s *AuthService) login(req *LoginRequest, web bool) (*LoginResponse, error) {
 	var user model.User
 	if err := s.db.Where("username = ?", req.Username).Preload("Roles").Preload("Roles.Permissions").First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -117,15 +128,25 @@ func (s *AuthService) Login(req *LoginRequest) (*LoginResponse, error) {
 	if !utils.CheckPassword(req.Password, user.PasswordHash) {
 		return nil, khoa.sauKhiSai(s.db, now)
 	}
-	// Tài khoản bật xác thực 2 bước: chưa cấp phiên, chỉ trả vé để hỏi mã. Bộ đếm sai
-	// cũng chưa xoá — LoginTOTP xoá khi mã đúng; xoá ở đây thì sai mã rồi gõ lại mật khẩu
-	// là bộ đếm về 0, dò được mã 6 số mãi.
-	if s.canMaHaiBuoc(&user) {
+	// Tài khoản bật 2 bước, hoặc quán bắt buộc mà tài khoản chưa cài: chưa cấp phiên,
+	// chỉ trả vé để hỏi mã (kèm mã QR nếu chưa cài). Bộ đếm sai cũng chưa xoá —
+	// LoginTOTP xoá khi mã đúng; xoá ở đây thì sai mã rồi gõ lại mật khẩu là bộ đếm về
+	// 0, dò được mã 6 số mãi.
+	if daBat := daBatHaiBuoc(&user); daBat || twoFactorRequired(s.db) {
+		if !web {
+			return nil, ErrTwoFactorWebOnly
+		}
 		challenge, err := s.jwtManager.GenerateTwoFactorToken(user.ID, twoFactorChallengeTTL)
 		if err != nil {
 			return nil, err
 		}
-		return &LoginResponse{NeedTOTP: true, Challenge: challenge}, nil
+		res := &LoginResponse{NeedTOTP: daBat, NeedSetup: !daBat, Challenge: challenge}
+		if !daBat {
+			if res.Setup, err = s.taoKhoaCho(&user); err != nil {
+				return nil, err
+			}
+		}
+		return res, nil
 	}
 	khoa.sauKhiDung(s.db)
 	// Mật khẩu vừa gõ đã khớp băm, nên so thẳng chuỗi là đủ — không tốn thêm một
@@ -282,13 +303,9 @@ func (s *AuthService) ClientLogin(req *MemberLoginRequest) (*ClientLoginResponse
 	err := s.db.Where("username = ?", req.Username).First(&user).Error
 
 	if err == nil {
-		res, err := s.Login(&LoginRequest{Username: req.Username, Password: req.Password})
+		res, err := s.login(&LoginRequest{Username: req.Username, Password: req.Password}, false)
 		if err != nil {
 			return nil, err
-		}
-		// Máy trạm không có bước nhập mã: tài khoản bật 2 bước chỉ vào trang quản trị.
-		if res.NeedTOTP {
-			return nil, ErrTwoFactorWebOnly
 		}
 		return &ClientLoginResponse{
 			MemberLoginResponse: &MemberLoginResponse{
@@ -514,6 +531,11 @@ func (s *AuthService) RefreshToken(req *RefreshRequest) (*LoginResponse, error) 
 	// vẫn đang dùng nó.
 	if at := user.PasswordChangedAt; at != nil && (claims.IssuedAt == nil || !claims.IssuedAt.Time.After(at.Truncate(time.Second))) {
 		return nil, errors.New("phiên đăng nhập đã hết hạn, hãy đăng nhập lại")
+	}
+	// Chủ quán vừa bắt buộc 2 bước: phiên của người chưa cài không được làm mới, đăng
+	// nhập lại là phải quét QR. Không có chốt này, refresh token giữ phiên thêm 7 ngày.
+	if !daBatHaiBuoc(&user) && twoFactorRequired(s.db) {
+		return nil, errors.New("quán bắt buộc xác thực 2 bước — đăng nhập lại để cài")
 	}
 
 	var permissions []string

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import { ElMessage } from 'element-plus';
 import { useAuthStore } from '@/store/modules/auth';
 import { useForm, useFormRules } from '@/hooks/common/form';
 import { $t } from '@/locales';
@@ -36,6 +37,8 @@ async function handleSubmit() {
 }
 
 // Bước 2 khi tài khoản bật xác thực 2 bước: mã 6 số, hoặc một mã dự phòng "abcd-efgh".
+// Quán bắt buộc mà tài khoản chưa cài thì quét QR trước, mã đúng là cài xong và hiện
+// 10 mã dự phòng trước khi vào trong.
 const code = ref('');
 const codeInput = ref<{ focus: () => void } | null>(null);
 
@@ -54,11 +57,49 @@ async function handleCode() {
   if (!code.value.trim()) return;
   await authStore.loginTotp(code.value.trim());
 }
+
+async function copyRecovery() {
+  try {
+    await navigator.clipboard.writeText(authStore.recoveryCodes.join('\n'));
+    ElMessage.success($t('common.twoFactor.copied'));
+  } catch {
+    // Trang mở qua http (IP trong quán) thì trình duyệt không cho chép: người dùng tự bôi đen.
+  }
+}
 </script>
 
 <template>
-  <div v-if="authStore.totpChallenge">
-    <p class="mb-16px text-14px text-gray-500">{{ $t('common.twoFactor.loginTip') }}</p>
+  <div v-if="authStore.recoveryCodes.length">
+    <ElAlert type="warning" :closable="false" show-icon :title="$t('common.twoFactor.recoveryTip')" />
+    <div class="grid grid-cols-2 my-16px gap-8px text-15px font-mono">
+      <span v-for="c in authStore.recoveryCodes" :key="c">{{ c }}</span>
+    </div>
+    <ElSpace direction="vertical" :size="16" class="w-full" fill>
+      <ElButton
+        type="primary"
+        size="large"
+        round
+        block
+        :loading="authStore.loginLoading"
+        @click="authStore.confirmRecovery()"
+      >
+        {{ $t('common.twoFactor.saved') }}
+      </ElButton>
+      <ElButton size="large" round block @click="copyRecovery">{{ $t('common.twoFactor.copy') }}</ElButton>
+    </ElSpace>
+  </div>
+  <div v-else-if="authStore.totpChallenge">
+    <template v-if="authStore.totpSetup">
+      <p class="mb-12px text-14px text-gray-500">{{ $t('common.twoFactor.setupLoginTip') }}</p>
+      <div class="mb-16px flex flex-col items-center gap-8px">
+        <img :src="authStore.totpSetup.qr" alt="QR" width="180" height="180" />
+        <div class="text-13px">
+          {{ $t('common.twoFactor.secretLabel') }}:
+          <span class="select-all font-mono">{{ authStore.totpSetup.secret }}</span>
+        </div>
+      </div>
+    </template>
+    <p v-else class="mb-16px text-14px text-gray-500">{{ $t('common.twoFactor.loginTip') }}</p>
     <ElForm size="large" :show-label="false" @submit.prevent="handleCode">
       <ElFormItem>
         <ElInput
@@ -66,7 +107,7 @@ async function handleCode() {
           v-model="code"
           autocomplete="one-time-code"
           inputmode="numeric"
-          maxlength="9"
+          :maxlength="authStore.totpSetup ? 6 : 9"
           :placeholder="$t('common.twoFactor.codePlaceholder')"
         />
       </ElFormItem>

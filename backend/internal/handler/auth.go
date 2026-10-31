@@ -47,7 +47,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	// Mật khẩu đúng nhưng còn bước mã 2 bước: chưa xong, nên KHÔNG xoá bộ chặn — không thì
 	// sai mã vài lần rồi gõ lại mật khẩu là có lượt dò mã mới, dò được vô hạn. Nhật ký ghi ở
 	// LoginTOTP, khi biết kết quả cuối.
-	if err == nil && result.NeedTOTP {
+	if err == nil && (result.NeedTOTP || result.NeedSetup) {
 		response.Success(c, result)
 		return
 	}

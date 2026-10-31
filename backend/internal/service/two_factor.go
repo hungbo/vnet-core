@@ -24,37 +24,37 @@ import (
 // Xác thực 2 bước cho tài khoản nhân viên: mã 6 số đổi mỗi 30 giây trên ứng dụng
 // xác thực (Google Authenticator, Authy…), theo chuẩn TOTP.
 //
-// Chủ quán bật TÍNH NĂNG ở Cài đặt > Tính năng (two_factor_enabled, mặc định tắt);
-// từng nhân viên tự bật cho tài khoản mình ở menu tài khoản. Tắt tính năng thì
-// không ai bị hỏi mã nữa, nhưng khoá đã cài vẫn giữ: bật lại là có hiệu lực ngay.
+// Từng nhân viên tự bật hoặc tắt cho tài khoản mình ở menu tài khoản. Chủ quán bật
+// "Bắt buộc xác thực 2 bước" ở Cài đặt > Tính năng (two_factor_required, mặc định
+// tắt) thì ai chưa cài phải quét QR ngay ở lần đăng nhập tới, và không ai tự tắt được.
 //
-// Chỉ trang quản trị hỏi mã. Máy trạm không có bước đó, nên tài khoản đã bật bị
-// chặn ở máy trạm (ClientLogin) — không thì token máy trạm là lối vòng qua 2 bước.
+// Chỉ trang quản trị hỏi mã. Máy trạm không có bước đó, nên nhân viên phải qua 2
+// bước bị chặn ở máy trạm (ClientLogin) — không thì token máy trạm là lối vòng.
 
 const (
-	TwoFactorFeatureKey    = "two_factor_enabled"
+	TwoFactorRequiredKey   = "two_factor_required"
 	twoFactorChallengeTTL  = 5 * time.Minute
 	twoFactorIssuer        = "VNET"
 	twoFactorRecoveryCount = 10
 )
 
 var (
-	ErrTwoFactorOff     = errors.New("chủ quán chưa bật xác thực 2 bước (Cài đặt > Tính năng)")
-	ErrBadTOTP          = errors.New("mã xác thực không đúng hoặc đã dùng")
-	ErrTwoFactorWebOnly = errors.New("tài khoản bật xác thực 2 bước chỉ đăng nhập ở trang quản trị, không đăng nhập ở máy trạm")
-	errTwoFactorExpired = errors.New("phiên nhập mã đã hết hạn — đăng nhập lại")
+	ErrTwoFactorRequired = errors.New("quán đang bắt buộc xác thực 2 bước — không tắt được")
+	ErrBadTOTP           = errors.New("mã xác thực không đúng hoặc đã dùng")
+	ErrTwoFactorWebOnly  = errors.New("tài khoản phải xác thực 2 bước nên chỉ đăng nhập ở trang quản trị, không đăng nhập ở máy trạm")
+	errTwoFactorExpired  = errors.New("phiên nhập mã đã hết hạn — đăng nhập lại")
 )
 
 var totpOpts = totp.ValidateOpts{Period: 30, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}
 
-func twoFactorOn(db *gorm.DB) bool {
-	return settingBool(settingsGroup(db, FeaturesGroup), TwoFactorFeatureKey, false)
+// twoFactorRequired: chủ quán bắt buộc mọi nhân viên có 2 bước.
+func twoFactorRequired(db *gorm.DB) bool {
+	return settingBool(settingsGroup(db, FeaturesGroup), TwoFactorRequiredKey, false)
 }
 
-// canMaHaiBuoc: lần đăng nhập này phải qua bước nhập mã. Xét khoá của tài khoản
-// trước: tài khoản chưa bật thì không tốn truy vấn cài đặt nào.
-func (s *AuthService) canMaHaiBuoc(u *model.User) bool {
-	return u.TOTPEnabledAt != nil && u.TOTPSecret != "" && twoFactorOn(s.db)
+// daBatHaiBuoc: tài khoản đã cài 2 bước, đăng nhập phải qua bước nhập mã.
+func daBatHaiBuoc(u *model.User) bool {
+	return u.TOTPEnabledAt != nil && u.TOTPSecret != ""
 }
 
 // khoaCuaNhanVien dựng trạng thái khoá đăng nhập (login_lock.go) của một nhân viên
@@ -188,30 +188,53 @@ func (s *AuthService) LoginTOTP(req *LoginTOTPRequest) (*LoginResponse, error) {
 	if !user.IsActive {
 		return nil, errors.New("tài khoản đã bị khoá — liên hệ quản lý")
 	}
-	// Tính năng vừa bị tắt, hay quản lý vừa gỡ 2 bước của tài khoản, trong lúc đang
-	// nhập mã: không còn gì để hỏi.
-	if s.canMaHaiBuoc(&user) {
+	var recovery []string
+	switch {
+	case daBatHaiBuoc(&user):
 		ok, err := s.dungMa(&user, req.Code, now)
 		if err != nil {
 			return nil, err
 		}
 		if !ok {
-			if err := khoa.sauKhiSai(s.db, now); !errors.Is(err, ErrBadCredentials) {
-				return nil, err
-			}
-			return nil, ErrBadTOTP
+			return nil, saiMa(khoa, s.db, now)
 		}
-		khoa.sauKhiDung(s.db)
+	case user.TOTPPending != "":
+		// Quán bắt buộc 2 bước mà tài khoản chưa cài: Login vừa trả mã QR, mã đúng là cài xong.
+		codes, err := s.batHaiBuoc(&user, req.Code, now)
+		if errors.Is(err, ErrBadTOTP) {
+			return nil, saiMa(khoa, s.db, now)
+		}
+		if err != nil {
+			return nil, err
+		}
+		recovery = codes
+	default:
+		// Quản lý vừa gỡ 2 bước của tài khoản trong lúc đang nhập mã.
+		return nil, errTwoFactorExpired
 	}
-	return s.capPhienNhanVien(&user, utils.CheckPassword(DefaultSeedPassword, user.PasswordHash))
+	khoa.sauKhiDung(s.db)
+	res, err := s.capPhienNhanVien(&user, utils.CheckPassword(DefaultSeedPassword, user.PasswordHash))
+	if err != nil {
+		return nil, err
+	}
+	res.RecoveryCodes = recovery
+	return res, nil
+}
+
+// saiMa tính một lượt sai mã vào bộ đếm khoá như sai mật khẩu.
+func saiMa(khoa khoaDangNhap, db *gorm.DB, now time.Time) error {
+	if err := khoa.sauKhiSai(db, now); !errors.Is(err, ErrBadCredentials) {
+		return err
+	}
+	return ErrBadTOTP
 }
 
 type TwoFactorStatus struct {
-	// FeatureEnabled: chủ quán đã bật tính năng ở Cài đặt > Tính năng.
-	FeatureEnabled bool       `json:"feature_enabled"`
-	Enabled        bool       `json:"enabled"`
-	EnabledAt      *time.Time `json:"enabled_at,omitempty"`
-	RecoveryLeft   int        `json:"recovery_left"`
+	// Required: chủ quán bắt buộc 2 bước — không tự tắt được.
+	Required     bool       `json:"required"`
+	Enabled      bool       `json:"enabled"`
+	EnabledAt    *time.Time `json:"enabled_at,omitempty"`
+	RecoveryLeft int        `json:"recovery_left"`
 }
 
 func (s *AuthService) TwoFactorStatus(userID string) (*TwoFactorStatus, error) {
@@ -220,10 +243,10 @@ func (s *AuthService) TwoFactorStatus(userID string) (*TwoFactorStatus, error) {
 		return nil, err
 	}
 	return &TwoFactorStatus{
-		FeatureEnabled: twoFactorOn(s.db),
-		Enabled:        user.TOTPEnabledAt != nil,
-		EnabledAt:      user.TOTPEnabledAt,
-		RecoveryLeft:   demMaDuPhong(user.TOTPRecovery),
+		Required:     twoFactorRequired(s.db),
+		Enabled:      user.TOTPEnabledAt != nil,
+		EnabledAt:    user.TOTPEnabledAt,
+		RecoveryLeft: demMaDuPhong(user.TOTPRecovery),
 	}, nil
 }
 
@@ -237,9 +260,6 @@ type TwoFactorSetupResponse struct {
 // TwoFactorSetup tạo khoá mới cho người đang đăng nhập và giữ ở TOTPPending: chưa
 // có hiệu lực cho tới khi TwoFactorEnable nhận đúng một mã sinh từ khoá này.
 func (s *AuthService) TwoFactorSetup(userID string) (*TwoFactorSetupResponse, error) {
-	if !twoFactorOn(s.db) {
-		return nil, ErrTwoFactorOff
-	}
 	var user model.User
 	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		return nil, err
@@ -247,6 +267,11 @@ func (s *AuthService) TwoFactorSetup(userID string) (*TwoFactorSetupResponse, er
 	if user.TOTPEnabledAt != nil {
 		return nil, errors.New("tài khoản đã bật xác thực 2 bước — tắt trước rồi cài lại")
 	}
+	return s.taoKhoaCho(&user)
+}
+
+// taoKhoaCho sinh khoá mới, ghi vào TOTPPending và trả mã QR để quét.
+func (s *AuthService) taoKhoaCho(user *model.User) (*TwoFactorSetupResponse, error) {
 	key, err := totp.Generate(totp.GenerateOpts{Issuer: twoFactorIssuer, AccountName: user.Username})
 	if err != nil {
 		return nil, err
@@ -272,9 +297,6 @@ func (s *AuthService) TwoFactorSetup(userID string) (*TwoFactorSetupResponse, er
 // TwoFactorEnable xác nhận khoá đang chờ bằng một mã từ ứng dụng, bật 2 bước và
 // trả các mã dự phòng (chỉ lần này).
 func (s *AuthService) TwoFactorEnable(userID, code string) ([]string, error) {
-	if !twoFactorOn(s.db) {
-		return nil, ErrTwoFactorOff
-	}
 	var user model.User
 	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		return nil, err
@@ -282,7 +304,12 @@ func (s *AuthService) TwoFactorEnable(userID, code string) ([]string, error) {
 	if user.TOTPPending == "" {
 		return nil, errors.New("chưa tạo mã QR — mở lại hộp Xác thực 2 bước")
 	}
-	step := kiemMaTOTP(user.TOTPPending, code, time.Now())
+	return s.batHaiBuoc(&user, code, time.Now())
+}
+
+// batHaiBuoc nhận khoá đang chờ (TOTPPending) khi mã khớp, bật 2 bước và trả mã dự phòng.
+func (s *AuthService) batHaiBuoc(user *model.User, code string, now time.Time) ([]string, error) {
+	step := kiemMaTOTP(user.TOTPPending, code, now)
 	if step < 0 {
 		return nil, ErrBadTOTP
 	}
@@ -293,7 +320,7 @@ func (s *AuthService) TwoFactorEnable(userID, code string) ([]string, error) {
 	if err := s.db.Model(&model.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{
 		"totp_secret":     user.TOTPPending,
 		"totp_pending":    "",
-		"totp_enabled_at": time.Now(),
+		"totp_enabled_at": now,
 		"totp_last_step":  step,
 		"totp_recovery":   hashes,
 	}).Error; err != nil {
@@ -305,6 +332,9 @@ func (s *AuthService) TwoFactorEnable(userID, code string) ([]string, error) {
 
 // TwoFactorDisable: người dùng tự tắt, phải gõ lại mật khẩu.
 func (s *AuthService) TwoFactorDisable(userID, password string) error {
+	if twoFactorRequired(s.db) {
+		return ErrTwoFactorRequired
+	}
 	var user model.User
 	if err := s.db.Where("id = ?", userID).First(&user).Error; err != nil {
 		return err

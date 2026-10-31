@@ -7,11 +7,16 @@ declare namespace Api {
       /** Mật khẩu đúng nhưng tài khoản bật xác thực 2 bước: chưa có token, hỏi mã rồi gửi kèm challenge. */
       need_totp?: boolean;
       challenge?: string;
+      /** Quán bắt buộc 2 bước mà tài khoản chưa cài: quét `setup.qr`, gửi mã kèm challenge là cài xong. */
+      need_setup?: boolean;
+      setup?: TwoFactorSetup;
+      /** 10 mã dự phòng, chỉ có ở lần cài xong ngay lúc đăng nhập. */
+      recovery_codes?: string[];
     }
 
     interface TwoFactorStatus {
-      /** Chủ quán đã bật tính năng ở Cài đặt > Tính năng. */
-      feature_enabled: boolean;
+      /** Chủ quán bắt buộc 2 bước (Cài đặt > Tính năng): không tự tắt được. */
+      required: boolean;
       enabled: boolean;
       enabled_at?: string;
       recovery_left: number;

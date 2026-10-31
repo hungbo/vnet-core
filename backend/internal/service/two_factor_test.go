@@ -48,15 +48,22 @@ func dongNhanVienHaiBuoc(hash string) *sqlmock.Rows {
 		AddRow("u1", "quanly", hash, true, testTOTPSecret, time.Now(), 0)
 }
 
-func expectTinhNangHaiBuoc(mock sqlmock.Sqlmock, bat bool) {
+// dongNhanVienChuaCai: tài khoản chưa cài 2 bước; pending là khoá Login vừa trả mã QR (rỗng nếu chưa có).
+func dongNhanVienChuaCai(hash, pending string) *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"id", "username", "password_hash", "is_active", "totp_pending"}).
+		AddRow("u1", "quanly", hash, true, pending)
+}
+
+func expectBatBuocHaiBuoc(mock sqlmock.Sqlmock, bat bool) {
 	rows := sqlmock.NewRows([]string{"group_name", "key", "value"})
 	if bat {
-		rows.AddRow(FeaturesGroup, TwoFactorFeatureKey, `"true"`)
+		rows.AddRow(FeaturesGroup, TwoFactorRequiredKey, `"true"`)
 	}
 	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs(FeaturesGroup).WillReturnRows(rows)
 }
 
-// Mật khẩu đúng mà tài khoản bật 2 bước: chỉ có vé, CHƯA có token nào.
+// Mật khẩu đúng mà tài khoản bật 2 bước: chỉ có vé, CHƯA có token nào — dù quán
+// không bắt buộc (tài khoản đã bật thì không tốn truy vấn cài đặt).
 func TestAuthService_Login_HaiBuocChiTraVe(t *testing.T) {
 	db, mock := newMockDB(t)
 	jwtMgr := newTestJWT()
@@ -65,11 +72,11 @@ func TestAuthService_Login_HaiBuocChiTraVe(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).WithArgs("quanly", 1).WillReturnRows(dongNhanVienHaiBuoc(hash))
 	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
-	expectTinhNangHaiBuoc(mock, true)
 
 	res, err := svc.Login(&LoginRequest{Username: "quanly", Password: "password123"})
 	require.NoError(t, err)
 	assert.True(t, res.NeedTOTP)
+	assert.False(t, res.NeedSetup)
 	assert.Empty(t, res.AccessToken)
 	assert.Empty(t, res.RefreshToken)
 	assert.Nil(t, res.User)
@@ -81,20 +88,49 @@ func TestAuthService_Login_HaiBuocChiTraVe(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Chủ quán tắt tính năng: khoá đã cài vẫn giữ nhưng không ai bị hỏi mã.
-func TestAuthService_Login_TatTinhNangThiKhongHoiMa(t *testing.T) {
+// Quán không bắt buộc, tài khoản chưa cài: vào thẳng bằng mật khẩu.
+func TestAuthService_Login_KhongBatBuocChuaCaiThiVaoThang(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewAuthService(db, newTestJWT(), nil)
 	hash, _ := utils.HashPassword("password123")
 
-	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).WithArgs("quanly", 1).WillReturnRows(dongNhanVienHaiBuoc(hash))
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).WithArgs("quanly", 1).WillReturnRows(dongNhanVienChuaCai(hash, ""))
 	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
-	expectTinhNangHaiBuoc(mock, false)
+	expectBatBuocHaiBuoc(mock, false)
 
 	res, err := svc.Login(&LoginRequest{Username: "quanly", Password: "password123"})
 	require.NoError(t, err)
 	assert.False(t, res.NeedTOTP)
+	assert.False(t, res.NeedSetup)
 	assert.NotEmpty(t, res.AccessToken)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Quán bắt buộc mà tài khoản chưa cài: chưa có token, chỉ có vé + mã QR; khoá mới
+// nằm ở totp_pending chờ mã đầu tiên.
+func TestAuthService_Login_BatBuocChuaCaiThiTraMaQR(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), nil)
+	hash, _ := utils.HashPassword("password123")
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).WithArgs("quanly", 1).WillReturnRows(dongNhanVienChuaCai(hash, ""))
+	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
+	expectBatBuocHaiBuoc(mock, true)
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "totp_pending"=\$1 WHERE id = \$2`).WithArgs(sqlmock.AnyArg(), "u1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	res, err := svc.Login(&LoginRequest{Username: "quanly", Password: "password123"})
+	require.NoError(t, err)
+	assert.True(t, res.NeedSetup)
+	assert.False(t, res.NeedTOTP)
+	assert.NotEmpty(t, res.Challenge)
+	assert.Empty(t, res.AccessToken)
+	require.NotNil(t, res.Setup)
+	assert.NotEmpty(t, res.Setup.Secret)
+	assert.Contains(t, res.Setup.QR, "data:image/png;base64,")
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // Máy trạm không có bước nhập mã: tài khoản bật 2 bước bị chặn ở đó, không thì
@@ -107,7 +143,23 @@ func TestAuthService_ClientLogin_NhanVienHaiBuocBiChan(t *testing.T) {
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).WithArgs("quanly", 1).WillReturnRows(dongNhanVienHaiBuoc(hash))
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).WithArgs("quanly", 1).WillReturnRows(dongNhanVienHaiBuoc(hash))
 	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
-	expectTinhNangHaiBuoc(mock, true)
+
+	_, err := svc.ClientLogin(&MemberLoginRequest{Username: "quanly", Password: "password123", MachineCode: "PC-01"})
+	assert.ErrorIs(t, err, ErrTwoFactorWebOnly)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Quán bắt buộc: nhân viên chưa cài cũng bị chặn ở máy trạm, và không sinh mã QR nào
+// (máy trạm không quét được; ghi totp_pending sẽ đè lần cài dở trên web).
+func TestAuthService_ClientLogin_BatBuocThiChanCaNguoiChuaCai(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), nil)
+	hash, _ := utils.HashPassword("password123")
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).WithArgs("quanly", 1).WillReturnRows(dongNhanVienChuaCai(hash, ""))
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE username = \$1`).WithArgs("quanly", 1).WillReturnRows(dongNhanVienChuaCai(hash, ""))
+	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
+	expectBatBuocHaiBuoc(mock, true)
 
 	_, err := svc.ClientLogin(&MemberLoginRequest{Username: "quanly", Password: "password123", MachineCode: "PC-01"})
 	assert.ErrorIs(t, err, ErrTwoFactorWebOnly)
@@ -117,7 +169,6 @@ func TestAuthService_ClientLogin_NhanVienHaiBuocBiChan(t *testing.T) {
 func expectBuocHaiDocNhanVien(mock sqlmock.Sqlmock, hash string) {
 	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1`).WithArgs("u1", 1).WillReturnRows(dongNhanVienHaiBuoc(hash))
 	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
-	expectTinhNangHaiBuoc(mock, true)
 }
 
 func TestAuthService_LoginTOTP_MaDungThiCapPhien(t *testing.T) {
@@ -175,7 +226,6 @@ func TestAuthService_LoginTOTP_MaDuPhong(t *testing.T) {
 		sqlmock.NewRows([]string{"id", "username", "password_hash", "is_active", "totp_secret", "totp_enabled_at", "totp_recovery"}).
 			AddRow("u1", "quanly", hash, true, testTOTPSecret, time.Now(), stored))
 	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
-	expectTinhNangHaiBuoc(mock, true)
 	mock.ExpectBegin()
 	mock.ExpectExec(`UPDATE "users" SET "totp_recovery"=\$1 WHERE \(id = \$2 AND totp_recovery = \$3\)`).
 		WithArgs(bamMaDuPhong("aaaa-bbbb"), "u1", stored).
@@ -199,4 +249,73 @@ func TestAuthService_LoginTOTP_VeKhongHopLe(t *testing.T) {
 		_, err := svc.LoginTOTP(&LoginTOTPRequest{Challenge: ve, Code: "123456"})
 		assert.ErrorIs(t, err, errTwoFactorExpired)
 	}
+}
+
+// Cài ngay lúc đăng nhập (quán bắt buộc): mã đúng với khoá đang chờ là bật 2 bước,
+// có phiên và 10 mã dự phòng.
+func TestAuthService_LoginTOTP_CaiLanDauKhiBatBuoc(t *testing.T) {
+	db, mock := newMockDB(t)
+	jwtMgr := newTestJWT()
+	svc := NewAuthService(db, jwtMgr, nil)
+	hash, _ := utils.HashPassword("password123")
+	challenge, _ := jwtMgr.GenerateTwoFactorToken("u1", time.Minute)
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1`).WithArgs("u1", 1).WillReturnRows(dongNhanVienChuaCai(hash, testTOTPSecret))
+	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "users" SET "totp_enabled_at"=\$1,"totp_last_step"=\$2,"totp_pending"=\$3,"totp_recovery"=\$4,"totp_secret"=\$5,"updated_at"=\$6 WHERE id = \$7`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "", sqlmock.AnyArg(), testTOTPSecret, sqlmock.AnyArg(), "u1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	res, err := svc.LoginTOTP(&LoginTOTPRequest{Challenge: challenge, Code: maTaiLuc(t, time.Now())})
+	require.NoError(t, err)
+	assert.NotEmpty(t, res.AccessToken)
+	assert.Len(t, res.RecoveryCodes, twoFactorRecoveryCount)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Quản lý gỡ 2 bước trong lúc người kia đang nhập mã: không còn khoá nào để so, đăng nhập lại.
+func TestAuthService_LoginTOTP_KhongConKhoaThiDangNhapLai(t *testing.T) {
+	db, mock := newMockDB(t)
+	jwtMgr := newTestJWT()
+	svc := NewAuthService(db, jwtMgr, nil)
+	hash, _ := utils.HashPassword("password123")
+	challenge, _ := jwtMgr.GenerateTwoFactorToken("u1", time.Minute)
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE id = \$1`).WithArgs("u1", 1).WillReturnRows(dongNhanVienChuaCai(hash, ""))
+	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
+
+	_, err := svc.LoginTOTP(&LoginTOTPRequest{Challenge: challenge, Code: "123456"})
+	assert.ErrorIs(t, err, errTwoFactorExpired)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Quán bắt buộc thì không ai tự tắt được, kể cả gõ đúng mật khẩu.
+func TestAuthService_TwoFactorDisable_BatBuocThiKhongTatDuoc(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewAuthService(db, newTestJWT(), nil)
+	expectBatBuocHaiBuoc(mock, true)
+
+	assert.ErrorIs(t, svc.TwoFactorDisable("u1", "password123"), ErrTwoFactorRequired)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Chủ quán vừa bắt buộc 2 bước: refresh token của người chưa cài không làm mới được
+// phiên nữa, giao diện về trang đăng nhập và người đó phải quét QR.
+func TestAuthService_RefreshToken_BatBuocMaChuaCaiThiDangNhapLai(t *testing.T) {
+	db, mock := newMockDB(t)
+	jwtMgr := newTestJWT()
+	svc := NewAuthService(db, jwtMgr, nil)
+	refreshToken, err := jwtMgr.GenerateRefreshToken("u1", "staff")
+	require.NoError(t, err)
+
+	mock.ExpectQuery(`SELECT \* FROM "users" WHERE \(id = \$1 AND is_active = \$2\)`).WithArgs("u1", true, 1).
+		WillReturnRows(dongNhanVienChuaCai("", ""))
+	mock.ExpectQuery(`SELECT \* FROM "user_roles"`).WithArgs("u1").WillReturnRows(sqlmock.NewRows([]string{"user_id", "role_id"}))
+	expectBatBuocHaiBuoc(mock, true)
+
+	_, err = svc.RefreshToken(&RefreshRequest{RefreshToken: refreshToken})
+	assert.EqualError(t, err, "quán bắt buộc xác thực 2 bước — đăng nhập lại để cài")
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
