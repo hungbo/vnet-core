@@ -678,6 +678,7 @@ const local: App.I18n.Schema = {
       cancelQr: 'Cancel code',
       title: 'Bank deposits',
       receivedAt: 'Received',
+      totalIn: 'Total deposits',
       amount: 'Amount',
       sender: 'Sender',
       contentCol: 'Note',

@@ -794,6 +794,7 @@ declare namespace App {
           cancelQr: string;
           title: string;
           receivedAt: string;
+          totalIn: string;
           amount: string;
           sender: string;
           contentCol: string;

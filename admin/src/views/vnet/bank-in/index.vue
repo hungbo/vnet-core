@@ -58,6 +58,8 @@ const fitter = useFitPageSize({
   }
 });
 const total = ref(0);
+// Tổng tiền vào của mọi dòng khớp bộ lọc (máy chủ cộng), không chỉ trang đang xem.
+const totalIn = ref(0);
 const search = ref('');
 const statusFilter = ref('');
 // Mặc định hôm nay; xoá ô ngày để xem mọi ngày.
@@ -91,6 +93,7 @@ async function fetchData() {
     const res: any = await client.get(view.value === 'qr' ? '/qr/requests' : '/bank-notifications', { params });
     list.value = res.items || [];
     total.value = res.total || 0;
+    totalIn.value = res.total_in || 0;
     await fitter.afterLoad();
   } catch (e: any) {
     ElMessage.error(e?.message || $t('vnetPages.common.error'));
@@ -396,7 +399,11 @@ const canAct = (row: any, ...states: string[]) => hasAuth('members.topup') && st
           </template>
         </ElTableColumn>
       </ElTable>
-      <div class="mt-12px flex justify-center">
+      <div class="mt-12px flex flex-wrap items-center justify-center gap-16px">
+        <span v-if="view === 'in'">
+          {{ $t('vnetPages.qrPay.totalIn') }}:
+          <span class="money-in">+{{ formatPrice(totalIn) }}</span>
+        </span>
         <ElPagination
           v-model:current-page="page"
           :page-size="pageSize"

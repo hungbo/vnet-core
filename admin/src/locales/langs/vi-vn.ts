@@ -678,6 +678,7 @@ const local: App.I18n.Schema = {
       cancelQr: 'Huỷ mã',
       title: 'Tiền vào',
       receivedAt: 'Giờ nhận',
+      totalIn: 'Tổng tiền vào',
       amount: 'Số tiền',
       sender: 'Người chuyển',
       contentCol: 'Nội dung',

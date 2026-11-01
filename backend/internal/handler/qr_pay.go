@@ -313,7 +313,7 @@ func (h *QRPayHandler) Notify(c *gin.Context) {
 // @Param search query string false "Nội dung, mã nạp, hội viên"
 // @Param page query int false "Trang"
 // @Param page_size query int false "Số dòng"
-// @Success 200 {object} response.Response{data=pagination.Result}
+// @Success 200 {object} response.Response{data=bankNotificationPage}
 // @Router /api/bank-notifications [get]
 // @Security BearerAuth
 func (h *QRPayHandler) List(c *gin.Context) {
@@ -323,12 +323,22 @@ func (h *QRPayHandler) List(c *gin.Context) {
 		return
 	}
 	params := pagination.GetParams(c)
-	rows, total, err := h.svc.List(f, *params)
+	rows, total, totalIn, err := h.svc.List(f, *params)
 	if err != nil {
 		response.InternalError(c, "Không tải được danh sách tiền vào", err)
 		return
 	}
-	response.Paginated(c, rows, total, params.Page, params.PageSize)
+	response.Success(c, bankNotificationPage{
+		PaginatedData: response.PaginatedData{Items: rows, Total: total, Page: params.Page, PageSize: params.PageSize},
+		TotalIn:       totalIn,
+	})
+}
+
+// bankNotificationPage: một trang như response.Paginated, kèm tổng tiền vào của
+// mọi dòng khớp bộ lọc.
+type bankNotificationPage struct {
+	response.PaginatedData
+	TotalIn int64 `json:"total_in"`
 }
 
 // @Summary QR codes created (log)

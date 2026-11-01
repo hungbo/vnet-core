@@ -675,6 +675,7 @@ const local: App.I18n.Schema = {
       cancelQr: '取消代码',
       title: '入账',
       receivedAt: '收到时间',
+      totalIn: '入账合计',
       amount: '金额',
       sender: '转账人',
       contentCol: '备注',

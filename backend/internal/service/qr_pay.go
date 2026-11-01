@@ -1009,7 +1009,8 @@ var bankNotifSortColumns = map[string]string{
 	"member_name": "member_name",
 }
 
-func (s *QRPayService) List(f BankNotificationFilter, params pagination.Params) ([]BankNotificationRow, int64, error) {
+// List trả thêm tổng tiền vào của mọi dòng khớp bộ lọc, không chỉ trang đang xem.
+func (s *QRPayService) List(f BankNotificationFilter, params pagination.Params) ([]BankNotificationRow, int64, int64, error) {
 	q := s.db.Table("bank_notifications AS n").
 		Joins("LEFT JOIN members m ON m.id = n.member_id").
 		Joins("LEFT JOIN orders o ON o.id = n.order_id").
@@ -1024,14 +1025,19 @@ func (s *QRPayService) List(f BankNotificationFilter, params pagination.Params) 
 	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
-		return nil, 0, err
+		return nil, 0, 0, err
+	}
+	// Chạy trên bản sao (Session): Scan thẳng trên q làm câu lấy dòng bên dưới lặp JOIN.
+	var totalIn int64
+	if err := q.Session(&gorm.Session{}).Select("COALESCE(SUM(n.amount) FILTER (WHERE n.incoming), 0)").Scan(&totalIn).Error; err != nil {
+		return nil, 0, 0, err
 	}
 	var rows []BankNotificationRow
 	err := q.Select("n.*, COALESCE(NULLIF(m.username,''), m.full_name, '') AS member_name, COALESCE(o.order_code,'') AS order_code, COALESCE(u.full_name, u.username, '') AS handled_by_name").
 		Order(pagination.OrderBy(&params, bankNotifSortColumns, "n.received_at DESC")).
 		Offset((params.Page - 1) * params.PageSize).Limit(params.PageSize).
 		Scan(&rows).Error
-	return rows, total, err
+	return rows, total, totalIn, err
 }
 
 // --- Nhật ký mã QR đã tạo -------------------------------------------------------
