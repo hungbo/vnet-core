@@ -50,6 +50,8 @@ var reservedPaymentCodes = map[string]bool{
 	"bonus_balance":      true,
 	"gift_card":          true,
 	"topup_card":         true,
+	// Nạp QR tự xác nhận (qr_pay.go): luôn có, không cài ở danh sách.
+	PaymentMethodQR: true,
 }
 
 // PaymentMethods trả về danh sách đã cài, hoặc danh sách mặc định khi quán
@@ -66,7 +68,7 @@ func PaymentMethods(db *gorm.DB) []PaymentMethodOption {
 // kiemTraPhuongThucThanhToan từ chối mã không có trong cài đặt hoặc đang tắt.
 // Tiền mặt luôn hợp lệ nên không tốn truy vấn.
 func kiemTraPhuongThucThanhToan(db *gorm.DB, code string) error {
-	if code == PaymentMethodCash {
+	if code == PaymentMethodCash || code == PaymentMethodQR {
 		return nil
 	}
 	for _, m := range PaymentMethods(db) {

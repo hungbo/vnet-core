@@ -126,6 +126,11 @@ func (s *SettingsService) Update(groupName string, settings map[string]interface
 			return nil, err
 		}
 	}
+	if groupName == QRPaymentGroup {
+		if err := kiemTraCaiDatQR(settings); err != nil {
+			return nil, err
+		}
+	}
 	if groupName == TopupGroup {
 		if raw, ok := settings[TopupBonusTiersKey]; ok {
 			tiers, err := chuanHoaMocNapTang(raw)

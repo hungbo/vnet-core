@@ -675,6 +675,15 @@ export const generatedRoutes = [
         }
       },
       {
+        name: 'vnet_bank-in',
+        path: '/vnet/bank-in',
+        component: 'view.vnet_bank-in',
+        meta: {
+          title: 'vnet_bank-in',
+          i18nKey: 'route.vnet_bank-in'
+        }
+      },
+      {
         name: 'vnet_bookings',
         path: '/vnet/bookings',
         component: 'view.vnet_bookings',

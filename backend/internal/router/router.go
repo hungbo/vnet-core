@@ -160,6 +160,16 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		// nhật ký trên ổ C: mất mỗi lần boot lại, nên phải gửi về đây mới còn.
 		api.POST("/machines/by-code/:code/errors", h.ErrorReport.ReportFromMachine)
 
+		// Điện thoại báo tiền ở quầy (app vnet-bank-notification) không có tài khoản: ghép
+		// bằng mã 6 số, sau đó mọi lần gửi ký HMAC bằng khoá nhận lúc ghép.
+		bankNotify := api.Group("/bank-notify")
+		{
+			bankNotify.POST("/pair", h.QRPay.Pair)
+			bankNotify.POST("", h.QRPay.Notify)
+			bankNotify.POST("/heartbeat", h.QRPay.Heartbeat)
+			bankNotify.GET("/ws", h.QRPay.WebSocket)
+		}
+
 		// WebSocket nằm NGOÀI nhóm protected: nó nhận thêm một cách vào thứ hai —
 		// khoá riêng của máy trạm — để tiến trình nền giữ được kết nối kể cả khi
 		// không có ai đăng nhập trên máy đó.
@@ -532,6 +542,27 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 			}
 
 			protected.GET("/transactions", middleware.StaffOnly(), middleware.PermissionRequired("transactions.view"), h.Report.ListTransactions)
+
+			// Nạp tiền bằng QR, tự xác nhận nhờ điện thoại báo tiền ở quầy (qr_pay.go).
+			qr := protected.Group("/qr")
+			{
+				qr.GET("/status", h.QRPay.Status)
+				qr.POST("/topup-request", h.QRPay.CreateForSelf)
+				qr.POST("/topups", middleware.StaffOnly(), middleware.PermissionRequired("members.topup"), h.QRPay.CreateForMember)
+				qr.GET("/requests", middleware.StaffOnly(), middleware.PermissionRequired("transactions.view"), h.QRPay.ListRequests)
+				qr.GET("/requests/:id", h.QRPay.GetRequest)
+				qr.POST("/requests/:id/cancel", h.QRPay.CancelRequest)
+				qr.POST("/orders/:id/pay", h.QRPay.PayOrder)
+				qr.POST("/pairing", middleware.StaffOnly(), middleware.PermissionRequired("settings.edit"), h.QRPay.StartPairing)
+				qr.DELETE("/device", middleware.StaffOnly(), middleware.PermissionRequired("settings.edit"), h.QRPay.Unpair)
+			}
+			bankIn := protected.Group("/bank-notifications", middleware.StaffOnly())
+			{
+				bankIn.GET("", middleware.PermissionRequired("transactions.view"), h.QRPay.List)
+				bankIn.POST("/:id/confirm", middleware.PermissionRequired("members.topup"), h.QRPay.Confirm)
+				bankIn.POST("/:id/assign", middleware.PermissionRequired("members.topup"), h.QRPay.Assign)
+				bankIn.POST("/:id/ignore", middleware.PermissionRequired("members.topup"), h.QRPay.Ignore)
+			}
 
 			reports := protected.Group("/reports", middleware.StaffOnly(), middleware.PermissionRequired("reports.view"))
 			{

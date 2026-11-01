@@ -98,12 +98,15 @@ export function useWsNotify() {
       return;
     }
     if (!dangMo) return;
-    const tong: number = data?.total ?? 0;
+    // Đơn nạp QR còn hạn thì tự duyệt khi tiền về (hoặc tự huỷ khi hết hạn): không
+    // kêu quầy, kêu thì nhân viên dễ duyệt tay trong lúc khách đang chuyển.
+    const items: any[] = (data?.items ?? []).filter((o: any) => o.payment_method !== 'qr');
+    const tong: number = (data?.total ?? 0) - ((data?.items ?? []).length - items.length);
     if (!tong) {
       dongNhac();
       return;
     }
-    const napTien = (data?.items ?? []).filter((o: any) => o.order_type === 'topup').length;
+    const napTien = items.filter((o: any) => o.order_type === 'topup').length;
     const goiMon = tong - napTien;
     if (keu) play(napTien ? '/audio/deposit.mp3' : '/audio/order.mp3');
 

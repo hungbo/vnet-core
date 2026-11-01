@@ -35,7 +35,9 @@ const SYSTEM_LABELS: Record<string, App.I18n.I18nKey> = {
   balance: 'vnetPages.paymentMethods.balance',
   gift_card: 'vnetPages.paymentMethods.giftCard',
   bonus_balance: 'vnetPages.paymentMethods.bonusBalance',
-  topup_card: 'vnetPages.paymentMethods.topupCard'
+  topup_card: 'vnetPages.paymentMethods.topupCard',
+  // Nạp QR tự xác nhận qua điện thoại báo tiền (máy chủ: qr_pay.go).
+  qr: 'vnetPages.qrPay.methodQr'
 };
 
 export function usePaymentMethods() {

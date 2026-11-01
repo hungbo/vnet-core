@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { moneyInput } from '@/utils/money';
 import ImageUpload from '@/components/common/ImageUpload.vue';
+import QrPhonePanel from './modules/qr-phone-panel.vue';
 
 const { t: $t } = useI18n();
 const { reload: reloadPaymentMethods } = usePaymentMethods();
@@ -140,12 +141,14 @@ async function fetchSettings() {
     if (activeTab.value === 'limits') coerceNumbers();
     if (activeTab.value === 'features') applyFeatureDefaults();
     if (activeTab.value === 'client') applyClientDefaults();
+    if (activeTab.value === 'qr_payment') applyQRDefaults();
   } catch (e: any) {
     // A group with no rows yet is a normal first-run state, not an error:
     // the form stays blank and saving creates the rows.
     if (e?.status !== 404 && e?.message) ElMessage.error(e.message);
     if (activeTab.value === 'features') applyFeatureDefaults();
     if (activeTab.value === 'client') applyClientDefaults();
+    if (activeTab.value === 'qr_payment') applyQRDefaults();
   } finally {
     loading.value = false;
   }
@@ -206,6 +209,16 @@ function applyClientDefaults() {
     settings.idle_shutdown_minutes === undefined || settings.idle_shutdown_minutes === '' || !Number.isFinite(idle)
       ? 5
       : idle;
+}
+
+// Nhóm "qr_payment": máy chủ mặc định TẮT, chỉ gợi ý (không tự duyệt), mã sống 10 phút.
+function applyQRDefaults() {
+  ['enabled', 'auto_confirm'].forEach(k => {
+    if (settings[k] !== 'true' && settings[k] !== 'false') settings[k] = 'false';
+  });
+  if (!settings.bank) settings.bank = 'mb';
+  const m = Number(settings.expire_minutes);
+  settings.expire_minutes = Number.isFinite(m) && m >= 3 ? m : 10;
 }
 
 // Hình nền máy trạm lưu thành một chuỗi nhiều dòng (mỗi dòng một đường dẫn /uploads/...); trang giữ nó dạng danh sách để
@@ -484,6 +497,38 @@ onMounted(() => {
           <ElButton @click="addPaymentMethod">{{ $t('vnetPages.settings.addPaymentMethod') }}</ElButton>
         </ElTabPane>
 
+        <ElTabPane :label="$t('vnetPages.qrPay.tab')" name="qr_payment">
+          <ElAlert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+            {{ $t('vnetPages.qrPay.hint') }}
+          </ElAlert>
+          <QrPhonePanel v-if="activeTab === 'qr_payment'" />
+          <ElForm label-width="200px" class="max-w-640px">
+            <ElFormItem :label="$t('vnetPages.qrPay.enabled')">
+              <ElSwitch v-model="settings.enabled" active-value="true" inactive-value="false" />
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.qrPay.bank')">
+              <ElRadioGroup v-model="settings.bank">
+                <ElRadioButton value="mb">MB Bank</ElRadioButton>
+                <ElRadioButton value="vcb">Vietcombank</ElRadioButton>
+              </ElRadioGroup>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.qrPay.accountNo')">
+              <ElInput v-model="settings.account_no" maxlength="19" inputmode="numeric" />
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.qrPay.accountName')">
+              <ElInput v-model="settings.account_name" maxlength="50" />
+              <div class="form-hint">{{ $t('vnetPages.qrPay.accountNameHint') }}</div>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.qrPay.expireMinutes')">
+              <ElInputNumber v-model="settings.expire_minutes" :min="3" :max="60" />
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.qrPay.autoConfirm')">
+              <ElSwitch v-model="settings.auto_confirm" active-value="true" inactive-value="false" />
+              <div class="form-hint">{{ $t('vnetPages.qrPay.autoConfirmHint') }}</div>
+            </ElFormItem>
+          </ElForm>
+        </ElTabPane>
+
         <ElTabPane :label="$t('vnetPages.settings.features')" name="features">
           <ElAlert type="info" :closable="false" show-icon style="margin-bottom: 16px">
             {{ $t('vnetPages.settings.featuresHint') }}
@@ -694,6 +739,12 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.form-hint {
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
 .wallpaper-item {
   position: relative;
 }

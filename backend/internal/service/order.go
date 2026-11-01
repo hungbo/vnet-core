@@ -304,17 +304,24 @@ func (s *OrderService) GetByID(id string) (*OrderResponse, error) {
 }
 
 func (s *OrderService) CreateTopupOrder(req CreateTopupOrderRequest, createdBy string) (*OrderResponse, error) {
+	return s.createTopupOrder(req, createdBy, "", true)
+}
+
+// createTopupOrder: method ghi sẵn phương thức (đơn nạp QR ghi "qr"). announce=false
+// thì không phát "order:new": đơn nạp QR tự duyệt khi tiền về, kêu quầy là thừa.
+func (s *OrderService) createTopupOrder(req CreateTopupOrderRequest, createdBy, method string, announce bool) (*OrderResponse, error) {
 	if req.Amount <= 0 {
 		return nil, errors.New("số tiền phải lớn hơn 0")
 	}
 
 	order := model.Order{
 		// OrderCode được gán bên trong giao dịch, xem GenerateOrderCode.
-		Status:      "pending",
-		OrderType:   model.OrderTypeTopup,
-		TotalAmount: req.Amount,
-		FinalAmount: req.Amount,
-		CreatedBy:   &createdBy,
+		Status:        "pending",
+		OrderType:     model.OrderTypeTopup,
+		TotalAmount:   req.Amount,
+		FinalAmount:   req.Amount,
+		CreatedBy:     &createdBy,
+		PaymentMethod: method,
 	}
 	if req.MemberID != "" {
 		order.MemberID = &req.MemberID
@@ -354,16 +361,18 @@ func (s *OrderService) CreateTopupOrder(req CreateTopupOrderRequest, createdBy s
 		},
 	})
 
-	// Đơn hàng là việc của quầy, không phải tin tức cho máy khách.
-	s.hub.BroadcastToType(hub.Event{
-		Type: "order:new",
-		Data: map[string]interface{}{
-			"order_id":     order.ID,
-			"order_code":   order.OrderCode,
-			"order_type":   model.OrderTypeTopup,
-			"final_amount": order.FinalAmount,
-		},
-	}, hub.ClientTypeAdmin)
+	if announce {
+		// Đơn hàng là việc của quầy, không phải tin tức cho máy khách.
+		s.hub.BroadcastToType(hub.Event{
+			Type: "order:new",
+			Data: map[string]interface{}{
+				"order_id":     order.ID,
+				"order_code":   order.OrderCode,
+				"order_type":   model.OrderTypeTopup,
+				"final_amount": order.FinalAmount,
+			},
+		}, hub.ClientTypeAdmin)
+	}
 
 	return &result, nil
 }
@@ -747,8 +756,9 @@ func (s *OrderService) BatchDelete(ids []string) error {
 // "Duyệt" trên một đơn đã xử lý xong, cho tới khi có người tự tải lại trang.
 //
 // BroadcastToType tới mọi kết nối admin, tức mọi thiết bị của mọi nhân viên.
-// Không gửi cho máy trạm: trạng thái đơn của người khác không phải việc của
-// khách đang ngồi máy.
+// Máy trạm chỉ nhận đơn của CHÍNH hội viên đang đăng nhập (SendToUser): quầy
+// vừa xác nhận thì tab "Đơn đã gọi" hiện ngay nút trả bằng QR, không phải bấm
+// Làm mới. Đơn của người khác vẫn không gửi cho máy trạm.
 func phatDonDoi(h *hub.Hub, order *model.Order, status string) {
 	if h == nil || order == nil {
 		return
@@ -762,7 +772,11 @@ func phatDonDoi(h *hub.Hub, order *model.Order, status string) {
 	if order.MemberID != nil {
 		data["member_id"] = *order.MemberID
 	}
-	h.BroadcastToType(hub.Event{Type: "order:updated", Data: data}, hub.ClientTypeAdmin)
+	ev := hub.Event{Type: "order:updated", Data: data}
+	h.BroadcastToType(ev, hub.ClientTypeAdmin)
+	if order.MemberID != nil {
+		h.SendToUser(*order.MemberID, ev)
+	}
 }
 
 var validOrderTransitions = map[string][]string{

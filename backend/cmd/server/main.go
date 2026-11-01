@@ -101,6 +101,7 @@ func main() {
 		&model.AppUpdate{},
 		&model.IdempotencyKey{},
 		&model.Game{}, &model.GamePublish{}, &model.GameLaunch{},
+		&model.QRRequest{}, &model.BankNotification{},
 	); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
@@ -174,6 +175,17 @@ func main() {
 		Interval:   time.Minute,
 		RunAtStart: true,
 		Run:        func(ctx context.Context) error { return backupSvc.RunAuto(time.Now()) },
+	})
+	// Mã nạp QR quá hạn thì huỷ cùng đơn nạp; đồng thời báo khi điện thoại báo
+	// tiền vừa mất/có lại kết nối.
+	qrSvc := h.QRPay.Service()
+	sched.Add(scheduler.Job{
+		Name:     "qr:expire",
+		Interval: time.Minute,
+		Run: func(ctx context.Context) error {
+			_, err := qrSvc.ExpireDue()
+			return err
+		},
 	})
 	sched.Start(ctx)
 

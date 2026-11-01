@@ -333,6 +333,7 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     vnet_machines: 'carbon:bare-metal-server',
     vnet_sessions: 'carbon:time',
     vnet_transactions: 'carbon:currency-dollar',
+    'vnet_bank-in': 'carbon:qr-code',
     vnet_orders: 'carbon:receipt',
     vnet_products: 'carbon:product',
     vnet_categories: 'carbon:category',
@@ -385,7 +386,8 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
         'vnet_machine-groups',
         'vnet_machine-assets',
         'vnet_sessions',
-        'vnet_transactions'
+        'vnet_transactions',
+        'vnet_bank-in'
       ]
     },
     {

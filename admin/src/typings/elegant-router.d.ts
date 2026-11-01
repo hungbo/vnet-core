@@ -93,6 +93,7 @@ declare module "@elegant-router/types" {
     "vnet_attendance": "/vnet/attendance";
     "vnet_audit": "/vnet/audit";
     "vnet_backups": "/vnet/backups";
+    "vnet_bank-in": "/vnet/bank-in";
     "vnet_bookings": "/vnet/bookings";
     "vnet_categories": "/vnet/categories";
     "vnet_combos": "/vnet/combos";
@@ -248,6 +249,7 @@ declare module "@elegant-router/types" {
     | "vnet_attendance"
     | "vnet_audit"
     | "vnet_backups"
+    | "vnet_bank-in"
     | "vnet_bookings"
     | "vnet_categories"
     | "vnet_combos"

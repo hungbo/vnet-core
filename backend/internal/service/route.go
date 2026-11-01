@@ -210,6 +210,13 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Meta:      RouteMeta{Title: "vnet_transactions", I18nKey: "route.vnet_transactions", RequiredPermission: "transactions.view"},
 		},
 		{
+			// Tiền vào qua ngân hàng mà điện thoại báo tiền ở quầy đọc được (nạp QR).
+			Name:      "vnet_bank-in",
+			Path:      "/vnet/bank-in",
+			Component: "view.vnet_bank-in",
+			Meta:      RouteMeta{Title: "vnet_bank-in", I18nKey: "route.vnet_bank-in", RequiredPermission: "transactions.view"},
+		},
+		{
 			Name:      "vnet_settings",
 			Path:      "/vnet/settings",
 			Component: "view.vnet_settings",
