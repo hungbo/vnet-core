@@ -103,6 +103,7 @@ func (h *GameHandler) List(c *gin.Context) {
 // @Description  Game đang bật và có tệp chạy, kèm root (GAME_ROOT như máy trạm thấy). Hội viên và nhân viên đều gọi được.
 // @Tags         Games
 // @Produce      json
+// @Param        v  query  int  false  "2: máy trạm biết trường folder (game nằm ở thư mục khác tên game); không gửi thì không có các mục đó"
 // @Success      200  {object}  response.Response{data=service.GameMenu}
 // @Router       /api/game-menu [get]
 // @Security     BearerAuth
@@ -111,6 +112,9 @@ func (h *GameHandler) Menu(c *gin.Context) {
 	if err != nil {
 		response.InternalError(c, err.Error(), err)
 		return
+	}
+	if c.Query("v") != "2" {
+		menu.Items = service.MenuChoMayTramCu(menu.Items)
 	}
 	response.Success(c, menu)
 }
@@ -186,7 +190,7 @@ func (h *GameHandler) Create(c *gin.Context) {
 
 // CreateLocal
 // @Summary      Thêm game cục bộ của quán (không đồng bộ với Hub)
-// @Description  Quán tự tải game rồi khai thư mục GAME_ROOT/<name> và tệp chạy; game lên menu máy trạm, catalog không ghi đè. Không dùng được ở master.
+// @Description  Quán tự tải game rồi khai thư mục (folder: đường dẫn đầy đủ trên máy chủ, ở đâu cũng được; không gửi là GAME_ROOT/<name>) và tệp chạy; game lên menu máy trạm, catalog không ghi đè. Không dùng được ở master.
 // @Tags         Games
 // @Accept       json
 // @Produce      json
@@ -207,13 +211,14 @@ func (h *GameHandler) CreateLocal(c *gin.Context) {
 }
 
 // LocalFolders
-// @Summary      Thư mục trong GAME_ROOT chưa là game nào (gợi ý khi thêm game cục bộ)
+// @Summary      Thư mục con chưa là game nào của GAME_ROOT hoặc của một thư mục tuỳ ý (gợi ý khi thêm game cục bộ)
 // @Tags         Games
 // @Produce      json
+// @Param        root  query  string  false  "Thư mục tuyệt đối trên máy chủ, ví dụ E:\Online Games; bỏ trống là GAME_ROOT"
 // @Success      200  {object}  response.Response
 // @Router       /api/games/local/folders [get]
 func (h *GameHandler) LocalFolders(c *gin.Context) {
-	folders, err := h.svc.LocalFolders()
+	folders, err := h.svc.LocalFolders(c.Query("root"))
 	if err != nil {
 		gameError(c, err)
 		return
@@ -225,7 +230,7 @@ func (h *GameHandler) LocalFolders(c *gin.Context) {
 // @Summary      Tệp chạy (.exe, .bat, .cmd, .lnk) trong một thư mục game (gợi ý khi thêm game cục bộ)
 // @Tags         Games
 // @Produce      json
-// @Param        folder  query  string  true  "Tên thư mục game trong GAME_ROOT"
+// @Param        folder  query  string  true  "Tên thư mục game trong GAME_ROOT, hoặc đường dẫn đầy đủ trên máy chủ"
 // @Success      200  {object}  response.Response
 // @Router       /api/games/local/launchers [get]
 func (h *GameHandler) LocalLaunchers(c *gin.Context) {

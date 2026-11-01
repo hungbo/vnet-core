@@ -784,10 +784,16 @@ const local: App.I18n.Schema = {
       addLocal: 'Thêm game cục bộ',
       localTag: 'Cục bộ',
       localHint:
-        'Game quán tự tải: chọn thư mục trong {root} và tệp chạy. Game hiện trên menu máy trạm nhưng không đồng bộ với Hub; Hub không ghi đè hay xoá nó.',
+        'Game quán tự tải: chọn thư mục game (trong {root} hoặc bất kỳ đâu trên máy chủ, không cần tạo liên kết) và tệp chạy. Game hiện trên menu máy trạm nhưng không đồng bộ với Hub; Hub không ghi đè hay xoá nó.',
       localFolderPick: 'Chọn thư mục game chưa thêm',
       localLauncherPick: 'Chọn hoặc gõ tệp chạy',
       localNoFolders: 'Không còn thư mục nào chưa thêm trong {root}',
+      localRoot: 'Thư mục chứa game',
+      localRootHint:
+        'Thư mục trên máy chủ chứa các thư mục game, ở đâu cũng được, ví dụ E:\\Online Games. Mặc định là {root}. Gõ xong bấm Enter để tải danh sách.',
+      localName: 'Tên game',
+      localNameHint:
+        'Để trống thì lấy tên thư mục. Đặt tên khác khi tên thư mục đã là game của Hub hoặc có dấu tiếng Việt (tên game chỉ gồm chữ không dấu, số, khoảng trắng và . _ ( ) + -).',
       localClash:
         'Game cục bộ trùng tên với game của Hub: {names}. Quán giữ bản cục bộ; muốn dùng bản của Hub thì xoá game cục bộ (tệp trên ổ giữ nguyên).',
       runFirst: 'Chạy trước khi mở game',
@@ -798,6 +804,8 @@ const local: App.I18n.Schema = {
       stepArgs: 'Tham số',
       clientRootLocal: 'Ổ máy trạm riêng',
       clientRootLocalHint: 'Để trống thì dùng thư mục game chung ở trên. Ví dụ E:\\Games2.',
+      clientRootFolderHint:
+        'Để trống thì dùng đường dẫn mờ trong ô (máy trạm thấy ổ đĩa giống máy chủ). Chỉ ghi khi máy trạm thấy thư mục chứa game dưới chữ ổ khác.',
       customize: 'Tuỳ chỉnh',
       customTag: 'Tuỳ chỉnh',
       customTitle: 'Tuỳ chỉnh game của quán',

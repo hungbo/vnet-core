@@ -288,6 +288,8 @@ const emptyStep = (): RunStep => ({ launcher: '', launch_args: '' });
 const cleanSteps = (list: RunStep[]) => list.filter(s => s.launcher.trim() !== '');
 const emptyForm = () => ({
   name: '',
+  // Thư mục game dưới "Thư mục chứa game" (game cục bộ). name để trống thì máy chủ lấy tên thư mục.
+  folder_name: '',
   display_name: '',
   category: '',
   launcher: '',
@@ -301,8 +303,24 @@ const emptyForm = () => ({
 const form = ref(emptyForm());
 // Hộp thêm/sửa game cục bộ: thư mục và tệp chạy chọn từ gợi ý của máy chủ (vẫn gõ tay được cho tệp chạy).
 const localMode = ref(false);
+// Thư mục trên máy chủ chứa các thư mục game: mặc định GAME_ROOT, gõ được nơi khác (thư mục của Kzone…).
+const localRoot = ref('');
+const localDir = computed(() => localRoot.value.trim() || info.value.root);
 const localFolders = ref<string[]>([]);
 const localLaunchers = ref<string[]>([]);
+
+const trimSep = (p: string) => p.replace(/[\\/]+$/, '');
+// Ghép thư mục trên máy chủ với tên con theo kiểu gạch của chính đường dẫn đó (máy chủ quán là Windows).
+function joinServerPath(dir: string, name: string) {
+  const sep = dir.includes('\\') || /^[A-Za-z]:/.test(dir) ? '\\' : '/';
+  return trimSep(dir) + sep + name;
+}
+// Gốc máy trạm máy chủ sẽ dùng khi để trống: thư mục chứa game, hoặc ổ chung khi đó chính là GAME_ROOT.
+const clientRootDefault = computed(() =>
+  trimSep(localDir.value).toLowerCase() === trimSep(info.value.root).toLowerCase()
+    ? clientRoot.value
+    : trimSep(localDir.value)
+);
 // Có id là đang sửa game đã có, rỗng là thêm mới. Thư mục game (name) là khoá nối
 // master với các quán nên không đổi được.
 const editingId = ref('');
@@ -314,42 +332,59 @@ function openCreate() {
   dialogVisible.value = true;
 }
 
-async function loadLocalLaunchers(folder: string) {
+// folder: tên thư mục trong GAME_ROOT hoặc đường dẫn đầy đủ trên máy chủ. quiet: không báo lỗi, chỉ là không có gợi ý.
+async function loadLocalLaunchers(folder: string, quiet = false) {
   localLaunchers.value = [];
   if (!folder) return;
   try {
     localLaunchers.value = ((await client.get('/games/local/launchers', { params: { folder } })) as string[]) || [];
   } catch (e: any) {
-    ElMessage.error(e?.message || $t('vnetPages.common.error'));
+    if (!quiet) ElMessage.error(e?.message || $t('vnetPages.common.error'));
   }
 }
 
-async function openCreateLocal() {
-  editingId.value = '';
-  localMode.value = true;
-  form.value = emptyForm();
+async function loadLocalFolders() {
   localFolders.value = [];
   localLaunchers.value = [];
-  dialogVisible.value = true;
+  form.value.name = '';
+  form.value.folder_name = '';
+  form.value.launcher = '';
   try {
-    localFolders.value = ((await client.get('/games/local/folders')) as string[]) || [];
+    localFolders.value =
+      ((await client.get('/games/local/folders', { params: { root: localDir.value } })) as string[]) || [];
   } catch (e: any) {
     ElMessage.error(e?.message || $t('vnetPages.common.error'));
   }
 }
 
+function openCreateLocal() {
+  editingId.value = '';
+  localMode.value = true;
+  form.value = emptyForm();
+  localRoot.value = info.value.root;
+  dialogVisible.value = true;
+  loadLocalFolders();
+}
+
 function onLocalFolderPicked(folder: string) {
   if (!form.value.display_name) form.value.display_name = folder;
   form.value.launcher = '';
-  loadLocalLaunchers(folder);
+  loadLocalLaunchers(joinServerPath(localDir.value, folder));
 }
 
 function openEdit(row: any) {
   editingId.value = row.id;
   localMode.value = isLocal(row);
-  if (localMode.value) loadLocalLaunchers(row.name);
+  const folder = row.custom?.folder || row.name;
+  if (localMode.value) {
+    // Máy chủ không lưu đường dẫn của game thêm từ thư mục ngoài GAME_ROOT. Gốc máy trạm riêng của nó mặc định là thư
+    // mục chứa game trên máy chủ nên thử ở đó; không thấy thì chỉ là không có gợi ý, vẫn gõ tay được.
+    const cr = row.custom?.client_root;
+    loadLocalLaunchers(joinServerPath(cr || info.value.root, folder), Boolean(cr));
+  }
   form.value = {
     name: row.name,
+    folder_name: folder,
     display_name: row.display_name,
     category: row.category || '',
     launcher: row.launcher || '',
@@ -428,9 +463,11 @@ async function submit() {
         priority
       });
     } else {
+      const { folder_name, ...body } = form.value;
       await client.post(localMode.value ? '/games/local' : '/games', {
-        ...form.value,
-        run_first: cleanSteps(form.value.run_first)
+        ...body,
+        ...(localMode.value && folder_name ? { folder: joinServerPath(localDir.value, folder_name) } : {}),
+        run_first: cleanSteps(body.run_first)
       });
     }
     ElMessage.success($t('vnetPages.common.success'));
@@ -752,19 +789,28 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
         {{ $t('vnetPages.games.addHint', { root: info.root }) }}
       </ElAlert>
       <ElForm label-width="150px">
+        <ElFormItem v-if="localMode && !editingId" :label="$t('vnetPages.games.localRoot')">
+          <ElInput v-model="localRoot" :placeholder="info.root" @change="loadLocalFolders" />
+          <div class="text-12px text-gray-500">{{ $t('vnetPages.games.localRootHint', { root: info.root }) }}</div>
+        </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.folder')">
           <ElSelect
             v-if="localMode && !editingId"
-            v-model="form.name"
+            v-model="form.folder_name"
             filterable
             class="w-full"
             :placeholder="$t('vnetPages.games.localFolderPick')"
-            :no-data-text="$t('vnetPages.games.localNoFolders', { root: info.root })"
+            :no-data-text="$t('vnetPages.games.localNoFolders', { root: localDir })"
             @change="onLocalFolderPicked"
           >
             <ElOption v-for="f in localFolders" :key="f" :label="f" :value="f" />
           </ElSelect>
-          <ElInput v-else v-model="form.name" placeholder="League of Legends" :disabled="!!editingId" />
+          <ElInput v-else-if="editingId" :model-value="form.folder_name" disabled />
+          <ElInput v-else v-model="form.name" placeholder="League of Legends" />
+        </ElFormItem>
+        <ElFormItem v-if="localMode && !editingId" :label="$t('vnetPages.games.localName')">
+          <ElInput v-model="form.name" :placeholder="form.folder_name" />
+          <div class="text-12px text-gray-500">{{ $t('vnetPages.games.localNameHint') }}</div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.displayName')">
           <ElInput v-model="form.display_name" />
@@ -829,9 +875,11 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
             </ElButton>
           </div>
         </ElFormItem>
-        <ElFormItem v-if="localMode && editingId" :label="$t('vnetPages.games.clientRootLocal')">
-          <ElInput v-model="form.client_root" placeholder="E:\Games2" />
-          <div class="text-12px text-gray-500">{{ $t('vnetPages.games.clientRootLocalHint') }}</div>
+        <ElFormItem v-if="localMode" :label="$t('vnetPages.games.clientRootLocal')">
+          <ElInput v-model="form.client_root" :placeholder="editingId ? 'E:\\Games2' : clientRootDefault" />
+          <div class="text-12px text-gray-500">
+            {{ $t(editingId ? 'vnetPages.games.clientRootLocalHint' : 'vnetPages.games.clientRootFolderHint') }}
+          </div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.priority')">
           <ElInputNumber v-model="form.priority" style="width: 100%" />

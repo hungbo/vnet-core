@@ -452,7 +452,8 @@ func (s *GameService) RecordLaunch(req *GameLaunchRequest, memberID string) erro
 }
 
 type CreateGameRequest struct {
-	Name        string `json:"name" binding:"required"`
+	// Name: tên thư mục game. Game cục bộ thêm từ Folder thì để trống được (lấy tên thư mục).
+	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`
 	Category    string `json:"category"`
 	Launcher    string `json:"launcher"`
@@ -463,6 +464,12 @@ type CreateGameRequest struct {
 	// RunFirst: lệnh chạy trước khi mở game.
 	RunFirst []model.GameRunStep `json:"run_first"`
 	Priority int                 `json:"priority"`
+	// Folder (chỉ game cục bộ): đường dẫn đầy đủ của thư mục game NHƯ MÁY CHỦ THẤY, ở đâu cũng được, ví dụ
+	// E:\Online Games\VALORANT. Rỗng là thư mục GAME_ROOT/<Name> như cũ.
+	Folder string `json:"folder"`
+	// ClientRoot (chỉ game cục bộ): gốc game trên máy trạm riêng cho game này. Rỗng thì lấy thư mục cha của Folder
+	// (máy trạm thấy ổ đĩa giống máy chủ), hoặc theo ổ chung khi game nằm ngay trong GAME_ROOT.
+	ClientRoot string `json:"client_root"`
 }
 
 // Create thêm một game ở master. Thư mục GAME_ROOT/<name> phải có sẵn.
@@ -654,7 +661,7 @@ func (s *GameService) Delete(id string) error {
 // ---------------------------------------------------------------- menu game (máy trạm)
 
 // GameMenuItem là một mục trên menu của máy trạm. Máy trạm chỉ chạy được game
-// khi Status == ready; đường dẫn đầy đủ là Root + `\` + Name + `\` + Launcher.
+// khi Status == ready; đường dẫn đầy đủ là Root + `\` + (Folder, rỗng thì Name) + `\` + Launcher.
 type GameMenuItem struct {
 	// Key: khoá của mục, máy trạm gửi lại khi chạy hay lấy icon. Bằng Name khi game là
 	// một mục; "<Name>/<thứ tự từ 1>" cho từng mục riêng (tên game không chứa "/").
@@ -671,6 +678,9 @@ type GameMenuItem struct {
 	Version  int    `json:"version"`
 	// Root: gốc game riêng của game này (khi quán đặt khác ổ chung). Rỗng là dùng GameMenu.Root.
 	Root string `json:"root,omitempty"`
+	// Folder: tên thư mục game dưới gốc khi khác Name (game cục bộ, xem model.GameCustom.Folder). Chỉ máy trạm hỏi
+	// menu kèm v=2 mới thấy những mục này (MenuChoMayTramCu).
+	Folder string `json:"folder,omitempty"`
 	// RunFirst: các bước chạy lần lượt (và chờ) trước khi mở game; máy trạm cũ không biết trường này thì bỏ qua.
 	RunFirst model.GameRunSteps `json:"run_first,omitempty"`
 	// Label: nhãn trên thẻ game, "hot" (nhiều lượt mở gần đây) hoặc "new" (mới về quán); rỗng là không nhãn.
@@ -722,7 +732,7 @@ func (s *GameService) Menu() (*GameMenu, error) {
 				Key: key, Name: g.Name, DisplayName: display, Category: g.Category,
 				Launcher: launcher, LaunchArgs: args, Icon: icon,
 				Status: g.Status, Progress: g.Progress, Version: g.Version,
-				Root: g.Custom.ClientRoot, RunFirst: runFirstOf(&g), Label: label,
+				Root: g.Custom.ClientRoot, Folder: g.Custom.Folder, RunFirst: runFirstOf(&g), Label: label,
 			}
 		}
 		if len(g.MenuEntries) > 0 {
@@ -740,6 +750,18 @@ func (s *GameService) Menu() (*GameMenu, error) {
 		}
 	}
 	return menu, nil
+}
+
+// MenuChoMayTramCu bỏ các mục có Folder: máy trạm chưa biết trường này ghép Root\Name\Launcher, tức đường dẫn sai,
+// nên thà không thấy game còn hơn bấm Chơi rồi báo thiếu tệp.
+func MenuChoMayTramCu(items []GameMenuItem) []GameMenuItem {
+	out := make([]GameMenuItem, 0, len(items))
+	for _, it := range items {
+		if it.Folder == "" {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 // RiotMetadataSource: giá trị mặc định của riot_metadata_source khi admin để trống:

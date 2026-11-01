@@ -36,6 +36,9 @@ type gameMenuItem struct {
 	Version  int    `json:"version"`
 	// Root: gốc game riêng của game này khi quán đặt khác ổ chung; rỗng là dùng gameMenu.Root.
 	Root string `json:"root"`
+	// Folder: tên thư mục game dưới gốc khi khác Name (game cục bộ quán đặt tên riêng); rỗng là thư mục trùng Name.
+	// Máy chủ chỉ gửi mục có folder khi máy trạm hỏi kèm v=2 (fetchGameMenu); máy chủ cũ không gửi.
+	Folder string `json:"folder"`
 	// RunFirst: các bước chạy lần lượt (và chờ) trước khi mở game. Máy chủ cũ không gửi.
 	RunFirst []gameRunStep `json:"run_first"`
 	// Label: nhãn trên thẻ game, "hot" hoặc "new"; máy chủ cũ không gửi.
@@ -63,6 +66,15 @@ func (g *gameMenuItem) rootOf(menuRoot string) string {
 	return menuRoot
 }
 
+// dirName là thư mục của mục này dưới gốc game: Folder nếu máy chủ gửi, không thì tên game. Không cắt khoảng trắng:
+// đó là tên thư mục thật, resolveGameLaunch kiểm nó như mọi thành phần đường dẫn khác.
+func (g *gameMenuItem) dirName() string {
+	if g.Folder != "" {
+		return g.Folder
+	}
+	return g.Name
+}
+
 // menuKey là khoá giao diện dùng để chạy mục và lấy icon. Máy chủ trước 1.1.15
 // không gửi key: khi đó mỗi thư mục là một mục, khoá là tên game.
 func (g *gameMenuItem) menuKey() string {
@@ -83,7 +95,8 @@ func (m *gameMenu) findMenuItem(key string) *gameMenuItem {
 }
 
 func (a *App) fetchGameMenu() (*gameMenu, error) {
-	data, err := a.doRequest("GET", "/api/game-menu", nil)
+	// v=2: máy trạm này biết trường folder. Thiếu cờ này, máy chủ bỏ các mục có folder vì máy trạm cũ sẽ ghép sai đường dẫn.
+	data, err := a.doRequest("GET", "/api/game-menu?v=2", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +155,7 @@ func (a *App) LaunchGame(key string) error {
 	}
 
 	root := g.rootOf(m.Root)
-	exe, dir, err := resolveGameLaunch(root, g.Name, g.Launcher)
+	exe, dir, err := resolveGameLaunch(root, g.dirName(), g.Launcher)
 	if err != nil {
 		log.Printf("[game] từ chối %q: %v", g.Name, err)
 		reportError("error", "game", fmt.Sprintf("cấu hình chạy game %s không hợp lệ", g.Name), err.Error())
@@ -178,7 +191,7 @@ func (a *App) reportLaunch(key string) {
 	}
 }
 
-// resolveGameLaunch dựng đường dẫn tệp chạy game: root\name\launcher.
+// resolveGameLaunch dựng đường dẫn tệp chạy game: root\name\launcher, name là thư mục game (gameMenuItem.dirName).
 //
 // Hàm thuần, và cố ý tự xử lý dấu `\` thay vì dùng path/filepath: đường dẫn
 // ở đây luôn là của Windows, mà bài kiểm chạy được cả trên Mac/Linux.
