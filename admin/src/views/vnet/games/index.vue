@@ -114,6 +114,28 @@ function outdated(row: any) {
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 
+// Game đang tải ở hàng đợi của quán (cùng nguồn với trang Danh mục Hub): tốc độ và số nguồn.
+const speed = ref<{ name: string; bytes_per_sec: number; peers: number } | null>(null);
+
+function bitRate(bps: number) {
+  const bits = bps * 8;
+  if (bits >= 1_000_000) return `${(bits / 1_000_000).toFixed(1)} Mbps`;
+  return `${Math.round(bits / 1000)} kbps`;
+}
+
+// Thiếu tốc độ (master, hàng đợi lỗi) thì cột Trạng thái vẫn hiện % như cũ.
+async function loadSpeed() {
+  if (!isCafe.value || !rows.value.some(r => r.status === 'downloading')) {
+    speed.value = null;
+    return;
+  }
+  try {
+    speed.value = ((await client.get('/games/queue')) as any)?.current || null;
+  } catch {
+    speed.value = null;
+  }
+}
+
 // Tải lặng chỉ đổi ô nào CHƯA bị sửa (còn đúng giá trị máy chủ lần trước):
 // người khác vừa đổi cài đặt thì ô theo kịp, còn ô đang gõ dở giữ nguyên chữ.
 function syncFields(i: any, silent: boolean) {
@@ -136,6 +158,7 @@ async function load(silent = false) {
     syncFields(i, silent);
     info.value = i;
     rows.value = list || [];
+    await loadSpeed();
   } catch (e: any) {
     if (!silent) ElMessage.error(e?.message || $t('vnetPages.common.error'));
   } finally {
@@ -646,6 +669,12 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
               {{ $t(`vnetPages.games.status_${row.status || 'not_installed'}`) }}
             </ElTag>
             <ElProgress v-if="row.status === 'downloading'" :percentage="row.progress" style="margin-top: 6px" />
+            <div
+              v-if="row.status === 'downloading' && speed && speed.name === row.name"
+              class="mt-4px text-12px text-[var(--el-text-color-secondary)]"
+            >
+              {{ bitRate(speed.bytes_per_sec) }} · {{ $t('vnetPages.hubGames.peers', { n: speed.peers }) }}
+            </div>
             <div
               v-if="row.status === 'error' && row.error"
               style="color: var(--el-color-danger); font-size: 12px; margin-top: 4px"
