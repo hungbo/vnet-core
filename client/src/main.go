@@ -222,6 +222,10 @@ const dockWidth = 360
 const (
 	childWidthRatio  = 0.70 // cửa sổ gọi món / hỗ trợ
 	childHeightRatio = 0.80
+	// Menu game to hơn một chút: lưới ô nhỏ nhiều cột như menu Kzone khách quen
+	// (~1326×885 trên màn 1920×1080, ~855×629 trên màn 1366×768).
+	gameWidthRatio  = 0.85
+	gameHeightRatio = 0.82
 )
 
 // vienTaskbar là phần bị thanh taskbar chiếm ở mỗi mép màn hình.
@@ -319,18 +323,18 @@ func dockGeometry(workX, workY, workW, workH int) (w, h, x, y int) {
 	return w, workH, workX + workW - w, workY
 }
 
-// canhGiuaManHinh đặt cửa sổ phụ vào GIỮA màn hình với kích thước theo tỉ lệ.
+// canhGiuaManHinh đặt cửa sổ phụ vào GIỮA màn hình với kích thước theo tỉ lệ rw×rh.
 //
 // Tự tính thay vì gọi runtime.WindowCenter: cửa sổ phụ do thanh điều khiển ở mép
 // phải sinh ra, và WindowCenter căn theo màn hình mà cửa sổ ĐANG nằm — nên nó
 // hay dừng lại ngay trên chính thanh điều khiển thay vì ra giữa.
-func canhGiuaManHinh(ctx context.Context, minW, minH int) {
+func canhGiuaManHinh(ctx context.Context, minW, minH int, rw, rh float64) {
 	screen, ok := manHinhHienTai(ctx)
 	if !ok {
 		return
 	}
 
-	w, h, x, y := childGeometry(screen.Size.Width, screen.Size.Height, minW, minH)
+	w, h, x, y := childGeometry(screen.Size.Width, screen.Size.Height, minW, minH, rw, rh)
 	runtime.WindowSetSize(ctx, w, h)
 	runtime.WindowSetPosition(ctx, x, y)
 }
@@ -340,17 +344,17 @@ func canhGiuaManHinh(ctx context.Context, minW, minH int) {
 // Căn giữa cả màn hình thì cửa sổ rộng 70% lấn sang phải và nằm dưới thanh dọc
 // (thanh dọc luôn nổi trên): kiểm trên máy thật, nút đóng của cửa sổ Nạp tiền
 // bị thanh dọc che mất. Màn hình quá hẹp để chừa chỗ thì mới căn cả màn hình.
-func childGeometry(screenW, screenH, minW, minH int) (w, h, x, y int) {
+func childGeometry(screenW, screenH, minW, minH int, rw, rh float64) (w, h, x, y int) {
 	if avail := screenW - dockWidth; avail >= minW {
-		return centeredGeometry(avail, screenH, minW, minH)
+		return centeredGeometry(avail, screenH, minW, minH, rw, rh)
 	}
-	return centeredGeometry(screenW, screenH, minW, minH)
+	return centeredGeometry(screenW, screenH, minW, minH, rw, rh)
 }
 
 // centeredGeometry tính kích thước theo tỉ lệ rồi căn giữa.
-func centeredGeometry(screenW, screenH, minW, minH int) (w, h, x, y int) {
-	w = int(float64(screenW) * childWidthRatio)
-	h = int(float64(screenH) * childHeightRatio)
+func centeredGeometry(screenW, screenH, minW, minH int, rw, rh float64) (w, h, x, y int) {
+	w = int(float64(screenW) * rw)
+	h = int(float64(screenH) * rh)
 
 	// Màn hình nhỏ thì tỉ lệ có thể ra nhỏ hơn kích thước tối thiểu của cửa sổ;
 	// khi đó hệ điều hành kéo cửa sổ to lại nhưng toạ độ đã tính theo số cũ, và

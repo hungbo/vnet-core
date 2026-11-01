@@ -197,8 +197,8 @@ func canhGiuaCoDinh(ctx context.Context, w, h int) {
 	wailsruntime.WindowSetPosition(ctx, x, y)
 }
 
-// canhGiuaPanel căn cửa sổ phụ cho màn hình mode: hộp thông báo nhỏ cố định, các màn khác
-// theo tỉ lệ màn hình như trước.
+// canhGiuaPanel căn cửa sổ phụ cho màn hình mode: hộp thông báo nhỏ cố định, menu game
+// theo tỉ lệ to hơn, các màn khác theo tỉ lệ màn hình như trước.
 func (a *App) canhGiuaPanel(ctx context.Context, mode string) {
 	if mode == noticeMode {
 		canhGiuaCoDinh(ctx, noticeW, noticeH)
@@ -206,7 +206,11 @@ func (a *App) canhGiuaPanel(ctx context.Context, mode string) {
 	}
 	// Vừa là hộp thông báo thì cỡ tối thiểu đã bị hạ; trả về như lúc dựng cửa sổ.
 	wailsruntime.WindowSetMinSize(ctx, panelMinW, panelMinH)
-	canhGiuaManHinh(ctx, panelMinW, panelMinH)
+	rw, rh := childWidthRatio, childHeightRatio
+	if mode == "games" {
+		rw, rh = gameWidthRatio, gameHeightRatio
+	}
+	canhGiuaManHinh(ctx, panelMinW, panelMinH, rw, rh)
 }
 
 // hienThongBao hiện thông báo quầy gửi cho khách. Chạy ở thanh chính.

@@ -35,14 +35,30 @@ const DEV_MENU = [
 ]
 
 // Đủ các trạng thái menu game phải vẽ được. Tiến độ của game đang tải nhích theo
-// đồng hồ để thấy lượt làm mới mỗi 10 giây có tác dụng.
-const DEV_GAMES = [
-	{ name: 'lol', display_name: 'Liên Minh Huyền Thoại', category: 'MOBA', status: 'ready', label: 'hot' },
-	{ name: 'valorant', display_name: 'Valorant', category: 'FPS', status: 'ready', label: 'new' },
-	{ name: 'cs-old', display_name: 'Game mất tệp chạy', category: 'FPS', status: 'ready', problem: 'missing_launcher' },
-	{ name: 'pubg', display_name: 'PUBG: Battlegrounds', category: 'FPS', status: 'downloading' },
-	{ name: 'fo4', display_name: 'FC Online', category: 'Thể thao', status: 'queued' },
-	{ name: 'csgo2', display_name: 'Counter-Strike 2', category: 'FPS', status: 'error' },
+// đồng hồ để thấy lượt làm mới mỗi 10 giây có tác dụng. Nhóm như menu của quán
+// (Game online / Game offline / Công cụ); Dota 2 chỉ nhận ra là Steam qua lệnh chạy.
+const ONL = 'Game online'
+const DEV_GAMES: Record<string, string>[] = [
+	{ name: 'roblox', display_name: 'Roblox', category: ONL, status: 'ready', label: 'hot' },
+	{ name: 'fo4', display_name: 'FIFA Online 4', category: ONL, status: 'ready', label: 'hot' },
+	{ name: 'lol', display_name: 'Liên Minh Huyền Thoại', category: ONL, status: 'ready', label: 'hot' },
+	{ name: 'valorant', display_name: 'Valorant', category: ONL, status: 'ready', label: 'new' },
+	{ name: 'cs-old', display_name: 'Game mất tệp chạy', category: ONL, status: 'ready', problem: 'missing_launcher' },
+	{ name: 'pubg', display_name: 'PUBG: Battlegrounds', category: ONL, status: 'downloading' },
+	{ name: 'fc-online', display_name: 'FC Online', category: ONL, status: 'queued' },
+	{ name: 'csgo2', display_name: 'Counter-Strike 2', category: ONL, status: 'error' },
+	...[
+		'Đột Kích', 'Free Fire', 'GTA5VN', 'Delta Force Garena', 'The Isle', 'Genshin Impact', 'PUBG Mobile',
+		'Zenless Zone Zero', 'ZingSpeed Mobile', 'Naraka VNG', 'GTA V Epic', 'Honkai Star Rail', 'FIFA 24',
+		'Truy Kích', 'Overwatch 2', 'World of Tanks ASIA', 'Wuthering Waves', 'Naraka Steam', 'ROS Legacy',
+		'GTA V Steam', 'Audition', 'Palworld Steam', 'Arena Breakout Infinite', 'Phi Đội 3 VTC', 'Black Desert',
+		'Onmyoji Steam', 'Elden Ring', 'Fortnite', 'Võ Lâm Truyền Kỳ I', 'Honkai Impact 3', 'Silkroad Origin',
+		'Mecha BREAK Steam', 'Age of Empires IV Steam', 'Võ Lâm Truyền Kỳ II',
+	].map(n => ({ name: n.toLowerCase().replace(/\s+/g, '-'), display_name: n, category: ONL, status: 'ready' })),
+	{ name: 'dota2', display_name: 'DotA 2', category: ONL, status: 'ready', launcher: 'steam.exe', launch_args: '-applaunch 570' },
+	...['Steam', 'Garena', 'BlueStacks 5', 'LDPlayer', 'GPlay', 'OBS Portable', 'Nox', 'EGOPlay', 'Vanguard']
+		.map(n => ({ name: n.toLowerCase().replace(/\s+/g, '-'), display_name: n, category: 'Công cụ', status: 'ready' })),
+	{ name: 'gta-v', display_name: 'GTA V', category: 'Game offline', status: 'ready', label: 'hot' },
 	{ name: 'tft-ten-rat-dai-de-thu-xem-hai-dong-co-bi-cat-hay-khong', display_name: 'Đấu Trường Chân Lý với một cái tên rất dài để thử xem hai dòng có bị cắt hay không', category: '', status: 'ready' },
 ]
 
@@ -252,7 +268,7 @@ export function installDevWailsStub() {
 					ok(JSON.stringify({
 						root: 'D:\\Games',
 						items: DEV_GAMES.map(g => ({
-							...g, launcher: 'Game.exe', launch_args: '', version: 1,
+							launcher: 'Game.exe', launch_args: '', ...g, version: 1,
 							progress: g.status === 'downloading' ? 20 + (Math.floor(Date.now() / 10000) % 80) : 0,
 						})),
 					})),

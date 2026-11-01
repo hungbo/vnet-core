@@ -88,7 +88,7 @@ func TestCenteredGeometry(t *testing.T) {
 
 	for _, m := range manHinhThuongGap {
 		t.Run(m.ten, func(t *testing.T) {
-			w, h, x, y := centeredGeometry(m.w, m.h, minW, minH)
+			w, h, x, y := centeredGeometry(m.w, m.h, minW, minH, childWidthRatio, childHeightRatio)
 
 			if trai, phai := x, m.w-(x+w); trai != phai && trai != phai-1 {
 				t.Errorf("không căn giữa ngang: trái %d, phải %d", trai, phai)
@@ -111,7 +111,7 @@ func TestCenteredGeometry(t *testing.T) {
 // chứ không được để toạ độ ra số âm — cửa sổ nằm ngoài màn hình thì không kéo
 // lại được, và máy trạm thì không có ai ngồi cạnh để sửa.
 func TestCenteredGeometry_ManHinhNhoHonKichThuocToiThieu(t *testing.T) {
-	w, h, x, y := centeredGeometry(800, 600, 1280, 1024)
+	w, h, x, y := centeredGeometry(800, 600, 1280, 1024, childWidthRatio, childHeightRatio)
 
 	if w != 800 || h != 600 {
 		t.Errorf("kích thước %dx%d — phải kẹp về vừa màn hình 800x600", w, h)
@@ -135,7 +135,7 @@ func TestChildGeometry_KhongDeThanhDoc(t *testing.T) {
 	const minW, minH = 640, 480
 	for _, m := range manHinhThuongGap {
 		t.Run(m.ten, func(t *testing.T) {
-			w, h, x, y := childGeometry(m.w, m.h, minW, minH)
+			w, h, x, y := childGeometry(m.w, m.h, minW, minH, childWidthRatio, childHeightRatio)
 			if m.w-dockWidth >= minW && x+w > m.w-dockWidth {
 				t.Errorf("cửa sổ %dx%d tại x=%d lấn %dpx vào thanh dọc", w, h, x, x+w-(m.w-dockWidth))
 			}
@@ -143,6 +143,30 @@ func TestChildGeometry_KhongDeThanhDoc(t *testing.T) {
 				t.Errorf("lòi ra ngoài màn hình: %dx%d tại (%d,%d)", w, h, x, y)
 			}
 		})
+	}
+}
+
+// Menu game to hơn cửa sổ gọi món một chút, mà vẫn không đè thanh dọc và không lòi
+// ra khỏi màn hình — kể cả màn 1366x768 của máy yếu.
+func TestChildGeometry_MenuGameToHon(t *testing.T) {
+	const minW, minH = 640, 480
+	for _, m := range manHinhThuongGap {
+		t.Run(m.ten, func(t *testing.T) {
+			w, h, x, y := childGeometry(m.w, m.h, minW, minH, gameWidthRatio, gameHeightRatio)
+			cw, ch, _, _ := childGeometry(m.w, m.h, minW, minH, childWidthRatio, childHeightRatio)
+			if w < cw || h < ch {
+				t.Errorf("menu game %dx%d nhỏ hơn cửa sổ gọi món %dx%d", w, h, cw, ch)
+			}
+			if m.w-dockWidth >= minW && x+w > m.w-dockWidth {
+				t.Errorf("menu game %dx%d tại x=%d lấn %dpx vào thanh dọc", w, h, x, x+w-(m.w-dockWidth))
+			}
+			if x < 0 || y < 0 || x+w > m.w || y+h > m.h {
+				t.Errorf("lòi ra ngoài màn hình: %dx%d tại (%d,%d)", w, h, x, y)
+			}
+		})
+	}
+	if w, h, _, _ := childGeometry(1920, 1080, minW, minH, gameWidthRatio, gameHeightRatio); w != 1326 || h != 885 {
+		t.Errorf("màn 1920x1080: menu game %dx%d, mong 1326x885", w, h)
 	}
 }
 
