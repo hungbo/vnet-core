@@ -5,6 +5,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -137,4 +139,37 @@ func gdiBitmapBits(dc, hbm uintptr, w, h int) ([]byte, error) {
 		return nil, errors.New("đọc điểm ảnh icon thất bại")
 	}
 	return buf, nil
+}
+
+// duongDanThat trả đường dẫn thật của tệp hay thư mục, đi theo cả symlink lẫn junction. Không dùng
+// filepath.EvalSymlinks: từ Go 1.23 junction mang ModeIrregular chứ không ModeDir, nên một junction ở giữa
+// đường dẫn (thư mục game E:\Games\CSGO dẫn sang thư mục của phần mềm khác) làm nó trả ENOTDIR và game mất icon.
+func duongDanThat(p string) (string, error) {
+	name, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return "", err
+	}
+	// Quyền 0 đủ để hỏi đường dẫn; FILE_FLAG_BACKUP_SEMANTICS để mở được cả thư mục.
+	h, err := windows.CreateFile(name, 0, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		return "", &fs.PathError{Op: "open", Path: p, Err: err}
+	}
+	defer windows.CloseHandle(h)
+	buf := make([]uint16, windows.MAX_PATH)
+	for {
+		// Cờ 0 = FILE_NAME_NORMALIZED | VOLUME_NAME_DOS: kết quả dạng \\?\E:\... hoặc \\?\UNC\máy\...
+		n, err := windows.GetFinalPathNameByHandle(h, &buf[0], uint32(len(buf)), 0)
+		if err != nil {
+			return "", &fs.PathError{Op: "GetFinalPathNameByHandle", Path: p, Err: err}
+		}
+		if int(n) < len(buf) {
+			s := windows.UTF16ToString(buf[:n])
+			if rest, ok := strings.CutPrefix(s, `\\?\UNC\`); ok {
+				return `\\` + rest, nil
+			}
+			return strings.TrimPrefix(s, `\\?\`), nil
+		}
+		buf = make([]uint16, n) // bộ đệm thiếu: n là cỡ cần, đã gồm ký tự kết thúc
+	}
 }

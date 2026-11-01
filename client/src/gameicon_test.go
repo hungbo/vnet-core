@@ -8,7 +8,9 @@ import (
 	"image/png"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -374,6 +376,40 @@ func TestCheckIconSource_KhoaDoiKhiTepDoi(t *testing.T) {
 	}
 	if a.key == b.key {
 		t.Error("khoá không đổi sau khi tệp đổi")
+	}
+}
+
+// lienKetThuMuc: junction trên Windows (đúng trường hợp ở quán, không cần quyền tạo symlink), symlink ở nơi khác.
+func lienKetThuMuc(t *testing.T, target, link string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		if out, err := exec.Command("cmd", "/c", "mklink", "/J", link, target).CombinedOutput(); err != nil {
+			t.Fatalf("mklink /J: %v %s", err, out)
+		}
+		return
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skip("không tạo được symlink:", err)
+	}
+}
+
+func TestCheckIconSource_ThuMucGameLaLienKet(t *testing.T) {
+	root := t.TempDir()
+	kho := filepath.Join(root, "kho", "CSGO") // thư mục game thật của phần mềm khác (Kzone…)
+	writeFile(t, filepath.Join(kho, "KZ_CSGO.exe"))
+	writeFile(t, filepath.Join(root, "ngoai", "evil.exe"))
+	gameDir := filepath.Join(root, "Games", "CSGO")
+	if err := os.MkdirAll(filepath.Dir(gameDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	lienKetThuMuc(t, kho, gameDir)
+
+	if _, err := checkIconSource(gameDir, filepath.Join(gameDir, "KZ_CSGO.exe")); err != nil {
+		t.Errorf("thư mục game là liên kết phải lấy được icon: %v", err)
+	}
+	lienKetThuMuc(t, filepath.Join(root, "ngoai"), filepath.Join(kho, "Ra"))
+	if _, err := checkIconSource(gameDir, filepath.Join(gameDir, "Ra", "evil.exe")); err == nil {
+		t.Error("liên kết bên trong thư mục game trỏ ra ngoài vẫn phải bị từ chối")
 	}
 }
 

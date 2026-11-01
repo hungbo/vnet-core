@@ -167,7 +167,7 @@ type iconSource struct {
 // checkIconSource chỉ cho đọc icon từ một tệp thường nằm thật sự trong thư mục
 // game. resolveGameLaunch đã chặn ".." trên chữ, nhưng chữ không thấy được
 // symlink/junction: Bin -> C:\Windows\System32 sẽ lọt qua. Lstat bắt tệp là
-// symlink hay thư mục; EvalSymlinks bắt thư mục cha là liên kết đi ra ngoài.
+// symlink hay thư mục; duongDanThat bắt thư mục cha là liên kết đi ra ngoài.
 // Thư mục game được giải liên kết trước khi so, nên game cố ý đặt junction ở
 // chính thư mục game vẫn dùng được.
 //
@@ -180,11 +180,11 @@ func checkIconSource(gameDir, exe string) (iconSource, error) {
 	if !fi.Mode().IsRegular() {
 		return iconSource{}, errors.New("không phải tệp thường")
 	}
-	realExe, err := filepath.EvalSymlinks(exe)
+	realExe, err := duongDanThat(exe)
 	if err != nil {
 		return iconSource{}, err
 	}
-	realDir, err := filepath.EvalSymlinks(gameDir)
+	realDir, err := duongDanThat(gameDir)
 	if err != nil {
 		return iconSource{}, err
 	}
