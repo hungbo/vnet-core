@@ -881,10 +881,18 @@ const local: App.I18n.Schema = {
       addLocal: 'Add local game',
       localTag: 'Local',
       localHint:
-        'A game the cafe downloads itself: pick its folder in {root} and its launcher. It shows on the workstation menu but is not synced with the Hub, and the Hub never overwrites or deletes it.',
+        'A game the cafe downloads itself: pick its folder (in {root} or anywhere on the server, no link needed) and its launcher. It shows on the workstation menu but is not synced with the Hub, and the Hub never overwrites or deletes it.',
       localFolderPick: 'Pick a folder not added yet',
       localLauncherPick: 'Pick or type the launcher file',
       localNoFolders: 'No folder left to add in {root}',
+      localRoot: 'Containing folder',
+      localRootHint:
+        'Folder on the server that holds the game folders, anywhere on the server, e.g. E:\\Online Games. Defaults to {root}. Press Enter after typing to load the list.',
+      localName: 'Game name',
+      localNameHint:
+        'Leave empty to use the folder name. If it matches a Hub game this cafe has not downloaded, you will be asked whether to replace it; if it matches a downloaded Hub game or the folder name has accents, give another name (letters without accents, digits, spaces and . _ ( ) + - only).',
+      replaceHubConfirm:
+        'The Hub already has a game "{name}" that this cafe has not downloaded. Replace it with this local game? The Hub version will no longer be downloaded; to use it again, delete the local game.',
       localClash:
         'A local game has the same name as a Hub game: {names}. The cafe keeps the local one; to use the Hub version, delete the local game (files on disk stay).',
       runFirst: 'Run before the game starts',
@@ -895,6 +903,8 @@ const local: App.I18n.Schema = {
       stepArgs: 'Arguments',
       clientRootLocal: 'Own workstation drive',
       clientRootLocalHint: 'Leave empty to use the shared game folder above. Example E:\\Games2.',
+      clientRootFolderHint:
+        'Leave empty to use the greyed-out path in the box (workstations see the same drives as the server). Fill it in only when workstations see the containing folder under another drive letter.',
       customize: 'Customize',
       customTag: 'Customized',
       customTitle: 'Customize the game for this cafe',

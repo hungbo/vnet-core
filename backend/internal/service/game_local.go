@@ -7,17 +7,20 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/vnet/core/internal/config"
 	"github.com/vnet/core/internal/model"
+	"gorm.io/gorm"
 )
 
 // Game cục bộ: quán tự tải game (copy, launcher của hãng, cài tay…) rồi chỉ khai báo thư mục và tệp chạy để game
 // hiện trên menu máy trạm. Khác game của Hub ở chỗ không có bản, không băm, không đồng bộ, không cập nhật (xem
-// model.GameOriginLocal). Thư mục vẫn nằm ở GAME_ROOT/<tên> vì menu máy trạm ghép đường dẫn từ gốc game, tên game và
-// launcher.
+// model.GameOriginLocal). Thư mục nằm ở GAME_ROOT/<tên> hoặc ở bất kỳ đâu trên máy chủ (thư mục của Kzone…); khi đó
+// gốc game riêng (custom.client_root) là thư mục cha. Menu máy trạm ghép đường dẫn từ gốc game, thư mục game và
+// launcher; tên game khác tên thư mục thì thư mục nằm ở custom.folder.
 
 var (
 	// ErrGameLocalOnMaster: master phát hành game, không có khái niệm game riêng của quán.
@@ -28,6 +31,8 @@ var (
 	ErrGameNeedRoot = errors.New("chưa đặt thư mục game trên máy chủ (GAME_ROOT)")
 	// ErrGameLocalNeedLauncher: không có tệp chạy thì game không lên menu.
 	ErrGameLocalNeedLauncher = errors.New("game cục bộ cần tệp chạy (launcher) hoặc ít nhất một mục menu riêng")
+	// ErrGameHubChuaTaiCanXacNhan: tên trùng một game Hub quán chưa tải; thay được nhưng phải hỏi người dùng trước.
+	ErrGameHubChuaTaiCanXacNhan = errors.New("tên này trùng với một game của Hub mà quán chưa tải: xác nhận thay bằng game cục bộ, hoặc đặt tên game khác")
 )
 
 // Giới hạn danh sách gợi ý cho hộp "Thêm game cục bộ": thư mục game ở quán lớn có thể rất nhiều tệp.
@@ -49,10 +54,40 @@ func laTepChay(name string) bool {
 // thuMucAn: thư mục của hệ thống phân phối, của launcher hay công cụ chứ không phải game.
 func thuMucAn(name string) bool { return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") }
 
-// tepTonTai kiểm launcher có thật trong thư mục game (tệp thường, không phải thư mục).
-func tepTonTai(root, game, rel string) bool {
-	fi, err := os.Stat(filepath.Join(root, game, filepath.FromSlash(strings.ReplaceAll(rel, `\`, "/"))))
+// tepTonTai kiểm launcher có thật trong thư mục game dir (tệp thường, không phải thư mục).
+func tepTonTai(dir, rel string) bool {
+	fi, err := os.Stat(filepath.Join(dir, filepath.FromSlash(strings.ReplaceAll(rel, `\`, "/"))))
 	return err == nil && fi.Mode().IsRegular()
+}
+
+// duongDanMayChu kiểm và làm gọn một thư mục tuyệt đối trên máy chủ (game cục bộ ngoài GAME_ROOT). Không nhận đường
+// dẫn mạng (\\máy\chia-sẻ, \\?\…): đọc thư mục ở máy khác làm máy chủ gửi thông tin đăng nhập Windows tới máy đó.
+func duongDanMayChu(p string) (string, error) {
+	p = strings.TrimSpace(p)
+	bad := !filepath.IsAbs(p) || strings.HasPrefix(p, `\\`) || strings.HasPrefix(p, "//")
+	if runtime.GOOS == "windows" && len(filepath.VolumeName(p)) != 2 { // chỉ "E:"; UNC ra "\\máy\chia-sẻ"
+		bad = true
+	}
+	if bad {
+		// %s chứ không %q: %q nhân đôi mọi dấu "\" của đường dẫn Windows.
+		return "", fmt.Errorf("\"%s\" không phải đường dẫn đầy đủ trên máy chủ, ví dụ E:\\Online Games\\VALORANT (không nhận thư mục chia sẻ qua mạng)", p)
+	}
+	return filepath.Clean(p), nil
+}
+
+// tenThuMucDungDuoc: tên thư mục game dưới gốc (custom.folder) dùng được trên máy trạm: cùng luật checkGameComponent
+// của client (client/src/games.go), cộng tên thiết bị Windows và chữ hỏng bảng mã. Tiếng Việt có dấu vẫn qua.
+func tenThuMucDungDuoc(c string) bool {
+	return c != "" && len(c) <= 255 && !coKyTuLoi(c) && strings.Trim(c, ". ") != "" && !thanhPhanWindowsXau(c) &&
+		strings.IndexFunc(c, func(r rune) bool { return r < 0x20 || strings.ContainsRune(`<>:"|?*\/`, r) }) < 0
+}
+
+// cungThuMuc: hai đường dẫn (đã Clean) chỉ cùng một thư mục; Windows không phân biệt hoa thường.
+func cungThuMuc(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
 }
 
 // lienKetToiThuMuc: mục là junction hay symlink trỏ tới một thư mục. Từ Go 1.23, junction trên Windows mang
@@ -65,7 +100,8 @@ func lienKetToiThuMuc(p string, t fs.FileMode) bool {
 	return err == nil && fi.IsDir()
 }
 
-// CreateLocal thêm một game cục bộ. Thư mục GAME_ROOT/<tên> và tệp chạy phải có sẵn trên máy chủ.
+// CreateLocal thêm một game cục bộ. Thư mục game (req.Folder, hoặc GAME_ROOT/<tên> khi không gửi) và tệp chạy phải có
+// sẵn trên máy chủ.
 func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 	c := s.conf()
 	if c.Role == config.GameRoleMaster {
@@ -75,14 +111,49 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 		return nil, ErrGameNeedRoot
 	}
 	name := strings.TrimSpace(req.Name)
+	dir := filepath.Join(c.Root, name)
+	clientRoot := strings.TrimSpace(req.ClientRoot)
+	folder := "" // custom.folder: chỉ khi tên game khác tên thư mục
+	if strings.TrimSpace(req.Folder) != "" {
+		p, err := duongDanMayChu(req.Folder)
+		if err != nil {
+			return nil, err
+		}
+		base := filepath.Base(p)
+		if !tenThuMucDungDuoc(base) {
+			return nil, fmt.Errorf("tên thư mục %q máy trạm không mở được: đổi tên thư mục", base)
+		}
+		if name == "" {
+			if !tenGameDungDuoc(base) {
+				return nil, fmt.Errorf("thư mục %q không dùng làm tên game được: nhập tên game riêng (chữ không dấu, số, khoảng trắng và . _ ( ) + -)", base)
+			}
+			name = base
+		}
+		if name != base {
+			folder = base
+		}
+		dir = p
+		// Máy trạm thấy ổ đĩa của máy chủ như nhau nên gốc riêng của game là thư mục cha. Game nằm ngay trong
+		// GAME_ROOT thì theo ổ chung của quán như game thêm kiểu cũ (máy trạm có thể thấy GAME_ROOT dưới chữ ổ khác).
+		if parent := filepath.Dir(p); clientRoot == "" && !cungThuMuc(parent, filepath.Clean(c.Root)) {
+			clientRoot = parent
+		}
+	}
 	if !tenGameDungDuoc(name) {
 		return nil, errors.New("tên game chỉ gồm chữ, số, khoảng trắng và . _ ( ) + -, không quá 100 ký tự, không kết thúc bằng dấu chấm và không trùng tên thiết bị Windows (CON, NUL, COM1…)")
 	}
 	if err := kiemTraCacTruongChuGame(&req.DisplayName, &req.Category, &req.Launcher, &req.LaunchArgs); err != nil {
 		return nil, err
 	}
-	if fi, err := os.Stat(filepath.Join(c.Root, name)); err != nil || !fi.IsDir() {
-		return nil, fmt.Errorf("không thấy thư mục %s", filepath.Join(c.Root, name))
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return nil, fmt.Errorf("không thấy thư mục %s", dir)
+	}
+	if clientRoot != "" {
+		p, err := parseGameClientRoot(clientRoot)
+		if err != nil {
+			return nil, fmt.Errorf("gốc game trên máy trạm %q: %w", clientRoot, err)
+		}
+		clientRoot = p
 	}
 	if err := checkLauncher(req.Launcher); err != nil {
 		return nil, err
@@ -102,20 +173,29 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 	if launcher == "" && len(entries) == 0 {
 		return nil, ErrGameLocalNeedLauncher
 	}
-	if launcher != "" && !tepTonTai(c.Root, name, launcher) {
+	if launcher != "" && !tepTonTai(dir, launcher) {
 		return nil, fmt.Errorf("không thấy tệp chạy %s trong thư mục game", launcher)
 	}
 	for _, e := range entries {
-		if !tepTonTai(c.Root, name, e.Launcher) {
+		if !tepTonTai(dir, e.Launcher) {
 			return nil, fmt.Errorf("không thấy tệp chạy %s của mục %q trong thư mục game", e.Launcher, e.DisplayName)
 		}
 	}
+	// Tên trùng một game Hub chưa có gì trên ổ (chưa tải, không bản nào): req.ReplaceHub thì xoá dòng đó và thêm game
+	// cục bộ cùng tên. Lượt đọc catalog sau thấy game cục bộ thì giữ nó (noteLocalClash). Game Hub đã tải hay đang tải
+	// thì không: mất bản cập nhật và bỏ rơi tệp đã nằm trong GAME_ROOT.
+	replaceID := ""
 	var existing model.Game
 	if err := s.db.Where("name = ?", name).First(&existing).Error; err == nil {
-		if existing.Origin == model.GameOriginLocal {
+		switch {
+		case existing.Origin == model.GameOriginLocal:
 			return nil, errors.New("game này đã có")
+		case existing.Status != model.GameStatusNotInstalled || existing.Version != 0:
+			return nil, errors.New("tên này trùng với một game của Hub đã tải hoặc đang tải: đặt tên game khác (thư mục giữ nguyên) hoặc dùng game của Hub")
+		case !req.ReplaceHub:
+			return nil, ErrGameHubChuaTaiCanXacNhan
 		}
-		return nil, errors.New("tên này trùng với một game của Hub; đổi tên thư mục hoặc dùng game của Hub")
+		replaceID = existing.ID
 	}
 	g := model.Game{
 		Name:        name,
@@ -126,17 +206,34 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 		Icon:        strings.TrimSpace(req.Icon),
 		MenuEntries: entries,
 		RunFirst:    runFirst,
+		Custom:      model.GameCustom{ClientRoot: clientRoot, Folder: folder},
 		Priority:    req.Priority,
 		Enabled:     true,
 		Origin:      model.GameOriginLocal,
 		Status:      model.GameStatusReady,
 		Progress:    100,
 	}
-	if err := s.db.Create(&g).Error; err != nil {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if replaceID != "" {
+			// Cùng điều kiện như lúc kiểm: vòng nền vừa xếp game Hub vào hàng đợi thì không xoá.
+			res := tx.Where("id = ? AND status = ? AND version = 0", replaceID, model.GameStatusNotInstalled).Delete(&model.Game{})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected != 1 {
+				return errors.New("game của Hub cùng tên vừa bắt đầu tải: tải lại trang rồi thử lại")
+			}
+		}
+		return tx.Create(&g).Error
+	})
+	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") {
 			return nil, errors.New("game này đã có")
 		}
 		return nil, err
+	}
+	if replaceID != "" {
+		log.Printf("[game] %s: thay game Hub chưa tải bằng game cục bộ", name)
 	}
 	s.baoDoi(g.ID)
 	return &g, nil
@@ -156,8 +253,10 @@ func (s *GameService) noteLocalClash(name string) {
 	}
 }
 
-// LocalFolders liệt kê thư mục con của GAME_ROOT chưa là game nào, để chọn khi thêm game cục bộ.
-func (s *GameService) LocalFolders() ([]string, error) {
+// LocalFolders liệt kê thư mục con chưa là game nào của root (thư mục tuyệt đối trên máy chủ; rỗng là GAME_ROOT), để
+// chọn khi thêm game cục bộ. Bỏ tên và thư mục của các game cục bộ đã có. Tên game của Hub chỉ bỏ trong GAME_ROOT (đó
+// là thư mục Hub tải về); ở nơi khác, thư mục trùng tên game Hub là bản riêng của quán, thêm được dưới tên khác.
+func (s *GameService) LocalFolders(root string) ([]string, error) {
 	c := s.conf()
 	if c.Role == config.GameRoleMaster {
 		return nil, ErrGameLocalOnMaster
@@ -165,25 +264,39 @@ func (s *GameService) LocalFolders() ([]string, error) {
 	if c.Root == "" {
 		return nil, ErrGameNeedRoot
 	}
-	entries, err := os.ReadDir(c.Root)
+	dir := c.Root
+	if strings.TrimSpace(root) != "" {
+		p, err := duongDanMayChu(root)
+		if err != nil {
+			return nil, err
+		}
+		dir = p
+	}
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("không đọc được thư mục game: %w", err)
 	}
-	var have []string
-	if err := s.db.Model(&model.Game{}).Pluck("name", &have).Error; err != nil {
+	var have []model.Game
+	if err := s.db.Select("name", "origin", "custom").Find(&have).Error; err != nil {
 		return nil, err
 	}
+	inRoot := cungThuMuc(filepath.Clean(dir), filepath.Clean(c.Root))
 	taken := make(map[string]bool, len(have))
-	for _, n := range have {
-		taken[strings.ToLower(n)] = true
+	for _, g := range have {
+		if g.Origin == model.GameOriginLocal || inRoot {
+			taken[strings.ToLower(g.Name)] = true
+		}
+		if g.Custom.Folder != "" {
+			taken[strings.ToLower(g.Custom.Folder)] = true
+		}
 	}
 	out := []string{}
 	for _, e := range entries {
 		n := e.Name()
-		if thuMucAn(n) || !tenGameDungDuoc(n) || taken[strings.ToLower(n)] {
+		if thuMucAn(n) || !tenThuMucDungDuoc(n) || taken[strings.ToLower(n)] {
 			continue
 		}
-		if !e.IsDir() && !lienKetToiThuMuc(filepath.Join(c.Root, n), e.Type()) {
+		if !e.IsDir() && !lienKetToiThuMuc(filepath.Join(dir, n), e.Type()) {
 			continue
 		}
 		out = append(out, n)
@@ -196,8 +309,8 @@ func (s *GameService) LocalFolders() ([]string, error) {
 }
 
 // LocalLaunchers liệt kê tệp chạy (.exe, .bat, .cmd, .lnk) trong một thư mục game, đường dẫn tương đối kiểu "Bin/Game.exe".
-// Tệp ở cấp nông trước. Không đi theo liên kết bên trong thư mục game (chính thư mục game là junction thì vẫn dò),
-// bỏ thư mục ẩn và thư mục của hệ thống phân phối.
+// folder là tên thư mục trong GAME_ROOT hoặc đường dẫn tuyệt đối trên máy chủ. Tệp ở cấp nông trước. Không đi theo liên
+// kết bên trong thư mục game (chính thư mục game là junction thì vẫn dò), bỏ thư mục ẩn và thư mục của hệ thống phân phối.
 func (s *GameService) LocalLaunchers(folder string) ([]string, error) {
 	c := s.conf()
 	if c.Role == config.GameRoleMaster {
@@ -207,10 +320,14 @@ func (s *GameService) LocalLaunchers(folder string) ([]string, error) {
 		return nil, ErrGameNeedRoot
 	}
 	folder = strings.TrimSpace(folder)
-	if !tenGameDungDuoc(folder) { // cũng là rào chặn "..", dấu gạch và ổ đĩa
-		return nil, errors.New("tên thư mục game không hợp lệ")
+	var base string
+	if tenGameDungDuoc(folder) { // cũng là rào chặn "..", dấu gạch và ổ đĩa
+		base = filepath.Join(c.Root, folder)
+	} else if p, err := duongDanMayChu(folder); err == nil {
+		base = p
+	} else {
+		return nil, errors.New("thư mục game không hợp lệ: cần tên thư mục trong GAME_ROOT hoặc đường dẫn đầy đủ trên máy chủ")
 	}
-	base := filepath.Join(c.Root, folder)
 	if fi, err := os.Stat(base); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("không thấy thư mục %s", base)
 	}

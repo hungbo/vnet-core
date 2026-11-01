@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -122,5 +123,43 @@ func TestGameHandler_IdKhongPhaiUUID(t *testing.T) {
 		assert.Contains(t, w.Body.String(), "không tìm thấy game", label)
 		assert.NotContains(t, w.Body.String(), "SQLSTATE", label)
 		assert.NoError(t, mock.ExpectationsWereMet(), label+": không được có truy vấn nào")
+	}
+}
+
+// Máy trạm cũ (không gửi v=2) không biết trường folder, sẽ ghép Root\Name\Launcher ra đường dẫn sai: không trả mục đó.
+func TestGameHandler_MenuChiTraFolderKhiV2(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, c := range []struct {
+		query string
+		keys  []string
+	}{{"", []string{"A"}}, {"?v=1", []string{"A"}}, {"?v=2", []string{"A", "Roblox KZ"}}} {
+		db, mock := newTestDB(t)
+		mock.ExpectQuery(`SELECT \* FROM "games"`).WillReturnRows(
+			sqlmock.NewRows([]string{"name", "display_name", "launcher", "enabled", "status", "custom"}).
+				AddRow("A", "A", "a.exe", true, "ready", nil).
+				AddRow("Roblox KZ", "Roblox", "r.exe", true, "ready", `{"client_root":"E:\\Online Games","folder":"Roblox"}`))
+		r := gin.New()
+		r.GET("/game-menu", NewGameHandler(service.NewGameService(db, config.GameConfig{Role: config.GameRoleCafe})).Menu)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest("GET", "/game-menu"+c.query, nil))
+		require.Equal(t, http.StatusOK, w.Code, c.query)
+
+		var body struct {
+			Data struct {
+				Items []struct {
+					Key    string `json:"key"`
+					Folder string `json:"folder"`
+				} `json:"items"`
+			} `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		keys := []string{}
+		for _, it := range body.Data.Items {
+			keys = append(keys, it.Key)
+			if it.Key == "Roblox KZ" {
+				assert.Equal(t, "Roblox", it.Folder)
+			}
+		}
+		assert.ElementsMatch(t, c.keys, keys, c.query)
 	}
 }

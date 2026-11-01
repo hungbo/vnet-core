@@ -90,7 +90,7 @@ func (a *App) runFirstBeforeGame(root string, g *gameMenuItem) {
 	if len(g.RunFirst) == 0 {
 		return
 	}
-	plan, problems := planRunFirst(root, g.Name, g.RunFirst)
+	plan, problems := planRunFirst(root, g.dirName(), g.RunFirst)
 	problems = append(problems, runPlan(plan, runRunFirstStep, fileExists, runFirstStepTimeout, runFirstTotalBudget, time.Now)...)
 	log.Printf("[game] %s: chạy %d/%d bước chuẩn bị, %d lỗi", g.menuKey(), len(plan), len(g.RunFirst), len(problems))
 	if len(problems) > 0 {

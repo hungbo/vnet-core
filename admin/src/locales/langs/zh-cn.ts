@@ -873,10 +873,19 @@ const local: App.I18n.Schema = {
       addHint: '游戏目录必须已存在于 {root}。游戏名称即该目录名称。',
       addLocal: '添加本地游戏',
       localTag: '本地',
-      localHint: '网吧自行下载的游戏：在 {root} 中选择游戏目录和启动文件。游戏会显示在工作站菜单中，但不与 Hub 同步，Hub 也不会覆盖或删除它。',
+      localHint:
+        '网吧自行下载的游戏：选择游戏目录（在 {root} 中或服务器上任意位置，无需创建链接）和启动文件。游戏会显示在工作站菜单中，但不与 Hub 同步，Hub 也不会覆盖或删除它。',
       localFolderPick: '选择尚未添加的目录',
       localLauncherPick: '选择或输入启动文件',
       localNoFolders: '{root} 中没有可添加的目录了',
+      localRoot: '游戏所在目录',
+      localRootHint:
+        '服务器上存放游戏目录的文件夹，可以在任意位置，例如 E:\\Online Games。默认为 {root}。输入后按回车加载列表。',
+      localName: '游戏名称',
+      localNameHint:
+        '留空则使用目录名。若与网吧尚未下载的 Hub 游戏同名，页面会询问是否替换；若与已下载的 Hub 游戏同名或目录名含越南语声调符号，请另起名称（仅限无声调字母、数字、空格及 . _ ( ) + -）。',
+      replaceHubConfirm:
+        'Hub 已有游戏“{name}”，但网吧尚未下载。要用此本地游戏替换吗？Hub 版本将不再下载；若要重新使用，请删除本地游戏。',
       localClash: '本地游戏与 Hub 游戏重名：{names}。网吧保留本地版本；若要使用 Hub 版本，请删除本地游戏（磁盘上的文件保留）。',
       runFirst: '启动游戏前先运行',
       runFirstHint: '游戏目录内的程序会依次运行并等待完成（每步最多 30 秒）后再打开游戏。最多 5 步。',
@@ -885,6 +894,8 @@ const local: App.I18n.Schema = {
       stepArgs: '参数',
       clientRootLocal: '独立的工作站盘符',
       clientRootLocalHint: '留空则使用上方共用的游戏目录。例如 E:\\Games2。',
+      clientRootFolderHint:
+        '留空则使用框中灰色显示的路径（工作站看到的盘符与服务器相同）。仅当工作站以其他盘符看到该上级目录时才填写。',
       customize: '自定义',
       customTag: '已自定义',
       customTitle: '为本网吧自定义游戏',

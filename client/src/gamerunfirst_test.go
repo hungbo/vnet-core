@@ -21,6 +21,11 @@ func TestRootOf(t *testing.T) {
 	equal(t, `E:\Games2`, (&gameMenuItem{Root: `E:\Games2`}).rootOf(`D:\Games`), "gốc riêng")
 }
 
+func TestDirName(t *testing.T) {
+	equal(t, "Roblox", (&gameMenuItem{Name: "Roblox"}).dirName(), "không có folder: thư mục là tên game")
+	equal(t, "Roblox", (&gameMenuItem{Name: "Roblox KZ", Folder: "Roblox"}).dirName(), "folder")
+}
+
 func TestGameMenu_JSONCuVaMoi(t *testing.T) {
 	var old gameMenu
 	if err := json.Unmarshal([]byte(`{"root":"D:","items":[{"key":"A","name":"A","launcher":"a.exe","status":"ready"}]}`), &old); err != nil {
@@ -35,6 +40,12 @@ func TestGameMenu_JSONCuVaMoi(t *testing.T) {
 		t.Fatal(err)
 	}
 	equal(t, `E:\G2`, cur.Items[0].Root, "root")
+	equal(t, "", cur.Items[0].Folder, "không có folder")
+	var withFolder gameMenu
+	if err := json.Unmarshal([]byte(`{"root":"D:","items":[{"key":"Roblox KZ","name":"Roblox KZ","folder":"Roblox","launcher":"r.exe"}]}`), &withFolder); err != nil {
+		t.Fatal(err)
+	}
+	equal(t, "Roblox", withFolder.Items[0].Folder, "folder")
 	equal(t, []gameRunStep{{Launcher: "pre/x.bat", LaunchArgs: "/s"}}, cur.Items[0].RunFirst, "run_first")
 }
 
@@ -103,6 +114,8 @@ func TestGameIconTarget_GocRieng(t *testing.T) {
 	m := &gameMenu{Root: `D:\Games`, Items: []gameMenuItem{
 		{Key: "A", Name: "A", Launcher: "a.exe"},
 		{Key: "B", Name: "B", Launcher: "b.exe", Root: `E:\Games2`},
+		{Key: "Roblox KZ", Name: "Roblox KZ", Folder: "Roblox", Launcher: "r.exe", Root: `E:\Online Games`},
+		{Key: "X", Name: "X", Folder: `..\Windows`, Launcher: "x.exe"},
 	}}
 	exe, dir, ok := gameIconTarget(m, "A")
 	equal(t, true, ok, "A có icon")
@@ -112,4 +125,10 @@ func TestGameIconTarget_GocRieng(t *testing.T) {
 	equal(t, true, ok, "B có icon")
 	equal(t, `E:\Games2\B\b.exe`, exe, "B exe")
 	equal(t, `E:\Games2\B`, dir, "B dir")
+	exe, dir, ok = gameIconTarget(m, "Roblox KZ")
+	equal(t, true, ok, "Roblox KZ có icon")
+	equal(t, `E:\Online Games\Roblox\r.exe`, exe, "thư mục theo folder, không theo tên game")
+	equal(t, `E:\Online Games\Roblox`, dir, "Roblox KZ dir")
+	_, _, ok = gameIconTarget(m, "X")
+	equal(t, false, ok, "folder thoát khỏi gốc thì bị từ chối như tên game")
 }

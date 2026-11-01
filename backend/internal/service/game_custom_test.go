@@ -166,7 +166,10 @@ func TestMenu_TuyChinhCuaQuan(t *testing.T) {
 			AddRow("C", "Game C", "Online", "c.exe", "", "", nil, true, 1, model.GameStatusReady, `[{"launcher":"pre/c.bat"}]`, `{"run_first":[]}`).
 			// game nhiều mục: tên và icon của từng mục giữ nguyên, gốc và lệnh chạy trước theo game
 			AddRow("D", "Game D", "Ứng dụng", "", "", "", `[{"display_name":"Word","launcher":"w.exe","icon":"w.ico"}]`, true, 1, model.GameStatusReady, nil,
-				`{"display_name":"Bỏ qua","icon":"bo-qua.ico","client_root":"F:\\Apps"}`))
+				`{"display_name":"Bỏ qua","icon":"bo-qua.ico","client_root":"F:\\Apps"}`).
+			// game cục bộ tên khác thư mục: thư mục Roblox của Kzone, tên Roblox đã là game của Hub
+			AddRow("Roblox KZ", "Roblox", "Online", "RobloxPlayerLauncher.exe", "", "", nil, true, 0, model.GameStatusReady, nil,
+				`{"client_root":"E:\\Online Games","folder":"Roblox"}`))
 	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs("games").
 		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
 
@@ -176,7 +179,7 @@ func TestMenu_TuyChinhCuaQuan(t *testing.T) {
 	for _, it := range menu.Items {
 		by[it.Key] = it
 	}
-	require.Len(t, menu.Items, 4)
+	require.Len(t, menu.Items, 5)
 
 	a := by["A"]
 	assert.Equal(t, "Game A", a.DisplayName)
@@ -196,11 +199,22 @@ func TestMenu_TuyChinhCuaQuan(t *testing.T) {
 	assert.Equal(t, "Word", d.DisplayName, "tên của mục menu không bị tên tuỳ chỉnh của game đè")
 	assert.Equal(t, "w.ico", d.Icon)
 	assert.Equal(t, `F:\Apps`, d.Root)
+
+	e := by["Roblox KZ"]
+	assert.Equal(t, "Roblox", e.Folder, "máy trạm mở E:\\Online Games\\Roblox\\…, không phải thư mục theo tên game")
+	assert.Equal(t, `E:\Online Games`, e.Root)
+	assert.Empty(t, a.Folder, "thư mục trùng tên game thì không gửi folder")
+	cu := MenuChoMayTramCu(menu.Items)
+	assert.Len(t, cu, 4, "máy trạm cũ không biết folder: bỏ mục đó thay vì để nó ghép sai đường dẫn")
+	for _, it := range cu {
+		assert.NotEqual(t, "Roblox KZ", it.Key)
+	}
 	assert.NoError(t, mock.ExpectationsWereMet())
 
 	raw, err := json.Marshal(a)
 	require.NoError(t, err)
 	assert.NotContains(t, string(raw), `"root"`, "omitempty: máy trạm cũ thấy đúng hình dạng cũ")
+	assert.NotContains(t, string(raw), `"folder"`)
 }
 
 func TestCatalog_CoRunFirst(t *testing.T) {

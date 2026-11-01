@@ -86,7 +86,7 @@ func annotateLaunchers(m *gameMenu, now time.Time) *gameMenu {
 		if g.Status != gameStatusReady {
 			continue
 		}
-		exe, _, err := resolveGameLaunch(g.rootOf(m.Root), g.Name, g.Launcher)
+		exe, _, err := resolveGameLaunch(g.rootOf(m.Root), g.dirName(), g.Launcher)
 		if err != nil {
 			g.Problem = problemBadConfig
 			noteLauncherProblem(g, fmt.Sprintf("cấu hình không hợp lệ: %v", err))

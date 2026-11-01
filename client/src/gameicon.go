@@ -121,7 +121,7 @@ func gameIconTarget(m *gameMenu, key string) (exe, gameDir string, ok bool) {
 		src = g.Launcher
 	}
 	root := g.rootOf(m.Root)
-	exe, _, err := resolveGameLaunch(root, g.Name, src)
+	exe, _, err := resolveGameLaunch(root, g.dirName(), src)
 	if err != nil {
 		return "", "", false
 	}
@@ -129,7 +129,7 @@ func gameIconTarget(m *gameMenu, key string) (exe, gameDir string, ok bool) {
 	if err != nil {
 		return "", "", false
 	}
-	return exe, base + `\` + g.Name, true
+	return exe, base + `\` + g.dirName(), true
 }
 
 // gameIconDataURI lấy icon của exe (nằm trong gameDir; cả hai là đường dẫn của

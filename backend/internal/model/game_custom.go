@@ -51,13 +51,16 @@ type GameCustom struct {
 	Icon        string `json:"icon,omitempty"`
 	// ClientRoot: gốc game NHƯ MÁY TRẠM THẤY riêng cho game này (khác ổ chung của quán), dạng D:\Games2.
 	ClientRoot string `json:"client_root,omitempty"`
+	// Folder (game cục bộ): tên thư mục game dưới gốc khi khác tên game, ví dụ game "Roblox KZ" nằm ở thư mục Roblox
+	// của Kzone vì tên Roblox đã là game của Hub. Rỗng là thư mục trùng tên game.
+	Folder string `json:"folder,omitempty"`
 	// RunFirst: nil là theo game gốc; có mặt (kể cả rỗng, nghĩa là bỏ hết) thì thay hẳn lệnh chạy trước của game gốc.
 	RunFirst *GameRunSteps `json:"run_first,omitempty"`
 }
 
 // IsZero: quán chưa tuỳ chỉnh gì.
 func (c GameCustom) IsZero() bool {
-	return c.DisplayName == "" && c.Icon == "" && c.ClientRoot == "" && c.RunFirst == nil
+	return c.DisplayName == "" && c.Icon == "" && c.ClientRoot == "" && c.Folder == "" && c.RunFirst == nil
 }
 
 func (c GameCustom) Value() (driver.Value, error) {

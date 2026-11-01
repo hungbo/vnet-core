@@ -124,7 +124,7 @@ func TestChinhSachLonNhatLotQuaKenh(t *testing.T) {
 }
 
 func TestMenuBranding_TuMayChuDenLogo(t *testing.T) {
-	var auth []string
+	var auth, menuV []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/game-menu/version":
@@ -132,6 +132,7 @@ func TestMenuBranding_TuMayChuDenLogo(t *testing.T) {
 			_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"version":"3.1700000000000.1700000000001"}}`))
 		case "/api/game-menu":
 			auth = append(auth, r.Header.Get("Authorization"))
+			menuV = append(menuV, r.URL.Query().Get("v"))
 			_, _ = w.Write([]byte(`{"code":0,"message":"success","data":{"root":"D:\\Games","items":[],` +
 				`"cafe_name":"Net Mia","logo_url":"/uploads/2026/10/20/1792465398056882300.png"}}`))
 		case "/uploads/2026/10/20/1792465398056882300.png":
@@ -164,6 +165,9 @@ func TestMenuBranding_TuMayChuDenLogo(t *testing.T) {
 		if h != "Bearer tok" {
 			t.Errorf("menu phải gọi bằng token của hội viên, được %q", h)
 		}
+	}
+	if len(menuV) == 0 || menuV[0] != "2" {
+		t.Errorf("menu phải hỏi kèm v=2 để máy chủ gửi cả mục có folder, được %q", menuV)
 	}
 }
 
