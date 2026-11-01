@@ -1560,6 +1560,7 @@ const local: App.I18n.Schema = {
       topup: 'Topup',
       product: 'Product',
       approve: 'Approve',
+      waitingQr: 'Waiting for QR',
       reject: 'Reject',
       paymentMethod: 'Payment Method',
       previewTotal: 'Preview Total',

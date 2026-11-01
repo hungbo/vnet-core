@@ -879,7 +879,7 @@ func (s *QRPayService) payRequest(r *model.QRRequest, n *model.BankNotification,
 	if res.RowsAffected == 0 {
 		return errors.New("mã nạp không còn chờ tiền")
 	}
-	_, err := s.orders.Pay(r.OrderID, PayRequest{PaymentMethod: PaymentMethodQR, Amount: r.Amount, ReferenceCode: clip(n.BankRef+" "+r.Code, 60)}, actorID)
+	_, err := s.orders.pay(r.OrderID, PayRequest{PaymentMethod: PaymentMethodQR, Amount: r.Amount, ReferenceCode: clip(n.BankRef+" "+r.Code, 60)}, actorID, true)
 	if err != nil && strings.Contains(err.Error(), "đã hoàn tất") {
 		s.db.Model(&model.QRRequest{}).Where("id = ?", r.ID).
 			Updates(map[string]interface{}{"status": model.QRRequestCancelled, "paid_at": nil, "bank_notification_id": nil})

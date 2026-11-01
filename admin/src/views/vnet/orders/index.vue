@@ -818,7 +818,12 @@ watch(
             <div class="order-actions">
               <template v-if="row.order_type === 'topup'">
                 <template v-if="row.status === 'pending' && hasAuth('orders.status')">
+                  <!-- Đơn nạp QR tự duyệt khi ngân hàng báo tiền về; máy chủ từ chối duyệt tay. -->
+                  <ElTag v-if="row.payment_method === 'qr'" size="small" type="warning">
+                    {{ $t('vnetPages.orders.waitingQr') }}
+                  </ElTag>
                   <ElButton
+                    v-else
                     size="small"
                     type="success"
                     :loading="approvingId === row.id"

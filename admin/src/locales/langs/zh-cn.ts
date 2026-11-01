@@ -1542,6 +1542,7 @@ const local: App.I18n.Schema = {
       topup: '充值',
       product: '商品',
       approve: '批准',
+      waitingQr: '等待二维码到账',
       reject: '拒绝',
       paymentMethod: '支付方式',
       previewTotal: '预览总计',

@@ -1560,6 +1560,7 @@ const local: App.I18n.Schema = {
       topup: 'Nạp tiền',
       product: 'Sản phẩm',
       approve: 'Duyệt nạp',
+      waitingQr: 'Chờ tiền QR',
       reject: 'Từ chối',
       paymentMethod: 'Hình thức',
       previewTotal: 'Tạm tính',

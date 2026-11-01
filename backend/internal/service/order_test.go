@@ -767,6 +767,95 @@ func TestOrderService_UpdateStatus_TopupWithoutMemberFails(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Đơn nạp QR không được duyệt tay: chỉ ngân hàng báo tiền về mới cộng tiền
+// (xem errNapQRDuyetTay). Bị chặn trước khi mở transaction nào.
+func TestOrderService_UpdateStatus_NapQRKhongDuyetTay(t *testing.T) {
+	for _, status := range []string{"completed", "confirmed"} {
+		t.Run(status, func(t *testing.T) {
+			db, mock := newMockDB(t)
+			svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+			mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1`).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type", "member_id", "final_amount", "payment_method"}).
+					AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(50000), "qr"))
+
+			_, err := svc.UpdateStatus("o1", "user-1", UpdateStatusRequest{Status: status})
+
+			require.ErrorIs(t, err, errNapQRDuyetTay)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// Nút Thanh toán chọn QR (hoặc không chọn gì, tức giữ "qr" của đơn) cũng là duyệt
+// tay đơn nạp QR, nên bị chặn như nút Duyệt.
+func TestOrderService_Pay_NapQRKhongTraTayBangQR(t *testing.T) {
+	for _, method := range []string{"qr", ""} {
+		t.Run("method="+method, func(t *testing.T) {
+			db, mock := newMockDB(t)
+			svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+			mock.ExpectBegin()
+			mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 .* FOR UPDATE`).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "order_code", "status", "order_type", "member_id", "final_amount", "payment_method"}).
+					AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(50000), "qr"))
+			mock.ExpectRollback()
+
+			_, err := svc.Pay("o1", PayRequest{PaymentMethod: method, Amount: 50000}, "user-1")
+
+			require.ErrorIs(t, err, errNapQRDuyetTay)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// Khách đưa tiền mặt cho một đơn nạp QR: thanh toán bằng tiền mặt vẫn được, và
+// đơn đổi sang "cash" để trang Ca làm việc tính vào két.
+func TestOrderService_Pay_NapQRTraTienMatVanDuoc(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+	const nhanVien = "11111111-1111-1111-1111-111111111111"
+	cot := []string{"id", "order_code", "status", "order_type", "member_id", "final_amount", "payment_method"}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows(cot).AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(50000), "qr"))
+	mock.ExpectRollback()
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "orders" SET "payment_method"=\$1 WHERE id = \$2`).
+		WithArgs("cash", "o1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows(cot).AddRow("o1", "ORD-1", "pending", "topup", "mem-1", int64(50000), "cash"))
+	mock.ExpectQuery(`SELECT \* FROM "members" WHERE id = \$1 .* FOR UPDATE`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "balance"}).AddRow("mem-1", int64(0)))
+	mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).
+		WithArgs(TopupGroup).
+		WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
+	mock.ExpectQuery(`INSERT INTO "member_transactions"`).
+		WithArgs("mem-1", "topup", int64(50000), int64(0), int64(50000), int64(0), int64(0), "cash", nil, "Nạp tiền qua đơn hàng ORD-1", nhanVien).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("tx-1"))
+	mock.ExpectExec(`UPDATE "members" SET "balance"=\$1`).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE "orders" SET "completed_at"=\$1,"payment_method"=\$2,"status"=\$3,"updated_by"=\$4`).
+		WithArgs(anyTime{}, "cash", "completed", nhanVien, "o1", "pending").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE id = \$1`).
+		WillReturnRows(sqlmock.NewRows(cot).AddRow("o1", "ORD-1", "completed", "topup", "mem-1", int64(50000), "cash"))
+	mock.ExpectQuery(`SELECT \* FROM "order_items"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err := svc.Pay("o1", PayRequest{PaymentMethod: "cash", Amount: 50000}, nhanVien)
+
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 // Huỷ một đơn đã huỷ không được hoàn kho lần nữa.
 //
 // restoreStockForOrder cộng tồn kho trả lại. Chạy hai lần là sinh hàng từ hư

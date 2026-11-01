@@ -1072,6 +1072,12 @@ func khoaDonHang(tx *gorm.DB, id, mongDoi string) error {
 	return nil
 }
 
+// Đơn nạp QR (payment_method "qr", chỉ QRPayService tạo) chỉ được cộng tiền khi
+// ngân hàng báo tiền về. Nhân viên duyệt tay lúc tiền chưa về là cộng tiền không:
+// ô QR ở máy trạm vẫn "đang chờ", khách tạo mã khác rồi chuyển khoản, và tài
+// khoản được cộng hai lần — đã xảy ra ở quán ngày 01/11/2026 (ORD-00274).
+var errNapQRDuyetTay = errors.New("đơn nạp QR tự cộng tiền khi ngân hàng báo tiền về (xem trang Tiền vào), không duyệt tay được; khách trả tiền mặt thì từ chối đơn này rồi nạp tiền mặt")
+
 func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusRequest) (*OrderResponse, error) {
 	var order model.Order
 	if err := s.db.Where("id = ?", id).First(&order).Error; err != nil {
@@ -1079,6 +1085,11 @@ func (s *OrderService) UpdateStatus(id, updatedBy string, req UpdateStatusReques
 			return nil, errors.New("không tìm thấy đơn hàng")
 		}
 		return nil, err
+	}
+
+	if order.OrderType == model.OrderTypeTopup && order.PaymentMethod == PaymentMethodQR &&
+		(req.Status == "confirmed" || req.Status == "completed") {
+		return nil, errNapQRDuyetTay
 	}
 
 	if order.OrderType == model.OrderTypeTopup && order.Status == "pending" && req.Status == "completed" {
@@ -1729,6 +1740,12 @@ func priceSplitHalf(tx *gorm.DB, items []model.OrderItem, original *model.Order)
 // Pay thu tiền một đơn. actorID là nhân viên bấm thanh toán: ghi vào updated_by
 // (cột "Người thực hiện" của trang Đơn hàng) và vào bút toán kho.
 func (s *OrderService) Pay(id string, req PayRequest, actorID string) (*OrderResponse, error) {
+	return s.pay(id, req, actorID, false)
+}
+
+// pay: tuNganHang=true chỉ khi QRPayService duyệt theo thông báo tiền về — đường
+// duy nhất được trả đơn nạp QR bằng phương thức QR (xem errNapQRDuyetTay).
+func (s *OrderService) pay(id string, req PayRequest, actorID string, tuNganHang bool) (*OrderResponse, error) {
 	switch req.PaymentMethod {
 	case "", PaymentMethodBalance:
 	default:
@@ -1778,6 +1795,10 @@ func (s *OrderService) Pay(id string, req PayRequest, actorID string) (*OrderRes
 		tx.Rollback()
 		if req.PaymentMethod == PaymentMethodBalance {
 			return nil, errors.New("đơn nạp tiền phải trả bằng tiền mặt hoặc chuyển khoản")
+		}
+		if !tuNganHang && order.PaymentMethod == PaymentMethodQR &&
+			(req.PaymentMethod == "" || req.PaymentMethod == PaymentMethodQR) {
+			return nil, errNapQRDuyetTay
 		}
 		if req.PaymentMethod != "" && req.PaymentMethod != order.PaymentMethod {
 			if err := s.db.Model(&model.Order{}).Where("id = ?", order.ID).
