@@ -793,7 +793,9 @@ const local: App.I18n.Schema = {
         'Thư mục trên máy chủ chứa các thư mục game, ở đâu cũng được, ví dụ E:\\Online Games. Mặc định là {root}. Gõ xong bấm Enter để tải danh sách.',
       localName: 'Tên game',
       localNameHint:
-        'Để trống thì lấy tên thư mục. Đặt tên khác khi tên thư mục đã là game của Hub hoặc có dấu tiếng Việt (tên game chỉ gồm chữ không dấu, số, khoảng trắng và . _ ( ) + -).',
+        'Để trống thì lấy tên thư mục. Trùng một game Hub quán chưa tải thì trang sẽ hỏi có thay không; trùng game Hub đã tải hoặc tên thư mục có dấu tiếng Việt thì đặt tên khác (chỉ chữ không dấu, số, khoảng trắng và . _ ( ) + -).',
+      replaceHubConfirm:
+        'Hub đã có game "{name}" nhưng quán chưa tải. Thay bằng game cục bộ này? Game của Hub sẽ không tải về nữa; muốn dùng lại bản của Hub thì xoá game cục bộ.',
       localClash:
         'Game cục bộ trùng tên với game của Hub: {names}. Quán giữ bản cục bộ; muốn dùng bản của Hub thì xoá game cục bộ (tệp trên ổ giữ nguyên).',
       runFirst: 'Chạy trước khi mở game',

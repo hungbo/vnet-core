@@ -793,7 +793,9 @@ const local: App.I18n.Schema = {
         'Folder on the server that holds the game folders, anywhere on the server, e.g. E:\\Online Games. Defaults to {root}. Press Enter after typing to load the list.',
       localName: 'Game name',
       localNameHint:
-        'Leave empty to use the folder name. Give another name when the folder name is already a Hub game or has accents (letters without accents, digits, spaces and . _ ( ) + - only).',
+        'Leave empty to use the folder name. If it matches a Hub game this cafe has not downloaded, you will be asked whether to replace it; if it matches a downloaded Hub game or the folder name has accents, give another name (letters without accents, digits, spaces and . _ ( ) + - only).',
+      replaceHubConfirm:
+        'The Hub already has a game "{name}" that this cafe has not downloaded. Replace it with this local game? The Hub version will no longer be downloaded; to use it again, delete the local game.',
       localClash:
         'A local game has the same name as a Hub game: {names}. The cafe keeps the local one; to use the Hub version, delete the local game (files on disk stay).',
       runFirst: 'Run before the game starts',

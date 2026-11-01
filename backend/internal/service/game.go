@@ -470,6 +470,8 @@ type CreateGameRequest struct {
 	// ClientRoot (chỉ game cục bộ): gốc game trên máy trạm riêng cho game này. Rỗng thì lấy thư mục cha của Folder
 	// (máy trạm thấy ổ đĩa giống máy chủ), hoặc theo ổ chung khi game nằm ngay trong GAME_ROOT.
 	ClientRoot string `json:"client_root"`
+	// ReplaceHub (chỉ game cục bộ): người dùng đã xác nhận thay game Hub cùng tên mà quán chưa tải.
+	ReplaceHub bool `json:"replace_hub"`
 }
 
 // Create thêm một game ở master. Thư mục GAME_ROOT/<name> phải có sẵn.

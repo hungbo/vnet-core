@@ -13,6 +13,7 @@ import (
 
 	"github.com/vnet/core/internal/config"
 	"github.com/vnet/core/internal/model"
+	"gorm.io/gorm"
 )
 
 // Game cục bộ: quán tự tải game (copy, launcher của hãng, cài tay…) rồi chỉ khai báo thư mục và tệp chạy để game
@@ -30,6 +31,8 @@ var (
 	ErrGameNeedRoot = errors.New("chưa đặt thư mục game trên máy chủ (GAME_ROOT)")
 	// ErrGameLocalNeedLauncher: không có tệp chạy thì game không lên menu.
 	ErrGameLocalNeedLauncher = errors.New("game cục bộ cần tệp chạy (launcher) hoặc ít nhất một mục menu riêng")
+	// ErrGameHubChuaTaiCanXacNhan: tên trùng một game Hub quán chưa tải; thay được nhưng phải hỏi người dùng trước.
+	ErrGameHubChuaTaiCanXacNhan = errors.New("tên này trùng với một game của Hub mà quán chưa tải: xác nhận thay bằng game cục bộ, hoặc đặt tên game khác")
 )
 
 // Giới hạn danh sách gợi ý cho hộp "Thêm game cục bộ": thư mục game ở quán lớn có thể rất nhiều tệp.
@@ -178,12 +181,21 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 			return nil, fmt.Errorf("không thấy tệp chạy %s của mục %q trong thư mục game", e.Launcher, e.DisplayName)
 		}
 	}
+	// Tên trùng một game Hub chưa có gì trên ổ (chưa tải, không bản nào): req.ReplaceHub thì xoá dòng đó và thêm game
+	// cục bộ cùng tên. Lượt đọc catalog sau thấy game cục bộ thì giữ nó (noteLocalClash). Game Hub đã tải hay đang tải
+	// thì không: mất bản cập nhật và bỏ rơi tệp đã nằm trong GAME_ROOT.
+	replaceID := ""
 	var existing model.Game
 	if err := s.db.Where("name = ?", name).First(&existing).Error; err == nil {
-		if existing.Origin == model.GameOriginLocal {
+		switch {
+		case existing.Origin == model.GameOriginLocal:
 			return nil, errors.New("game này đã có")
+		case existing.Status != model.GameStatusNotInstalled || existing.Version != 0:
+			return nil, errors.New("tên này trùng với một game của Hub đã tải hoặc đang tải: đặt tên game khác (thư mục giữ nguyên) hoặc dùng game của Hub")
+		case !req.ReplaceHub:
+			return nil, ErrGameHubChuaTaiCanXacNhan
 		}
-		return nil, errors.New("tên này trùng với một game của Hub: đặt tên game khác (thư mục giữ nguyên) hoặc dùng game của Hub")
+		replaceID = existing.ID
 	}
 	g := model.Game{
 		Name:        name,
@@ -201,11 +213,27 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 		Status:      model.GameStatusReady,
 		Progress:    100,
 	}
-	if err := s.db.Create(&g).Error; err != nil {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if replaceID != "" {
+			// Cùng điều kiện như lúc kiểm: vòng nền vừa xếp game Hub vào hàng đợi thì không xoá.
+			res := tx.Where("id = ? AND status = ? AND version = 0", replaceID, model.GameStatusNotInstalled).Delete(&model.Game{})
+			if res.Error != nil {
+				return res.Error
+			}
+			if res.RowsAffected != 1 {
+				return errors.New("game của Hub cùng tên vừa bắt đầu tải: tải lại trang rồi thử lại")
+			}
+		}
+		return tx.Create(&g).Error
+	})
+	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") {
 			return nil, errors.New("game này đã có")
 		}
 		return nil, err
+	}
+	if replaceID != "" {
+		log.Printf("[game] %s: thay game Hub chưa tải bằng game cục bộ", name)
 	}
 	s.baoDoi(g.ID)
 	return &g, nil

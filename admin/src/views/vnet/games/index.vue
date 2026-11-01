@@ -444,7 +444,25 @@ async function saveCustom() {
   }
 }
 
+// Tên trùng một game Hub quán chưa tải: hỏi trước, máy chủ chỉ thay khi có replace_hub. null là người dùng huỷ.
+async function askReplaceHub(): Promise<boolean | null> {
+  if (!localMode.value || editingId.value) return false;
+  const name = form.value.name.trim() || form.value.folder_name;
+  const hub = rows.value.find(r => r.name === name && !isLocal(r));
+  if (!hub || hub.status !== 'not_installed' || hub.version) return false;
+  try {
+    await ElMessageBox.confirm($t('vnetPages.games.replaceHubConfirm', { name }), $t('vnetPages.common.confirm'), {
+      type: 'warning'
+    });
+  } catch {
+    return null;
+  }
+  return true;
+}
+
 async function submit() {
+  const replaceHub = await askReplaceHub();
+  if (replaceHub === null) return;
   saving.value = true;
   try {
     if (editingId.value) {
@@ -467,6 +485,7 @@ async function submit() {
       await client.post(localMode.value ? '/games/local' : '/games', {
         ...body,
         ...(localMode.value && folder_name ? { folder: joinServerPath(localDir.value, folder_name) } : {}),
+        ...(replaceHub ? { replace_hub: true } : {}),
         run_first: cleanSteps(body.run_first)
       });
     }

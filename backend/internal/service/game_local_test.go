@@ -428,6 +428,83 @@ func TestCreateLocal_TenKhacThuMuc(t *testing.T) {
 	})
 }
 
+// Game cục bộ cùng tên với một game Hub quán chưa tải: thay được sau khi người dùng xác nhận (replace_hub).
+func TestCreateLocal_ThayGameHubChuaTai(t *testing.T) {
+	root, kho := t.TempDir(), t.TempDir()
+	writeEmpty(t, kho, "Roblox/RobloxPlayerLauncher.exe")
+	const hubID = "22222222-2222-2222-2222-222222222222"
+	req := func(replace bool) *CreateGameRequest {
+		return &CreateGameRequest{Folder: filepath.Join(kho, "Roblox"), Launcher: "RobloxPlayerLauncher.exe", ClientRoot: `E:\Online Games`, ReplaceHub: replace}
+	}
+	hubRow := func(mock sqlmock.Sqlmock, status string, version int) {
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).WithArgs("Roblox", 1).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "origin", "status", "version"}).
+				AddRow(hubID, "Roblox", model.GameOriginHub, status, version))
+	}
+
+	t.Run("chưa xác nhận: hỏi lại, không ghi gì", func(t *testing.T) {
+		svc, mock := cafeWithRoot(t, root)
+		hubRow(mock, model.GameStatusNotInstalled, 0)
+		_, err := svc.CreateLocal(req(false))
+		assert.ErrorIs(t, err, ErrGameHubChuaTaiCanXacNhan)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	for _, c := range []struct {
+		ten     string
+		status  string
+		version int
+	}{
+		{"đã tải xong", model.GameStatusReady, 3},
+		{"đang tải", model.GameStatusDownloading, 0},
+		{"đang chờ tải", model.GameStatusQueued, 0},
+		{"có bản cũ trên ổ", model.GameStatusNotInstalled, 2},
+	} {
+		t.Run(c.ten+": không thay dù đã xác nhận", func(t *testing.T) {
+			svc, mock := cafeWithRoot(t, root)
+			hubRow(mock, c.status, c.version)
+			_, err := svc.CreateLocal(req(true))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "đã tải hoặc đang tải")
+			assert.NoError(t, mock.ExpectationsWereMet(), "không được xoá hay thêm gì")
+		})
+	}
+
+	t.Run("đã xác nhận: xoá dòng Hub và thêm game cục bộ trong một transaction", func(t *testing.T) {
+		svc, mock := cafeWithRoot(t, root)
+		hubRow(mock, model.GameStatusNotInstalled, 0)
+		mock.ExpectBegin()
+		mock.ExpectExec(`DELETE FROM "games" WHERE id = \$1 AND status = \$2 AND version = 0`).
+			WithArgs(hubID, model.GameStatusNotInstalled).WillReturnResult(sqlmock.NewResult(0, 1))
+		args := make([]driver.Value, 28)
+		for i := range args {
+			args[i] = sqlmock.AnyArg()
+		}
+		mock.ExpectQuery(`INSERT INTO "games"`).WithArgs(args...).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("g-moi"))
+		mock.ExpectCommit()
+
+		g, err := svc.CreateLocal(req(true))
+		require.NoError(t, err)
+		assert.Equal(t, "Roblox", g.Name)
+		assert.Equal(t, model.GameOriginLocal, g.Origin)
+		assert.Empty(t, g.Custom.Folder, "tên trùng tên thư mục")
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("vòng nền vừa xếp game Hub vào hàng đợi: không xoá được thì không thêm", func(t *testing.T) {
+		svc, mock := cafeWithRoot(t, root)
+		hubRow(mock, model.GameStatusNotInstalled, 0)
+		mock.ExpectBegin()
+		mock.ExpectExec(`DELETE FROM "games"`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectRollback()
+
+		_, err := svc.CreateLocal(req(true))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "vừa bắt đầu tải")
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
 func TestTenThuMucDungDuoc(t *testing.T) {
 	for _, ok := range []string{"Roblox", "Liên Quân Mobile", "Game (2024)", "a.b"} {
 		assert.True(t, tenThuMucDungDuoc(ok), ok)
