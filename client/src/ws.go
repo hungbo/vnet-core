@@ -122,6 +122,31 @@ func NewWSClient(ctx context.Context, baseURL, token string, machineCode string)
 		}
 	})
 
+	// Mã QR nạp tiền của hội viên này vừa được trả (tiền đã cộng) hoặc vừa hết hạn.
+	// Cửa sổ Nạp tiền đang hiện mã thì đổi sang báo kết quả.
+	c.On("qr:paid", func(msg WSMessage) {
+		var data map[string]interface{}
+		if json.Unmarshal(msg.Payload, &data) == nil {
+			runtime.EventsEmit(ctx, "vnet:qr:paid", data)
+		}
+	})
+
+	c.On("qr:expired", func(msg WSMessage) {
+		var data map[string]interface{}
+		if json.Unmarshal(msg.Payload, &data) == nil {
+			runtime.EventsEmit(ctx, "vnet:qr:expired", data)
+		}
+	})
+
+	// Đơn của chính hội viên này vừa đổi trạng thái (quầy xác nhận, thu tiền, huỷ):
+	// tab "Đơn đã gọi" tải lại để hiện/ẩn nút trả bằng QR.
+	c.On("order:updated", func(msg WSMessage) {
+		var data map[string]interface{}
+		if json.Unmarshal(msg.Payload, &data) == nil {
+			runtime.EventsEmit(ctx, "vnet:order:updated", data)
+		}
+	})
+
 	c.On("room:read", func(msg WSMessage) {
 		runtime.EventsEmit(ctx, "vnet:room:read", string(msg.Payload))
 	})

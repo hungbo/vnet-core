@@ -1071,36 +1071,41 @@ func (a *App) ShowWindow() {
 	}()
 }
 
-// coTheThuNho: lúc này thanh điều khiển có được thu xuống thanh tác vụ không.
+// coTheAn: lúc này thanh điều khiển có được ẩn xuống khay hệ thống không.
 //
 // Dùng đúng định nghĩa "đang khoá" mà dịch vụ nền nhận qua linkStatus, để hai bên
 // không lệch nhau: màn hình đăng nhập, khoá vì mất kết nối máy chủ, phiên chưa được
-// máy chủ xác nhận — đều KHÔNG được thu nhỏ, vì thu nhỏ màn hình khoá là lộ desktop.
+// máy chủ xác nhận — đều KHÔNG được ẩn, vì ẩn màn hình khoá là lộ desktop.
 // Chế độ bảo trì thì được: nhân viên kỹ thuật cần desktop, và hai đường mở khoá bảo
 // trì ở trên vốn đã tự thu nhỏ cửa sổ.
-func (a *App) coTheThuNho() bool {
+func (a *App) coTheAn() bool {
 	return a.windowMode == "" && !a.linkStatus().Locked
 }
 
-// MinimiseDock thu thanh điều khiển xuống thanh tác vụ — việc duy nhất nút thu nhỏ
-// trên thanh tiêu đề tự vẽ (DockTitleBar.vue) làm. Nút tắt không tồn tại.
+// HideDock ẩn thanh điều khiển xuống khay hệ thống — việc của nút Tắt trên thanh tiêu
+// đề tự vẽ (DockTitleBar.vue). "Tắt" với khách, nhưng tiến trình vẫn chạy: thoát hẳn là
+// mất đồng hồ tính tiền và mất đường nhận lệnh khoá máy.
 //
-// Frontend chỉ ĐỀ NGHỊ (như SetLoggedIn): màn hình khoá không được thu nhỏ kể cả khi
-// ai đó gọi thẳng hàm này từ giao diện, nên chốt chặn nằm ở đây chứ không ở nút.
-// Thu xuống rồi thì nút trên taskbar vẫn còn; bấm nó, hoặc bấm lối tắt VNET trên
-// desktop (ShowWindow), là thanh hiện lại đúng chỗ cũ.
-func (a *App) MinimiseDock() {
-	if a.ctx == nil || !a.coTheThuNho() {
+// Ẩn chứ không thu nhỏ: thu nhỏ thì cửa sổ còn nút trên thanh tác vụ và còn trong
+// Alt+Tab, khách đang chơi game bấm Alt+Tab là VNET nhảy ra. Ẩn rồi thì bấm biểu tượng
+// VNET ở khay (tray_windows.go) hoặc lối tắt VNET trên desktop (ShowWindow) là thanh
+// hiện lại đúng chỗ cũ. Khoá máy (applyLoginLock, setOfflineLock) tự WindowShow trước
+// khi phủ màn hình, nên đang ẩn vẫn khoá được.
+//
+// Frontend chỉ ĐỀ NGHỊ (như SetLoggedIn): màn hình khoá không được ẩn kể cả khi ai đó
+// gọi thẳng hàm này từ giao diện, nên chốt chặn nằm ở đây chứ không ở nút.
+func (a *App) HideDock() {
+	if a.ctx == nil || !a.coTheAn() {
 		return
 	}
-	wailsruntime.WindowMinimise(a.ctx)
+	wailsruntime.WindowHide(a.ctx)
 }
 
 // beforeDockClose là OnBeforeClose của thanh điều khiển chính (runDock): lệnh đóng
-// nào cũng thành thu nhỏ — hoặc bị bỏ qua nếu đang khoá — và KHÔNG BAO GIỜ cho thoát.
-// Trả true là bảo Wails dừng Quit(). Lý do và ranh giới với tắt máy ở main.go.
+// nào cũng thành ẩn xuống khay — hoặc bị bỏ qua nếu đang khoá — và KHÔNG BAO GIỜ cho
+// thoát. Trả true là bảo Wails dừng Quit(). Lý do và ranh giới với tắt máy ở main.go.
 func (a *App) beforeDockClose(context.Context) (prevent bool) {
-	a.MinimiseDock()
+	a.HideDock()
 	return true
 }
 
@@ -1504,6 +1509,64 @@ func (a *App) RequestTopup(amount int64) (string, error) {
 	}
 
 	data, err := a.doRequest("POST", "/api/orders/topup-request", reqBody)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// Nạp bằng QR chuyển khoản. Máy chủ tạo đơn nạp chờ kèm mã VietQR; điện thoại báo tiền
+// ở quầy thấy tiền về đúng mã + số tiền thì máy chủ tự duyệt đơn và đẩy "qr:paid" cho
+// hội viên (ws.go). Khách không phải ra quầy.
+
+// GetQRStatus: quán có nhận nạp QR lúc này không. Giao diện chỉ hiện nút QR khi
+// "ready" (đã bật, đã cài tài khoản, điện thoại báo tiền đang kết nối).
+func (a *App) GetQRStatus() (string, error) {
+	data, err := a.doRequest("GET", "/api/qr/status", nil)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// RequestTopupQR tạo mã QR nạp số tiền này cho hội viên đang ngồi máy (máy chủ lấy hội
+// viên từ token, không từ thân yêu cầu).
+func (a *App) RequestTopupQR(amount int64) (string, error) {
+	data, err := a.doRequest("POST", "/api/qr/topup-request", map[string]interface{}{
+		"amount":       amount,
+		"machine_code": a.machineCode,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// GetQRRequest đọc lại trạng thái một mã QR (pending|paid|expired|cancelled). Lối
+// dự phòng cho lúc sự kiện WebSocket bị rơi.
+func (a *App) GetQRRequest(id string) (string, error) {
+	data, err := a.doRequest("GET", "/api/qr/requests/"+url.PathEscape(id), nil)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// PayOrderQR tạo mã QR trả một đơn đã gọi mà quầy đã xác nhận, chưa thanh toán. Số
+// tiền do máy chủ lấy từ đơn; khách chỉ trả đơn của chính mình. Đơn đã có mã đang chờ
+// thì máy chủ trả lại đúng mã đó.
+func (a *App) PayOrderQR(orderID string) (string, error) {
+	data, err := a.doRequest("POST", "/api/qr/orders/"+url.PathEscape(orderID)+"/pay", nil)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+// CancelQRRequest huỷ mã QR khách không dùng nữa (và đơn nạp chờ đi kèm; đơn đã gọi
+// thì giữ nguyên, chỉ bỏ mã).
+func (a *App) CancelQRRequest(id string) (string, error) {
+	data, err := a.doRequest("POST", "/api/qr/requests/"+url.PathEscape(id)+"/cancel", nil)
 	if err != nil {
 		return "", err
 	}

@@ -64,6 +64,8 @@ export function GetWindowMode():Promise<string>;
 
 export function IsLocked():Promise<boolean>;
 
+export function HideDock():Promise<void>;
+
 export function HidePanel():Promise<void>;
 
 export function IsLoggedIn():Promise<boolean>;
@@ -89,8 +91,6 @@ export function MarkMessageRead(arg1:string):Promise<string>;
 export function MarkNotificationRead(arg1:string):Promise<string>;
 
 export function MarkRoomMessagesRead(arg1:string):Promise<string>;
-
-export function MinimiseDock():Promise<void>;
 
 export function OpenWindow(arg1:string):Promise<void>;
 

@@ -5,16 +5,17 @@ import vnetLogo from '../assets/vnet-logo.svg'
 
 // Thanh tiêu đề tự vẽ của thanh dọc mép phải.
 //
-// Cửa sổ chính không có viền hệ điều hành (main.go, Frameless) vì viền thì không bỏ
-// được riêng nút tắt: chỉ làm mờ nó đi chứ không biến mất. Nên ở đây chỉ có hai
-// thứ: vùng kéo cửa sổ và MỘT nút thu nhỏ. Không có nút tắt, và mọi lệnh đóng khác
-// (Alt+F4, taskbar) cũng chỉ thu nhỏ — xem App.beforeDockClose bên Go.
+// Cửa sổ chính không có viền hệ điều hành (main.go, Frameless). Ở đây chỉ có hai
+// thứ: vùng kéo cửa sổ và MỘT nút tắt. "Tắt" chỉ ẨN thanh xuống khay hệ thống (góc phải
+// dưới, App.HideDock) chứ không thoát — mất đồng hồ tính tiền là không được. Mọi lệnh
+// đóng khác (Alt+F4, taskbar) cũng vậy — xem App.beforeDockClose bên Go.
 //
-// Thu nhỏ xong thì cửa sổ nằm ở taskbar; bấm nút trên taskbar hoặc lối tắt VNET
-// ngoài desktop là hiện lại đúng chỗ cũ.
+// Không thu nhỏ như trước: thu nhỏ thì VNET vẫn nằm trong Alt+Tab, khách chơi game bấm
+// Alt+Tab là nó nhảy ra. Ẩn rồi thì bấm biểu tượng VNET ở khay hoặc lối tắt VNET ngoài
+// desktop là hiện lại đúng chỗ cũ.
 //
 // Chỉ dựng khi đã đăng nhập (App.vue). Màn hình đăng nhập phủ kín màn hình và KHÔNG
-// được thu nhỏ — nên ở đó không có thanh này; bên Go cũng từ chối (App.MinimiseDock).
+// được ẩn — nên ở đó không có thanh này; bên Go cũng từ chối (App.HideDock).
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -31,8 +32,8 @@ onMounted(() => {
 })
 onUnmounted(() => huy.forEach(f => f()))
 
-function thuNho() {
-	api()?.MinimiseDock?.()
+function tat() {
+	api()?.HideDock?.()
 }
 </script>
 
@@ -42,13 +43,13 @@ function thuNho() {
 		<button
 			v-if="!dangKhoa"
 			type="button"
-			class="dock-bar-min"
-			title="Thu nhỏ xuống thanh tác vụ"
-			aria-label="Thu nhỏ"
-			@click="thuNho"
+			class="dock-bar-close"
+			title="Tắt — VNET vẫn chạy ở biểu tượng góc phải dưới màn hình"
+			aria-label="Tắt"
+			@click="tat"
 		>
 			<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-				<path d="M0 5.5h10" fill="none" stroke="currentColor" stroke-width="1" />
+				<path d="M0.5 0.5l9 9M9.5 0.5l-9 9" fill="none" stroke="currentColor" stroke-width="1" />
 			</svg>
 		</button>
 	</header>
@@ -67,7 +68,7 @@ function thuNho() {
 	user-select: none;
 	/* Vùng kéo cửa sổ của Wails. Đây là thuộc tính tuỳ biến nên con cháu kế thừa luôn
 	   — nút bên dưới phải tự ghi đè bằng no-drag, nếu không bấm vào nó là bắt đầu
-	   kéo cửa sổ chứ không phải thu nhỏ. */
+	   kéo cửa sổ chứ không phải tắt. */
 	--wails-draggable: drag;
 }
 
@@ -77,9 +78,9 @@ function thuNho() {
 	pointer-events: none;
 }
 
-/* Cao hết thanh, rộng cỡ nút thu nhỏ của Windows: vùng bấm lớn mà khách không cần
+/* Cao hết thanh, rộng cỡ nút tắt của Windows: vùng bấm lớn mà khách không cần
    ngắm cho trúng. */
-.dock-bar-min {
+.dock-bar-close {
 	--wails-draggable: no-drag;
 	display: grid;
 	place-items: center;
@@ -93,8 +94,9 @@ function thuNho() {
 	transition: background 0.15s, color 0.15s;
 }
 
-.dock-bar-min:hover {
-	background: var(--vnet-surface-2);
-	color: var(--vnet-text);
+/* Nền đỏ khi rê chuột như nút tắt của Windows: khách nhận ra ngay đây là nút tắt. */
+.dock-bar-close:hover {
+	background: #e81123;
+	color: #fff;
 }
 </style>

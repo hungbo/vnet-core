@@ -48,6 +48,36 @@ const DEV_GAMES = [
 
 let nguoiDangDangNhap = { id: 'dev', username: 'khach', full_name: 'Khách Thử', role: 'member' }
 
+// Nạp QR giả. ?qr=off → quán chưa bật QR (chỉ còn nút trả tại quầy). Mã đang hiện thì
+// __vnetQr('paid') / __vnetQr('expired') trong Console giả tiền về / hết hạn. Ảnh chỉ
+// là một ô vuông có hoa văn giống mã QR — mã thật do máy chủ vẽ (vietqr.go).
+let devQr: any = null
+const phutTruoc = (m: number) => new Date(Date.now() - m * 60000).toISOString()
+const devOrders: any[] = [
+	{ id: 'o1', order_code: 'ORD-00042', status: 'pending', order_type: 'food', created_at: phutTruoc(2), final_amount: 30000,
+		items: [{ id: 'i1', quantity: 1, product_name: 'Trà sữa trân châu', subtotal: 30000 }] },
+	{ id: 'o2', order_code: 'ORD-00041', status: 'confirmed', order_type: 'food', created_at: phutTruoc(25), final_amount: 60000,
+		items: [{ id: 'i2', quantity: 1, product_name: 'Cơm sườn trứng ốp la', subtotal: 55000 }, { id: 'i3', quantity: 1, product_name: 'Xúc xích Đức Việt nướng', subtotal: 5000 }] },
+	{ id: 'o3', order_code: 'ORD-00037', status: 'completed', order_type: 'food', created_at: phutTruoc(90), final_amount: 15000,
+		items: [{ id: 'i4', quantity: 1, product_name: 'Coca-Cola lon 330ml', subtotal: 15000 }] },
+	{ id: 'o4', order_code: 'TOP-00012', status: 'completed', order_type: 'topup', created_at: phutTruoc(120), final_amount: 50000, items: [] },
+]
+function anhQrGia() {
+	const n = 29, o: string[] = []
+	let x = 7
+	const ngauNhien = () => ((x = (x * 1103515245 + 12345) % 2147483648) % 100) < 45
+	const goc = (cx: number, cy: number) =>
+		o.push(`<path d="M${cx} ${cy}h7v7h-7zM${cx + 1} ${cy + 1}v5h5v-5z" fill-rule="evenodd"/><rect x="${cx + 2}" y="${cy + 2}" width="3" height="3"/>`)
+	for (let r = 0; r < n; r++)
+		for (let c = 0; c < n; c++) {
+			const trongGoc = (r < 8 && c < 8) || (r < 8 && c > n - 9) || (r > n - 9 && c < 8)
+			if (!trongGoc && ngauNhien()) o.push(`<rect x="${c}" y="${r}" width="1" height="1"/>`)
+		}
+	goc(0, 0); goc(n - 7, 0); goc(0, n - 7)
+	const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges">${o.join('')}</svg>`
+	return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg)
+}
+
 // Hàng chờ hộp thông báo của quầy (notice.go) — cùng luật với Go: trả mới nhất trước, và
 // "Đã hiểu" chỉ gạt những cái có `at` tới mốc khách đã đọc. Xem hộp ở ?window=notice;
 // bắn thêm một thông báo lúc hộp đang mở bằng __vnetNotice('nội dung') trong Console.
@@ -88,6 +118,14 @@ export function installDevWailsStub() {
 	window.__vnetEmit = (event: string, data: unknown) => {
 		(handlers[event] || []).forEach(fn => fn(data))
 		return (handlers[event] || []).length
+	}
+
+	window.__vnetQr = (kq: 'paid' | 'expired' = 'paid') => {
+		if (!devQr) return 'chưa có mã QR nào đang hiện'
+		devQr.status = kq
+		const o = devOrders.find(x => x.id === devQr.order_id)
+		if (o && kq === 'paid') o.status = 'completed'
+		return window.__vnetEmit(`vnet:qr:${kq}`, { request_id: devQr.request_id, order_id: devQr.order_id, amount: devQr.amount })
 	}
 
 	window.__vnetNotice = (body: string, title = 'Thông báo') => {
@@ -141,6 +179,35 @@ export function installDevWailsStub() {
 					),
 				GetFeatureFlags: () => ok(JSON.stringify({ attendance_enabled: true, feedback_enabled: true })),
 				GetTopupPresets: () => ok(JSON.stringify([10000, 20000, 50000, 100000])),
+				GetQRStatus: () => ok(JSON.stringify({ ready: new URLSearchParams(location.search).get('qr') !== 'off' })),
+				RequestTopupQR: (amount: number) => {
+					devQr = {
+						request_id: 'dev-qr-' + Date.now(), order_id: 'dev-order', order_code: 'TOP-DEV',
+						code: 'VN7K2Q9M', amount, status: 'pending',
+						expires_at: new Date(Date.now() + 10 * 60000).toISOString(),
+						bank: 'MB', bank_name: 'MB Bank', account_no: '0123456789', account_name: 'NGUYEN VAN A',
+						qr_payload: '', qr_image: anhQrGia(),
+					}
+					return ok(JSON.stringify(devQr))
+				},
+				// Đủ các trạng thái tab "Đơn đã gọi" phải vẽ: chờ duyệt, đã xác nhận chưa trả
+				// (có nút Thanh toán bằng QR), hoàn thành, yêu cầu nạp tiền.
+				GetMyOrders: () => ok(JSON.stringify(devOrders)),
+				PayOrderQR: (id: string) => {
+					const o = devOrders.find(x => x.id === id)
+					if (!o || o.status !== 'confirmed') return Promise.reject('đơn không còn chờ thanh toán')
+					devQr = {
+						request_id: 'dev-qr-' + Date.now(), order_id: o.id, order_code: o.order_code,
+						code: 'VN4HQ8TR', amount: o.final_amount, status: 'pending',
+						expires_at: new Date(Date.now() + 10 * 60000).toISOString(),
+						bank: 'MB', bank_name: 'MB Bank', account_no: '0123456789', account_name: 'NGUYEN VAN A',
+						qr_payload: '', qr_image: anhQrGia(),
+					}
+					return ok(JSON.stringify(devQr))
+				},
+				GetQRRequest: (id: string) =>
+					ok(JSON.stringify({ id, status: devQr?.request_id === id ? devQr.status : 'expired' })),
+				CancelQRRequest: () => { if (devQr) devQr.status = 'cancelled'; return ok('') },
 				GetNotifications: () => ok(JSON.stringify([])),
 				GetHardware: () => ok(JSON.stringify({ machine_code: 'KT-01', server_url: 'http://localhost:20800' })),
 				GetVersion: () => ok('dev'),
@@ -199,6 +266,9 @@ export function installDevWailsStub() {
 						: ok(undefined),
 
 				OpenWindow: (mode: string) => {
+					// Cửa sổ khởi động sẵn (prewarm) bên Go là cửa sổ ẩn: mở nó thành một tab
+					// sau mỗi lần đăng nhập chỉ che mất trang đang xem.
+					if (mode === 'prewarm') return ok(undefined)
 					window.open(`${location.pathname}?window=${mode}`, '_blank')
 					return ok(undefined)
 				},
@@ -208,9 +278,9 @@ export function installDevWailsStub() {
 					devNotices = devNotices.filter(n => n.at > upTo)
 					return ok(JSON.stringify([...devNotices].reverse()))
 				},
-				// Nút thu nhỏ của DockTitleBar. Ngoài Wails không có cửa sổ nào để thu nhỏ:
+				// Nút tắt của DockTitleBar. Ngoài Wails không có cửa sổ nào để ẩn xuống khay:
 				// chỉ ghi log để thấy nút đã được nối dây.
-				MinimiseDock: () => { console.info('[dev-stub] MinimiseDock'); return ok(undefined) },
+				HideDock: () => { console.info('[dev-stub] HideDock'); return ok(undefined) },
 				Logout: () => ok(''),
 				GetBootTime: () => ok(1700000000),
 

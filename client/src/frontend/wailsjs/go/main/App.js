@@ -126,6 +126,10 @@ export function IsLocked() {
   return window['go']['main']['App']['IsLocked']();
 }
 
+export function HideDock() {
+  return window['go']['main']['App']['HideDock']();
+}
+
 export function HidePanel() {
   return window['go']['main']['App']['HidePanel']();
 }
@@ -176,10 +180,6 @@ export function MarkNotificationRead(arg1) {
 
 export function MarkRoomMessagesRead(arg1) {
   return window['go']['main']['App']['MarkRoomMessagesRead'](arg1);
-}
-
-export function MinimiseDock() {
-  return window['go']['main']['App']['MinimiseDock']();
 }
 
 export function OpenWindow(arg1) {

@@ -20,52 +20,99 @@
 			</div>
 		</div>
 
-		<div class="section-label">Gửi yêu cầu nạp tới quầy</div>
-		<div class="preset-grid">
-			<button
-				v-for="amount in presets"
-				:key="amount"
-				:class="['preset-btn', { active: selectedAmount === amount }]"
-				@click="selectedAmount = amount"
-			>
-				{{ formatCurrency(amount) }}
-			</button>
-		</div>
+		<!--
+			Màn mã QR thay chỗ biểu mẫu: khách đang chuyển khoản thì không còn gì để
+			chọn nữa, và cửa sổ không phải dài gấp đôi.
+		-->
+		<QrPayPanel
+			v-if="qr"
+			:qr="qr"
+			paid-title="Đã nạp"
+			paid-text="Tiền đã cộng vào tài khoản của bạn."
+			cancel-text="Huỷ, chọn lại số tiền"
+			@paid="taiSoDu"
+			@close="dong"
+			@retry="veBieuMau"
+			@cancelled="veBieuMau"
+		/>
 
-		<div class="custom-input">
-			<span class="custom-label">Hoặc nhập số tiền</span>
-			<el-input-number
-				v-model="customAmount"
-				:min="1000"
-				:step="10000"
-				:precision="0"
-				:formatter="nhomNghin"
-				:parser="boDauCham"
-				style="width: 100%;"
-				controls-position="right"
-			/>
-		</div>
-
-		<div class="total-display">
-			<span>Nạp</span>
-			<strong>{{ formatCurrency(finalAmount) }}</strong>
-		</div>
-
-		<template v-if="daGui">
-			<div class="da-gui">Đã gửi yêu cầu nạp {{ formatCurrency(finalAmount) }}</div>
-			<p class="hint">Nhân viên quầy sẽ xác nhận sau khi nhận tiền. Đóng cửa sổ này được rồi.</p>
-		</template>
 		<template v-else>
-			<el-button
-				type="warning"
-				size="large"
-				style="width: 100%; margin-top: 8px;"
-				:loading="sending"
-				@click="handleRequest"
-			>
-				Gửi yêu cầu nạp tiền
-			</el-button>
-			<p class="hint">Nhân viên quầy sẽ xác nhận sau khi nhận tiền</p>
+			<div class="section-label">{{ qrReady ? 'Chọn số tiền nạp' : 'Gửi yêu cầu nạp tới quầy' }}</div>
+			<div class="preset-grid">
+				<button
+					v-for="amount in presets"
+					:key="amount"
+					:class="['preset-btn', { active: selectedAmount === amount }]"
+					@click="selectedAmount = amount"
+				>
+					{{ formatCurrency(amount) }}
+				</button>
+			</div>
+
+			<div class="custom-input">
+				<span class="custom-label">Hoặc nhập số tiền</span>
+				<el-input-number
+					v-model="customAmount"
+					:min="1000"
+					:step="10000"
+					:precision="0"
+					:formatter="nhomNghin"
+					:parser="boDauCham"
+					style="width: 100%;"
+					controls-position="right"
+				/>
+			</div>
+
+			<div class="total-display">
+				<span>Nạp</span>
+				<strong>{{ formatCurrency(finalAmount) }}</strong>
+			</div>
+
+			<template v-if="daGui">
+				<div class="da-gui">Đã gửi yêu cầu nạp {{ formatCurrency(finalAmount) }}</div>
+				<p class="hint">Nhân viên quầy sẽ xác nhận sau khi nhận tiền. Đóng cửa sổ này được rồi.</p>
+			</template>
+			<!--
+				Chỉ hiện nút QR khi máy chủ báo sẵn sàng: đã bật, đã cài tài khoản nhận tiền,
+				và điện thoại báo tiền ở quầy đang kết nối. Điện thoại rớt mạng mà vẫn cho
+				quét thì khách chuyển tiền xong ngồi chờ mãi không thấy cộng.
+			-->
+			<template v-else-if="qrReady">
+				<el-button
+					type="primary"
+					size="large"
+					class="full-btn"
+					style="margin-top: 8px;"
+					:loading="taoQR"
+					:disabled="sending"
+					@click="taoMaQR"
+				>
+					Quét QR chuyển khoản
+				</el-button>
+				<p class="hint">Chuyển khoản xong tiền tự cộng, không cần ra quầy</p>
+				<el-button
+					size="large"
+					class="full-btn"
+					style="margin-top: 12px;"
+					:loading="sending"
+					:disabled="taoQR"
+					@click="handleRequest"
+				>
+					Gửi yêu cầu, trả tiền tại quầy
+				</el-button>
+			</template>
+			<template v-else>
+				<el-button
+					type="warning"
+					size="large"
+					style="width: 100%; margin-top: 8px;"
+					:loading="sending"
+					@click="handleRequest"
+				>
+					Gửi yêu cầu nạp tiền
+				</el-button>
+				<p class="hint">Nhân viên quầy sẽ xác nhận sau khi nhận tiền</p>
+			</template>
 		</template>
 	</component>
 </template>
@@ -73,6 +120,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import QrPayPanel from '../components/QrPayPanel.vue'
 
 declare const window: any
 const api = () => window.go?.main?.App
@@ -127,11 +175,49 @@ async function handleRequest() {
 	}
 }
 
-onMounted(async () => {
+// ---- Nạp bằng QR chuyển khoản ----
+const qrReady = ref(false)
+const taoQR = ref(false)
+// Mã đang hiện (trả lời của RequestTopupQR); null là đang ở biểu mẫu.
+const qr = ref<any>(null)
+
+async function taiSoDu() {
 	try {
 		const data = await api().GetMemberInfo()
 		if (data) memberInfo.value = JSON.parse(data)
 	} catch {}
+}
+
+async function taoMaQR() {
+	if (!finalAmount.value || finalAmount.value < 1000) {
+		ElMessage.warning('Chọn số tiền nạp')
+		return
+	}
+	taoQR.value = true
+	try {
+		qr.value = JSON.parse(await api().RequestTopupQR(finalAmount.value))
+	} catch (e) {
+		ElMessage.error(String(e).replace(/^Error:\s*/, ''))
+	} finally {
+		taoQR.value = false
+	}
+}
+
+function veBieuMau() {
+	qr.value = null
+}
+
+function dong() {
+	if (props.standalone) api()?.HidePanel?.()
+	else emit('close')
+}
+
+onMounted(async () => {
+	await taiSoDu()
+
+	try {
+		qrReady.value = !!JSON.parse(await api().GetQRStatus())?.ready
+	} catch { /* máy chủ cũ chưa có QR: chỉ có nạp tại quầy */ }
 
 	try {
 		const data = await api().GetTopupPresets()
@@ -254,5 +340,11 @@ onMounted(async () => {
 	color: var(--vnet-text-muted);
 	text-align: center;
 	margin-top: 8px;
+}
+
+.full-btn {
+	width: 100%;
+	/* Element Plus đẩy nút đứng sau một nút khác sang phải 12px. */
+	margin-left: 0 !important;
 }
 </style>

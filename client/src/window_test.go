@@ -146,8 +146,8 @@ func TestChildGeometry_KhongDeThanhDoc(t *testing.T) {
 	}
 }
 
-// Các trạng thái máy mà thanh điều khiển có thể đang ở, và việc nó có được thu nhỏ
-// xuống taskbar hay không. Dùng chung cho hai test dưới.
+// Các trạng thái máy mà thanh điều khiển có thể đang ở, và việc nó có được ẩn
+// xuống khay hay không. Dùng chung cho hai test dưới.
 func cacTrangThaiThuNho() []struct {
 	ten  string
 	app  func() *App
@@ -181,13 +181,13 @@ func cacTrangThaiThuNho() []struct {
 	}
 }
 
-// Màn hình khoá không bao giờ thu nhỏ được: thu nhỏ nó là lộ desktop cho người
+// Màn hình khoá không bao giờ ẩn được: ẩn nó là lộ desktop cho người
 // chưa đăng nhập. Chốt chặn nằm ở Go chứ không ở nút, vì giao diện chỉ đề nghị.
-func TestCoTheThuNho(t *testing.T) {
+func TestCoTheAn(t *testing.T) {
 	for _, c := range cacTrangThaiThuNho() {
 		t.Run(c.ten, func(t *testing.T) {
-			if got := c.app().coTheThuNho(); got != c.duoc {
-				t.Errorf("coTheThuNho = %v, mong %v", got, c.duoc)
+			if got := c.app().coTheAn(); got != c.duoc {
+				t.Errorf("coTheAn = %v, mong %v", got, c.duoc)
 			}
 		})
 	}

@@ -210,6 +210,16 @@ onMounted(() => {
 	border-bottom: 1px solid var(--vnet-border);
 }
 
+/* Ô lưới mặc định kéo giãn con hết cột 1fr, nên nút rộng cả cột và chữ "Quay lại"
+   nằm giữa cột chứ không sát mép trái. Nút lùi ra sát mép cửa sổ, đệm trái bằng đúng
+   khoảng lề: mũi tên thẳng hàng với mép các khối bên dưới, nền khi rê chuột không bị
+   cắt. */
+.settings-header > .el-button {
+	justify-self: start;
+	margin-left: calc(-1 * var(--vnet-gap));
+	padding-left: var(--vnet-gap);
+}
+
 .settings-header h3 {
 	font-size: 15px;
 	font-weight: 600;

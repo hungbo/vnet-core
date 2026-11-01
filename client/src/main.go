@@ -113,6 +113,9 @@ func runDock() {
 		}
 	}
 
+	// Đường đưa thanh điều khiển về sau khi khách bấm nút tắt (tray_windows.go).
+	trayStart(app.ShowWindow)
+
 	err := wails.Run(&options.App{
 		Title:  "VNET",
 		Width:  dockWidth,
@@ -120,13 +123,13 @@ func runDock() {
 		// Màn khoá native đang giữ máy thì cửa sổ chỉ hiện lần đầu khi giao diện đã ở
 		// trạng thái đăng nhập (SetLoggedIn), không bao giờ ở DomReady.
 		StartHidden: khoaNative,
-		// KHÔNG viền: thanh điều khiển không có nút tắt, chỉ có nút thu nhỏ.
+		// KHÔNG viền: nút tắt của thanh điều khiển chỉ ẩn nó xuống khay hệ thống
+		// (App.HideDock), không bao giờ thoát.
 		//
-		// Viền hệ điều hành thì không làm được điều đó. Ba nút của Windows chung một
-		// kiểu WS_SYSMENU: bỏ nút tắt là mất luôn thu nhỏ, còn DeleteMenu(SC_CLOSE)
-		// chỉ làm nó MỜ đi chứ vẫn vẽ ra — khách vẫn thấy một nút X bấm không ăn,
-		// tệ hơn không có. Nên bỏ hẳn viền: thanh tiêu đề do giao diện tự vẽ
-		// (components/DockTitleBar.vue) với đúng hai thứ, vùng kéo và nút thu nhỏ.
+		// Viền hệ điều hành thì không làm được điều đó: nút X của Windows là lệnh đóng
+		// cửa sổ, và ba nút chung một kiểu WS_SYSMENU nên không bỏ riêng được nút nào.
+		// Nên bỏ hẳn viền: thanh tiêu đề do giao diện tự vẽ
+		// (components/DockTitleBar.vue) với đúng hai thứ, vùng kéo và nút tắt.
 		//
 		// Cửa sổ không viền thì vùng vẽ web = TOÀN BỘ hình chữ nhật cửa sổ (Wails trả
 		// 0 cho WM_NCCALCSIZE). Hình chữ nhật NGOÀI mà dockGeometry tính không đổi một
@@ -153,13 +156,13 @@ func runDock() {
 		// (styles/tokens.css) và curtain_windows.go.
 		BackgroundColour: &options.RGBA{R: 0x0a, G: 0x0f, B: 0x1e, A: 255},
 		// Mọi lệnh ĐÓNG (Alt+F4, "Đóng cửa sổ" trên hình thu nhỏ của taskbar, menu hệ
-		// thống, WM_CLOSE từ bất kỳ đâu) đều thành THU NHỎ, không bao giờ ẩn hay thoát:
-		// thoát hẳn là mất đồng hồ tính tiền và mất đường nhận lệnh khoá máy.
+		// thống, WM_CLOSE từ bất kỳ đâu) đều thành ẨN XUỐNG KHAY như nút tắt, không bao
+		// giờ thoát: thoát hẳn là mất đồng hồ tính tiền và mất đường nhận lệnh khoá máy.
 		//
 		// Phải là OnBeforeClose chứ KHÔNG phải HideWindowOnClose. Wails (Windows) bắt
 		// WM_CLOSE rồi bắn sự kiện OnClose, và nhánh HideWindowOnClose gọi WindowHide
-		// thẳng, bỏ qua OnBeforeClose — tức là bản cũ giấu mất cửa sổ, và không có gì
-		// ngoài lối tắt đưa nó về. Để false thì OnClose đi qua Quit() → OnBeforeClose,
+		// thẳng, bỏ qua OnBeforeClose — tức là ẩn cả màn hình khoá, lộ desktop. Để false
+		// thì OnClose đi qua Quit() → OnBeforeClose (HideDock tự từ chối khi đang khoá),
 		// trả true là Quit() dừng lại.
 		//
 		// Tắt máy, khởi động lại, đăng xuất KHÔNG đi qua đây: Windows chỉ gửi
@@ -171,7 +174,7 @@ func runDock() {
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "vnet-client-dock",
 			// Lối tắt VNET trên desktop chạy một bản thứ hai: nó gõ cửa bản đang chạy
-			// rồi thoát. ShowWindow đưa thanh về từ trạng thái thu nhỏ; màn hình khoá
+			// rồi thoát. ShowWindow đưa thanh về từ khay hệ thống; màn hình khoá
 			// đang phủ kín thì giữ nguyên, màn khoá native thì được đưa lên trước (xem
 			// ShowWindow).
 			OnSecondInstanceLaunch: func(d options.SecondInstanceData) {
