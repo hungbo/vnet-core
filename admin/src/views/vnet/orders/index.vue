@@ -758,9 +758,9 @@ watch(
               />
               <ElInput
                 v-model="search"
-                :placeholder="$t('vnetPages.orders.search') + '...'"
+                :placeholder="$t('vnetPages.orders.searchPlaceholder')"
                 clearable
-                style="width: 160px"
+                style="width: 280px"
                 @input="fetchData"
               />
             </template>

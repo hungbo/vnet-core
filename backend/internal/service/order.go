@@ -206,7 +206,13 @@ func (s *OrderService) listOrders(query *gorm.DB, params pagination.Params) ([]O
 		search := "%" + params.Search + "%"
 		// Ghi chú đơn là tiếng Việt có dấu; nhân viên quầy gõ không dấu. Bỏ dấu
 		// cả hai vế đúng như trang Sản phẩm và Hội viên đang làm.
-		query = query.Where("unaccent(note) ILIKE unaccent(?)", search)
+		// Trước chỉ tìm ghi chú (bảng không có cột này) nên gõ mã đơn, tên khách
+		// hay mã máy đều ra trống. Hội viên và máy tra bằng truy vấn con, không
+		// JOIN, để status/created_at và các cột sắp xếp không bị trùng tên.
+		query = query.Where(`order_code ILIKE ? OR unaccent(note) ILIKE unaccent(?)
+			OR member_id IN (SELECT id FROM members WHERE unaccent(username) ILIKE unaccent(?) OR unaccent(full_name) ILIKE unaccent(?) OR phone ILIKE ?)
+			OR machine_id IN (SELECT id FROM machines WHERE machine_code ILIKE ?)`,
+			search, search, search, search, search, search)
 	}
 
 	var total int64

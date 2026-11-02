@@ -923,6 +923,25 @@ func TestOrderService_List_LocTheoTrangThaiVaNgay(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Ô tìm kiếm trang Đơn hàng trước chỉ khớp ghi chú; giờ khớp cả mã đơn, khách
+// (tài khoản, họ tên, SĐT) và mã máy, vẫn đi cùng bộ lọc trạng thái.
+func TestOrderService_List_TimTheoMaDonKhachMay(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewOrderService(db, nil, NewAuditService(db), NewInventoryService(db, NewAuditService(db)))
+
+	tim := `\(order_code ILIKE \$2 OR unaccent\(note\) ILIKE unaccent\(\$3\)\s+OR member_id IN \(SELECT id FROM members WHERE unaccent\(username\) ILIKE unaccent\(\$4\) OR unaccent\(full_name\) ILIKE unaccent\(\$5\) OR phone ILIKE \$6\)\s+OR machine_id IN \(SELECT id FROM machines WHERE machine_code ILIKE \$7\)\)`
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "orders" WHERE status = \$1 AND ` + tim + ` AND "orders"\."deleted_at" IS NULL`).
+		WithArgs("pending", "%may05%", "%may05%", "%may05%", "%may05%", "%may05%", "%may05%").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "orders" WHERE status = \$1 AND ` + tim + ` AND "orders"\."deleted_at" IS NULL ORDER BY created_at desc LIMIT \$8`).
+		WithArgs("pending", "%may05%", "%may05%", "%may05%", "%may05%", "%may05%", "%may05%", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, _, _, _, err := svc.List(OrderListFilter{Status: "pending"}, pagination.Params{Page: 1, PageSize: 20, Search: "may05"})
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 // Bấm tiêu đề cột "Phải trả": sắp trên toàn bộ đơn, created_at làm tiêu chí phụ
 // để đơn bằng tiền nhau không nhảy trang.
 func TestOrderService_List_SapXepTheoCot(t *testing.T) {

@@ -1524,7 +1524,7 @@ const local: App.I18n.Schema = {
       payAmount: 'Amount',
       title: 'Orders',
       orderCode: 'Order Code',
-      search: 'Search',
+      searchPlaceholder: 'Order code, member, phone, machine, note…',
       member: 'Member',
       total: 'Total',
       discount: 'Discount',

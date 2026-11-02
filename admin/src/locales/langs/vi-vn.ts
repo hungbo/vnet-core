@@ -1524,7 +1524,7 @@ const local: App.I18n.Schema = {
       payAmount: 'Số tiền',
       title: 'Đơn hàng',
       orderCode: 'Mã đơn',
-      search: 'Tìm kiếm',
+      searchPlaceholder: 'Mã đơn, hội viên, SĐT, máy, ghi chú…',
       member: 'Hội viên',
       total: 'Tổng tiền',
       discount: 'Giảm giá',

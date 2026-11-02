@@ -1506,7 +1506,7 @@ const local: App.I18n.Schema = {
       payAmount: '金额',
       title: '订单管理',
       orderCode: '订单号',
-      search: '搜索',
+      searchPlaceholder: '订单号、会员、电话、机器、备注…',
       member: '会员',
       total: '总计',
       discount: '优惠',
