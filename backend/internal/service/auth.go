@@ -400,11 +400,7 @@ func (s *AuthService) openSessionForLogin(member *model.Member, machine *model.M
 		} else if n > 0 {
 			// Phiên cũ vừa đóng, máy vừa được giải phóng — xuống dưới mở phiên
 			// mới. KHÔNG nối lại phiên nào.
-			session, err := s.sessions.StartSession(&StartRequest{MachineID: machine.ID, MemberID: member.ID})
-			if err != nil {
-				return "", err
-			}
-			return session.ID, nil
+			return s.moPhienDangNhap(member, machine)
 		}
 	}
 
@@ -427,8 +423,24 @@ func (s *AuthService) openSessionForLogin(member *model.Member, machine *model.M
 		return "", CheckMemberMayPlay(s.db, s.curfew, member, false)
 	}
 
-	session, err := s.sessions.StartSession(&StartRequest{MachineID: machine.ID, MemberID: member.ID})
+	return s.moPhienDangNhap(member, machine)
+}
+
+// moPhienDangNhap mở phiên cho khách vừa đăng nhập ở máy trạm, bằng gói cước
+// nếu khách có gói dùng được ngay trên máy này (lần đầu thì kích hoạt luôn).
+func (s *AuthService) moPhienDangNhap(member *model.Member, machine *model.Machine) (string, error) {
+	goi, lyDo, err := goiDungKhiDangNhap(s.db, member.ID, machine, utils.VietnamTime())
 	if err != nil {
+		return "", err
+	}
+	session, err := s.sessions.StartSession(&StartRequest{
+		MachineID: machine.ID, MemberID: member.ID, ComboPurchaseID: goi, KichHoatGoi: goi != "",
+	})
+	if err != nil {
+		// Có gói mà lúc này không dùng được: nói lý do của gói, đừng chỉ "số dư 0₫".
+		if lyDo != "" {
+			return "", fmt.Errorf("%s; %w", lyDo, err)
+		}
 		return "", err
 	}
 	return session.ID, nil

@@ -294,6 +294,66 @@ func kiemTraNhomMayCuaCombo(tx *gorm.DB, combo *model.Combo, machine *model.Mach
 		combo.Name, strings.Join(ten, ", "), machine.MachineCode)
 }
 
+// goiDungKhiDangNhap chọn gói cước hội viên dùng được NGAY trên máy này, cho lúc
+// khách tự đăng nhập ở máy trạm. Tài khoản sinh ra lúc bán gói có số dư 0: không
+// gắn gói vào phiên thì khách bị chặn "số dư 0₫" dù đã trả tiền gói ở quầy.
+//
+// Gói dùng được: còn hạn, chưa gắn phiên nào, máy thuộc nhóm của gói, gói khung
+// giờ thì đang trong khung, gói theo phút thì còn phút. Gói đã dùng dở được ưu
+// tiên, sau đó tới gói mua trước.
+//
+// Không gói nào dùng được mà hội viên vẫn có gói còn hạn thì lyDo là lý do của
+// gói đầu tiên, để báo khách thay cho câu số dư khó hiểu.
+func goiDungKhiDangNhap(db *gorm.DB, memberID string, machine *model.Machine, now time.Time) (purchaseID, lyDo string, err error) {
+	var purchases []model.ComboPurchase
+	if err := db.Where("member_id = ? AND current_session_id IS NULL AND (expires_at IS NULL OR expires_at > ?)", memberID, now).
+		Order("activated DESC, created_at").Find(&purchases).Error; err != nil {
+		return "", "", err
+	}
+	for _, p := range purchases {
+		var combo model.Combo
+		// Unscoped: gói đã xoá vẫn là gói khách đã trả tiền.
+		if err := db.Unscoped().First(&combo, "id = ?", p.ComboID).Error; err != nil {
+			continue
+		}
+		var khongDung error
+		if combo.Type == "fixed_slot" {
+			bd, okBD := phutTrongNgay(clockValue(combo.SlotStart))
+			kt, okKT := phutTrongNgay(clockValue(combo.SlotEnd))
+			phut := now.Hour()*60 + now.Minute()
+			trong := bd <= phut && phut < kt
+			if bd > kt { // khung qua nửa đêm, ví dụ 22:00–06:00
+				trong = phut >= bd || phut < kt
+			}
+			if okBD && okKT && !trong {
+				khongDung = fmt.Errorf("gói %s chỉ dùng trong khung %s–%s", combo.Name,
+					clockHHMM(clockValue(combo.SlotStart)), clockHHMM(clockValue(combo.SlotEnd)))
+			}
+		} else if p.RemainingMinutes <= 0 {
+			khongDung = fmt.Errorf("gói %s đã hết phút", combo.Name)
+		}
+		if khongDung == nil {
+			khongDung = kiemTraNhomMayCuaCombo(db, &combo, machine)
+		}
+		if khongDung == nil {
+			return p.ID, "", nil
+		}
+		if lyDo == "" {
+			lyDo = khongDung.Error()
+		}
+	}
+	return "", lyDo, nil
+}
+
+// phutTrongNgay đổi giờ "07:30:00" thành 450.
+func phutTrongNgay(s string) (int, bool) {
+	var h, m int
+	if _, err := fmt.Sscanf(s, "%d:%d", &h, &m); err != nil {
+		return 0, false
+	}
+	return h*60 + m, true
+}
+
 // ganTenMonTang điền tên món tặng cho cả trang bằng một câu truy vấn. Unscoped:
 // món đã xoá mềm vẫn hiện tên, giống mọi chỗ trang trí bản ghi cũ.
 func ganTenMonTang(db *gorm.DB, items []ComboResponse) {

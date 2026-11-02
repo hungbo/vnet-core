@@ -77,6 +77,9 @@ type StartRequest struct {
 	MachineID       string `json:"machine_id" binding:"required"`
 	MemberID        string `json:"member_id" binding:"required"`
 	ComboPurchaseID string `json:"combo_purchase_id"`
+	// KichHoatGoi: gói chưa kích hoạt thì kích hoạt luôn bằng phiên này, thay vì
+	// từ chối. Chỉ đường khách tự đăng nhập ở máy trạm bật nó.
+	KichHoatGoi bool `json:"-"`
 }
 
 type SwitchMachineRequest struct {
@@ -632,7 +635,7 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 			return nil, errors.New("không tìm thấy lượt mua gói cước")
 		}
 
-		if !purchase.Activated {
+		if !purchase.Activated && !req.KichHoatGoi {
 			tx.Rollback()
 			return nil, errors.New("gói cước này chưa được kích hoạt")
 		}
@@ -668,6 +671,12 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 					}
 				}
 				slotEnd := time.Date(now.Year(), now.Month(), now.Day(), h, m, 0, 0, now.Location())
+				// Khung qua nửa đêm (22:00–06:00) mở lúc 23:00 thì hết khung là
+				// 06:00 sáng mai, không phải 06:00 hôm nay đã qua.
+				if bd, ok := phutTrongNgay(clockValue(combo.SlotStart)); ok && bd > h*60+m &&
+					now.Hour()*60+now.Minute() >= bd {
+					slotEnd = slotEnd.AddDate(0, 0, 1)
+				}
 				session.SlotEnd = &slotEnd
 			}
 		}
@@ -713,6 +722,12 @@ func (s *SessionService) StartSession(req *StartRequest) (*SessionDetail, error)
 		if err := tx.Model(dungGoi).Update("current_session_id", session.ID).Error; err != nil {
 			tx.Rollback()
 			return nil, err
+		}
+		if !dungGoi.Activated {
+			if err := tx.Model(dungGoi).Updates(map[string]interface{}{"activated": true, "activated_at": session.StartedAt}).Error; err != nil {
+				tx.Rollback()
+				return nil, err
+			}
 		}
 	}
 
