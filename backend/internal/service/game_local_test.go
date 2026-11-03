@@ -585,6 +585,61 @@ func TestUpdate_GameCucBoSuaDuocMoiTruong(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// Sửa game cục bộ trỏ sang thư mục khác: tên game giữ nguyên, custom.folder và gốc máy trạm theo thư mục mới.
+func TestUpdate_GameCucBoDoiThuMuc(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	root, kho := t.TempDir(), t.TempDir()
+	writeEmpty(t, kho, "ROS Legacy 2/Mirae Labs Launcher.exe", "ROS Legacy 2/Moi.exe")
+	writeEmpty(t, root, "ROS Legacy/Mirae Labs Launcher.exe")
+	moi := filepath.Join(kho, "ROS Legacy 2")
+	row := func(origin string) *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"id", "name", "origin", "launcher", "custom"}).
+			AddRow(id, "ROS Legacy", origin, "Mirae Labs Launcher.exe", `{"client_root":"F:\\Cu"}`)
+	}
+
+	t.Run("thư mục khác tên game, gốc máy trạm ghi tay, đổi cả tệp chạy", func(t *testing.T) {
+		svc, mock := cafeWithRoot(t, root)
+		mock.ExpectQuery(gameByIDSQL).WillReturnRows(row(model.GameOriginLocal))
+		expectGameUpdate(mock, `UPDATE "games" SET "custom"=\$1,"launcher"=\$2,"updated_at"=\$3 WHERE "id" = \$4`,
+			`{"client_root":"E:\\Online Games","folder":"ROS Legacy 2"}`, "Moi.exe", anyTime{}, id)
+		mock.ExpectQuery(gameByIDSQL).WillReturnRows(row(model.GameOriginLocal))
+		folder, cr, launcher := " "+moi+" ", "E:/Online Games/", "Moi.exe"
+		_, err := svc.Update(id, &UpdateGameRequest{Folder: &folder, ClientRoot: &cr, Launcher: &launcher})
+		require.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("thư mục trùng tên game ngay trong GAME_ROOT: bỏ custom.folder và gốc riêng", func(t *testing.T) {
+		svc, mock := cafeWithRoot(t, root)
+		mock.ExpectQuery(gameByIDSQL).WillReturnRows(row(model.GameOriginLocal))
+		expectGameUpdate(mock, `UPDATE "games" SET "custom"=\$1,"updated_at"=\$2 WHERE "id" = \$3`, nil, anyTime{}, id)
+		mock.ExpectQuery(gameByIDSQL).WillReturnRows(row(model.GameOriginLocal))
+		folder, cr := filepath.Join(root, "ROS Legacy"), ""
+		_, err := svc.Update(id, &UpdateGameRequest{Folder: &folder, ClientRoot: &cr})
+		require.NoError(t, err)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	for _, tc := range []struct {
+		ten, folder, origin, loi string
+	}{
+		{"thiếu tệp chạy ở thư mục mới", filepath.Join(kho), model.GameOriginLocal, "không thấy tệp chạy Mirae Labs Launcher.exe"},
+		{"thư mục không có", filepath.Join(kho, "khong-co"), model.GameOriginLocal, "không thấy thư mục"},
+		{"đường dẫn tương đối", "ROS Legacy 2", model.GameOriginLocal, "không phải đường dẫn đầy đủ"},
+		{"game của Hub", moi, model.GameOriginHub, "chỉ game cục bộ"},
+	} {
+		t.Run(tc.ten, func(t *testing.T) {
+			svc, mock := cafeWithRoot(t, root)
+			mock.ExpectQuery(gameByIDSQL).WillReturnRows(row(tc.origin))
+			folder := tc.folder
+			_, err := svc.Update(id, &UpdateGameRequest{Folder: &folder})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.loi)
+			assert.NoError(t, mock.ExpectationsWereMet(), "lỗi phải trả về trước khi ghi DB")
+		})
+	}
+}
+
 func TestSyncNow_TuChoiGameCucBo(t *testing.T) {
 	const id = "11111111-1111-1111-1111-111111111111"
 	svc, mock := cafeWithRoot(t, t.TempDir())

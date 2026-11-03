@@ -347,6 +347,16 @@ const clientRootDefault = computed(() =>
 // Có id là đang sửa game đã có, rỗng là thêm mới. Thư mục game (name) là khoá nối
 // master với các quán nên không đổi được.
 const editingId = ref('');
+// Sửa game cục bộ: đường dẫn thư mục lúc mở hộp; khác đường dẫn đang chọn thì gửi folder để trỏ game sang đó.
+const editFolderPath = ref('');
+const localFolderPath = computed(() =>
+  form.value.folder_name ? joinServerPath(localDir.value, form.value.folder_name) : ''
+);
+const folderChanged = computed(
+  () =>
+    Boolean(editingId.value && localMode.value && localFolderPath.value) &&
+    trimSep(localFolderPath.value).toLowerCase() !== trimSep(editFolderPath.value).toLowerCase()
+);
 
 function openCreate() {
   editingId.value = '';
@@ -369,9 +379,15 @@ async function loadLocalLaunchers(folder: string, quiet = false) {
 async function loadLocalFolders() {
   localFolders.value = [];
   localLaunchers.value = [];
-  form.value.name = '';
-  form.value.folder_name = '';
-  form.value.launcher = '';
+  if (editingId.value) {
+    // Đang sửa: giữ tên, thư mục và tệp chạy; đổi gốc mà giữ tên thư mục là trỏ sang thư mục cùng tên ở chỗ mới.
+    form.value.client_root = '';
+    loadLocalLaunchers(localFolderPath.value, true);
+  } else {
+    form.value.name = '';
+    form.value.folder_name = '';
+    form.value.launcher = '';
+  }
   try {
     localFolders.value =
       ((await client.get('/games/local/folders', { params: { root: localDir.value } })) as string[]) || [];
@@ -390,8 +406,13 @@ function openCreateLocal() {
 }
 
 function onLocalFolderPicked(folder: string) {
-  if (!form.value.display_name) form.value.display_name = folder;
-  form.value.launcher = '';
+  if (editingId.value) {
+    // Cùng game ở thư mục khác: giữ tệp chạy; gốc máy trạm để trống cho máy chủ lấy thư mục cha mới.
+    form.value.client_root = '';
+  } else {
+    if (!form.value.display_name) form.value.display_name = folder;
+    form.value.launcher = '';
+  }
   loadLocalLaunchers(joinServerPath(localDir.value, folder));
 }
 
@@ -403,7 +424,14 @@ function openEdit(row: any) {
     // Máy chủ không lưu đường dẫn của game thêm từ thư mục ngoài GAME_ROOT. Gốc máy trạm riêng của nó mặc định là thư
     // mục chứa game trên máy chủ nên thử ở đó; không thấy thì chỉ là không có gợi ý, vẫn gõ tay được.
     const cr = row.custom?.client_root;
-    loadLocalLaunchers(joinServerPath(cr || info.value.root, folder), Boolean(cr));
+    localRoot.value = cr || info.value.root;
+    editFolderPath.value = joinServerPath(localRoot.value, folder);
+    loadLocalLaunchers(editFolderPath.value, Boolean(cr));
+    localFolders.value = [];
+    client
+      .get('/games/local/folders', { params: { root: localRoot.value } })
+      .then((list: any) => (localFolders.value = list || []))
+      .catch(() => {}); // không đọc được gốc cũ thì chỉ là không có gợi ý
   }
   form.value = {
     name: row.name,
@@ -501,6 +529,7 @@ async function submit() {
         run_first: cleanSteps(run_first),
         // Gốc game riêng chỉ đi cùng game cục bộ; game của Hub đặt ở hộp Tuỳ chỉnh.
         ...(localMode.value ? { client_root } : {}),
+        ...(folderChanged.value ? { folder: localFolderPath.value } : {}),
         priority
       });
     } else {
@@ -837,22 +866,26 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
         {{ $t('vnetPages.games.addHint', { root: info.root }) }}
       </ElAlert>
       <ElForm label-width="150px">
-        <ElFormItem v-if="localMode && !editingId" :label="$t('vnetPages.games.localRoot')">
+        <ElFormItem v-if="localMode" :label="$t('vnetPages.games.localRoot')">
           <ElInput v-model="localRoot" :placeholder="info.root" @change="loadLocalFolders" />
           <div class="text-12px text-gray-500">{{ $t('vnetPages.games.localRootHint', { root: info.root }) }}</div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.folder')">
-          <ElSelect
-            v-if="localMode && !editingId"
-            v-model="form.folder_name"
-            filterable
-            class="w-full"
-            :placeholder="$t('vnetPages.games.localFolderPick')"
-            :no-data-text="$t('vnetPages.games.localNoFolders', { root: localDir })"
-            @change="onLocalFolderPicked"
-          >
-            <ElOption v-for="f in localFolders" :key="f" :label="f" :value="f" />
-          </ElSelect>
+          <div v-if="localMode" class="w-full">
+            <ElSelect
+              v-model="form.folder_name"
+              filterable
+              :allow-create="Boolean(editingId)"
+              :default-first-option="Boolean(editingId)"
+              class="w-full"
+              :placeholder="$t('vnetPages.games.localFolderPick')"
+              :no-data-text="$t('vnetPages.games.localNoFolders', { root: localDir })"
+              @change="onLocalFolderPicked"
+            >
+              <ElOption v-for="f in localFolders" :key="f" :label="f" :value="f" />
+            </ElSelect>
+            <div v-if="editingId" class="text-12px text-gray-500">{{ $t('vnetPages.games.localFolderEditHint') }}</div>
+          </div>
           <ElInput v-else-if="editingId" :model-value="form.folder_name" disabled />
           <ElInput v-else v-model="form.name" placeholder="League of Legends" />
         </ElFormItem>
@@ -924,9 +957,18 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
           </div>
         </ElFormItem>
         <ElFormItem v-if="localMode" :label="$t('vnetPages.games.clientRootLocal')">
-          <ElInput v-model="form.client_root" :placeholder="editingId ? 'E:\\Games2' : clientRootDefault" />
+          <ElInput
+            v-model="form.client_root"
+            :placeholder="editingId && !folderChanged ? 'E:\\Games2' : clientRootDefault"
+          />
           <div class="text-12px text-gray-500">
-            {{ $t(editingId ? 'vnetPages.games.clientRootLocalHint' : 'vnetPages.games.clientRootFolderHint') }}
+            {{
+              $t(
+                editingId && !folderChanged
+                  ? 'vnetPages.games.clientRootLocalHint'
+                  : 'vnetPages.games.clientRootFolderHint'
+              )
+            }}
           </div>
         </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.priority')">

@@ -239,6 +239,60 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 	return &g, nil
 }
 
+// doiThuMucCucBo trỏ game cục bộ g sang thư mục folder (đường dẫn đầy đủ trên máy chủ) khi sửa game, cùng luật như
+// CreateLocal: tên game giữ nguyên, thư mục khác tên game thì vào custom.folder, gốc máy trạm không gửi thì là thư mục
+// cha. Tệp chạy (mới nếu đang sửa, không thì cũ) phải có trong thư mục mới.
+func (s *GameService) doiThuMucCucBo(g *model.Game, folder string, req *UpdateGameRequest, updates map[string]interface{}, custom *model.GameCustom) error {
+	if g.Origin != model.GameOriginLocal {
+		return errors.New("chỉ game cục bộ đổi được thư mục game")
+	}
+	root := s.conf().Root
+	if root == "" {
+		return ErrGameNeedRoot
+	}
+	dir, err := duongDanMayChu(folder)
+	if err != nil {
+		return err
+	}
+	base := filepath.Base(dir)
+	if !tenThuMucDungDuoc(base) {
+		return fmt.Errorf("tên thư mục %q máy trạm không mở được: đổi tên thư mục", base)
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("không thấy thư mục %s", dir)
+	}
+	launcher, entries := g.Launcher, g.MenuEntries
+	if v, ok := updates["launcher"].(string); ok {
+		launcher = v
+	}
+	if v, ok := updates["menu_entries"].(model.GameMenuEntries); ok {
+		entries = v
+	}
+	if launcher != "" && !tepTonTai(dir, launcher) {
+		return fmt.Errorf("không thấy tệp chạy %s trong thư mục %s", launcher, dir)
+	}
+	for _, e := range entries {
+		if !tepTonTai(dir, e.Launcher) {
+			return fmt.Errorf("không thấy tệp chạy %s của mục %q trong thư mục %s", e.Launcher, e.DisplayName, dir)
+		}
+	}
+	custom.Folder = ""
+	if base != g.Name {
+		custom.Folder = base
+	}
+	if req.ClientRoot == nil || strings.TrimSpace(*req.ClientRoot) == "" {
+		custom.ClientRoot = ""
+		if parent := filepath.Dir(dir); !cungThuMuc(parent, filepath.Clean(root)) {
+			p, err := parseGameClientRoot(parent)
+			if err != nil {
+				return fmt.Errorf("gốc game trên máy trạm %q: %w", parent, err)
+			}
+			custom.ClientRoot = p
+		}
+	}
+	return nil
+}
+
 // noteLocalClash ghi nhận một game cục bộ trùng tên với game của catalog; nhật ký chỉ một dòng cho mỗi tên.
 func (s *GameService) noteLocalClash(name string) {
 	s.mu.Lock()

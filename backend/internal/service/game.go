@@ -539,7 +539,10 @@ type UpdateGameRequest struct {
 	RunFirst *[]model.GameRunStep `json:"run_first"`
 	// ClientRoot: gốc game trên máy trạm riêng cho game cục bộ ("" để theo ổ chung). Game của Hub đặt qua SetCustom.
 	ClientRoot *string `json:"client_root"`
-	Enabled    *bool   `json:"enabled"`
+	// Folder (chỉ game cục bộ): đường dẫn đầy đủ của thư mục game mới NHƯ MÁY CHỦ THẤY. Tên game giữ nguyên; ClientRoot
+	// không gửi hoặc rỗng thì lấy thư mục cha như lúc thêm (xem CreateGameRequest.Folder). Rỗng là giữ thư mục cũ.
+	Folder  *string `json:"folder"`
+	Enabled *bool   `json:"enabled"`
 	AutoUpdate *bool   `json:"auto_update"`
 	Priority   *int    `json:"priority"`
 }
@@ -596,6 +599,7 @@ func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, er
 			updates["run_first"] = steps
 		}
 	}
+	custom := g.Custom
 	if req.ClientRoot != nil && g.Origin == model.GameOriginLocal {
 		root := strings.TrimSpace(*req.ClientRoot)
 		if root != "" {
@@ -605,9 +609,14 @@ func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, er
 			}
 			root = p
 		}
-		c := g.Custom
-		c.ClientRoot = root
-		updates["custom"] = c
+		custom.ClientRoot = root
+		updates["custom"] = custom
+	}
+	if req.Folder != nil && strings.TrimSpace(*req.Folder) != "" {
+		if err := s.doiThuMucCucBo(&g, *req.Folder, req, updates, &custom); err != nil {
+			return nil, err
+		}
+		updates["custom"] = custom
 	}
 	if req.Enabled != nil {
 		updates["enabled"] = *req.Enabled

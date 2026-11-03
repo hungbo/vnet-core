@@ -877,6 +877,7 @@ const local: App.I18n.Schema = {
       localHint:
         '网吧自行下载的游戏：选择游戏目录（在 {root} 中或服务器上任意位置，无需创建链接）和启动文件。游戏会显示在工作站菜单中，但不与 Hub 同步，Hub 也不会覆盖或删除它。',
       localFolderPick: '选择尚未添加的目录',
+      localFolderEditHint: '更换目录：从列表选择其他目录，或输入目录名后选择刚输入的那一项（新位置下的同名目录）。游戏名称不变；新目录中必须有启动文件。',
       localLauncherPick: '选择或输入启动文件',
       localNoFolders: '{root} 中没有可添加的目录了',
       localRoot: '游戏所在目录',

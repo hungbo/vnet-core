@@ -243,7 +243,7 @@ func (h *GameHandler) LocalLaunchers(c *gin.Context) {
 }
 
 // Update
-// @Summary      Sửa game: bật/tắt, tự cập nhật, ưu tiên (master và game cục bộ sửa được cả tên, launcher)
+// @Summary      Sửa game: bật/tắt, tự cập nhật, ưu tiên (master và game cục bộ sửa được cả tên, launcher; game cục bộ đổi được thư mục qua folder)
 // @Tags         Games
 // @Accept       json
 // @Produce      json

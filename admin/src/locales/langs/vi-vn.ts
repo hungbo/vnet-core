@@ -884,6 +884,8 @@ const local: App.I18n.Schema = {
       localHint:
         'Game quán tự tải: chọn thư mục game (trong {root} hoặc bất kỳ đâu trên máy chủ, không cần tạo liên kết) và tệp chạy. Game hiện trên menu máy trạm nhưng không đồng bộ với Hub; Hub không ghi đè hay xoá nó.',
       localFolderPick: 'Chọn thư mục game chưa thêm',
+      localFolderEditHint:
+        'Đổi thư mục: chọn thư mục khác trong danh sách, hoặc gõ tên thư mục rồi chọn dòng vừa gõ (thư mục cùng tên ở chỗ mới). Tên game giữ nguyên; tệp chạy phải có trong thư mục mới.',
       localLauncherPick: 'Chọn hoặc gõ tệp chạy',
       localNoFolders: 'Không còn thư mục nào chưa thêm trong {root}',
       localRoot: 'Thư mục chứa game',

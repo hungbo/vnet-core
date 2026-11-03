@@ -884,6 +884,8 @@ const local: App.I18n.Schema = {
       localHint:
         'A game the cafe downloads itself: pick its folder (in {root} or anywhere on the server, no link needed) and its launcher. It shows on the workstation menu but is not synced with the Hub, and the Hub never overwrites or deletes it.',
       localFolderPick: 'Pick a folder not added yet',
+      localFolderEditHint:
+        'Change folder: pick another folder from the list, or type a folder name and pick the typed entry (a folder with the same name in the new place). The game name stays; the launcher must exist in the new folder.',
       localLauncherPick: 'Pick or type the launcher file',
       localNoFolders: 'No folder left to add in {root}',
       localRoot: 'Containing folder',
