@@ -1207,6 +1207,7 @@ const local: App.I18n.Schema = {
         rdViewOnly: 'View only',
         rdFullscreen: 'Full screen',
         rdReconnect: 'Reconnect',
+        rdCopied: 'Copied text from the machine',
         rdLost: 'Connection to the machine was lost',
         rdAuthFailed: 'VNC rejected the password — wait for the next heartbeat and retry',
         sendNotification: 'Send Notification',

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { ElMessage } from 'element-plus';
 import { useI18n } from 'vue-i18n';
 import { buildWsUrl } from '@/service/ws/config';
 import client from '@/api/client';
@@ -50,6 +51,7 @@ async function connect() {
     rfb.addEventListener('securityfailure', (e: any) => {
       errorText.value = e.detail?.reason || $t('vnetPages.machines.remote.rdAuthFailed');
     });
+    rfb.addEventListener('clipboard', (e: any) => copyToLocal(e.detail.text));
   } catch (e: any) {
     status.value = 'disconnected';
     errorText.value = e?.message || $t('vnetPages.common.error');
@@ -68,6 +70,48 @@ function toggleViewOnly() {
 
 function fullscreen() {
   wrapEl.value?.requestFullscreen?.();
+}
+
+// Dán: noVNC chặn mặc định mọi phím nên Ctrl+V không thành sự kiện paste, và
+// trang chạy http nên không đọc được navigator.clipboard. Giữ Ctrl+V (Cmd+V
+// trên Mac) lại không cho noVNC thấy, để trình duyệt phát paste; chữ dán được
+// đưa vào clipboard máy trạm rồi bấm Ctrl+V bên đó.
+const XK_CONTROL_L = 0xffe3;
+const XK_ALT_L = 0xffe9;
+const XK_V = 0x0076;
+let pasteWithCmd = false;
+
+function onKeydown(e: KeyboardEvent) {
+  if (!rfb || viewOnly.value || e.code !== 'KeyV' || !(e.ctrlKey || e.metaKey)) return;
+  pasteWithCmd = e.metaKey && !e.ctrlKey;
+  e.stopPropagation();
+}
+
+function onPaste(e: ClipboardEvent) {
+  const text = e.clipboardData?.getData('text/plain');
+  if (!rfb || viewOnly.value || !text) return;
+  e.preventDefault();
+  rfb.clipboardPasteFrom(text);
+  rfb.sendKey(XK_CONTROL_L, 'ControlLeft', true);
+  // noVNC gửi Cmd thành Alt; nhả Alt sau Ctrl để máy trạm nhận Ctrl+V chứ không
+  // phải Ctrl+Alt+V, và Windows không bật thanh menu.
+  if (pasteWithCmd) rfb.sendKey(XK_ALT_L, 'AltLeft', false);
+  rfb.sendKey(XK_V, 'KeyV');
+  rfb.sendKey(XK_CONTROL_L, 'ControlLeft', false);
+}
+
+// Copy: máy trạm báo clipboard đổi thì chép sang máy admin. execCommand('copy')
+// chạy được trên http, miễn người dùng vừa bấm phím/chuột (Ctrl+C, chuột phải →
+// Copy). noVNC không báo clipboard khi đang Chỉ xem.
+function copyToLocal(text: string) {
+  const onCopy = (e: ClipboardEvent) => {
+    e.clipboardData?.setData('text/plain', text);
+    e.preventDefault();
+  };
+  document.addEventListener('copy', onCopy);
+  const ok = document.execCommand('copy');
+  document.removeEventListener('copy', onCopy);
+  if (ok) ElMessage.success($t('vnetPages.machines.remote.rdCopied'));
 }
 
 watch(visible, v => (v ? connect() : disconnect()));
@@ -98,7 +142,7 @@ onBeforeUnmount(disconnect);
       </ElButton>
       <span v-if="errorText" class="text-sm text-red-500">{{ errorText }}</span>
     </div>
-    <div ref="wrapEl" class="rd-wrap">
+    <div ref="wrapEl" class="rd-wrap" @keydown.capture="onKeydown" @paste="onPaste">
       <div ref="screenEl" class="rd-screen" />
     </div>
   </ElDialog>

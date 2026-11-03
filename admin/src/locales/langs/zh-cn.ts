@@ -1193,6 +1193,7 @@ const local: App.I18n.Schema = {
         rdViewOnly: '仅查看',
         rdFullscreen: '全屏',
         rdReconnect: '重新连接',
+        rdCopied: '已复制机器上的文本',
         rdLost: '与机器的连接已断开',
         rdAuthFailed: 'VNC 拒绝了密码，请等待下一次心跳后重试',
         sendNotification: '发送通知',

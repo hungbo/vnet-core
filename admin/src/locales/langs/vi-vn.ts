@@ -1207,6 +1207,7 @@ const local: App.I18n.Schema = {
         rdViewOnly: 'Chỉ xem',
         rdFullscreen: 'Toàn màn hình',
         rdReconnect: 'Kết nối lại',
+        rdCopied: 'Đã chép chữ từ máy trạm',
         rdLost: 'Mất kết nối tới máy',
         rdAuthFailed: 'VNC từ chối mật khẩu — chờ nhịp tim kế tiếp rồi thử lại',
         sendNotification: 'Gửi thông báo',
