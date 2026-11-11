@@ -48,7 +48,8 @@ type GameHubRequest struct {
 
 // effectiveGameConfig: cấu hình có hiệu lực. Có GAME_ROLE thì lấy nguyên môi trường. Không có thì quán đã
 // nối Hub từ trang Game chạy vai quán, các thông số còn lại (cổng, chu kỳ, thư mục engine) vẫn từ môi trường.
-// Thiếu một trong ba giá trị hoặc giá trị đã lưu không còn hợp lệ là không có vai: không đoán.
+// Thiếu địa chỉ hay key, hoặc giá trị đã lưu không còn hợp lệ là không có vai: không đoán. Thư mục game chung là tuỳ
+// chọn (quán chọn thư mục lưu từng game lúc tải); quán nối từ trước đã lưu thì vẫn dùng cho các game cũ.
 func effectiveGameConfig(base config.GameConfig, st map[string]string) config.GameConfig {
 	if base.Role != config.GameRoleOff {
 		return base
@@ -57,7 +58,7 @@ func effectiveGameConfig(base config.GameConfig, st map[string]string) config.Ga
 	if root == "" {
 		root = base.Root
 	}
-	if st[GameHubURLKey] == "" || st[GameHubKeyKey] == "" || root == "" {
+	if st[GameHubURLKey] == "" || st[GameHubKeyKey] == "" {
 		return base
 	}
 	c := base
@@ -203,14 +204,14 @@ func (s *GameService) SetHub(ctx context.Context, req GameHubRequest) (*GameInfo
 	if root == "" {
 		root = st[GameRootKey]
 	}
-	if root == "" {
-		root = s.cfg.Root
-	}
-	// Lưu đường dẫn đã giải symlink: thư mục game sau này bị thay bằng một liên kết trỏ chỗ khác thì
-	// vẫn ghi vào đúng chỗ đã kiểm.
-	root, err = kiemTraGameRoot(root, s.cfg.RootAllowed)
-	if err != nil {
-		return nil, err
+	// Thư mục chung không bắt buộc nữa: trống thì quán chọn thư mục lưu từng game lúc bấm Tải.
+	if root != "" {
+		// Lưu đường dẫn đã giải symlink: thư mục game sau này bị thay bằng một liên kết trỏ chỗ khác thì
+		// vẫn ghi vào đúng chỗ đã kiểm.
+		root, err = kiemTraGameRoot(root, s.cfg.RootAllowed)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := s.checkHub(ctx, base, key); err != nil {
 		return nil, err

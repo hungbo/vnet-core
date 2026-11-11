@@ -2,6 +2,7 @@ package service
 
 import (
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,6 +23,9 @@ type DonMoMay struct {
 	PendingCount int    `json:"pending_count"`
 	UnpaidCount  int    `json:"unpaid_count"`
 	Amount       int64  `json:"amount"`
+	// MemberNames: hội viên còn nợ các đơn này. Khách trả máy hay tắt máy thì máy
+	// không còn phiên, đây là chỗ duy nhất quầy biết ai chưa trả tiền.
+	MemberNames []string `json:"member_names,omitempty"`
 }
 
 // DonMoTheoMay gom đơn chưa thu tiền theo máy, cho GET /machines/open-orders.
@@ -94,6 +98,10 @@ func donMoTheoMay(db *gorm.DB) ([]DonMoMay, error) {
 	if err != nil {
 		return nil, err
 	}
+	tenKhach, err := tenKhachCoDon(db, dons)
+	if err != nil {
+		return nil, err
+	}
 
 	theoMay := map[string]*DonMoMay{}
 	var thuTu []string
@@ -114,13 +122,42 @@ func donMoTheoMay(db *gorm.DB) ([]DonMoMay, error) {
 			m.UnpaidCount++
 		}
 		m.Amount += d.FinalAmount
+		if d.MemberID != nil {
+			if ten := tenKhach[*d.MemberID]; ten != "" && !slices.Contains(m.MemberNames, ten) {
+				m.MemberNames = append(m.MemberNames, ten)
+			}
+		}
 	}
 
 	out := make([]DonMoMay, 0, len(thuTu))
 	for _, id := range thuTu {
+		slices.Sort(theoMay[id].MemberNames) // DB không hứa thứ tự đơn: tên không được nhảy chỗ mỗi lần tải lại
 		out = append(out, *theoMay[id])
 	}
 	return out, nil
+}
+
+// tenKhachCoDon tra tên hội viên của các đơn (member_id → tên). Unscoped vì hội
+// viên đã bị xoá vẫn có thể còn nợ đơn.
+func tenKhachCoDon(db *gorm.DB, dons []model.Order) (map[string]string, error) {
+	var ids []string
+	for _, d := range dons {
+		if d.MemberID != nil && !slices.Contains(ids, *d.MemberID) {
+			ids = append(ids, *d.MemberID)
+		}
+	}
+	ten := map[string]string{}
+	if len(ids) == 0 {
+		return ten, nil
+	}
+	var rows []model.Member
+	if err := db.Unscoped().Select("id", "full_name", "username").Where("id IN ?", ids).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		ten[rows[i].ID] = tenHoiVien(&rows[i])
+	}
+	return ten, nil
 }
 
 // donMoCuaMay trả ID các đơn chưa thu tiền đang tính cho một máy — đúng những đơn

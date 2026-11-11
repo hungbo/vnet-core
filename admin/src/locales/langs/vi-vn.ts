@@ -296,7 +296,6 @@ const local: App.I18n.Schema = {
     'vnet_app-updates': 'Cập nhật máy khách',
     vnet_games: 'Cập nhật game',
     vnet_hardware: 'Phần cứng',
-    'vnet_hub-games': 'Danh mục Hub',
     'vnet_windows-keys': 'Bản quyền Windows',
     vnet_curfew: 'Giới nghiêm',
     vnet_feedback: 'Đánh giá dịch vụ',
@@ -630,7 +629,7 @@ const local: App.I18n.Schema = {
   vnetPages: {
     qrPay: {
       tab: 'Nhận tiền QR',
-      hint: 'Khách quét mã VietQR để chuyển khoản. Điện thoại ở quầy cài app VNET Bank Notification đọc thông báo của app ngân hàng; máy chủ khớp mã nạp và số tiền rồi cộng tiền.',
+      hint: 'Khách quét mã VietQR để chuyển khoản. ThueAPI báo giao dịch về qua Hub; máy chủ khớp mã nạp và số tiền rồi cộng tiền.',
       enabled: 'Bật nạp tiền bằng QR',
       bank: 'Ngân hàng nhận',
       accountNo: 'Số tài khoản',
@@ -640,34 +639,11 @@ const local: App.I18n.Schema = {
       autoConfirm: 'Tự duyệt khi tiền về',
       autoConfirmHint:
         'Tắt thì khoản khớp mã chỉ được gợi ý ở trang Tiền vào, nhân viên bấm Duyệt. Nên tắt vài ngày đầu để đối chiếu sao kê.',
-      phone: 'Điện thoại báo tiền',
-      paired: 'Đã ghép',
-      notPaired: 'Chưa ghép',
+      source: 'Nguồn ThueAPI',
       online: 'Đang kết nối',
       offline: 'Mất kết nối',
-      lastSeen: 'Lần cuối thấy',
-      lastNotif: 'Thông báo gần nhất',
-      appVersion: 'Phiên bản app',
-      battery: 'Pin',
-      charging: 'đang sạc',
-      listener: 'Quyền đọc thông báo',
-      listenerOk: 'Có',
-      listenerMissing: 'Chưa cấp',
-      queue: 'Đang chờ gửi',
-      connection: 'Kết nối',
-      connectionLive: 'Trực tiếp (WebSocket)',
-      connectionHeartbeat: 'Nhịp HTTP mỗi phút',
-      pair: 'Ghép điện thoại',
-      repair: 'Ghép lại',
-      unpair: 'Gỡ điện thoại',
-      unpairConfirm: 'Gỡ điện thoại báo tiền? Nạp QR sẽ ngừng cho tới khi ghép lại.',
-      pairCode: 'Mã ghép',
-      pairCodeHint:
-        'Mở app VNET Bank Notification trên điện thoại, nhập địa chỉ máy chủ và mã này. Mã hết hạn sau {time}.',
-      serverAddress: 'Địa chỉ máy chủ',
-      never: 'chưa có',
       methodQr: 'QR chuyển khoản',
-      notReady: 'Nạp QR chưa sẵn sàng: chưa bật, hoặc điện thoại báo tiền mất kết nối',
+      notReady: 'Nạp QR chưa sẵn sàng: chưa bật, hoặc máy chủ mất kết nối tới Hub',
       createQr: 'Tạo mã QR',
       scanHint: 'Khách mở app ngân hàng bất kỳ và quét mã. Giữ nguyên số tiền và nội dung.',
       content: 'Nội dung',
@@ -695,6 +671,7 @@ const local: App.I18n.Schema = {
       assignTitle: 'Cộng {amount} cho hội viên',
       selectMember: 'Chọn hội viên',
       ignoreConfirm: 'Bỏ qua khoản này? Tiền không được cộng cho ai.',
+      deleteConfirm: 'Xoá khoản này khỏi trang Tiền vào? Tổng tiền vào sẽ giảm tương ứng.',
       outgoing: 'tiền ra',
       searchPlaceholder: 'Nội dung, mã nạp, hội viên',
       rawText: 'Nguyên văn thông báo',
@@ -838,7 +815,7 @@ const local: App.I18n.Schema = {
       root: 'Thư mục game',
       upstream: 'Máy master',
       offHint:
-        'Máy chủ này chưa bật cập nhật game. Điền địa chỉ Hub, key do Hub cấp và thư mục game vào khung "Kết nối cập nhật game" bên dưới rồi bấm "Lưu và kết nối": bật ngay, không cần khởi động lại.',
+        'Máy chủ này chưa bật cập nhật game. Bấm nút "Kết nối cập nhật game" ở trên, điền địa chỉ Hub và key do Hub cấp rồi bấm "Lưu và kết nối": bật ngay, không cần khởi động lại.',
       offMissing: 'Còn thiếu: {items}.',
       offSavedInvalid:
         'Đã lưu đủ nhưng chưa bật được (thư mục game hoặc địa chỉ đã lưu không còn dùng được). Bấm "Lưu và kết nối" để kiểm tra lại.',
@@ -848,8 +825,6 @@ const local: App.I18n.Schema = {
       hubKey: 'Key cập nhật game',
       hubKeySaved: 'Đã lưu ({hint}), để trống nếu giữ nguyên',
       hubKeyKeepHint: 'Đổi địa chỉ Hub thì phải dán lại key.',
-      gameRoot: 'Thư mục game trên máy chủ',
-      gameRootHint: 'Ví dụ D:\\Games. Thư mục phải có sẵn, game tải về nằm trong đây.',
       hubConnect: 'Lưu và kết nối',
       hubDisconnect: 'Ngắt kết nối',
       hubDisconnectConfirm: 'Ngắt kết nối cập nhật game? Game đã tải và thư mục game giữ nguyên, chỉ ngừng nhận bản mới.',
@@ -871,7 +846,7 @@ const local: App.I18n.Schema = {
       masterHint:
         'Master tự publish khi thư mục một game đứng yên đủ lâu sau lần cập nhật cuối. Bấm "Publish ngay" nếu chắc game đã cập nhật xong. Các quán chỉ tải phần đã đổi.',
       cafeHint:
-        'Quán tự tải bản mới từ master khi bật "Tự cập nhật" và đang trong khung giờ cho phép. Máy trạm Cloud Update chỉ thấy bản mới sau khi khởi động lại.',
+        'Game của Hub không tự tải: bấm "Tải game", chọn game rồi chọn thư mục lưu. Game đã tải tự nhận bản mới khi bật "Tự cập nhật" và đang trong khung giờ cho phép. Máy trạm Cloud Update chỉ thấy bản mới sau khi khởi động lại.',
       clientRoot: 'Thư mục game trên máy trạm',
       clientRootHint:
         'Đường dẫn thư mục game mà máy trạm nhìn thấy (chữ ổ Game Disk), ví dụ D:\\Games. Menu game trên máy trạm chạy game từ đây. Để trống hoặc gõ sai thì dùng D:\\Games.',
@@ -882,18 +857,22 @@ const local: App.I18n.Schema = {
       addLocal: 'Thêm game cục bộ',
       localTag: 'Cục bộ',
       localHint:
-        'Game quán tự tải: chọn thư mục game (trong {root} hoặc bất kỳ đâu trên máy chủ, không cần tạo liên kết) và tệp chạy. Game hiện trên menu máy trạm nhưng không đồng bộ với Hub; Hub không ghi đè hay xoá nó.',
-      localFolderPick: 'Chọn thư mục game chưa thêm',
+        'Game quán tự tải: chọn thư mục game (ở bất kỳ đâu trên máy chủ, không cần tạo liên kết) và tệp chạy. Game hiện trên menu máy trạm nhưng không đồng bộ với Hub; Hub không ghi đè hay xoá nó.',
+      localFolder: 'Thư mục game',
+      localFolderPick: 'Chọn thư mục game trên máy chủ',
+      localFolderHint:
+        'Bấm vào thư mục để mở thư mục con và chọn luôn thư mục đó (bao nhiêu cấp cũng được); tới thư mục game là xong. Thư mục mờ là đã thêm làm game.',
       localFolderEditHint:
-        'Đổi thư mục: chọn thư mục khác trong danh sách, hoặc gõ tên thư mục rồi chọn dòng vừa gõ (thư mục cùng tên ở chỗ mới). Tên game giữ nguyên; tệp chạy phải có trong thư mục mới.',
+        'Chọn thư mục khác để trỏ game sang đó. Tên game giữ nguyên; tệp chạy phải có trong thư mục mới.',
+      localFolderPath: 'Đang chọn: {path}.',
       localLauncherPick: 'Chọn hoặc gõ tệp chạy',
-      localNoFolders: 'Không còn thư mục nào chưa thêm trong {root}',
-      localRoot: 'Thư mục chứa game',
-      localRootHint:
-        'Thư mục trên máy chủ chứa các thư mục game, ở đâu cũng được, ví dụ E:\\Online Games. Mặc định là {root}. Gõ xong bấm Enter để tải danh sách.',
+      localIconPick: 'Chọn hoặc gõ tệp icon',
+      categoryPick: 'Chọn nhóm hoặc gõ nhóm mới',
       localName: 'Tên game',
       localNameHint:
         'Để trống thì lấy tên thư mục. Trùng một game Hub quán chưa tải thì trang sẽ hỏi có thay không; trùng game Hub đã tải hoặc tên thư mục có dấu tiếng Việt thì đặt tên khác (chỉ chữ không dấu, số, khoảng trắng và . _ ( ) + -).',
+      localRenameHint:
+        'Đổi tên để nhường tên cho game Hub cùng tên (ví dụ thêm KZ). Thư mục game và lượt chơi giữ nguyên. Chỉ chữ không dấu, số, khoảng trắng và . _ ( ) + -.',
       replaceHubConfirm:
         'Hub đã có game "{name}" nhưng quán chưa tải. Thay bằng game cục bộ này? Game của Hub sẽ không tải về nữa; muốn dùng lại bản của Hub thì xoá game cục bộ.',
       localClash:
@@ -939,6 +918,13 @@ const local: App.I18n.Schema = {
       lastUpdated: 'Cập nhật lúc',
       publishNow: 'Publish ngay',
       syncNow: 'Tải ngay',
+      downloadGames: 'Tải game',
+      searchPlaceholder: 'Tìm game',
+      downloadTitle: 'Tải {name}',
+      downloadRoot: 'Thư mục lưu trên máy chủ',
+      downloadPath: 'Game sẽ nằm ở {path}.',
+      downloadRootHint:
+        'Chọn thư mục đã dùng hoặc gõ đường dẫn mới, ví dụ E:\\Games; chưa có thì máy chủ tự tạo. Máy trạm mở game theo đúng đường dẫn này; máy trạm thấy ổ khác thì đặt ở Tuỳ chỉnh.',
       publishing: 'Đang băm {name} để publish, sẽ xong sau ít phút',
       queued: 'Đã xếp {name} vào hàng tải',
       deleteConfirm: 'Bỏ {name} khỏi danh mục? Tệp trên ổ đĩa giữ nguyên.',
@@ -1072,6 +1058,7 @@ const local: App.I18n.Schema = {
       topUp: 'Nạp tiền',
       orders: 'Đơn đang gọi',
       ordersTitle: 'Đơn đang gọi — {member} ({code})',
+      owing: 'Chưa thanh toán: {names}',
       noOrders: 'Không có đơn nào đang chờ',
       orderItems: 'Món',
       orderTotal: 'Tổng',
@@ -1718,6 +1705,19 @@ const local: App.I18n.Schema = {
       before: 'Trước',
       after: 'Sau',
       createdAt: 'Ngày tạo',
+      description: 'Ghi chú',
+      searchPlaceholder: 'Sản phẩm, mã đơn, ghi chú, nhân viên',
+      kinds: {
+        manual_in: 'Nhập tay',
+        manual_out: 'Xuất tay',
+        order_out: 'Xuất theo đơn',
+        order_in: 'Hoàn theo đơn',
+        count: 'Kiểm kê'
+      },
+      kindGroups: {
+        manual: 'Nhân viên nhập/xuất',
+        system: 'Hệ thống tự ghi'
+      },
       form: {
         productRequired: 'Chọn sản phẩm',
         quantityRequired: 'Nhập số lượng'
@@ -2151,9 +2151,8 @@ const local: App.I18n.Schema = {
       }
     },
     hubGames: {
-      title: 'Danh mục game của Hub',
+      title: 'Tải game từ Hub',
       loadFailed: 'Không đọc được danh mục từ Hub',
-      queueTitle: 'Đang tải',
       waiting: 'Đang chờ {n} game',
       window: 'Khung giờ',
       peers: '{n} nguồn',
@@ -2168,65 +2167,32 @@ const local: App.I18n.Schema = {
       limitUp: 'Trần tải lên (Mbps)',
       limitHint: '0 là không giới hạn. Áp ngay cho cả lượt đang tải, gồm P2P, webseed và relay. Mỗi lúc chỉ tải một game: ổ đĩa và đường truyền là chỗ nghẽn chung.',
       limitsSaved: 'Đã lưu trần băng thông',
-      modeAllLabel: 'Đang nhận mọi game Hub phát',
-      modeSelectedLabel: 'Chỉ nhận game đã chọn',
-      startChoosing: 'Chỉ nhận game tôi chọn',
-      receiveAll: 'Nhận mọi game',
-      startChoosingConfirm: 'Quán sẽ chỉ nhận game đã chọn: gồm các game quán đang có và game bạn chọn thêm. Game khác sẽ không được Hub giao nữa. Tiếp tục?',
-      receiveAllConfirm: 'Quán sẽ nhận lại mọi game Hub đang phát, kể cả game chưa tải. Tiếp tục?',
-      modeSelected: 'Quán chỉ nhận game đã chọn',
-      modeAll: 'Quán nhận mọi game Hub phát',
-      hintAll: 'Hiện Hub giao MỌI game đang phát cho quán. Bấm “Chỉ nhận game tôi chọn” để chọn riêng: quán giữ các game đang có và chỉ nhận thêm game bạn chọn.',
-      hintSelected: 'Hub chỉ giao game đã chọn và game bắt buộc. Chọn thêm để tải; bỏ chọn là ngừng nhận bản mới (tệp và mục menu giữ nguyên, xoá game ở trang Game).',
+      tabs: {
+        all: 'Tất cả',
+        downloaded: 'Đã tải',
+        downloading: 'Đang tải',
+        not_downloaded: 'Chưa tải'
+      },
       searchPlaceholder: 'Tìm tên game hoặc nhóm',
-      category: 'Nhóm',
-      source: 'Nguồn',
-      state: 'Tình trạng',
-      count: '{n} game',
-      picked: 'Đã chọn {n} dòng',
-      chooseAndDownload: 'Chọn và tải ngay',
-      choose: 'Chọn',
-      chooseOne: 'Chọn',
-      downloadNow: 'Tải ngay (đã có bản)',
-      downloadNowOne: 'Tải ngay',
-      unchoose: 'Bỏ chọn',
-      unchooseOne: 'Bỏ chọn',
-      repair: 'Sửa chữa',
       game: 'Game',
       mandatory: 'Bắt buộc',
+      category: 'Nhóm',
       size: 'Dung lượng',
       hubStatus: 'Trên Hub',
       available: 'Phát được v{v}',
       unavailable: 'Chưa phát được',
-      selected: 'Đã chọn',
       atCafe: 'Ở quán',
-      autoUpdate: 'Tự cập nhật',
-      chosen: 'Đã chọn {n} game',
-      unchosen: 'Đã bỏ chọn {n} game',
-      unknown: 'Hub không có game: {names}',
-      queued: 'Đã xếp {n} game vào hàng đợi tải',
-      unchooseConfirm: 'Bỏ chọn {n} game? Quán thôi nhận bản mới của chúng. Tệp trên ổ và mục menu giữ nguyên.',
-      repairConfirm: 'Sửa chữa {name}? Máy chủ băm lại toàn bộ thư mục game, tải phần thiếu hoặc hỏng và xoá tệp không thuộc bản này. Game không mở được trong lúc đó.',
+      download: 'Tải',
+      hint: 'Bấm Tải ở game chưa tải rồi chọn thư mục lưu trên máy chủ. Game đã tải hiện ở bảng trang Game và tự nhận bản mới khi bật "Tự cập nhật".',
       actionFailed: 'Không thực hiện được',
-      sources: {
-        steam: 'Steam',
-        epic: 'Epic',
-        riot: 'Riot',
-        battlenet: 'Battle.net',
-        ea: 'EA',
-        vendor: 'Hãng khác',
-        portable: 'Công cụ'
-      },
       states: {
-        selected: 'Đã chọn',
-        not_selected: 'Chưa chọn',
-        available: 'Phát được',
-        unavailable: 'Chưa phát được',
-        installed: 'Đã có ở quán',
+        downloaded: 'Đã tải',
         downloading: 'Đang tải',
-        needs_update: 'Có bản mới',
+        queued: 'Chờ tải',
         error: 'Lỗi',
-        not_installed: 'Chưa tải'
+        needs_update: 'Có bản mới',
+        not_downloaded: 'Chưa tải',
+        local_game: 'Có game cục bộ cùng tên'
       }
     },
     hardware: {
@@ -2339,6 +2305,7 @@ const local: App.I18n.Schema = {
       description: 'Mô tả',
       time: 'Thời gian',
       actionLabels: {
+        bank_notification_delete: 'Xoá tiền vào',
         create: 'Tạo',
         update: 'Cập nhật',
         delete: 'Xóa',
@@ -2349,6 +2316,7 @@ const local: App.I18n.Schema = {
         cancel: 'Hủy'
       },
       entityLabels: {
+        bank_notification: 'Tiền vào',
         member: 'hội viên',
         machine: 'máy',
         order: 'đơn hàng',

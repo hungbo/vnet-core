@@ -394,12 +394,25 @@ func (s *GameService) eventsOnce(ctx context.Context) (held bool, err error) {
 		switch m.Event {
 		case "game.catalog.changed":
 			s.Kick()
+		case "bank.event.new":
+			if s.onBankEvent != nil {
+				s.onBankEvent()
+			}
 		case "hello":
 			if m.Data.Key != nil {
 				s.setKeyInfo(m.Data.Key)
 			}
 		}
 	}
+}
+
+// OnBankEvent đặt hàm gọi khi Hub báo có giao dịch ngân hàng mới.
+func (s *GameService) OnBankEvent(f func()) { s.onBankEvent = f }
+
+// HubAccess trả địa chỉ Hub và key của quán; trống là quán chưa nối Hub.
+func (s *GameService) HubAccess() (url, key string) {
+	c := s.conf()
+	return c.UpstreamURL, c.CatalogKey
 }
 
 func (s *GameService) setEventsUp(up bool) {

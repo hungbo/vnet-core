@@ -178,6 +178,34 @@ func PermissionRequired(permission string) gin.HandlerFunc {
 	}
 }
 
+// HasPermission cho biết người đang gọi có mã quyền code (hoặc "*") không — cho
+// handler mà quyền cần còn tuỳ dữ liệu, như đổi trạng thái đơn.
+func HasPermission(c *gin.Context, code string) bool {
+	perms, _ := c.Get(ContextKeyPermissions)
+	permList, _ := perms.([]string)
+	for _, p := range permList {
+		if p == code || p == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// AnyPermissionRequired cho qua khi có ít nhất một trong các mã; handler tự kiểm
+// mã đúng việc bằng HasPermission.
+func AnyPermissionRequired(codes ...string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		for _, code := range codes {
+			if HasPermission(c, code) {
+				c.Next()
+				return
+			}
+		}
+		response.Forbidden(c, "Insufficient permissions")
+		c.Abort()
+	}
+}
+
 func GetUserID(c *gin.Context) string {
 	if v, exists := c.Get(ContextKeyUserID); exists {
 		if id, ok := v.(string); ok {

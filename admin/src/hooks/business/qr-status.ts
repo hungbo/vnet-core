@@ -2,12 +2,11 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import client from '@/api/client';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 
-/** `GET /qr/status`: nạp QR có dùng được không và điện thoại báo tiền ra sao. */
+/** `GET /qr/status`: nạp QR có dùng được không và có đang đọc được giao dịch từ Hub không. */
 export interface QRStatus {
   enabled: boolean;
   configured: boolean;
-  paired: boolean;
-  phone_online: boolean;
+  source_online: boolean;
   ready: boolean;
   auto_confirm: boolean;
   bank: string;
@@ -15,20 +14,12 @@ export interface QRStatus {
   account_name: string;
   last_seen: string | null;
   last_notification_at: string | null;
-  app_version: string;
-  queue: number;
-  battery: number;
-  charging: boolean;
-  listener_ok: boolean;
   expire_minutes: number;
-  /** Điện thoại đang giữ WebSocket (app 0.4.0+); không thì chỉ có nhịp HTTP. */
-  ws_connected: boolean;
 }
 
 /**
- * Trạng thái nạp QR, tự tải lại khi máy chủ báo "qr:changed" (ghép/gỡ, điện
- * thoại vừa mất hay có lại kết nối) và mỗi 30 giây để "lần cuối thấy" không đứng
- * yên.
+ * Trạng thái nạp QR, tự tải lại khi máy chủ báo "qr:changed" (vừa mất hay có lại
+ * kết nối tới Hub) và mỗi 30 giây.
  */
 export function useQRStatus() {
   const status = ref<QRStatus | null>(null);

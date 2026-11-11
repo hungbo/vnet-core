@@ -4920,6 +4920,30 @@ const docTemplate = `{
                         "description": "Page size",
                         "name": "page_size",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Product name, description (order code), or staff name; accent-insensitive",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "manual_in | manual_out | order_out | order_in | count",
+                        "name": "kind",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD, Vietnam time",
+                        "name": "date_from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD, Vietnam time, whole day included",
+                        "name": "date_to",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4954,6 +4978,12 @@ const docTemplate = `{
                                     }
                                 }
                             ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
                         }
                     },
                     "500": {
@@ -9352,6 +9382,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/response.Response"
                         }
+                    },
+                    "403": {
+                        "description": "confirmed needs orders.confirm, cancelled needs orders.cancel, completed of a product order needs orders.pay",
+                        "schema": {
+                            "$ref": "#/definitions/response.Response"
+                        }
                     }
                 }
             }
@@ -13493,6 +13529,12 @@ const docTemplate = `{
                 "machine_id": {
                     "type": "string"
                 },
+                "member_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "pending_count": {
                     "type": "integer"
                 },
@@ -14984,6 +15026,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "description": "Kind là nguồn của phiếu cho cột \"Loại\": một trong các hằng PhieuKho*.",
                     "type": "string"
                 },
                 "product_id": {

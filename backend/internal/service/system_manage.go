@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/vnet/core/internal/authz"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"github.com/vnet/core/pkg/utils"
@@ -723,7 +724,6 @@ func (s *SystemManageService) GetMenuList(params *SystemListParams) (*PaginatedR
 				{Name: "vnet_website-blocking", Path: "/vnet/website-blocking", Icon: "ic:round-block", Order: 31, I18nKey: "route.vnet_website-blocking"},
 				{Name: "vnet_app-updates", Path: "/vnet/app-updates", Icon: "ic:round-system-update", Order: 32, I18nKey: "route.vnet_app-updates"},
 				{Name: "vnet_games", Path: "/vnet/games", Icon: "ic:round-sports-esports", Order: 36, I18nKey: "route.vnet_games"},
-				{Name: "vnet_hub-games", Path: "/vnet/hub-games", Icon: "ic:round-cloud-download", Order: 39, I18nKey: "route.vnet_hub-games"},
 				{Name: "vnet_hardware", Path: "/vnet/hardware", Icon: "ic:round-memory", Order: 37, I18nKey: "route.vnet_hardware"},
 				{Name: "vnet_windows-keys", Path: "/vnet/windows-keys", Icon: "ic:round-vpn-key", Order: 38, I18nKey: "route.vnet_windows-keys"},
 				{Name: "vnet_curfew", Path: "/vnet/curfew", Icon: "ic:round-nightlight", Order: 33, I18nKey: "route.vnet_curfew"},
@@ -834,7 +834,6 @@ func (s *SystemManageService) GetAllPages() ([]string, error) {
 		"vnet_website-blocking",
 		"vnet_app-updates",
 		"vnet_games",
-		"vnet_hub-games",
 		"vnet_hardware",
 		"vnet_windows-keys",
 		"vnet_curfew",
@@ -914,7 +913,9 @@ type PermissionResponse struct {
 
 func (s *SystemManageService) GetAllPermissions() ([]PermissionResponse, error) {
 	var perms []model.Permission
-	if err := s.db.Order("module, code").Find(&perms).Error; err != nil {
+	// Mã đã bỏ (authz.RetiredCodes) còn trong database để quay về bản trước vẫn
+	// chạy, nhưng không gác gì nữa: tick nó trên trang Phân quyền là vô nghĩa.
+	if err := s.db.Where("code NOT IN ?", authz.RetiredCodes).Order("module, code").Find(&perms).Error; err != nil {
 		return nil, err
 	}
 	out := make([]PermissionResponse, len(perms))

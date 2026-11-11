@@ -18,6 +18,19 @@ const saving = ref(false);
 
 const products = ref<any[]>([]);
 
+// Thanh lọc: ô tìm kiếm (tên sản phẩm, ghi chú — phiếu theo đơn ghi mã đơn ở đây —
+// và người thực hiện, không dấu), nguồn phiếu, khoảng ngày. Ngày để trống mặc định:
+// trang này để tra lại lịch sử kho.
+const search = ref('');
+const filterKind = ref('');
+// Nguồn phiếu (kind ở API), chia hai nhóm cho ô lọc.
+const kindGroups = [
+  { label: 'manual', kinds: ['manual_in', 'manual_out'] },
+  { label: 'system', kinds: ['order_out', 'order_in', 'count'] }
+];
+const systemKinds = new Set(kindGroups[1].kinds);
+const dateRange = ref<[string, string] | null>(null);
+
 const dialog = ref(false);
 const formRef = ref<any>(null);
 const form = ref<any>({
@@ -43,10 +56,19 @@ const rules = {
   ]
 };
 
-const { columns, columnChecks, data, getData, loading, mobilePagination, onSortChange } = useUIPaginatedTable({
+const stockTable = useUIPaginatedTable({
   api: ({ page, pageSize, sort, order }) =>
     client.get('/stock-transactions', {
-      params: { page, page_size: pageSize, sort, order }
+      params: {
+        page,
+        page_size: pageSize,
+        sort,
+        order,
+        search: search.value || undefined,
+        kind: filterKind.value || undefined,
+        date_from: dateRange.value?.[0] || undefined,
+        date_to: dateRange.value?.[1] || undefined
+      }
     }),
   transform: vnetTransform,
   columns: () => [
@@ -59,16 +81,17 @@ const { columns, columnChecks, data, getData, loading, mobilePagination, onSortC
     {
       prop: 'transaction_type',
       label: $t('vnetPages.stockTransactions.transactionType'),
-      width: 100,
+      width: 130,
       sortable: 'custom',
-      // "adjustment" do chốt kiểm kê sinh ra (số lượng là phần lệch, có thể dương)
-      // — gộp nó vào "Xuất" thì kiểm thấy dư 2 lại hiện thành "Xuất 2".
+      // Hiện NGUỒN phiếu chứ không chỉ Nhập/Xuất: hàng nhân viên tự nhập lẫn với hàng
+      // hệ thống trừ khi bán thì đọc sổ không ra. Phiếu hệ thống tự ghi viền rỗng
+      // (plain) để tách khỏi phiếu tay. "count" là chốt kiểm kê (số lượng là phần
+      // lệch, có thể dương) — gộp vào "Xuất" thì kiểm thấy dư 2 lại hiện "Xuất 2".
       formatter: (row: any) => {
-        const [tag, label] = {
-          inbound: ['success', 'importLabel'],
-          adjustment: ['warning', 'adjustLabel']
-        }[row.transaction_type as string] ?? ['danger', 'exportLabel'];
-        return h(ElTag, { type: tag as any }, () => $t(`vnetPages.stockTransactions.${label}` as any));
+        const tag = { manual_in: 'success', order_in: 'success', count: 'warning' }[row.kind as string] ?? 'danger';
+        return h(ElTag, { type: tag as any, effect: systemKinds.has(row.kind) ? 'plain' : 'light' }, () =>
+          $t(`vnetPages.stockTransactions.kinds.${row.kind}` as any)
+        );
       }
     },
     {
@@ -97,6 +120,12 @@ const { columns, columnChecks, data, getData, loading, mobilePagination, onSortC
       formatter: (row: any) => formatPrice(row.total_price)
     },
     {
+      prop: 'description',
+      label: $t('vnetPages.stockTransactions.description'),
+      minWidth: 220,
+      formatter: (row: any) => row.description || '-'
+    },
+    {
       prop: 'created_by_name',
       label: $t('vnetPages.transactions.createdBy'),
       width: 140,
@@ -111,6 +140,13 @@ const { columns, columnChecks, data, getData, loading, mobilePagination, onSortC
     }
   ]
 });
+const { columns, columnChecks, data, getData, getDataByPage, loading, mobilePagination, onSortChange } = stockTable;
+
+// Đổi bộ lọc thì về trang 1: đang ở trang 5 mà kết quả lọc chỉ còn một trang thì
+// bảng trống.
+function reload() {
+  getDataByPage(1);
+}
 
 // Phiếu kho phần lớn sinh ra ở nơi khác: xác nhận, thanh toán, huỷ đơn; chốt
 // kiểm kê; nhập/xuất ở trang Sản phẩm. Mọi đường đó đều phát stock:changed sau
@@ -169,7 +205,46 @@ async function handleSave() {
             :show-delete="false"
             @add="handleCreate"
             @refresh="getData"
-          />
+          >
+            <template #prefix>
+              <ElSelect
+                v-model="filterKind"
+                :placeholder="$t('vnetPages.stockTransactions.transactionType')"
+                clearable
+                style="width: 150px"
+                @change="reload"
+              >
+                <ElOptionGroup
+                  v-for="g in kindGroups"
+                  :key="g.label"
+                  :label="$t(`vnetPages.stockTransactions.kindGroups.${g.label}` as any)"
+                >
+                  <ElOption
+                    v-for="k in g.kinds"
+                    :key="k"
+                    :value="k"
+                    :label="$t(`vnetPages.stockTransactions.kinds.${k}` as any)"
+                  />
+                </ElOptionGroup>
+              </ElSelect>
+              <ElDatePicker
+                v-model="dateRange"
+                type="daterange"
+                range-separator="→"
+                :start-placeholder="$t('vnetPages.reports.from')"
+                :end-placeholder="$t('vnetPages.reports.to')"
+                value-format="YYYY-MM-DD"
+                @change="reload"
+              />
+              <ElInput
+                v-model="search"
+                :placeholder="$t('vnetPages.stockTransactions.searchPlaceholder')"
+                clearable
+                style="width: 300px"
+                @input="reload"
+              />
+            </template>
+          </TableHeaderOperation>
         </div>
       </template>
       <ElTable

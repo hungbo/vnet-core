@@ -50,6 +50,9 @@ type Game struct {
 	Custom GameCustom `gorm:"type:jsonb" json:"custom"`
 	// Origin: GameOriginHub (mặc định, mọi game có từ trước) hoặc GameOriginLocal.
 	Origin string `gorm:"type:varchar(10);not null;default:'hub'" json:"origin"`
+	// InstallRoot (game Hub ở quán): thư mục trên máy chủ quán chọn lúc bấm Tải; game nằm ở InstallRoot\Name. Rỗng là
+	// quán chưa chọn: game cũ thì theo GAME_ROOT, game mới thì chưa tải được.
+	InstallRoot string `gorm:"type:varchar(500)" json:"install_root"`
 
 	Version   int    `gorm:"default:0" json:"version"`
 	Infohash  string `gorm:"type:varchar(64)" json:"infohash"`

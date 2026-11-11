@@ -361,7 +361,6 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
     'vnet_website-blocking': 'carbon:content-view',
     'vnet_app-updates': 'carbon:upgrade',
     vnet_games: 'carbon:game-console',
-    'vnet_hub-games': 'carbon:catalog',
     vnet_hardware: 'carbon:chip',
     'vnet_windows-keys': 'carbon:password'
   };
@@ -433,7 +432,6 @@ export function groupVnetMenus(menus: App.Global.Menu[]): App.Global.Menu[] {
         'vnet_website-blocking',
         'vnet_app-updates',
         'vnet_games',
-        'vnet_hub-games',
         'vnet_hardware',
         'vnet_windows-keys',
         'vnet_backups',

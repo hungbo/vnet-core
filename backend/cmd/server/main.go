@@ -107,6 +107,10 @@ func main() {
 	}
 	log.Println("Database migrations completed")
 
+	if err := service.ChuyenQuyenTrangThaiDon(db); err != nil {
+		log.Printf("chuyển quyền orders.status sang orders.confirm/orders.cancel: %v", err)
+	}
+
 	wsHub := hub.New(cfg.Server.AllowedOrigins)
 
 	r := gin.New()
@@ -176,8 +180,7 @@ func main() {
 		RunAtStart: true,
 		Run:        func(ctx context.Context) error { return backupSvc.RunAuto(time.Now()) },
 	})
-	// Mã nạp QR quá hạn thì huỷ cùng đơn nạp; đồng thời báo khi điện thoại báo
-	// tiền vừa mất/có lại kết nối.
+	// Mã nạp QR quá hạn thì huỷ cùng đơn nạp.
 	qrSvc := h.QRPay.Service()
 	sched.Add(scheduler.Job{
 		Name:     "qr:expire",
@@ -188,6 +191,9 @@ func main() {
 		},
 	})
 	sched.Start(ctx)
+
+	// Đọc giao dịch tiền vào từ Hub để tự xác nhận nạp QR.
+	go qrSvc.RunBankSync(ctx)
 
 	// Cập nhật game chạy nền cho tới khi tắt máy chủ; không làm gì nếu GAME_ROLE trống.
 	gameDone := make(chan struct{})

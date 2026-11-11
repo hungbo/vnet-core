@@ -1196,6 +1196,10 @@ definitions:
         type: integer
       machine_id:
         type: string
+      member_names:
+        items:
+          type: string
+        type: array
       pending_count:
         type: integer
       unpaid_count:
@@ -2218,6 +2222,10 @@ definitions:
       description:
         type: string
       id:
+        type: string
+      kind:
+        description: 'Kind là nguồn của phiếu cho cột "Loại": một trong các hằng
+          PhieuKho*.'
         type: string
       product_id:
         type: string
@@ -5806,6 +5814,22 @@ paths:
         in: query
         name: page_size
         type: integer
+      - description: 'Product name, description (order code), or staff name; accent-insensitive'
+        in: query
+        name: search
+        type: string
+      - description: 'manual_in | manual_out | order_out | order_in | count'
+        in: query
+        name: kind
+        type: string
+      - description: 'YYYY-MM-DD, Vietnam time'
+        in: query
+        name: date_from
+        type: string
+      - description: 'YYYY-MM-DD, Vietnam time, whole day included'
+        in: query
+        name: date_to
+        type: string
       produces:
       - application/json
       responses:
@@ -5825,6 +5849,10 @@ paths:
                         type: array
                     type: object
               type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
         "500":
           description: Internal Server Error
           schema:
@@ -8380,6 +8408,11 @@ paths:
               type: object
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/response.Response'
+        "403":
+          description: confirmed needs orders.confirm, cancelled needs orders.cancel,
+            completed of a product order needs orders.pay
           schema:
             $ref: '#/definitions/response.Response'
       security:

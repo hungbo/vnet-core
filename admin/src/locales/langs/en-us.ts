@@ -296,7 +296,6 @@ const local: App.I18n.Schema = {
     'vnet_app-updates': 'Client updates',
     vnet_games: 'Game updates',
     vnet_hardware: 'Hardware',
-    'vnet_hub-games': 'Hub catalog',
     'vnet_windows-keys': 'Windows licenses',
     vnet_curfew: 'Curfew',
     vnet_feedback: 'Service ratings',
@@ -630,7 +629,7 @@ const local: App.I18n.Schema = {
   vnetPages: {
     qrPay: {
       tab: 'QR payments',
-      hint: 'Customers scan a VietQR code to transfer. The counter phone runs the VNET Bank Notification app, which reads the bank app notifications; the server matches the code and amount, then credits the member.',
+      hint: 'Customers scan a VietQR code to transfer. ThueAPI reports the transaction through the Hub; the server matches the code and amount, then credits the member.',
       enabled: 'Enable QR top-up',
       bank: 'Receiving bank',
       accountNo: 'Account number',
@@ -640,34 +639,11 @@ const local: App.I18n.Schema = {
       autoConfirm: 'Auto-confirm when money arrives',
       autoConfirmHint:
         'When off, matched transfers wait on the Bank deposits page for staff to confirm. Keep it off for the first days and check the bank statement.',
-      phone: 'Counter phone',
-      paired: 'Paired',
-      notPaired: 'Not paired',
+      source: 'ThueAPI source',
       online: 'Online',
       offline: 'Offline',
-      lastSeen: 'Last seen',
-      lastNotif: 'Last notification',
-      appVersion: 'App version',
-      battery: 'Battery',
-      charging: 'charging',
-      listener: 'Notification access',
-      listenerOk: 'Granted',
-      listenerMissing: 'Missing',
-      queue: 'Waiting to send',
-      connection: 'Connection',
-      connectionLive: 'Live (WebSocket)',
-      connectionHeartbeat: 'HTTP heartbeat every minute',
-      pair: 'Pair phone',
-      repair: 'Pair again',
-      unpair: 'Unpair phone',
-      unpairConfirm: 'Unpair the counter phone? QR top-up stops until a phone is paired again.',
-      pairCode: 'Pairing code',
-      pairCodeHint:
-        'Open VNET Bank Notification on the phone and enter the server address and this code. The code expires in {time}.',
-      serverAddress: 'Server address',
-      never: 'never',
       methodQr: 'QR transfer',
-      notReady: 'QR top-up is not ready: disabled, or the counter phone is offline',
+      notReady: 'QR top-up is not ready: disabled, or the server cannot reach the Hub',
       createQr: 'Create QR',
       scanHint: 'The customer scans with any bank app, keeping the amount and the transfer note unchanged.',
       content: 'Transfer note',
@@ -695,6 +671,7 @@ const local: App.I18n.Schema = {
       assignTitle: 'Credit {amount} to a member',
       selectMember: 'Select member',
       ignoreConfirm: 'Ignore this transfer? Nobody will be credited.',
+      deleteConfirm: 'Delete this entry from the Incoming page? The incoming total will drop accordingly.',
       outgoing: 'outgoing',
       searchPlaceholder: 'Note, code, member',
       rawText: 'Raw notification',
@@ -838,7 +815,7 @@ const local: App.I18n.Schema = {
       root: 'Game folder',
       upstream: 'Master',
       offHint:
-        'Game updates are off on this server. Fill in the Hub address, the key issued by the Hub and the game folder in the "Game update connection" box below, then click "Save and connect": updates turn on right away, no restart needed.',
+        'Game updates are off on this server. Click the "Game update connection" button above, fill in the Hub address and the key issued by the Hub, then click "Save and connect": updates turn on right away, no restart needed.',
       offMissing: 'Still missing: {items}.',
       offSavedInvalid:
         'Everything is saved but updates could not start (the saved game folder or address no longer works). Click "Save and connect" to check again.',
@@ -848,8 +825,6 @@ const local: App.I18n.Schema = {
       hubKey: 'Game update key',
       hubKeySaved: 'Saved ({hint}), leave empty to keep it',
       hubKeyKeepHint: 'Changing the Hub address means pasting the key again.',
-      gameRoot: 'Game folder on this server',
-      gameRootHint: 'For example D:\\Games. The folder must already exist; downloaded games are stored in it.',
       hubConnect: 'Save and connect',
       hubDisconnect: 'Disconnect',
       hubDisconnectConfirm: 'Disconnect game updates? Games already downloaded and the game folder stay as they are; only new versions stop arriving.',
@@ -871,7 +846,7 @@ const local: App.I18n.Schema = {
       masterHint:
         'The master publishes a game once its folder has stayed unchanged for a while after the last update. Use "Publish now" when you know the update is complete. Cafes only download what changed.',
       cafeHint:
-        'This server downloads new versions from the master when "Auto update" is on and within the allowed hours. Cloud Update workstations only see the new version after a restart.',
+        'Hub games are not downloaded on their own: click "Download games", pick a game and then a folder. Downloaded games get new versions when "Auto update" is on and within the allowed hours. Cloud Update workstations only see the new version after a restart.',
       clientRoot: 'Game folder on workstations',
       clientRootHint:
         'Where workstations see the game folder, i.e. the Game Disk letter, for example D:\\Games. The in-room game menu starts games from here. Empty or malformed falls back to D:\\Games.',
@@ -882,18 +857,22 @@ const local: App.I18n.Schema = {
       addLocal: 'Add local game',
       localTag: 'Local',
       localHint:
-        'A game the cafe downloads itself: pick its folder (in {root} or anywhere on the server, no link needed) and its launcher. It shows on the workstation menu but is not synced with the Hub, and the Hub never overwrites or deletes it.',
-      localFolderPick: 'Pick a folder not added yet',
+        'A game the cafe downloads itself: pick its folder (anywhere on the server, no link needed) and its launcher. It shows on the workstation menu but is not synced with the Hub, and the Hub never overwrites or deletes it.',
+      localFolder: 'Game folder',
+      localFolderPick: 'Pick the game folder on the server',
+      localFolderHint:
+        'Click a folder to open its subfolders and pick it (any depth); stop at the game folder. Greyed-out folders are already games.',
       localFolderEditHint:
-        'Change folder: pick another folder from the list, or type a folder name and pick the typed entry (a folder with the same name in the new place). The game name stays; the launcher must exist in the new folder.',
+        'Pick another folder to point the game there. The game name stays; the launcher must exist in the new folder.',
+      localFolderPath: 'Selected: {path}.',
       localLauncherPick: 'Pick or type the launcher file',
-      localNoFolders: 'No folder left to add in {root}',
-      localRoot: 'Containing folder',
-      localRootHint:
-        'Folder on the server that holds the game folders, anywhere on the server, e.g. E:\\Online Games. Defaults to {root}. Press Enter after typing to load the list.',
+      localIconPick: 'Pick or type the icon file',
+      categoryPick: 'Pick a category or type a new one',
       localName: 'Game name',
       localNameHint:
         'Leave empty to use the folder name. If it matches a Hub game this cafe has not downloaded, you will be asked whether to replace it; if it matches a downloaded Hub game or the folder name has accents, give another name (letters without accents, digits, spaces and . _ ( ) + - only).',
+      localRenameHint:
+        'Rename to free the name for a Hub game with the same name (for example add KZ). The game folder and play counts stay. Letters without accents, digits, spaces and . _ ( ) + - only.',
       replaceHubConfirm:
         'The Hub already has a game "{name}" that this cafe has not downloaded. Replace it with this local game? The Hub version will no longer be downloaded; to use it again, delete the local game.',
       localClash:
@@ -939,6 +918,13 @@ const local: App.I18n.Schema = {
       lastUpdated: 'Updated at',
       publishNow: 'Publish now',
       syncNow: 'Download now',
+      downloadGames: 'Download games',
+      searchPlaceholder: 'Search games',
+      downloadTitle: 'Download {name}',
+      downloadRoot: 'Folder on the server',
+      downloadPath: 'The game will be stored in {path}.',
+      downloadRootHint:
+        'Pick a folder already used or type a new path, e.g. E:\\Games; the server creates it if missing. Workstations open the game at this same path; if they see a different drive, set it in Customize.',
       publishing: 'Hashing {name} for publishing; this takes a few minutes',
       queued: '{name} queued for download',
       deleteConfirm: 'Remove {name} from the catalog? Files on disk are kept.',
@@ -1072,6 +1058,7 @@ const local: App.I18n.Schema = {
       topUp: 'Top up',
       orders: 'Open orders',
       ordersTitle: 'Open orders — {member} ({code})',
+      owing: 'Unpaid: {names}',
       noOrders: 'No open orders',
       orderItems: 'Items',
       orderTotal: 'Total',
@@ -1719,6 +1706,19 @@ const local: App.I18n.Schema = {
       before: 'Before',
       after: 'After',
       createdAt: 'Created At',
+      description: 'Note',
+      searchPlaceholder: 'Product, note, order code, staff',
+      kinds: {
+        manual_in: 'Manual in',
+        manual_out: 'Manual out',
+        order_out: 'Sold (order)',
+        order_in: 'Returned (order)',
+        count: 'Stock count'
+      },
+      kindGroups: {
+        manual: 'By staff',
+        system: 'Automatic'
+      },
       form: {
         productRequired: 'Select product',
         quantityRequired: 'Enter quantity'
@@ -2155,9 +2155,8 @@ const local: App.I18n.Schema = {
       }
     },
     hubGames: {
-      title: 'Hub game catalog',
+      title: 'Download games from the Hub',
       loadFailed: 'Could not read the catalog from the Hub',
-      queueTitle: 'Downloading',
       waiting: '{n} games waiting',
       window: 'Window',
       peers: '{n} sources',
@@ -2172,65 +2171,32 @@ const local: App.I18n.Schema = {
       limitUp: 'Upload cap (Mbps)',
       limitHint: '0 means unlimited. Applies at once, including the running download (P2P, webseed and relay). One game downloads at a time: disk and line are shared bottlenecks.',
       limitsSaved: 'Bandwidth caps saved',
-      modeAllLabel: 'Receiving every game the Hub publishes',
-      modeSelectedLabel: 'Receiving selected games only',
-      startChoosing: 'Only the games I choose',
-      receiveAll: 'Receive every game',
-      startChoosingConfirm: 'The cafe will only receive the games it has plus the ones you choose. The Hub stops sending any other game. Continue?',
-      receiveAllConfirm: 'The cafe will receive every game the Hub publishes again, including games not downloaded yet. Continue?',
-      modeSelected: 'The cafe now receives selected games only',
-      modeAll: 'The cafe now receives every game',
-      hintAll: 'The Hub currently sends EVERY published game. Press "Only the games I choose" to choose: the cafe keeps what it has and only receives what you add.',
-      hintSelected: 'The Hub only sends selected and mandatory games. Choose to download; unchoose to stop new versions (files and menu entries stay, delete games on the Games page).',
+      tabs: {
+        all: 'All',
+        downloaded: 'Downloaded',
+        downloading: 'Downloading',
+        not_downloaded: 'Not downloaded'
+      },
       searchPlaceholder: 'Search game or category',
-      category: 'Category',
-      source: 'Source',
-      state: 'Status',
-      count: '{n} games',
-      picked: '{n} rows picked',
-      chooseAndDownload: 'Choose and download now',
-      choose: 'Choose',
-      chooseOne: 'Choose',
-      downloadNow: 'Download now (available)',
-      downloadNowOne: 'Download now',
-      unchoose: 'Unchoose',
-      unchooseOne: 'Unchoose',
-      repair: 'Repair',
       game: 'Game',
       mandatory: 'Mandatory',
+      category: 'Category',
       size: 'Size',
       hubStatus: 'On the Hub',
       available: 'Available v{v}',
       unavailable: 'Not available yet',
-      selected: 'Chosen',
       atCafe: 'At the cafe',
-      autoUpdate: 'Auto update',
-      chosen: 'Chose {n} games',
-      unchosen: 'Unchose {n} games',
-      unknown: 'The Hub has no game: {names}',
-      queued: 'Queued {n} games for download',
-      unchooseConfirm: 'Unchoose {n} games? The cafe stops receiving new versions. Files and menu entries stay.',
-      repairConfirm: 'Repair {name}? The server re-hashes the whole game folder, downloads missing or damaged parts and deletes files that are not part of this version. The game cannot start meanwhile.',
+      download: 'Download',
+      hint: 'Click Download on a game that is not downloaded, then pick a folder on the server. Downloaded games show on the Games page table and get new versions when "Auto update" is on.',
       actionFailed: 'Could not complete the action',
-      sources: {
-        steam: 'Steam',
-        epic: 'Epic',
-        riot: 'Riot',
-        battlenet: 'Battle.net',
-        ea: 'EA',
-        vendor: 'Other vendor',
-        portable: 'Tool'
-      },
       states: {
-        selected: 'Chosen',
-        not_selected: 'Not chosen',
-        available: 'Available',
-        unavailable: 'Not available yet',
-        installed: 'At the cafe',
+        downloaded: 'Downloaded',
         downloading: 'Downloading',
-        needs_update: 'Update available',
+        queued: 'Waiting',
         error: 'Error',
-        not_installed: 'Not downloaded'
+        needs_update: 'Update available',
+        not_downloaded: 'Not downloaded',
+        local_game: 'Local game with the same name'
       }
     },
     hardware: {
@@ -2343,6 +2309,7 @@ const local: App.I18n.Schema = {
       description: 'Description',
       time: 'Time',
       actionLabels: {
+        bank_notification_delete: 'Delete incoming',
         create: 'Create',
         update: 'Update',
         delete: 'Delete',
@@ -2353,6 +2320,7 @@ const local: App.I18n.Schema = {
         cancel: 'Cancel'
       },
       entityLabels: {
+        bank_notification: 'Incoming transfer',
         member: 'member',
         machine: 'machine',
         order: 'order',

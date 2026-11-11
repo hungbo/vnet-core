@@ -1,12 +1,7 @@
 package handler
 
 import (
-	"encoding/json"
-	"errors"
-	"net/http"
-
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 	"github.com/vnet/core/internal/middleware"
 	"github.com/vnet/core/internal/service"
 	"github.com/vnet/core/pkg/jwt"
@@ -26,7 +21,7 @@ func NewQRPayHandler(svc *service.QRPayService) *QRPayHandler {
 func (h *QRPayHandler) Service() *service.QRPayService { return h.svc }
 
 // @Summary QR top-up status
-// @Description Nạp QR có dùng được không: đã bật, đã cài tài khoản, điện thoại báo tiền còn kết nối
+// @Description Nạp QR có dùng được không: đã bật, đã cài tài khoản, đang đọc được giao dịch từ Hub
 // @Tags QR
 // @Produce json
 // @Success 200 {object} response.Response{data=service.QRStatus}
@@ -161,147 +156,6 @@ func (h *QRPayHandler) CancelRequest(c *gin.Context) {
 	response.Success(c, nil)
 }
 
-// @Summary Start pairing the counter phone
-// @Description Hiện mã 6 số (sống 5 phút) để nhập vào app VNET Bank Notification
-// @Tags QR
-// @Produce json
-// @Success 200 {object} response.Response
-// @Router /api/qr/pairing [post]
-// @Security BearerAuth
-func (h *QRPayHandler) StartPairing(c *gin.Context) {
-	code, expires, err := h.svc.StartPairing(middleware.GetUserID(c))
-	if err != nil {
-		response.InternalError(c, "Không tạo được mã ghép", err)
-		return
-	}
-	response.Success(c, gin.H{"code": code, "expires_at": expires})
-}
-
-// @Summary Unpair the counter phone
-// @Tags QR
-// @Produce json
-// @Success 200 {object} response.Response
-// @Router /api/qr/device [delete]
-// @Security BearerAuth
-func (h *QRPayHandler) Unpair(c *gin.Context) {
-	if err := h.svc.Unpair(middleware.GetUserID(c)); err != nil {
-		response.InternalError(c, "Không gỡ được điện thoại", err)
-		return
-	}
-	response.Success(c, nil)
-}
-
-// --- Điện thoại ở quầy (không có tài khoản: ký bằng khoá nhận lúc ghép) -------
-
-type qrPairRequest struct {
-	Code string `json:"code" binding:"required"`
-}
-
-// @Summary Pair the counter phone
-// @Description Điện thoại gửi mã 6 số, nhận khoá ký các lần gửi sau
-// @Tags QR
-// @Accept json
-// @Produce json
-// @Param body body qrPairRequest true "Mã ghép"
-// @Success 200 {object} response.Response{data=service.QRPairResponse}
-// @Failure 400 {object} response.Response
-// @Router /api/bank-notify/pair [post]
-func (h *QRPayHandler) Pair(c *gin.Context) {
-	var req qrPairRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		handleValidationError(c, err)
-		return
-	}
-	res, err := h.svc.Pair(req.Code)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-	response.Success(c, res)
-}
-
-// signedBody đọc thân yêu cầu và kiểm chữ ký của điện thoại.
-func (h *QRPayHandler) signedBody(c *gin.Context, into interface{}) bool {
-	body, err := c.GetRawData()
-	if err != nil {
-		response.BadRequest(c, "Không đọc được dữ liệu")
-		return false
-	}
-	if err := h.svc.VerifyDevice(c.GetHeader("X-VNET-Timestamp"), c.GetHeader("X-VNET-Signature"), body); err != nil {
-		if errors.Is(err, service.ErrQRBadSignature) {
-			response.Unauthorized(c, err.Error())
-		} else {
-			response.Forbidden(c, err.Error())
-		}
-		return false
-	}
-	if err := json.Unmarshal(body, into); err != nil {
-		response.BadRequest(c, "Dữ liệu không đúng dạng")
-		return false
-	}
-	return true
-}
-
-// Điện thoại không phải trình duyệt: không có Origin để kiểm, xác thực bằng chữ ký.
-var deviceUpgrader = websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
-
-// @Summary Counter phone live connection
-// @Description WebSocket giữ trạng thái online của điện thoại báo tiền. Bắt tay ký HMAC(khoá, timestamp + "\n" + "ws") qua X-VNET-Timestamp / X-VNET-Signature; sau đó điện thoại gửi trạng thái (như heartbeat) dạng JSON, máy chủ ping mỗi 10 giây
-// @Tags QR
-// @Router /api/bank-notify/ws [get]
-func (h *QRPayHandler) WebSocket(c *gin.Context) {
-	if err := h.svc.VerifyDevice(c.GetHeader("X-VNET-Timestamp"), c.GetHeader("X-VNET-Signature"), []byte("ws")); err != nil {
-		if errors.Is(err, service.ErrQRBadSignature) {
-			response.Unauthorized(c, err.Error())
-		} else {
-			response.Forbidden(c, err.Error())
-		}
-		return
-	}
-	conn, err := deviceUpgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-	h.svc.ServeDevice(conn)
-}
-
-// @Summary Counter phone heartbeat
-// @Description Mỗi 60 giây: điện thoại còn sống, hàng đợi, pin, quyền đọc thông báo
-// @Tags QR
-// @Accept json
-// @Produce json
-// @Param body body service.QRHeartbeat true "Trạng thái điện thoại"
-// @Success 200 {object} response.Response{data=service.QRStatus}
-// @Router /api/bank-notify/heartbeat [post]
-func (h *QRPayHandler) Heartbeat(c *gin.Context) {
-	var req service.QRHeartbeat
-	if !h.signedBody(c, &req) {
-		return
-	}
-	response.Success(c, h.svc.Heartbeat(req))
-}
-
-// @Summary Counter phone sends a bank notification
-// @Description Nguyên văn một thông báo của app ngân hàng; khớp mã nạp thì duyệt đơn
-// @Tags QR
-// @Accept json
-// @Produce json
-// @Param body body service.BankNotifyRequest true "Thông báo"
-// @Success 200 {object} response.Response{data=service.BankNotifyResult}
-// @Router /api/bank-notify [post]
-func (h *QRPayHandler) Notify(c *gin.Context) {
-	var req service.BankNotifyRequest
-	if !h.signedBody(c, &req) {
-		return
-	}
-	res, err := h.svc.Ingest(req)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-	response.Success(c, res)
-}
-
 // --- Trang "Tiền vào" ---------------------------------------------------------
 
 // @Summary Bank notifications ("Tiền vào")
@@ -427,6 +281,21 @@ func (h *QRPayHandler) Ignore(c *gin.Context) {
 	var req qrIgnoreRequest
 	_ = c.ShouldBindJSON(&req)
 	if err := h.svc.Ignore(c.Param("id"), middleware.GetUserID(c), req.Note); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// @Summary Delete a bank notification (not for credited ones)
+// @Tags QR
+// @Produce json
+// @Param id path string true "Notification ID"
+// @Success 200 {object} response.Response
+// @Router /api/bank-notifications/{id} [delete]
+// @Security BearerAuth
+func (h *QRPayHandler) DeleteNotification(c *gin.Context) {
+	if err := h.svc.DeleteNotification(c.Param("id"), middleware.GetUserID(c)); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}

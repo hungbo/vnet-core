@@ -55,8 +55,7 @@ func hashLocalAdminWithSalt(password string, salt []byte) (string, error) {
 // và đường dẫn thư mục game trên máy chủ: nhân viên đọc chúng qua GET /api/games/info.
 func isSecretSetting(group, key string) bool {
 	return (group == ClientGroup && key == LocalAdminHashKey) ||
-		(group == GamesGroup && (key == GameHubKeyKey || key == GameHubURLKey || key == GameRootKey)) ||
-		(group == QRPaymentGroup && key == QRDeviceKeyKey)
+		(group == GamesGroup && (key == GameHubKeyKey || key == GameHubURLKey || key == GameRootKey))
 }
 
 // prepareClientSettings biến mật khẩu trần thành băm trước khi lưu nhóm client.

@@ -246,6 +246,7 @@ func (h *OrderHandler) CreateTopup(c *gin.Context) {
 // @Param body body service.UpdateStatusRequest true "Status update data"
 // @Success 200 {object} response.Response{data=service.OrderResponse}
 // @Failure 400 {object} response.Response
+// @Failure 403 {object} response.Response "confirmed needs orders.confirm, cancelled needs orders.cancel, completed of a product order needs orders.pay"
 // @Router /orders/{id}/status [patch]
 func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 	id := c.Param("id")
@@ -253,6 +254,15 @@ func (h *OrderHandler) UpdateStatus(c *gin.Context) {
 	var req service.UpdateStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
+		return
+	}
+	code, err := h.svc.QuyenDoiTrangThai(id, req.Status)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if !middleware.HasPermission(c, code) {
+		response.Forbidden(c, "Insufficient permissions")
 		return
 	}
 	result, err := h.svc.UpdateStatus(id, userID, req)

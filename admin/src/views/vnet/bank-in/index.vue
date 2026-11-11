@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Tiền vào: mọi thông báo biến động số dư mà điện thoại báo tiền ở quầy gửi về
-// (máy chủ: qr_pay.go). Khoản khớp mã nạp đã cộng tự động; còn lại nhân viên
+// Tiền vào: mọi giao dịch tiền vào ThueAPI báo về qua Hub (máy chủ: qr_pay.go,
+// bank_sync.go). Khoản khớp mã nạp đã cộng tự động; còn lại nhân viên
 // duyệt, cộng cho đúng hội viên, hoặc bỏ qua. Giữ nguyên văn để đối chiếu sao kê.
 // Bảng thứ hai "Mã QR đã tạo": nhật ký mọi mã đưa cho khách, tạo lúc nào và bao
 // lâu sau thì tiền vào.
@@ -164,6 +164,17 @@ async function ignoreRow(row: any) {
   act(() => client.post(`/bank-notifications/${row.id}/ignore`, {}));
 }
 
+async function deleteRow(row: any) {
+  try {
+    await ElMessageBox.confirm($t('vnetPages.qrPay.deleteConfirm'), $t('vnetPages.common.confirm'), {
+      type: 'warning'
+    });
+  } catch {
+    return;
+  }
+  act(() => client.delete(`/bank-notifications/${row.id}`));
+}
+
 // --- Cộng cho hội viên ---------------------------------------------------------
 const assignVisible = ref(false);
 const assignRow = ref<any>(null);
@@ -202,6 +213,8 @@ async function submitAssign() {
 }
 
 const canAct = (row: any, ...states: string[]) => hasAuth('members.topup') && states.includes(row.status);
+// Khoản đã cộng cho hội viên thì giữ lại để đối chiếu sao kê.
+const canDelete = (row: any) => hasAuth('transactions.delete') && !['matched', 'assigned'].includes(row.status);
 </script>
 
 <template>
@@ -214,13 +227,9 @@ const canAct = (row: any, ...states: string[]) => hasAuth('members.topup') && st
               <ElRadioButton value="in">{{ $t('vnetPages.qrPay.title') }}</ElRadioButton>
               <ElRadioButton value="qr">{{ $t('vnetPages.qrPay.qrLog') }}</ElRadioButton>
             </ElRadioGroup>
-            <ElTag v-if="qrStatus && !qrStatus.paired" type="info">{{ $t('vnetPages.qrPay.notPaired') }}</ElTag>
-            <ElTag v-else-if="qrStatus" :type="qrStatus.phone_online ? 'success' : 'danger'">
-              {{ $t('vnetPages.qrPay.phone') }}:
-              {{ qrStatus.phone_online ? $t('vnetPages.qrPay.online') : $t('vnetPages.qrPay.offline') }}
-              <template v-if="qrStatus.last_seen">
-                · {{ $t('vnetPages.qrPay.battery') }} {{ qrStatus.battery }}%
-              </template>
+            <ElTag v-if="qrStatus" :type="qrStatus.source_online ? 'success' : 'danger'">
+              {{ $t('vnetPages.qrPay.source') }}:
+              {{ qrStatus.source_online ? $t('vnetPages.qrPay.online') : $t('vnetPages.qrPay.offline') }}
             </ElTag>
           </div>
           <div class="flex flex-wrap items-center gap-8px">
@@ -334,7 +343,7 @@ const canAct = (row: any, ...states: string[]) => hasAuth('members.topup') && st
           <template #default="{ row }">
             <div class="raw">
               <b>{{ $t('vnetPages.qrPay.rawText') }}:</b>
-              {{ row.title }} — {{ row.text }}
+              {{ row.title ? `${row.title} — ${row.text}` : row.text }}
             </div>
           </template>
         </ElTableColumn>
@@ -374,7 +383,7 @@ const canAct = (row: any, ...states: string[]) => hasAuth('members.topup') && st
         <ElTableColumn :label="$t('vnetPages.qrPay.handledBy')" width="110">
           <template #default="{ row }">{{ row.handled_by_name || '-' }}</template>
         </ElTableColumn>
-        <ElTableColumn :label="$t('vnetPages.common.action')" width="230" fixed="right">
+        <ElTableColumn :label="$t('vnetPages.common.action')" width="270" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <ElButton v-if="canAct(row, 'suggested')" size="small" type="success" @click="confirmRow(row)">
@@ -394,6 +403,9 @@ const canAct = (row: any, ...states: string[]) => hasAuth('members.topup') && st
                 @click="ignoreRow(row)"
               >
                 {{ $t('vnetPages.qrPay.ignore') }}
+              </ElButton>
+              <ElButton v-if="canDelete(row)" size="small" type="danger" @click="deleteRow(row)">
+                {{ $t('vnetPages.common.delete') }}
               </ElButton>
             </div>
           </template>

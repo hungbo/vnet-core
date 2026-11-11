@@ -171,7 +171,7 @@ func TestGameService_Menu_RongVaMacDinh(t *testing.T) {
 
 // Quán tự điền nguồn metadata Riot: client_root của quán + game đầu tiên có bản chụp trên GAME_ROOT của chính nó.
 func TestGameService_RiotMetadataSource(t *testing.T) {
-	const pluckSQL = `SELECT "name" FROM "games" WHERE enabled = \$1 ORDER BY name`
+	const pluckSQL = `SELECT "name","install_root","custom" FROM "games" WHERE enabled = \$1 ORDER BY name`
 	snapshot := func(root, game string) string { return filepath.Join(root, game, "_vnet", "ProgramData", "Riot Games") }
 	cafeRoot := func(t *testing.T) string {
 		root := t.TempDir()
@@ -182,7 +182,8 @@ func TestGameService_RiotMetadataSource(t *testing.T) {
 	}
 	expectNames := func(mock sqlmock.Sqlmock) {
 		mock.ExpectQuery(pluckSQL).WithArgs(true).
-			WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Audition").AddRow("Game.").AddRow("Riot Games"))
+			WillReturnRows(sqlmock.NewRows([]string{"name", "install_root", "custom"}).
+				AddRow("Audition", "", nil).AddRow("Game.", "", nil).AddRow("Riot Games", "", nil))
 	}
 	expectClientRoot := func(mock sqlmock.Sqlmock, stored string) {
 		rows := sqlmock.NewRows([]string{"group_name", "key", "value"})
@@ -244,14 +245,21 @@ func TestGameService_RiotMetadataSource(t *testing.T) {
 		}
 		assert.Empty(t, runNoSettings(t, root))
 	})
-	t.Run("master hoặc chưa đặt GAME_ROOT: không chạm DB", func(t *testing.T) {
-		for _, cfg := range []config.GameConfig{{Role: config.GameRoleMaster, Root: cafeRoot(t)}, {Role: config.GameRoleCafe}} {
-			db, mock := newMockDB(t)
-			// sqlmock không báo truy vấn ngoài dự kiến, nên đặt sẵn câu đọc tên: nó phải còn nguyên.
-			expectNames(mock)
-			assert.Empty(t, NewGameService(db, cfg).RiotMetadataSource(), cfg.Role)
-			assert.Error(t, mock.ExpectationsWereMet(), "%s: không được đọc danh sách game", cfg.Role)
-		}
+	t.Run("master: không chạm DB", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		// sqlmock không báo truy vấn ngoài dự kiến, nên đặt sẵn câu đọc tên: nó phải còn nguyên.
+		expectNames(mock)
+		assert.Empty(t, NewGameService(db, config.GameConfig{Role: config.GameRoleMaster, Root: cafeRoot(t)}).RiotMetadataSource())
+		assert.Error(t, mock.ExpectationsWereMet(), "không được đọc danh sách game")
+	})
+	t.Run("không có GAME_ROOT: game tải vào thư mục quán chọn", func(t *testing.T) {
+		got := run(t, config.GameConfig{Role: config.GameRoleCafe}, func(mock sqlmock.Sqlmock) {
+			mock.ExpectQuery(pluckSQL).WithArgs(true).
+				WillReturnRows(sqlmock.NewRows([]string{"name", "install_root", "custom"}).
+					AddRow("Audition", "", nil).
+					AddRow("Riot Games", cafeRoot(t), `{"client_root":"F:\\Games"}`))
+		})
+		assert.Equal(t, `F:\Games\Riot Games\_vnet\ProgramData\Riot Games`, got, "máy trạm thấy theo gốc riêng của game")
 	})
 	t.Run("lỗi DB: rỗng", func(t *testing.T) {
 		got := run(t, config.GameConfig{Role: config.GameRoleCafe, Root: cafeRoot(t)}, func(mock sqlmock.Sqlmock) {
@@ -431,7 +439,8 @@ func TestFailInstall_ChiHuaTuThuLaiKhiThatSuSeThuLai(t *testing.T) {
 		{"đã đúng bản", model.Game{ID: "g1", Name: "a", Infohash: "h", RemoteInfohash: "h"}, true},
 		{"đã đúng bản, tắt tự cập nhật", model.Game{ID: "g1", Name: "a", Infohash: "h", RemoteInfohash: "h", AutoUpdate: false}, true},
 		{"chờ bản mới, tự cập nhật bật", model.Game{ID: "g1", Name: "a", Infohash: "old", RemoteInfohash: "new", AutoUpdate: true}, true},
-		{"chưa cài, tự cập nhật bật", model.Game{ID: "g1", Name: "a", RemoteInfohash: "new", AutoUpdate: true}, true},
+		{"chưa cài, đã bấm Tải (có thư mục lưu)", model.Game{ID: "g1", Name: "a", RemoteInfohash: "new", AutoUpdate: true, InstallRoot: "/games"}, true},
+		{"chưa cài, quán chưa bấm Tải", model.Game{ID: "g1", Name: "a", RemoteInfohash: "new", AutoUpdate: true}, false},
 		{"chờ bản mới, tắt tự cập nhật", model.Game{ID: "g1", Name: "a", Infohash: "old", RemoteInfohash: "new"}, false},
 	}
 	for _, c := range cases {
@@ -754,6 +763,121 @@ func TestGameService_IdKhongPhaiUUID(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet(), "không được chạm DB")
 }
 
+// Game Hub mới vào catalog không tự tải: quán phải bấm Tải (chọn thư mục lưu). Đã bấm rồi thì như game đã có.
+func TestNextInstall_GameChuaBamTaiKhongTuTai(t *testing.T) {
+	cols := append(append([]string{}, gameCols...), "install_root")
+	pick := func(installRoot string, status string) *model.Game {
+		db, mock := newMockDB(t)
+		svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe})
+		mock.ExpectQuery(nextInstallSQL).WithArgs(true).WillReturnRows(sqlmock.NewRows(cols).
+			AddRow("g1", "moi", true, true, 0, "", "new", status, installRoot))
+		mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs("games").
+			WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
+		g := svc.nextInstall(time.Now())
+		require.NoError(t, mock.ExpectationsWereMet())
+		return g
+	}
+	assert.Nil(t, pick("", model.GameStatusNotInstalled), "chưa bấm Tải: chờ quán chọn, dù tự cập nhật bật")
+	assert.NotNil(t, pick(`E:\Games`, model.GameStatusNotInstalled), "đã bấm Tải rồi bị ngắt: tải tiếp")
+	assert.NotNil(t, pick("", model.GameStatusQueued), "bấm Tải ngay thì chạy")
+}
+
+// Bấm Tải chọn thư mục lưu: tự tạo thư mục, không ghi đè thư mục đã có dữ liệu hay liên kết, không dời game đã tải.
+func TestSyncNowTo_ThuMucLuu(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	const syncSQL = `UPDATE "games" SET "install_root"=\$1,"status"=\$2,"updated_at"=\$3 WHERE id = \$4 AND status <> \$5`
+	cafe := func(root string) (*GameService, sqlmock.Sqlmock) {
+		db, mock := newMockDB(t)
+		return NewGameService(db, config.GameConfig{Role: config.GameRoleCafe, Root: root}), mock
+	}
+	game := func(mock sqlmock.Sqlmock, infohash, installRoot string) {
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE id = \$1`).WillReturnRows(
+			sqlmock.NewRows([]string{"id", "name", "origin", "infohash", "install_root"}).AddRow(id, "Dota 2", model.GameOriginHub, infohash, installRoot))
+	}
+	real := func(p string) string {
+		r, err := filepath.EvalSymlinks(p)
+		require.NoError(t, err)
+		return r
+	}
+
+	t.Run("không có thư mục chung, không chọn: báo chọn thư mục", func(t *testing.T) {
+		svc, mock := cafe("")
+		game(mock, "", "")
+		assert.ErrorIs(t, svc.SyncNowTo(id, ""), ErrGameNoFolder)
+		assert.NoError(t, mock.ExpectationsWereMet(), "không được xếp hàng")
+	})
+	t.Run("thư mục chưa có thì tạo rồi lưu", func(t *testing.T) {
+		svc, mock := cafe("")
+		dest := filepath.Join(t.TempDir(), "Games moi")
+		game(mock, "", "")
+		expectGameUpdate(mock, syncSQL, real(filepath.Dir(dest))+string(filepath.Separator)+"Games moi", model.GameStatusQueued, anyTime{}, id, model.GameStatusDownloading)
+		require.NoError(t, svc.SyncNowTo(id, " "+dest+" "))
+		assert.DirExists(t, dest)
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+	t.Run("đường dẫn tương đối hay gốc ổ đĩa: từ chối", func(t *testing.T) {
+		for _, p := range []string{"Games", string(filepath.Separator)} {
+			svc, mock := cafe("")
+			game(mock, "", "")
+			assert.Error(t, svc.SyncNowTo(id, p), p)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		}
+	})
+	t.Run("thư mục game ở chỗ mới đã có dữ liệu: từ chối", func(t *testing.T) {
+		svc, mock := cafe("")
+		root := t.TempDir()
+		writeEmpty(t, root, "Dota 2/_kz/KZ_Dota2.exe")
+		game(mock, "", "")
+		assert.ErrorContains(t, svc.SyncNowTo(id, root), "đã có dữ liệu")
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+	t.Run("thư mục game ở chỗ mới là liên kết: từ chối", func(t *testing.T) {
+		svc, mock := cafe("")
+		root, kz := t.TempDir(), t.TempDir()
+		if err := os.Symlink(kz, filepath.Join(root, "Dota 2")); err != nil {
+			t.Skipf("không tạo được liên kết: %v", err)
+		}
+		game(mock, "", "")
+		assert.ErrorContains(t, svc.SyncNowTo(id, root), "không phải thư mục thường")
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+	t.Run("vẫn chỗ cũ: tải tiếp dù thư mục game đã có dữ liệu", func(t *testing.T) {
+		root := real(t.TempDir())
+		writeEmpty(t, root, "Dota 2/game/dota.exe")
+		svc, mock := cafe("")
+		game(mock, "", root)
+		expectGameUpdate(mock, syncSQL, root, model.GameStatusQueued, anyTime{}, id, model.GameStatusDownloading)
+		require.NoError(t, svc.SyncNowTo(id, root))
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+	t.Run("game cũ trong thư mục chung: chọn đúng thư mục chung là tải tiếp", func(t *testing.T) {
+		root := real(t.TempDir())
+		writeEmpty(t, root, "Dota 2/game/dota.exe")
+		svc, mock := cafe(root)
+		game(mock, "", "")
+		expectGameUpdate(mock, syncSQL, root, model.GameStatusQueued, anyTime{}, id, model.GameStatusDownloading)
+		require.NoError(t, svc.SyncNowTo(id, root))
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+	t.Run("game đã tải xong ở chỗ khác: không dời", func(t *testing.T) {
+		svc, mock := cafe("")
+		game(mock, "h", real(t.TempDir()))
+		assert.ErrorContains(t, svc.SyncNowTo(id, t.TempDir()), "không dời")
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+// Menu máy trạm: game Hub tải vào thư mục khác thư mục chung thì máy trạm mở đúng đường dẫn đó; quán đặt riêng thì thắng.
+func TestGocMayTram(t *testing.T) {
+	svc := NewGameService(nil, config.GameConfig{Role: config.GameRoleCafe, Root: "/srv/games"})
+	assert.Empty(t, svc.gocMayTram(&model.Game{}), "game cũ: theo ổ chung")
+	assert.Empty(t, svc.gocMayTram(&model.Game{InstallRoot: "/srv/games"}), "chọn đúng thư mục chung: theo ổ chung")
+	assert.Equal(t, "/data/games", svc.gocMayTram(&model.Game{InstallRoot: "/data/games"}))
+	assert.Equal(t, `F:\Games`, svc.gocMayTram(&model.Game{InstallRoot: "/data/games", Custom: model.GameCustom{ClientRoot: `F:\Games`}}))
+	noRoot := NewGameService(nil, config.GameConfig{Role: config.GameRoleCafe})
+	assert.Equal(t, "/data/games", noRoot.gocMayTram(&model.Game{InstallRoot: "/data/games"}), "không có thư mục chung")
+}
+
 // SyncNow trên id hợp lệ nhưng không có game: 404, không phải thành công im lặng.
 func TestSyncNow_IdKhongTonTai(t *testing.T) {
 	db, mock := newMockDB(t)
@@ -953,7 +1077,7 @@ func TestPullCatalog_KhongGhiDeTenTotBangTenHong(t *testing.T) {
 		pullCatalogVoi(t, item(tenHong), func(mock sqlmock.Sqlmock) {
 			mock.ExpectQuery(selectSQL).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 			mock.ExpectBegin()
-			args := make([]driver.Value, 28) // 28 cột của bảng games; chỉ name và display_name cần khớp
+			args := make([]driver.Value, 29) // 29 cột của bảng games; chỉ name và display_name cần khớp
 			for i := range args {
 				args[i] = sqlmock.AnyArg()
 			}

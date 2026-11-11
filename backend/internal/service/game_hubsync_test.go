@@ -446,3 +446,19 @@ func TestEvents_BoNoiChanDiaChiNoiBo(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "địa chỉ nội bộ")
 }
+
+func TestEvents_BaoGiaoDichNganHang(t *testing.T) {
+	hub, _ := wsHub(t, `{"event":"bank.event.new","data":{}}`)
+	svc := newEventsSvc(t, hub.URL)
+	got := make(chan struct{}, 1)
+	svc.OnBankEvent(func() { got <- struct{}{} })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _, _ = svc.eventsOnce(ctx) }()
+
+	select {
+	case <-got:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Hub báo có giao dịch mới mà không đánh thức việc đọc giao dịch")
+	}
+}

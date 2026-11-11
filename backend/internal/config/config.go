@@ -37,8 +37,8 @@ type GameConfig struct {
 	// thống). Chuỗi chứ không phải slice: GameConfig được so sánh bằng == (GameService.setConf).
 	RootAllowed string
 	// DataDir: trạng thái riêng của engine BitTorrent, không chứa dữ liệu game.
-	// Trống thì dùng GAME_ROOT/.vnet-gameupdate — dịch vụ Windows chạy với thư
-	// mục làm việc là System32, nên một đường dẫn tương đối ở đây là sai chỗ.
+	// Trống thì dùng GAME_ROOT/.vnet-gameupdate, không có GAME_ROOT thì data\gameupdate cạnh tệp chạy — dịch vụ
+	// Windows chạy với thư mục làm việc là System32, nên một đường dẫn tương đối ở đây là sai chỗ.
 	DataDir string
 	// UpstreamURL: địa chỉ vnet-server của master, chỉ dùng ở quán.
 	UpstreamURL string
@@ -217,8 +217,9 @@ func (g GameConfig) Validate() error {
 	default:
 		return fmt.Errorf("GAME_ROLE must be empty, %q or %q, got %q", GameRoleMaster, GameRoleCafe, g.Role)
 	}
-	if g.Root == "" || !filepath.IsAbs(g.Root) {
-		return errors.New("GAME_ROOT must be an absolute path when GAME_ROLE is set")
+	// Quán chọn thư mục lưu cho từng game lúc tải nên GAME_ROOT là tuỳ chọn; master phát cả thư mục nên phải có.
+	if (g.Role == GameRoleMaster || g.Root != "") && !filepath.IsAbs(g.Root) {
+		return errors.New("GAME_ROOT must be an absolute path when GAME_ROLE=master, and when set")
 	}
 	if len(g.CatalogKey) < 16 {
 		return errors.New("GAME_CATALOG_KEY must be at least 16 characters when GAME_ROLE is set")

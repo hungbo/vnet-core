@@ -18,8 +18,9 @@ import TableHeaderOperation from '@/components/advanced/table-header-operation.v
 const { t: $t } = useI18n();
 const { enabledMethods, paymentLabel } = usePaymentMethods();
 // Mỗi nút ứng với một API và một quyền của backend; thiếu quyền thì không hiện
-// nút: duyệt/xác nhận/huỷ (orders.status, POST /orders/:id/status), thanh toán
-// (orders.pay), sửa (orders.update), tách (orders.split), in (orders.print),
+// nút: xác nhận đơn, duyệt đơn nạp, trạng thái món (orders.confirm), huỷ đơn,
+// từ chối đơn nạp (orders.cancel), thanh toán (orders.pay), sửa (orders.update),
+// tách (orders.split), in (orders.print),
 // xoá (orders.delete), tạo đơn ở quầy (orders.create).
 const { hasAuth } = useAuth();
 const appStore = useAppStore();
@@ -786,7 +787,7 @@ watch(
           {{ $t('vnetPages.orders.batchPay', { count: batchPayable.length }) }}
         </ElButton>
         <ElButton
-          v-if="hasAuth('orders.status')"
+          v-if="hasAuth('orders.cancel')"
           size="small"
           type="danger"
           plain
@@ -817,13 +818,13 @@ watch(
           <template #default="{ row }">
             <div class="order-actions">
               <template v-if="row.order_type === 'topup'">
-                <template v-if="row.status === 'pending' && hasAuth('orders.status')">
+                <template v-if="row.status === 'pending' && hasAuth(['orders.confirm', 'orders.cancel'])">
                   <!-- Đơn nạp QR tự duyệt khi ngân hàng báo tiền về; máy chủ từ chối duyệt tay. -->
                   <ElTag v-if="row.payment_method === 'qr'" size="small" type="warning">
                     {{ $t('vnetPages.orders.waitingQr') }}
                   </ElTag>
                   <ElButton
-                    v-else
+                    v-else-if="hasAuth('orders.confirm')"
                     size="small"
                     type="success"
                     :loading="approvingId === row.id"
@@ -832,14 +833,20 @@ watch(
                   >
                     {{ $t('vnetPages.orders.approve') }}
                   </ElButton>
-                  <ElButton size="small" type="danger" plain @click="handleRejectTopup(row)">
+                  <ElButton
+                    v-if="hasAuth('orders.cancel')"
+                    size="small"
+                    type="danger"
+                    plain
+                    @click="handleRejectTopup(row)"
+                  >
                     {{ $t('vnetPages.orders.reject') }}
                   </ElButton>
                 </template>
               </template>
               <template v-else>
                 <ElButton
-                  v-if="row.status === 'pending' && hasAuth('orders.status')"
+                  v-if="row.status === 'pending' && hasAuth('orders.confirm')"
                   size="small"
                   type="primary"
                   @click="handleConfirm(row)"
@@ -855,7 +862,7 @@ watch(
                   {{ $t('vnetPages.orders.pay') }}
                 </ElButton>
                 <ElButton
-                  v-if="row.status !== 'completed' && row.status !== 'cancelled' && hasAuth('orders.status')"
+                  v-if="row.status !== 'completed' && row.status !== 'cancelled' && hasAuth('orders.cancel')"
                   size="small"
                   type="danger"
                   plain
@@ -1054,7 +1061,7 @@ watch(
                 :model-value="row.status || 'pending'"
                 size="small"
                 :loading="itemStatusBusy === row.id"
-                :disabled="detail.status === 'cancelled' || !hasAuth('orders.status')"
+                :disabled="detail.status === 'cancelled' || !hasAuth('orders.confirm')"
                 style="width: 130px"
                 @change="(v: string) => setItemStatus(row, v)"
               >

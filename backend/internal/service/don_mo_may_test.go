@@ -33,13 +33,19 @@ func TestDonMoTheoMay_DonDiTheoKhach(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"member_id", "machine_id"}).
 			AddRow("mem-a", "vip01").
 			AddRow("mem-b", "may04"))
+	mock.ExpectQuery(`SELECT "id","full_name","username" FROM "members" WHERE id IN \(\$1,\$2,\$3\)$`).
+		WithArgs("mem-a", "mem-b", "mem-c").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name", "username"}).
+			AddRow("mem-a", "Nguyễn Văn A", "a01").
+			AddRow("mem-b", "  ", "b02"). // chưa có họ tên thì hiện tên đăng nhập
+			AddRow("mem-c", "Khách C", "c03"))
 
 	got, err := donMoTheoMay(db)
 	require.NoError(t, err)
 	assert.Equal(t, []DonMoMay{
-		{MachineID: "vip01", PendingCount: 1, UnpaidCount: 1, Amount: 25000},
+		{MachineID: "vip01", PendingCount: 1, UnpaidCount: 1, Amount: 25000, MemberNames: []string{"Nguyễn Văn A"}},
 		{MachineID: "may02", UnpaidCount: 1, Amount: 15000},
-		{MachineID: "may04", UnpaidCount: 1, Amount: 30000},
+		{MachineID: "may04", UnpaidCount: 1, Amount: 30000, MemberNames: []string{"b02"}},
 	}, got)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -143,5 +149,33 @@ func TestBaoDonMoKhiRoiMay_KhongConDon(t *testing.T) {
 	mock.ExpectQuery(`SELECT "full_name","username" FROM "members"`).
 		WillReturnRows(sqlmock.NewRows([]string{"full_name", "username"}).AddRow("", "nguyena"))
 	baoDonMoKhiRoiMay(db, h, "phien-khong-don", "mem-a", may, "ended")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Nhiều khách cùng còn nợ trên một máy thì hiện đủ tên, mỗi tên một lần, thứ tự
+// cố định dù DB trả đơn theo thứ tự nào.
+func TestDonMoTheoMay_NhieuKhachMotMay(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	mock.ExpectQuery(`SELECT "id","status","member_id","machine_id","final_amount" FROM "orders"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "status", "member_id", "machine_id", "final_amount"}).
+			AddRow("o1", "confirmed", "mem-b", "may01", 1000).
+			AddRow("o2", "confirmed", "mem-a", "may01", 2000).
+			AddRow("o3", "pending", "mem-b", "may01", 3000))
+	mock.ExpectQuery(`SELECT DISTINCT ON \(member_id\) member_id, machine_id FROM "machine_sessions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"member_id", "machine_id"}).
+			AddRow("mem-a", "may01").
+			AddRow("mem-b", "may01"))
+	mock.ExpectQuery(`SELECT "id","full_name","username" FROM "members"`).
+		WithArgs("mem-b", "mem-a").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "full_name", "username"}).
+			AddRow("mem-a", "An", "a").
+			AddRow("mem-b", "Bình", "b"))
+
+	got, err := donMoTheoMay(db)
+	require.NoError(t, err)
+	assert.Equal(t, []DonMoMay{
+		{MachineID: "may01", PendingCount: 1, UnpaidCount: 2, Amount: 6000, MemberNames: []string{"An", "Bình"}},
+	}, got)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

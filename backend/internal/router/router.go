@@ -160,16 +160,6 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 		// nhật ký trên ổ C: mất mỗi lần boot lại, nên phải gửi về đây mới còn.
 		api.POST("/machines/by-code/:code/errors", h.ErrorReport.ReportFromMachine)
 
-		// Điện thoại báo tiền ở quầy (app vnet-bank-notification) không có tài khoản: ghép
-		// bằng mã 6 số, sau đó mọi lần gửi ký HMAC bằng khoá nhận lúc ghép.
-		bankNotify := api.Group("/bank-notify")
-		{
-			bankNotify.POST("/pair", h.QRPay.Pair)
-			bankNotify.POST("", h.QRPay.Notify)
-			bankNotify.POST("/heartbeat", h.QRPay.Heartbeat)
-			bankNotify.GET("/ws", h.QRPay.WebSocket)
-		}
-
 		// WebSocket nằm NGOÀI nhóm protected: nó nhận thêm một cách vào thứ hai —
 		// khoá riêng của máy trạm — để tiến trình nền giữ được kết nối kể cả khi
 		// không có ai đăng nhập trên máy đó.
@@ -394,9 +384,11 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				orders.PUT("/:id", middleware.StaffOnly(), middleware.PermissionRequired("orders.update"), h.Order.Update)
 				orders.DELETE("/batch-delete", middleware.StaffOnly(), middleware.PermissionRequired("orders.delete"), h.Order.BatchDelete)
 				orders.DELETE("/:id", middleware.StaffOnly(), middleware.PermissionRequired("orders.delete"), h.Order.Delete)
-				orders.POST("/:id/status", middleware.StaffOnly(), middleware.PermissionRequired("orders.status"), h.Order.UpdateStatus)
+				// Một API, ba việc: xác nhận (orders.confirm), huỷ (orders.cancel), hoàn
+				// thành đơn món = thu tiền (orders.pay). Handler kiểm đúng mã theo đơn.
+				orders.POST("/:id/status", middleware.StaffOnly(), middleware.AnyPermissionRequired("orders.confirm", "orders.cancel", "orders.pay"), h.Order.UpdateStatus)
 				orders.POST("/:id/split", middleware.StaffOnly(), middleware.PermissionRequired("orders.split"), h.Order.Split)
-				orders.POST("/:id/items/:itemId/status", middleware.StaffOnly(), middleware.PermissionRequired("orders.status"), h.Order.UpdateItemStatus)
+				orders.POST("/:id/items/:itemId/status", middleware.StaffOnly(), middleware.PermissionRequired("orders.confirm"), h.Order.UpdateItemStatus)
 				orders.POST("/:id/pay", middleware.StaffOnly(), middleware.PermissionRequired("orders.pay"), h.Order.Pay)
 				// In hoá đơn và phiếu chế biến. StaffOnly: hội viên không được
 				// bắt máy in ở quầy nhả giấy.
@@ -413,7 +405,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				games.GET("", middleware.PermissionRequired("games.view"), h.Game.List)
 				games.POST("", middleware.PermissionRequired("games.create"), h.Game.Create)
 				games.POST("/local", middleware.PermissionRequired("games.create"), h.Game.CreateLocal)
-				games.GET("/local/folders", middleware.PermissionRequired("games.create"), h.Game.LocalFolders)
+				games.GET("/local/browse", middleware.PermissionRequired("games.create"), h.Game.LocalBrowse)
 				games.GET("/local/launchers", middleware.PermissionRequired("games.create"), h.Game.LocalLaunchers)
 				games.PUT("/:id", middleware.PermissionRequired("games.update"), h.Game.Update)
 				games.PUT("/:id/custom", middleware.PermissionRequired("games.update"), h.Game.UpdateCustom)
@@ -425,6 +417,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				// Danh mục Hub ở quán: xem cả danh mục, chọn game, tải hàng loạt, hàng đợi và trần băng thông.
 				games.GET("/hub-catalog", middleware.PermissionRequired("games.view"), h.Game.HubCatalog)
 				games.PUT("/hub-selection", middleware.PermissionRequired("games.update"), h.Game.SelectHubGames)
+				games.POST("/hub-download", middleware.PermissionRequired("games.update"), h.Game.DownloadHubGame)
 				games.POST("/bulk-sync", middleware.PermissionRequired("games.update"), h.Game.BulkSync)
 				games.GET("/queue", middleware.PermissionRequired("games.view"), h.Game.Queue)
 				games.GET("/limits", middleware.PermissionRequired("games.view"), h.Game.GetLimits)
@@ -543,7 +536,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 
 			protected.GET("/transactions", middleware.StaffOnly(), middleware.PermissionRequired("transactions.view"), h.Report.ListTransactions)
 
-			// Nạp tiền bằng QR, tự xác nhận nhờ điện thoại báo tiền ở quầy (qr_pay.go).
+			// Nạp tiền bằng QR, tự xác nhận nhờ giao dịch ThueAPI báo qua Hub (qr_pay.go, bank_sync.go).
 			qr := protected.Group("/qr")
 			{
 				qr.GET("/status", h.QRPay.Status)
@@ -553,8 +546,6 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				qr.GET("/requests/:id", h.QRPay.GetRequest)
 				qr.POST("/requests/:id/cancel", h.QRPay.CancelRequest)
 				qr.POST("/orders/:id/pay", h.QRPay.PayOrder)
-				qr.POST("/pairing", middleware.StaffOnly(), middleware.PermissionRequired("settings.edit"), h.QRPay.StartPairing)
-				qr.DELETE("/device", middleware.StaffOnly(), middleware.PermissionRequired("settings.edit"), h.QRPay.Unpair)
 			}
 			bankIn := protected.Group("/bank-notifications", middleware.StaffOnly())
 			{
@@ -562,6 +553,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				bankIn.POST("/:id/confirm", middleware.PermissionRequired("members.topup"), h.QRPay.Confirm)
 				bankIn.POST("/:id/assign", middleware.PermissionRequired("members.topup"), h.QRPay.Assign)
 				bankIn.POST("/:id/ignore", middleware.PermissionRequired("members.topup"), h.QRPay.Ignore)
+				bankIn.DELETE("/:id", middleware.PermissionRequired("transactions.delete"), h.QRPay.DeleteNotification)
 			}
 
 			reports := protected.Group("/reports", middleware.StaffOnly(), middleware.PermissionRequired("reports.view"))

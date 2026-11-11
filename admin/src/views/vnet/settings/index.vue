@@ -8,7 +8,6 @@ import { useAuth } from '@/hooks/business/auth';
 import { useRealtimeRefresh } from '@/hooks/common/realtime';
 import { moneyInput } from '@/utils/money';
 import ImageUpload from '@/components/common/ImageUpload.vue';
-import QrPhonePanel from './modules/qr-phone-panel.vue';
 
 const { t: $t } = useI18n();
 const { reload: reloadPaymentMethods } = usePaymentMethods();
@@ -501,7 +500,6 @@ onMounted(() => {
           <ElAlert type="info" :closable="false" show-icon style="margin-bottom: 16px">
             {{ $t('vnetPages.qrPay.hint') }}
           </ElAlert>
-          <QrPhonePanel v-if="activeTab === 'qr_payment'" />
           <ElForm label-width="200px" class="max-w-640px">
             <ElFormItem :label="$t('vnetPages.qrPay.enabled')">
               <ElSwitch v-model="settings.enabled" active-value="true" inactive-value="false" />

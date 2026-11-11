@@ -9,6 +9,7 @@ import (
 	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
+	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -103,6 +104,39 @@ type StockTransactionResponse struct {
 	CreatedBy       *string `json:"created_by"`
 	CreatedByName   string  `json:"created_by_name"`
 	CreatedAt       string  `json:"created_at"`
+	// Kind là nguồn của phiếu cho cột "Loại": một trong các hằng PhieuKho*.
+	Kind string `json:"kind"`
+}
+
+// Nguồn của phiếu kho. Chỉ "Nhập"/"Xuất" thì quầy không phân biệt được hàng nhân
+// viên tự nhập với hàng hệ thống tự trừ khi bán. Không có cột riêng trong bảng:
+// phiếu theo đơn trỏ reference_id vào orders, phiếu kiểm kê là loại adjustment,
+// còn lại là nhân viên nhập/xuất tay (trang Sản phẩm, trang Giao dịch tồn kho).
+const (
+	PhieuKhoNhapTay = "manual_in"  // nhân viên nhập kho
+	PhieuKhoXuatTay = "manual_out" // nhân viên xuất kho (hỏng, tự dùng…)
+	PhieuKhoXuatDon = "order_out"  // hệ thống trừ kho khi bán theo đơn
+	PhieuKhoHoanDon = "order_in"   // hệ thống trả lại kho khi huỷ đơn
+	PhieuKhoKiemKe  = "count"      // chốt kiểm kê chỉnh theo số đếm
+)
+
+// phieuTheoDon: reference_id trỏ vào một đơn hàng — kể cả đơn đã xoá mềm, nên
+// đọc bảng orders trực tiếp chứ không qua model.
+const phieuTheoDon = "reference_id IN (SELECT id FROM orders)"
+
+func loaiPhieuKho(transactionType string, theoDon bool) string {
+	switch {
+	case transactionType == "adjustment":
+		return PhieuKhoKiemKe
+	case theoDon && transactionType == "inbound":
+		return PhieuKhoHoanDon
+	case theoDon:
+		return PhieuKhoXuatDon
+	case transactionType == "inbound":
+		return PhieuKhoNhapTay
+	default:
+		return PhieuKhoXuatTay
+	}
 }
 
 type CreateStockTransactionRequest struct {
@@ -283,7 +317,15 @@ var stockTransactionSortColumns = map[string]string{
 	"created_at":       "created_at",
 }
 
-func (s *InventoryService) ListStockTransactions(params *pagination.Params) (*pagination.Result, error) {
+// StockTransactionFilter là các bộ lọc trên thanh công cụ trang Giao dịch tồn
+// kho; ô tìm kiếm đi theo params.Search.
+type StockTransactionFilter struct {
+	Kind     string // một trong các hằng PhieuKho*
+	DateFrom string // YYYY-MM-DD, giờ Việt Nam
+	DateTo   string // YYYY-MM-DD, giờ Việt Nam, tính hết ngày
+}
+
+func (s *InventoryService) ListStockTransactions(f StockTransactionFilter, params *pagination.Params) (*pagination.Result, error) {
 	if params.Page < 1 {
 		params.Page = 1
 	}
@@ -292,10 +334,45 @@ func (s *InventoryService) ListStockTransactions(params *pagination.Params) (*pa
 	}
 
 	var transactions []model.StockTransaction
-	query := s.db
+	query := s.db.Model(&model.StockTransaction{})
+	switch f.Kind {
+	case PhieuKhoNhapTay, PhieuKhoXuatTay:
+		loai := map[string]string{PhieuKhoNhapTay: "inbound", PhieuKhoXuatTay: "outbound"}[f.Kind]
+		query = query.Where("transaction_type = ? AND (reference_id IS NULL OR NOT "+phieuTheoDon+")", loai)
+	case PhieuKhoXuatDon, PhieuKhoHoanDon:
+		loai := map[string]string{PhieuKhoXuatDon: "outbound", PhieuKhoHoanDon: "inbound"}[f.Kind]
+		query = query.Where("transaction_type = ? AND "+phieuTheoDon, loai)
+	case PhieuKhoKiemKe:
+		query = query.Where("transaction_type = ?", "adjustment")
+	}
+	// Neo theo giờ Việt Nam như trang Đơn hàng: time.Parse là nửa đêm UTC, lọc
+	// "hôm nay → hôm nay" sẽ cắt mất phiếu ca đêm.
+	if f.DateFrom != "" {
+		if t, err := time.ParseInLocation("2006-01-02", f.DateFrom, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at >= ?", utils.StartOfDay(t))
+		}
+	}
+	if f.DateTo != "" {
+		if t, err := time.ParseInLocation("2006-01-02", f.DateTo, utils.VietnamLocation()); err == nil {
+			query = query.Where("created_at <= ?", utils.EndOfDay(t))
+		}
+	}
+	if params.Search != "" {
+		search := "%" + params.Search + "%"
+		// Tên sản phẩm, ghi chú (phiếu theo đơn ghi mã đơn ở đây) và người thực
+		// hiện; bỏ dấu cả hai vế vì nhân viên quầy gõ không dấu. Sản phẩm và nhân
+		// viên tra bằng truy vấn con, không JOIN, để cột created_at và các cột sắp
+		// xếp không bị trùng tên.
+		query = query.Where(`unaccent(description) ILIKE unaccent(?)
+			OR product_id IN (SELECT id FROM products WHERE unaccent(name) ILIKE unaccent(?))
+			OR created_by IN (SELECT id FROM users WHERE unaccent(full_name) ILIKE unaccent(?) OR unaccent(username) ILIKE unaccent(?))`,
+			search, search, search, search)
+	}
 
 	var total int64
-	query.Model(&model.StockTransaction{}).Count(&total)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, err
+	}
 
 	// Bấm tiêu đề cột thì sắp theo cột đó trên toàn bộ phiếu, không bấm thì
 	// phiếu mới nhất trước.
@@ -304,9 +381,28 @@ func (s *InventoryService) ListStockTransactions(params *pagination.Params) (*pa
 		return nil, err
 	}
 
+	// Một câu cho cả trang: phiếu nào trỏ vào đơn hàng.
+	var refs []string
+	for _, t := range transactions {
+		if t.ReferenceID != nil {
+			refs = append(refs, *t.ReferenceID)
+		}
+	}
+	laDon := map[string]bool{}
+	if len(refs) > 0 {
+		var ids []string
+		if err := s.db.Table("orders").Where("id IN ?", refs).Pluck("id", &ids).Error; err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			laDon[id] = true
+		}
+	}
+
 	items := make([]StockTransactionResponse, len(transactions))
 	for i, t := range transactions {
 		items[i] = stockTransactionToResponse(s.db, t)
+		items[i].Kind = loaiPhieuKho(t.TransactionType, t.ReferenceID != nil && laDon[*t.ReferenceID])
 	}
 
 	return pagination.NewResult(items, total, params), nil
@@ -393,6 +489,7 @@ func (s *InventoryService) CreateStockTransaction(req *CreateStockTransactionReq
 	})
 
 	result := stockTransactionToResponse(s.db, transaction)
+	result.Kind = loaiPhieuKho(transaction.TransactionType, false) // phiếu tay
 	return &result, nil
 }
 

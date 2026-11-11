@@ -76,12 +76,17 @@ func TestGameConfigValidate(t *testing.T) {
 	if err := (GameConfig{}).Validate(); err != nil {
 		t.Fatalf("tắt tính năng thì không cần gì: %v", err)
 	}
+	noRoot := GameConfig{Role: GameRoleCafe, CatalogKey: "0123456789abcdef", UpstreamURL: "http://master:20800"}
+	if err := noRoot.Validate(); err != nil {
+		t.Fatalf("quán không có thư mục game chung (chọn thư mục lưu từng game) bị từ chối: %v", err)
+	}
 	bad := []GameConfig{
 		{Role: "slave", Root: "/srv/games", CatalogKey: "0123456789abcdef"},
 		{Role: GameRoleCafe, Root: "games", CatalogKey: "0123456789abcdef", UpstreamURL: "http://m"},
 		{Role: GameRoleCafe, Root: "/srv/games", CatalogKey: "short", UpstreamURL: "http://m"},
 		{Role: GameRoleCafe, Root: "/srv/games", CatalogKey: "0123456789abcdef"},
 		{Role: GameRoleMaster, Root: "/srv/games", CatalogKey: "0123456789abcdef"},
+		{Role: GameRoleMaster, CatalogKey: "0123456789abcdef", PublicURL: "http://master:20800"},
 	}
 	for i, c := range bad {
 		if c.Validate() == nil {

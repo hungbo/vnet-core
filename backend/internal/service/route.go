@@ -107,12 +107,6 @@ func (s *RouteService) GetUserRoutes(permissions []string) UserRoutesResponse {
 			Meta:      RouteMeta{Title: "vnet_machines", I18nKey: "route.vnet_machines", RequiredPermission: "machines.view"},
 		},
 		{
-			Name:      "vnet_hub-games",
-			Path:      "/vnet/hub-games",
-			Component: "view.vnet_hub-games",
-			Meta:      RouteMeta{Title: "vnet_hub-games", I18nKey: "route.vnet_hub-games", RequiredPermission: "games.view"},
-		},
-		{
 			Name:      "vnet_windows-keys",
 			Path:      "/vnet/windows-keys",
 			Component: "view.vnet_windows-keys",

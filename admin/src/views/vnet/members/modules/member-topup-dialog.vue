@@ -21,8 +21,8 @@ const visible = defineModel<boolean>('visible', { default: false });
 
 const { t: $t } = useI18n();
 const { enabledMethods } = usePaymentMethods();
-// "QR chuyển khoản": máy chủ tạo đơn nạp chờ + mã VietQR; điện thoại báo tiền ở
-// quầy thấy tiền về thì đơn tự duyệt (hoặc chờ duyệt ở trang Tiền vào).
+// "QR chuyển khoản": máy chủ tạo đơn nạp chờ + mã VietQR; ThueAPI báo tiền về thì
+// đơn tự duyệt (hoặc chờ duyệt ở trang Tiền vào).
 const { status: qrStatus } = useQRStatus();
 const qrReady = computed(() => Boolean(qrStatus.value?.ready));
 const qr = ref<any>(null);

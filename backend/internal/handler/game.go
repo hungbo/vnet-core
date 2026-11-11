@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -210,31 +211,32 @@ func (h *GameHandler) CreateLocal(c *gin.Context) {
 	response.Created(c, g)
 }
 
-// LocalFolders
-// @Summary      Thư mục con chưa là game nào của GAME_ROOT hoặc của một thư mục tuỳ ý (gợi ý khi thêm game cục bộ)
+// LocalBrowse
+// @Summary      Thư mục con của một thư mục trên máy chủ, để chọn thư mục game qua nhiều cấp (thêm/sửa game cục bộ)
 // @Tags         Games
 // @Produce      json
-// @Param        root  query  string  false  "Thư mục tuyệt đối trên máy chủ, ví dụ E:\Online Games; bỏ trống là GAME_ROOT"
-// @Success      200  {object}  response.Response
-// @Router       /api/games/local/folders [get]
-func (h *GameHandler) LocalFolders(c *gin.Context) {
-	folders, err := h.svc.LocalFolders(c.Query("root"))
+// @Param        path  query  string  false  "Thư mục tuyệt đối trên máy chủ, ví dụ E:\Online Games; bỏ trống là các ổ đĩa"
+// @Success      200  {object}  response.Response{data=[]service.LocalDir}
+// @Router       /api/games/local/browse [get]
+func (h *GameHandler) LocalBrowse(c *gin.Context) {
+	dirs, err := h.svc.LocalBrowse(c.Query("path"))
 	if err != nil {
 		gameError(c, err)
 		return
 	}
-	response.Success(c, folders)
+	response.Success(c, dirs)
 }
 
 // LocalLaunchers
-// @Summary      Tệp chạy (.exe, .bat, .cmd, .lnk) trong một thư mục game (gợi ý khi thêm game cục bộ)
+// @Summary      Tệp chạy (.exe, .bat, .cmd, .lnk) hoặc tệp icon (.exe, .ico) trong một thư mục game, gồm cả thư mục con
 // @Tags         Games
 // @Produce      json
-// @Param        folder  query  string  true  "Tên thư mục game trong GAME_ROOT, hoặc đường dẫn đầy đủ trên máy chủ"
+// @Param        folder  query  string  true   "Tên thư mục game trong GAME_ROOT, hoặc đường dẫn đầy đủ trên máy chủ"
+// @Param        kind    query  string  false  "launcher (mặc định) hoặc icon"
 // @Success      200  {object}  response.Response
 // @Router       /api/games/local/launchers [get]
 func (h *GameHandler) LocalLaunchers(c *gin.Context) {
-	files, err := h.svc.LocalLaunchers(c.Query("folder"))
+	files, err := h.svc.LocalFiles(c.Query("folder"), c.Query("kind"))
 	if err != nil {
 		gameError(c, err)
 		return
@@ -319,11 +321,21 @@ func (h *GameHandler) Publish(c *gin.Context) {
 // Sync
 // @Summary      Tải ngay một game từ master (chỉ máy chủ quán)
 // @Tags         Games
+// @Description  Thân tuỳ chọn {"install_root": "E:\\Games"}: thư mục lưu quán chọn (tự tạo nếu chưa có). Bỏ trống là giữ thư mục game đã có.
 // @Param        id  path  string  true  "Game ID"
 // @Success      200  {object}  response.Response
 // @Router       /api/games/{id}/sync [post]
 func (h *GameHandler) Sync(c *gin.Context) {
-	if err := h.svc.SyncNow(c.Param("id")); err != nil {
+	var req struct {
+		InstallRoot string `json:"install_root"`
+	}
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+			handleValidationError(c, err)
+			return
+		}
+	}
+	if err := h.svc.SyncNowTo(c.Param("id"), req.InstallRoot); err != nil {
 		gameError(c, err)
 		return
 	}
@@ -343,6 +355,30 @@ func (h *GameHandler) HubCatalog(c *gin.Context) {
 		return
 	}
 	response.Success(c, v)
+}
+
+// DownloadHubGame
+// @Summary      Tải một game của Hub vào thư mục quán chọn (chỉ máy chủ quán)
+// @Description  Game quán chưa nhận từ Hub thì chọn nó trên Hub trước. install_root là thư mục trên máy chủ (game nằm ở install_root\\name); game đã tải bỏ trống để tải tiếp vào chỗ cũ.
+// @Tags         Games
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  response.Response
+// @Router       /api/games/hub-download [post]
+func (h *GameHandler) DownloadHubGame(c *gin.Context) {
+	var req struct {
+		Name        string `json:"name" binding:"required"`
+		InstallRoot string `json:"install_root"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		handleValidationError(c, err)
+		return
+	}
+	if err := h.svc.DownloadHubGame(c.Request.Context(), req.Name, req.InstallRoot); err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, nil)
 }
 
 // SelectHubGames

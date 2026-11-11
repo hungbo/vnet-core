@@ -121,14 +121,30 @@ func (h *InventoryHandler) DeleteSupplier(c *gin.Context) {
 // @Param page_size query int false "Page size"
 // @Param sort query string false "Column to sort by (transaction_type, quantity, stock_before, stock_after, total_price, created_at); default newest first"
 // @Param order query string false "asc | desc"
+// @Param search query string false "Product name, description (order code), or staff name; accent-insensitive"
+// @Param kind query string false "manual_in | manual_out | order_out | order_in | count"
+// @Param date_from query string false "YYYY-MM-DD, Vietnam time"
+// @Param date_to query string false "YYYY-MM-DD, Vietnam time, whole day included"
 // @Success 200 {object} response.Response{data=response.PaginatedData{data=[]service.StockTransactionResponse}}
+// @Failure 400 {object} response.Response
 // @Failure 500 {object} response.Response
 // @Router /api/stock-transactions [get]
 // @Security BearerAuth
 func (h *InventoryHandler) ListStockTransactions(c *gin.Context) {
+	f := service.StockTransactionFilter{
+		Kind:     c.Query("kind"),
+		DateFrom: c.Query("date_from"),
+		DateTo:   c.Query("date_to"),
+	}
+	switch f.Kind {
+	case "", service.PhieuKhoNhapTay, service.PhieuKhoXuatTay, service.PhieuKhoXuatDon, service.PhieuKhoHoanDon, service.PhieuKhoKiemKe:
+	default:
+		response.BadRequest(c, "kind chỉ nhận manual_in, manual_out, order_out, order_in hoặc count")
+		return
+	}
 	params := pagination.GetParams(c)
 
-	result, err := h.svc.ListStockTransactions(params)
+	result, err := h.svc.ListStockTransactions(f, params)
 	if err != nil {
 		response.InternalError(c, "Failed to fetch stock transactions", err)
 		return

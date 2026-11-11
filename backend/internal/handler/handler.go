@@ -65,7 +65,9 @@ func NewHandlers(db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hub, cfg *conf
 	// Bán combo có món tặng kèm ghi một đơn 0đ và trừ kho qua chính bản này.
 	orderSvc := service.NewOrderService(db, wsHub, auditSvc, invSvc)
 	// Nạp QR duyệt đơn qua orderSvc.Pay và cộng khoản chưa khớp qua MemberService.Topup.
-	qrSvc := service.NewQRPayService(db, wsHub, auditSvc, orderSvc, service.NewMemberService(db, auditSvc).WithHub(wsHub))
+	qrSvc := service.NewQRPayService(db, wsHub, auditSvc, orderSvc, service.NewMemberService(db, auditSvc).WithHub(wsHub)).
+		WithHubAccess(gameSvc.HubAccess)
+	gameSvc.OnBankEvent(qrSvc.KickBankSync)
 	return &Handlers{Upload: NewUploadHandler(cfg.Server.UploadDir, cfg.Server.MaxFileSize),
 		Auth:              NewAuthHandler(service.NewAuthService(db, jwtManager, auditSvc).WithCurfew(curfewSvc).WithSessions(sessionSvc).WithHub(wsHub)),
 		Route:             NewRouteHandler(service.NewRouteService()),

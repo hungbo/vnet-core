@@ -132,6 +132,8 @@ var (
 	ErrGameRoleOff    = errors.New("máy chủ này chưa bật cập nhật game (GAME_ROLE)")
 	ErrGameMasterOnly = errors.New("chỉ máy master mới làm được việc này")
 	ErrGameCafeOnly   = errors.New("chỉ máy chủ quán mới làm được việc này")
+	// ErrGameNoFolder: game chưa có thư mục lưu (quán không có thư mục chung và chưa chọn lúc bấm Tải).
+	ErrGameNoFolder = errors.New("chưa chọn thư mục lưu game: bấm Tải ở trang Game rồi chọn thư mục")
 )
 
 type GameService struct {
@@ -140,6 +142,8 @@ type GameService struct {
 	engine *gameupdate.Engine
 	http   *http.Client
 	hub    *hub.Hub
+
+	onBankEvent func() // Hub báo có giao dịch ngân hàng mới; đặt một lần lúc dựng
 
 	cfgMu      sync.RWMutex
 	live       *config.GameConfig // cấu hình có hiệu lực khi quán nối Hub từ trang Game; nil là dùng cfg (môi trường)
@@ -159,6 +163,7 @@ type GameService struct {
 	mu          sync.Mutex
 	runCtx      context.Context // context của vòng nền; nil khi chưa chạy
 	pubMu       sync.Mutex      // một lần publish một lúc: số phiên bản không được trùng
+	pullMu      sync.Mutex      // một lượt đọc catalog một lúc: hai lượt cùng thêm một game mới thì lượt sau vấp idx_games_name
 	stabilizers map[string]*gameupdate.Stabilizer
 	kick        chan struct{}
 	wake        chan struct{}         // vòng đọc catalog đánh thức luồng tải game (quán)
@@ -528,6 +533,8 @@ func (s *GameService) Create(req *CreateGameRequest) (*model.Game, error) {
 }
 
 type UpdateGameRequest struct {
+	// Name (chỉ game cục bộ): tên game mới, cũng là tên so với catalog của Hub. Thư mục game giữ nguyên.
+	Name        *string `json:"name"`
 	DisplayName *string `json:"display_name"`
 	Category    *string `json:"category"`
 	Launcher    *string `json:"launcher"`
@@ -600,6 +607,12 @@ func (s *GameService) Update(id string, req *UpdateGameRequest) (*model.Game, er
 		}
 	}
 	custom := g.Custom
+	if req.Name != nil && strings.TrimSpace(*req.Name) != "" && strings.TrimSpace(*req.Name) != g.Name {
+		if err := s.doiTenCucBo(&g, strings.TrimSpace(*req.Name), updates, &custom); err != nil {
+			return nil, err
+		}
+		updates["custom"] = custom
+	}
 	if req.ClientRoot != nil && g.Origin == model.GameOriginLocal {
 		root := strings.TrimSpace(*req.ClientRoot)
 		if root != "" {
@@ -743,7 +756,7 @@ func (s *GameService) Menu() (*GameMenu, error) {
 				Key: key, Name: g.Name, DisplayName: display, Category: g.Category,
 				Launcher: launcher, LaunchArgs: args, Icon: icon,
 				Status: g.Status, Progress: g.Progress, Version: g.Version,
-				Root: g.Custom.ClientRoot, Folder: g.Custom.Folder, RunFirst: runFirstOf(&g), Label: label,
+				Root: s.gocMayTram(&g), Folder: g.Custom.Folder, RunFirst: runFirstOf(&g), Label: label,
 			}
 		}
 		if len(g.MenuEntries) > 0 {
@@ -782,22 +795,27 @@ func MenuChoMayTramCu(items []GameMenuItem) []GameMenuItem {
 // Không lọc theo trạng thái: giá trị đổi qua lại suốt mấy giờ tải lại game thì mỗi lần đổi máy trạm
 // lại ghi policy.json và chép lại metadata. Bản chụp là liên kết (Lstat) thì bỏ, như máy trạm từ chối.
 func (s *GameService) RiotMetadataSource() string {
-	if s.conf().Role != config.GameRoleCafe || s.conf().Root == "" {
+	if s.conf().Role != config.GameRoleCafe {
 		return ""
 	}
-	var names []string
-	if s.db.Model(&model.Game{}).Where("enabled = ?", true).Order("name").Pluck("name", &names).Error != nil {
+	var games []model.Game
+	if s.db.Select("name", "install_root", "custom").Where("enabled = ?", true).Order("name").Find(&games).Error != nil {
 		return ""
 	}
-	for _, n := range names {
-		if !tenGameDungDuoc(n) {
+	for i := range games {
+		g := &games[i]
+		dir := s.gameDir(g)
+		if !tenGameDungDuoc(g.Name) || dir == "" {
 			continue
 		}
-		if fi, err := os.Lstat(filepath.Join(s.conf().Root, n, "_vnet", "ProgramData", "Riot Games")); err != nil || !fi.IsDir() {
+		if fi, err := os.Lstat(filepath.Join(dir, "_vnet", "ProgramData", "Riot Games")); err != nil || !fi.IsDir() {
 			continue
 		}
-		root := normalizeGameClientRoot(settingsGroup(s.db, GamesGroup)[GameClientRootKey])
-		return chuanHoaNguonRiot(root + `\` + n + `\_vnet\ProgramData\Riot Games`)
+		root := s.gocMayTram(g)
+		if root == "" {
+			root = normalizeGameClientRoot(settingsGroup(s.db, GamesGroup)[GameClientRootKey])
+		}
+		return chuanHoaNguonRiot(root + `\` + g.Name + `\_vnet\ProgramData\Riot Games`)
 	}
 	return ""
 }
@@ -1009,7 +1027,7 @@ func (s *GameService) runRole(ctx context.Context) {
 	}
 	dataDir := s.conf().DataDir
 	if dataDir == "" || !filepath.IsAbs(dataDir) {
-		dataDir = filepath.Join(s.conf().Root, ".vnet-gameupdate")
+		dataDir = engineDataDir(s.conf().Root)
 	}
 	c := s.conf()
 	engine, err := gameupdate.NewEngine(gameupdate.EngineConfig{
@@ -1073,6 +1091,18 @@ func (s *GameService) runRole(ctx context.Context) {
 		case <-s.kick:
 		}
 	}
+}
+
+// engineDataDir: nơi engine giữ trạng thái khi không đặt GAME_DATA_DIR. Có GAME_ROOT thì như cũ (GAME_ROOT\.vnet-gameupdate);
+// quán không có thư mục game chung thì data\gameupdate cạnh vnet-server.exe (bộ cài để dữ liệu ở C:\VNET\data).
+func engineDataDir(root string) string {
+	if root != "" {
+		return filepath.Join(root, ".vnet-gameupdate")
+	}
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Join(filepath.Dir(exe), "data", "gameupdate")
+	}
+	return filepath.Join(os.TempDir(), "vnet-gameupdate")
 }
 
 // recoverDownloading xử lý các game mà lần tải bị cắt giữa chừng (mất điện, khởi động lại).
@@ -1389,8 +1419,11 @@ func (s *GameService) setError(id, msg string) {
 
 // ---------------------------------------------------------------- đồng bộ (quán)
 
-// SyncNow tải ngay một game ở quán, bỏ qua tự cập nhật, khung giờ và thời gian chờ thử lại.
-func (s *GameService) SyncNow(id string) error {
+// SyncNow tải ngay một game ở quán vào thư mục nó đã có, bỏ qua tự cập nhật, khung giờ và thời gian chờ thử lại.
+func (s *GameService) SyncNow(id string) error { return s.SyncNowTo(id, "") }
+
+// SyncNowTo là SyncNow kèm thư mục lưu quán chọn ở hộp thoại Tải (rỗng là giữ thư mục đã có; game chưa có thì lỗi).
+func (s *GameService) SyncNowTo(id, installRoot string) error {
 	if s.conf().Role != config.GameRoleCafe {
 		return ErrGameCafeOnly
 	}
@@ -1404,12 +1437,67 @@ func (s *GameService) SyncNow(id string) error {
 	if g.Origin == model.GameOriginLocal {
 		return ErrGameIsLocal
 	}
+	updates := map[string]interface{}{"status": model.GameStatusQueued}
+	if strings.TrimSpace(installRoot) != "" {
+		root, err := s.chonThuMucLuu(&g, installRoot)
+		if err != nil {
+			return err
+		}
+		updates["install_root"] = root
+	} else if s.gameDir(&g) == "" {
+		return ErrGameNoFolder
+	}
 	if err := s.db.Model(&model.Game{}).Where("id = ? AND status <> ?", g.ID, model.GameStatusDownloading).
-		Update("status", model.GameStatusQueued).Error; err != nil {
+		Updates(updates).Error; err != nil {
 		return err
 	}
 	s.Kick()
 	return nil
+}
+
+// chonThuMucLuu kiểm thư mục lưu quán chọn cho g lúc bấm Tải, tạo nếu chưa có, trả đường dẫn đã giải liên kết. Game đã tải
+// xong một bản thì không dời sang thư mục khác. Ở chỗ mới mà thư mục game đã có dữ liệu hay là một liên kết thì từ chối:
+// engine xoá mọi tệp không thuộc game, tải vào bản Kzone hay thư mục của phần mềm khác là mất dữ liệu của chúng.
+func (s *GameService) chonThuMucLuu(g *model.Game, raw string) (string, error) {
+	p := filepath.Clean(strings.TrimSpace(raw))
+	if !filepath.IsAbs(p) {
+		return "", errors.New(`thư mục lưu phải là đường dẫn đầy đủ trên máy chủ, ví dụ E:\Games`)
+	}
+	if filepath.Dir(p) == p {
+		return "", errors.New(`thư mục lưu không được là gốc ổ đĩa: chọn một thư mục riêng, ví dụ E:\Games`)
+	}
+	for _, h := range thuMucHeThong() { // kiểm trước khi tạo thư mục; kiemTraGameRoot kiểm lại đủ sau đó
+		if trongHoacChua(p, h) {
+			return "", fmt.Errorf("thư mục lưu không được trùng, nằm trong hay chứa thư mục hệ thống %s", h)
+		}
+	}
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		return "", fmt.Errorf("không tạo được thư mục %s: %w", p, err)
+	}
+	root, err := kiemTraGameRoot(p, s.conf().RootAllowed)
+	if err != nil {
+		return "", err
+	}
+	cu := g.InstallRoot
+	if cu == "" {
+		cu = s.conf().Root
+	}
+	if cu != "" && cungThuMuc(filepath.Clean(cu), root) {
+		return root, nil // vẫn chỗ cũ: tải tiếp hay kiểm lại
+	}
+	if g.Infohash != "" {
+		return "", fmt.Errorf("game đã tải ở %s, không dời sang thư mục khác được", s.gameDir(g))
+	}
+	dir := filepath.Join(root, g.Name)
+	if fi, err := os.Lstat(dir); err == nil {
+		if !fi.IsDir() || fi.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return "", fmt.Errorf("%s đã có nhưng không phải thư mục thường (liên kết tới chỗ khác?): chọn thư mục lưu khác", dir)
+		}
+		if entries, err := os.ReadDir(dir); err != nil || len(entries) > 0 {
+			return "", fmt.Errorf("%s đã có dữ liệu: chọn thư mục lưu khác (tải vào đó sẽ xoá các tệp không thuộc game)", dir)
+		}
+	}
+	return root, nil
 }
 
 // Tải game ở quán gồm hai việc chạy tách rời:
@@ -1486,11 +1574,42 @@ func (s *GameService) nextInstall(now time.Time) *model.Game {
 			if g.Status == model.GameStatusError && !s.inBackoff(g, now) {
 				return g
 			}
-		case g.AutoUpdate && inWindow && !s.inBackoff(g, now):
+		case g.AutoUpdate && daChonTai(g) && inWindow && !s.inBackoff(g, now):
 			return g
 		}
 	}
 	return nil
+}
+
+// daChonTai: quán đã muốn có game này, tức đã tải xong ít nhất một bản hoặc đã bấm Tải (chọn thư mục lưu). Game Hub mới
+// vào catalog chỉ nằm đó chờ quán chọn, không tự tải; game đã chọn thì tự cập nhật và tự tải tiếp sau khi bị ngắt.
+func daChonTai(g *model.Game) bool {
+	return g.Infohash != "" || g.InstallRoot != ""
+}
+
+// gameDir: thư mục game trên máy chủ quán, InstallRoot\Name hoặc GAME_ROOT\Name với game cũ. Rỗng khi quán chưa chọn
+// thư mục lưu và không có thư mục chung.
+func (s *GameService) gameDir(g *model.Game) string {
+	root := g.InstallRoot
+	if root == "" {
+		root = s.conf().Root
+	}
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, g.Name)
+}
+
+// gocMayTram: gốc game riêng của g như máy trạm thấy, rỗng là theo ổ chung (GameMenu.Root). Quán đặt riêng thì thắng;
+// game Hub tải vào thư mục khác GAME_ROOT thì máy trạm thấy đúng đường dẫn đó (ổ đĩa của máy chủ như nhau).
+func (s *GameService) gocMayTram(g *model.Game) string {
+	if g.Custom.ClientRoot != "" {
+		return g.Custom.ClientRoot
+	}
+	if g.InstallRoot != "" && !cungThuMuc(filepath.Clean(g.InstallRoot), filepath.Clean(s.conf().Root)) {
+		return g.InstallRoot
+	}
+	return ""
 }
 
 func (s *GameService) inBackoff(g *model.Game, now time.Time) bool {
@@ -1565,7 +1684,7 @@ func (s *GameService) failInstall(g model.Game, err error, now time.Time) {
 	// Chỉ hứa tự thử lại khi nextInstall sẽ thật sự nhặt game này lên: game đã đúng bản master thì luôn,
 	// game chờ bản mới thì phải bật tự cập nhật (và còn phải chờ khung giờ, nên là "sớm nhất").
 	hint := fmt.Sprintf("Tự thử lại sớm nhất sau %s.", thoiLuong(delay))
-	if g.Infohash != g.RemoteInfohash && !g.AutoUpdate {
+	if g.Infohash != g.RemoteInfohash && !(g.AutoUpdate && daChonTai(&g)) {
 		hint = "Bấm Tải ngay để thử lại."
 	}
 	s.setError(g.ID, fmt.Sprintf("%s. %s", msg, hint))
@@ -1588,8 +1707,11 @@ func (s *GameService) supersede(name, infohash string) {
 	}
 }
 
-// pullCatalog cập nhật danh sách game ở quán theo catalog của master.
+// pullCatalog cập nhật danh sách game ở quán theo catalog của master. Vòng nền và nút Tải (DownloadHubGame,
+// SelectHubGames) đều gọi hàm này nên mỗi lúc chỉ một lượt chạy (pullMu); lượt chờ đọc lại catalog sau khi lượt trước xong.
 func (s *GameService) pullCatalog(ctx context.Context) error {
+	s.pullMu.Lock()
+	defer s.pullMu.Unlock()
 	var items []CatalogItem
 	if err := s.upstreamJSON(ctx, "/api/game-catalog", &items); err != nil {
 		return err
@@ -1663,6 +1785,10 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 }
 
 func (s *GameService) install(ctx context.Context, g model.Game) error {
+	dest := s.gameDir(&g)
+	if dest == "" {
+		return ErrGameNoFolder
+	}
 	raw, err := s.upstreamBytes(ctx, "/api/game-catalog/"+url.PathEscape(g.Name)+"/torrent")
 	if err != nil {
 		return fmt.Errorf("tải tệp torrent: %w", err)
@@ -1696,7 +1822,7 @@ func (s *GameService) install(ctx context.Context, g model.Game) error {
 	job := gameupdate.Job{
 		Name:         g.Name,
 		MetaInfo:     mi,
-		Dest:         filepath.Join(s.conf().Root, g.Name),
+		Dest:         dest,
 		Webseeds:     s.webseedsFor(g),
 		Trackers:     g.RemoteTrackers,
 		Relays:       g.RemoteRelays,

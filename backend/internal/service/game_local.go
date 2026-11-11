@@ -27,25 +27,36 @@ var (
 	ErrGameLocalOnMaster = errors.New("máy master phát hành game, không thêm game cục bộ")
 	// ErrGameIsLocal: việc chỉ có nghĩa với game đến từ catalog (tải ngay từ master).
 	ErrGameIsLocal = errors.New("game cục bộ do quán tự quản, không đồng bộ với Hub")
-	// ErrGameNeedRoot: chưa biết thư mục game trên máy chủ nên không kiểm được thư mục và tệp chạy.
-	ErrGameNeedRoot = errors.New("chưa đặt thư mục game trên máy chủ (GAME_ROOT)")
+	// ErrGameNeedRoot: quán không có thư mục game chung nên phải chỉ rõ thư mục game bằng đường dẫn đầy đủ.
+	ErrGameNeedRoot = errors.New(`chưa có thư mục game chung: nhập đường dẫn đầy đủ của thư mục trên máy chủ, ví dụ E:\Online Games`)
 	// ErrGameLocalNeedLauncher: không có tệp chạy thì game không lên menu.
 	ErrGameLocalNeedLauncher = errors.New("game cục bộ cần tệp chạy (launcher) hoặc ít nhất một mục menu riêng")
 	// ErrGameHubChuaTaiCanXacNhan: tên trùng một game Hub quán chưa tải; thay được nhưng phải hỏi người dùng trước.
 	ErrGameHubChuaTaiCanXacNhan = errors.New("tên này trùng với một game của Hub mà quán chưa tải: xác nhận thay bằng game cục bộ, hoặc đặt tên game khác")
+
+	errTenGameCucBo = errors.New("tên game chỉ gồm chữ, số, khoảng trắng và . _ ( ) + -, không quá 100 ký tự, không kết thúc bằng dấu chấm và không trùng tên thiết bị Windows (CON, NUL, COM1…)")
 )
 
 // Giới hạn danh sách gợi ý cho hộp "Thêm game cục bộ": thư mục game ở quán lớn có thể rất nhiều tệp.
 const (
-	maxLocalFolders   = 500
+	maxLocalFolders   = 500 // thư mục con mỗi cấp của ô chọn thư mục
 	maxLocalLaunchers = 300
-	maxLocalDepth     = 3 // số cấp thư mục dò tìm tệp chạy, tính từ thư mục game
+	maxLocalDepth     = 3 // số cấp thư mục dò tìm tệp chạy và tệp icon, tính từ thư mục game
 )
 
 // laTepChay: đuôi tệp có thể mở được từ menu máy trạm.
 func laTepChay(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".exe", ".bat", ".cmd", ".lnk":
+		return true
+	}
+	return false
+}
+
+// laTepIcon: tệp máy trạm lấy được icon cho menu.
+func laTepIcon(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".exe", ".ico":
 		return true
 	}
 	return false
@@ -107,7 +118,7 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 	if c.Role == config.GameRoleMaster {
 		return nil, ErrGameLocalOnMaster
 	}
-	if c.Root == "" {
+	if c.Root == "" && strings.TrimSpace(req.Folder) == "" {
 		return nil, ErrGameNeedRoot
 	}
 	name := strings.TrimSpace(req.Name)
@@ -140,7 +151,7 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 		}
 	}
 	if !tenGameDungDuoc(name) {
-		return nil, errors.New("tên game chỉ gồm chữ, số, khoảng trắng và . _ ( ) + -, không quá 100 ký tự, không kết thúc bằng dấu chấm và không trùng tên thiết bị Windows (CON, NUL, COM1…)")
+		return nil, errTenGameCucBo
 	}
 	if err := kiemTraCacTruongChuGame(&req.DisplayName, &req.Category, &req.Launcher, &req.LaunchArgs); err != nil {
 		return nil, err
@@ -239,6 +250,37 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 	return &g, nil
 }
 
+// doiTenCucBo đổi tên game cục bộ g sang name, ví dụ để nhường tên cho game cùng tên của Hub. Thư mục game giữ nguyên:
+// game chưa có custom.folder thì thư mục chính là tên cũ nên tên cũ vào custom.folder; tên mới trùng tên thư mục thì bỏ
+// custom.folder. Lượt chơi gắn với id game nên không mất. g.Name nhận tên mới để doiThuMucCucBo (nếu cùng lần sửa) so
+// thư mục với tên mới.
+func (s *GameService) doiTenCucBo(g *model.Game, name string, updates map[string]interface{}, custom *model.GameCustom) error {
+	if g.Origin != model.GameOriginLocal {
+		return errors.New("chỉ đổi được tên game cục bộ")
+	}
+	if !tenGameDungDuoc(name) {
+		return errTenGameCucBo
+	}
+	var n int64
+	if err := s.db.Model(&model.Game{}).Where("name = ? AND id <> ?", name, g.ID).Count(&n).Error; err != nil {
+		return err
+	}
+	if n > 0 {
+		return errors.New("tên này đã có game khác dùng: đặt tên khác")
+	}
+	folder := custom.Folder
+	if folder == "" {
+		folder = g.Name
+	}
+	custom.Folder = ""
+	if folder != name {
+		custom.Folder = folder
+	}
+	updates["name"] = name
+	g.Name = name
+	return nil
+}
+
 // doiThuMucCucBo trỏ game cục bộ g sang thư mục folder (đường dẫn đầy đủ trên máy chủ) khi sửa game, cùng luật như
 // CreateLocal: tên game giữ nguyên, thư mục khác tên game thì vào custom.folder, gốc máy trạm không gửi thì là thư mục
 // cha. Tệp chạy (mới nếu đang sửa, không thì cũ) phải có trong thư mục mới.
@@ -247,9 +289,6 @@ func (s *GameService) doiThuMucCucBo(g *model.Game, folder string, req *UpdateGa
 		return errors.New("chỉ game cục bộ đổi được thư mục game")
 	}
 	root := s.conf().Root
-	if root == "" {
-		return ErrGameNeedRoot
-	}
 	dir, err := duongDanMayChu(folder)
 	if err != nil {
 		return err
@@ -307,34 +346,39 @@ func (s *GameService) noteLocalClash(name string) {
 	}
 }
 
-// LocalFolders liệt kê thư mục con chưa là game nào của root (thư mục tuyệt đối trên máy chủ; rỗng là GAME_ROOT), để
-// chọn khi thêm game cục bộ. Bỏ tên và thư mục của các game cục bộ đã có. Tên game của Hub chỉ bỏ trong GAME_ROOT (đó
-// là thư mục Hub tải về); ở nơi khác, thư mục trùng tên game Hub là bản riêng của quán, thêm được dưới tên khác.
-func (s *GameService) LocalFolders(root string) ([]string, error) {
+// LocalDir là một thư mục con trong ô chọn thư mục game nhiều cấp.
+type LocalDir struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+	// Taken: đã là thư mục của một game (tên game hoặc custom.folder trùng, không phân biệt hoa thường).
+	Taken bool `json:"taken"`
+}
+
+// LocalBrowse liệt kê thư mục con của dir (đường dẫn tuyệt đối trên máy chủ) để chọn thư mục game qua nhiều cấp; dir
+// rỗng là các ổ đĩa (Windows) hoặc "/". Bỏ thư mục ẩn, của hệ thống phân phối và của Windows ($RECYCLE.BIN…). Thư mục đã
+// là game được đánh dấu: tên game cục bộ ở mọi nơi, tên game Hub chỉ trong GAME_ROOT (đó là thư mục Hub tải về); ở nơi
+// khác, thư mục trùng tên game Hub là bản riêng của quán, thêm được dưới tên khác.
+func (s *GameService) LocalBrowse(dir string) ([]LocalDir, error) {
 	c := s.conf()
 	if c.Role == config.GameRoleMaster {
 		return nil, ErrGameLocalOnMaster
 	}
-	if c.Root == "" {
-		return nil, ErrGameNeedRoot
+	if strings.TrimSpace(dir) == "" {
+		return oDiaMayChu(), nil
 	}
-	dir := c.Root
-	if strings.TrimSpace(root) != "" {
-		p, err := duongDanMayChu(root)
-		if err != nil {
-			return nil, err
-		}
-		dir = p
+	dir, err := duongDanMayChu(dir)
+	if err != nil {
+		return nil, err
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, fmt.Errorf("không đọc được thư mục game: %w", err)
+		return nil, fmt.Errorf("không đọc được thư mục %s: %w", dir, err)
 	}
 	var have []model.Game
 	if err := s.db.Select("name", "origin", "custom").Find(&have).Error; err != nil {
 		return nil, err
 	}
-	inRoot := cungThuMuc(filepath.Clean(dir), filepath.Clean(c.Root))
+	inRoot := cungThuMuc(dir, filepath.Clean(c.Root))
 	taken := make(map[string]bool, len(have))
 	for _, g := range have {
 		if g.Origin == model.GameOriginLocal || inRoot {
@@ -344,38 +388,61 @@ func (s *GameService) LocalFolders(root string) ([]string, error) {
 			taken[strings.ToLower(g.Custom.Folder)] = true
 		}
 	}
-	out := []string{}
+	out := []LocalDir{}
 	for _, e := range entries {
 		n := e.Name()
-		if thuMucAn(n) || !tenThuMucDungDuoc(n) || taken[strings.ToLower(n)] {
+		if thuMucAn(n) || strings.HasPrefix(n, "$") || strings.EqualFold(n, "System Volume Information") || !tenThuMucDungDuoc(n) {
 			continue
 		}
-		if !e.IsDir() && !lienKetToiThuMuc(filepath.Join(dir, n), e.Type()) {
+		p := filepath.Join(dir, n)
+		if !e.IsDir() && !lienKetToiThuMuc(p, e.Type()) {
 			continue
 		}
-		out = append(out, n)
+		out = append(out, LocalDir{Name: n, Path: p, Taken: taken[strings.ToLower(n)]})
 		if len(out) >= maxLocalFolders {
 			break
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
 	return out, nil
 }
 
-// LocalLaunchers liệt kê tệp chạy (.exe, .bat, .cmd, .lnk) trong một thư mục game, đường dẫn tương đối kiểu "Bin/Game.exe".
-// folder là tên thư mục trong GAME_ROOT hoặc đường dẫn tuyệt đối trên máy chủ. Tệp ở cấp nông trước. Không đi theo liên
-// kết bên trong thư mục game (chính thư mục game là junction thì vẫn dò), bỏ thư mục ẩn và thư mục của hệ thống phân phối.
-func (s *GameService) LocalLaunchers(folder string) ([]string, error) {
+// oDiaMayChu: cấp đầu của ô chọn thư mục. Windows là các ổ đang có (bỏ A: và B:, ổ mềm làm Stat chờ lâu), nơi khác là "/".
+func oDiaMayChu() []LocalDir {
+	if runtime.GOOS != "windows" {
+		return []LocalDir{{Name: "/", Path: "/"}}
+	}
+	out := []LocalDir{}
+	for d := 'C'; d <= 'Z'; d++ {
+		p := string(d) + `:\`
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			out = append(out, LocalDir{Name: p, Path: p})
+		}
+	}
+	return out
+}
+
+// Loại tệp gợi ý trong thư mục game.
+const (
+	LocalFileLauncher = "launcher" // tệp chạy: .exe, .bat, .cmd, .lnk
+	LocalFileIcon     = "icon"     // tệp lấy icon cho menu máy trạm: .exe, .ico
+)
+
+// LocalFiles liệt kê tệp chạy (kind LocalFileLauncher) hoặc tệp icon (LocalFileIcon) trong một thư mục game, đường dẫn
+// tương đối kiểu "Bin/Game.exe", dò tới maxLocalDepth cấp thư mục con. folder là tên thư mục trong GAME_ROOT hoặc đường
+// dẫn tuyệt đối trên máy chủ. Tệp ở cấp nông trước. Không đi theo liên kết bên trong thư mục game (chính thư mục game là
+// junction thì vẫn dò), bỏ thư mục ẩn và thư mục của hệ thống phân phối.
+func (s *GameService) LocalFiles(folder, kind string) ([]string, error) {
 	c := s.conf()
 	if c.Role == config.GameRoleMaster {
 		return nil, ErrGameLocalOnMaster
 	}
-	if c.Root == "" {
-		return nil, ErrGameNeedRoot
-	}
 	folder = strings.TrimSpace(folder)
 	var base string
 	if tenGameDungDuoc(folder) { // cũng là rào chặn "..", dấu gạch và ổ đĩa
+		if c.Root == "" {
+			return nil, ErrGameNeedRoot
+		}
 		base = filepath.Join(c.Root, folder)
 	} else if p, err := duongDanMayChu(folder); err == nil {
 		base = p
@@ -384,6 +451,10 @@ func (s *GameService) LocalLaunchers(folder string) ([]string, error) {
 	}
 	if fi, err := os.Stat(base); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("không thấy thư mục %s", base)
+	}
+	match := laTepChay
+	if kind == LocalFileIcon {
+		match = laTepIcon
 	}
 	out := []string{}
 	// fs.WalkDir trên os.DirFS lấy gốc "." bằng Stat (đi theo junction/symlink của thư mục game), còn các mục bên
@@ -403,7 +474,7 @@ func (s *GameService) LocalLaunchers(folder string) ([]string, error) {
 			}
 			return nil
 		}
-		if d.Type().IsRegular() && laTepChay(d.Name()) {
+		if d.Type().IsRegular() && match(d.Name()) {
 			out = append(out, rel)
 			if len(out) >= maxLocalLaunchers {
 				return fs.SkipAll

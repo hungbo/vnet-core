@@ -8,16 +8,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/vnet/core/internal/config"
 	"github.com/vnet/core/internal/model"
+	"gorm.io/gorm"
 )
 
-// Danh mục Hub ở quán (roadmap H3, H4): quán xem MỌI game Hub hỗ trợ, chọn game cần tải, tải hàng loạt, sửa chữa, xem
-// hàng đợi và đặt trần băng thông. Việc chọn nằm ở Hub (PUT /api/game-catalog/selection): Hub chỉ đưa vào catalog những
+// Danh mục Hub ở quán (roadmap H3, H4; hộp "Tải game" ở trang Game): quán xem MỌI game Hub hỗ trợ, bấm Tải để chọn và tải
+// vào thư mục mình chọn, xem hàng đợi và đặt trần băng thông. Việc chọn nằm ở Hub (PUT /api/game-catalog/selection): Hub chỉ đưa vào catalog những
 // game quán đã chọn, nên mọi quán khác nhau nhận đúng danh sách của mình.
 
 // Giới hạn băng thông đặt bằng Mbps (cách quán nói về đường truyền); engine dùng byte/giây.
@@ -65,12 +67,17 @@ type HubCatalogLocal struct {
 	Error      string `json:"error"`
 	// NeedsUpdate: master đã có bản khác bản trên ổ.
 	NeedsUpdate bool `json:"needs_update"`
+	// Chosen: quán đã bấm Tải game này (hoặc đã có bản trên ổ), nên nó tự tải và tự cập nhật.
+	Chosen      bool   `json:"chosen"`
+	InstallRoot string `json:"install_root"`
 }
 
-// HubCatalogGame là một dòng của trang Danh mục Hub.
+// HubCatalogGame là một dòng của hộp "Tải game".
 type HubCatalogGame struct {
 	hubBrowseItem
 	Local *HubCatalogLocal `json:"local,omitempty"`
+	// LocalGame: quán có game cục bộ trùng tên, game Hub này không tải được.
+	LocalGame bool `json:"local_game,omitempty"`
 }
 
 type HubCatalogView struct {
@@ -113,18 +120,19 @@ func (s *GameService) HubCatalog(ctx context.Context) (*HubCatalogView, error) {
 	}
 	local := make(map[string]model.Game, len(games))
 	for _, g := range games {
-		if g.Origin != model.GameOriginLocal {
-			local[g.Name] = g
-		}
+		local[g.Name] = g
 	}
 	view := &HubCatalogView{Mode: b.Mode, SelectedCount: b.SelectedCount, Items: make([]HubCatalogGame, 0, len(b.Items))}
 	for _, it := range b.Items {
 		row := HubCatalogGame{hubBrowseItem: it}
-		if g, ok := local[it.Name]; ok {
+		if g, ok := local[it.Name]; ok && g.Origin == model.GameOriginLocal {
+			row.LocalGame = true
+		} else if ok {
 			row.Local = &HubCatalogLocal{
 				ID: g.ID, Status: g.Status, Progress: g.Progress, Version: g.Version, AutoUpdate: g.AutoUpdate,
 				Priority: g.Priority, Error: g.Error,
 				NeedsUpdate: g.RemoteInfohash != "" && g.Infohash != g.RemoteInfohash,
+				Chosen:      daChonTai(&g), InstallRoot: g.InstallRoot,
 			}
 		}
 		view.Items = append(view.Items, row)
@@ -184,6 +192,51 @@ func (s *GameService) SelectHubGames(ctx context.Context, req HubSelectionReques
 	}
 	s.Kick()
 	return &res, nil
+}
+
+// DownloadHubGame là nút Tải của hộp "Tải game": game quán chưa nhận từ Hub (quán đang "chỉ nhận game đã chọn") thì chọn
+// nó trên Hub và đọc lại catalog cho có bản ghi, rồi xếp tải vào thư mục quán chọn (SyncNowTo).
+func (s *GameService) DownloadHubGame(ctx context.Context, name, installRoot string) error {
+	if err := s.requireCafe(); err != nil {
+		return err
+	}
+	var b hubBrowse
+	if err := s.upstreamJSON(ctx, "/api/game-catalog/all", &b); err != nil {
+		return hubCatalogError(err)
+	}
+	i := slices.IndexFunc(b.Items, func(it hubBrowseItem) bool { return it.Name == name })
+	if i < 0 {
+		return fmt.Errorf("Hub không có game %s", name)
+	}
+	it := b.Items[i]
+	if !it.Available {
+		return fmt.Errorf("Hub chưa phát được %s: chờ máy master có bản", it.DisplayName)
+	}
+	// Chế độ "nhận mọi game" thì game nào cũng đã chọn; chưa chọn nghĩa là quán đang "chỉ nhận game đã chọn".
+	if !it.Selected {
+		if _, err := s.SelectHubGames(ctx, HubSelectionRequest{Mode: "selected", Add: []string{name}}); err != nil {
+			return err
+		}
+	}
+	var g model.Game
+	err := s.db.Where("name = ?", name).First(&g).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Hub vừa phát game này, vòng đọc catalog chưa tới lượt.
+		if err := s.pullCatalog(ctx); err != nil {
+			return fmt.Errorf("chưa đọc được catalog của Hub: %w", err)
+		}
+		err = s.db.Where("name = ?", name).First(&g).Error
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("catalog của Hub chưa có %s, thử lại sau ít phút", it.DisplayName)
+	}
+	if err != nil {
+		return err
+	}
+	if g.Origin == model.GameOriginLocal {
+		return fmt.Errorf("quán đã có game cục bộ tên %s: xoá hoặc đổi tên game đó trước", name)
+	}
+	return s.SyncNowTo(g.ID, installRoot)
 }
 
 // queueByNames xếp các game Hub (đã có bản master) vào hàng đợi "tải ngay". Game đang tải không bị đụng; game chưa có
@@ -409,6 +462,8 @@ func (s *GameService) Queue(now time.Time) (*QueueView, error) {
 			}
 		case upToDate:
 			continue // đã đúng bản master, không có gì để tải
+		case !daChonTai(g):
+			continue // quán chưa bấm Tải game này: không chờ gì cả
 		case !g.AutoUpdate:
 			entry.State = QueueManual
 		case !view.InWindow:

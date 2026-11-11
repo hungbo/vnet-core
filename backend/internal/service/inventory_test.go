@@ -2,11 +2,13 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/vnet/core/pkg/pagination"
+	"github.com/vnet/core/pkg/utils"
 	"gorm.io/gorm"
 )
 
@@ -35,8 +37,82 @@ func TestInventoryService_ListStockTransactions_SapXepTheoCot(t *testing.T) {
 		WithArgs(20).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
-	_, err := svc.ListStockTransactions(&pagination.Params{Page: 1, PageSize: 20, Sort: "quantity", Order: "asc", Sorted: true})
+	_, err := svc.ListStockTransactions(StockTransactionFilter{}, &pagination.Params{Page: 1, PageSize: 20, Sort: "quantity", Order: "asc", Sorted: true})
 	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Thanh lọc trang Giao dịch tồn kho: nguồn phiếu (ở đây: hệ thống xuất theo đơn), khoảng ngày theo giờ Việt Nam
+// và ô tìm kiếm (sản phẩm, ghi chú có mã đơn, người thực hiện), không dấu. Đếm
+// và lấy trang dùng cùng điều kiện, để tổng ở phân trang khớp với kết quả lọc.
+func TestInventoryService_ListStockTransactions_Loc(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewInventoryService(db, NewAuditService(db))
+
+	where := `WHERE \(transaction_type = \$1 AND reference_id IN \(SELECT id FROM orders\)\) AND created_at >= \$2 AND created_at <= \$3 AND \(unaccent\(description\) ILIKE unaccent\(\$4\)\s+OR product_id IN \(SELECT id FROM products WHERE unaccent\(name\) ILIKE unaccent\(\$5\)\)\s+OR created_by IN \(SELECT id FROM users WHERE unaccent\(full_name\) ILIKE unaccent\(\$6\) OR unaccent\(username\) ILIKE unaccent\(\$7\)\)\)`
+	tu := time.Date(2026, 11, 1, 0, 0, 0, 0, utils.VietnamLocation())
+	den := time.Date(2026, 11, 8, 23, 59, 59, 0, utils.VietnamLocation())
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "stock_transactions" `+where).
+		WithArgs("outbound", tu, den, "%sting%", "%sting%", "%sting%", "%sting%").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "stock_transactions" `+where+` ORDER BY created_at desc LIMIT \$8`).
+		WithArgs("outbound", tu, den, "%sting%", "%sting%", "%sting%", "%sting%", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err := svc.ListStockTransactions(
+		StockTransactionFilter{Kind: PhieuKhoXuatDon, DateFrom: "2026-11-01", DateTo: "2026-11-08"},
+		&pagination.Params{Page: 1, PageSize: 20, Search: "sting"})
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Lọc "Nhập tay": phiếu nhập không trỏ vào đơn nào (trang Sản phẩm trỏ vào chính
+// sản phẩm, nên reference_id có thể khác rỗng mà vẫn là phiếu tay).
+func TestInventoryService_ListStockTransactions_LocNhapTay(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewInventoryService(db, NewAuditService(db))
+
+	// Một điều kiện duy nhất thì GORM không bọc ngoặc; có thêm ngày/tìm kiếm thì
+	// bọc (xem TestInventoryService_ListStockTransactions_Loc).
+	where := `WHERE transaction_type = \$1 AND \(reference_id IS NULL OR NOT reference_id IN \(SELECT id FROM orders\)\)`
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "stock_transactions" ` + where + `$`).
+		WithArgs("inbound").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(`SELECT \* FROM "stock_transactions" `+where+` ORDER BY created_at desc LIMIT \$2`).
+		WithArgs("inbound", 20).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+	_, err := svc.ListStockTransactions(StockTransactionFilter{Kind: PhieuKhoNhapTay}, &pagination.Params{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Cột "Loại" hiện nguồn phiếu: nhập/xuất tay, xuất/hoàn theo đơn, kiểm kê. Tra
+// một câu cho cả trang xem reference_id nào là đơn hàng.
+func TestInventoryService_ListStockTransactions_NguonPhieu(t *testing.T) {
+	db, mock := newMockDB(t)
+	svc := NewInventoryService(db, NewAuditService(db))
+
+	mock.ExpectQuery(`SELECT count\(\*\) FROM "stock_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(5))
+	mock.ExpectQuery(`SELECT \* FROM "stock_transactions"`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "transaction_type", "reference_id"}).
+			AddRow("t1", "inbound", nil).      // nhập ở trang Giao dịch tồn kho
+			AddRow("t2", "outbound", "sp1").   // xuất ở trang Sản phẩm: trỏ vào sản phẩm
+			AddRow("t3", "outbound", "don1").  // bán theo đơn
+			AddRow("t4", "inbound", "don1").   // huỷ đơn, trả kho
+			AddRow("t5", "adjustment", "kk1")) // chốt kiểm kê
+	mock.ExpectQuery(`SELECT "id" FROM "orders" WHERE id IN \(\$1,\$2,\$3,\$4\)$`).
+		WithArgs("sp1", "don1", "don1", "kk1").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("don1"))
+
+	res, err := svc.ListStockTransactions(StockTransactionFilter{}, &pagination.Params{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	var kinds []string
+	for _, it := range res.Items.([]StockTransactionResponse) {
+		kinds = append(kinds, it.Kind)
+	}
+	assert.Equal(t, []string{PhieuKhoNhapTay, PhieuKhoXuatTay, PhieuKhoXuatDon, PhieuKhoHoanDon, PhieuKhoKiemKe}, kinds)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

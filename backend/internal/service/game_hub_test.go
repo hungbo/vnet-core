@@ -44,8 +44,13 @@ func TestEffectiveGameConfig(t *testing.T) {
 		assert.Equal(t, config.GameRoleCafe, got.Role)
 		assert.Equal(t, root, got.Root)
 	})
-	t.Run("thiếu một giá trị là không có vai", func(t *testing.T) {
-		for _, drop := range []string{GameHubURLKey, GameHubKeyKey, GameRootKey} {
+	t.Run("không có thư mục chung vẫn chạy vai quán: thư mục lưu chọn từng game lúc tải", func(t *testing.T) {
+		got := effectiveGameConfig(base, map[string]string{GameHubURLKey: "http://hub:1", GameHubKeyKey: testHubKey})
+		assert.Equal(t, config.GameRoleCafe, got.Role)
+		assert.Empty(t, got.Root)
+	})
+	t.Run("thiếu địa chỉ hay key là không có vai", func(t *testing.T) {
+		for _, drop := range []string{GameHubURLKey, GameHubKeyKey} {
 			st := map[string]string{}
 			for k, v := range full {
 				if k != drop {

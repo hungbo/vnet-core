@@ -11,7 +11,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -22,7 +25,7 @@ import (
 
 const gameByIDSQL = `SELECT \* FROM "games" WHERE id = \$1`
 
-// LocalFolders đọc tên, nguồn và phần tuỳ chỉnh (custom.folder) của mọi game để bỏ thư mục đã dùng.
+// LocalBrowse đọc tên, nguồn và phần tuỳ chỉnh (custom.folder) của mọi game để đánh dấu thư mục đã dùng.
 const gameNamesSQL = `SELECT "name","origin","custom" FROM "games"`
 
 var gameNameCols = []string{"name", "origin", "custom"}
@@ -54,47 +57,80 @@ func TestLaTepChayVaThuMucAn(t *testing.T) {
 	assert.False(t, thuMucAn("Riot Games"))
 }
 
-func TestLocalFolders(t *testing.T) {
+// tenThuMuc: tên của các thư mục LocalBrowse trả về, kèm dấu * nếu đã là game.
+func tenThuMuc(dirs []LocalDir) []string {
+	out := make([]string, 0, len(dirs))
+	for _, d := range dirs {
+		if d.Taken {
+			out = append(out, d.Name+"*")
+		} else {
+			out = append(out, d.Name)
+		}
+	}
+	return out
+}
+
+func TestLocalBrowse(t *testing.T) {
 	root := t.TempDir()
-	for _, d := range []string{"Zebra", "alpha", "Taken", "Liên Quân", "_riot_metadata", ".vnet-gameupdate", "bad.", "CON"} {
+	for _, d := range []string{"Zebra", "alpha", "Taken", "Liên Quân", "_riot_metadata", ".vnet-gameupdate", "$RECYCLE.BIN", "bad.", "CON", "alpha/Dota"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, d), 0o755))
 	}
-	writeEmpty(t, root, "tep-le.txt") // tệp ở gốc không phải thư mục game
+	writeEmpty(t, root, "tep-le.txt") // tệp không phải thư mục
 	svc, mock := cafeWithRoot(t, root)
 	mock.ExpectQuery(gameNamesSQL).WillReturnRows(sqlmock.NewRows(gameNameCols).AddRow("taken", model.GameOriginHub, nil))
 
-	got, err := svc.LocalFolders("")
+	got, err := svc.LocalBrowse(root)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"alpha", "Liên Quân", "Zebra"}, got,
-		"bỏ thư mục ẩn, tên máy trạm không mở được, đã là game (không phân biệt hoa thường); tên có dấu vẫn hiện (đặt tên game riêng); sắp theo tên")
+	assert.Equal(t, []string{"alpha", "Liên Quân", "Taken*", "Zebra"}, tenThuMuc(got),
+		"bỏ thư mục ẩn, của Windows, tên máy trạm không mở được; đánh dấu thư mục đã là game (không phân biệt hoa thường); sắp theo tên")
+	assert.Equal(t, filepath.Join(root, "alpha"), got[0].Path)
 	assert.NoError(t, mock.ExpectationsWereMet())
 
+	// Cấp dưới: không có gốc game chung vẫn duyệt được; tên game Hub chỉ tính ở GAME_ROOT.
+	noRoot, mock := cafeWithRoot(t, "")
+	mock.ExpectQuery(gameNamesSQL).WillReturnRows(sqlmock.NewRows(gameNameCols).AddRow("Dota", model.GameOriginHub, nil))
+	got, err = noRoot.LocalBrowse(filepath.Join(root, "alpha"))
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Dota"}, tenThuMuc(got), "ngoài GAME_ROOT, thư mục trùng tên game Hub là bản riêng của quán")
+	assert.NoError(t, mock.ExpectationsWereMet())
+
+	drives, err := noRoot.LocalBrowse("")
+	require.NoError(t, err)
+	assert.NotEmpty(t, drives, "cấp đầu là các ổ đĩa (hoặc /)")
+
+	for _, bad := range []string{"tuong-doi", `\\may\chia-se`, filepath.Join(root, "khong-co")} {
+		_, err := noRoot.LocalBrowse(bad)
+		assert.Error(t, err, bad)
+	}
 	master := NewGameService(nil, config.GameConfig{Role: config.GameRoleMaster, Root: root})
-	_, err = master.LocalFolders("")
+	_, err = master.LocalBrowse(root)
 	assert.ErrorIs(t, err, ErrGameLocalOnMaster)
-	noRoot := NewGameService(nil, config.GameConfig{Role: config.GameRoleCafe})
-	_, err = noRoot.LocalFolders("")
-	assert.ErrorIs(t, err, ErrGameNeedRoot)
 }
 
-func TestLocalLaunchers(t *testing.T) {
+func TestLocalFiles(t *testing.T) {
 	root := t.TempDir()
 	writeEmpty(t, root,
 		"Game/Run.exe", "Game/Bin/game.exe", "Game/Bin/readme.txt", "Game/Bin/helper.dll", "Game/Setup.BAT",
 		"Game/.hidden/x.exe", "Game/_vnet/y.exe", "Game/a/b/c/ok3.exe", "Game/a/b/c/d/deep.exe", "Game/a/ok.lnk")
 	svc, _ := cafeWithRoot(t, root)
 
-	got, err := svc.LocalLaunchers("Game")
+	got, err := svc.LocalFiles("Game", "")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"Run.exe", "Setup.BAT", "a/ok.lnk", "Bin/game.exe", "a/b/c/ok3.exe"}, got,
 		"tệp nông trước, bỏ thư mục ẩn và _vnet, bỏ tệp sâu quá 3 cấp thư mục, bỏ tệp không chạy được")
 
+	writeEmpty(t, root, "Game/icons/game.ico", "Game/a/b/c/x.ICO", "Game/a/b/c/d/sau.ico")
+	got, err = svc.LocalFiles("Game", LocalFileIcon)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"Run.exe", "Bin/game.exe", "icons/game.ico", "a/b/c/ok3.exe", "a/b/c/x.ICO"}, got,
+		"tệp icon là .exe và .ico, dò cả thư mục con như tệp chạy")
+
 	for _, bad := range []string{"", "..", "../x", "a/b", `a\b`, "C:", "KhongCo"} {
-		_, err := svc.LocalLaunchers(bad)
+		_, err := svc.LocalFiles(bad, "")
 		assert.Error(t, err, bad)
 	}
 	master := NewGameService(nil, config.GameConfig{Role: config.GameRoleMaster, Root: root})
-	_, err = master.LocalLaunchers("Game")
+	_, err = master.LocalFiles("Game", "")
 	assert.ErrorIs(t, err, ErrGameLocalOnMaster)
 }
 
@@ -106,7 +142,7 @@ func lienKet(t *testing.T, target, link string) {
 	}
 }
 
-func TestLocalFoldersVaLaunchers_ThuMucGameLaLienKet(t *testing.T) {
+func TestLocalBrowseVaFiles_ThuMucGameLaLienKet(t *testing.T) {
 	root, kho := t.TempDir(), t.TempDir() // kho: thư mục game của phần mềm khác (Kzone…), nằm ngoài gốc game
 	writeEmpty(t, kho, "CSGO/KZ_CSGO.exe", "CSGO/bin/cs2.exe", "CSGO/_kz/x.exe", "Khac/inner.exe", "tep.exe")
 	lienKet(t, filepath.Join(kho, "CSGO"), filepath.Join(root, "CSGO"))
@@ -116,17 +152,17 @@ func TestLocalFoldersVaLaunchers_ThuMucGameLaLienKet(t *testing.T) {
 	svc, mock := cafeWithRoot(t, root)
 	mock.ExpectQuery(gameNamesSQL).WillReturnRows(sqlmock.NewRows(gameNameCols))
 
-	got, err := svc.LocalFolders("")
+	dirs, err := svc.LocalBrowse(root)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"CSGO"}, got, "liên kết tới thư mục là thư mục game; trỏ tới tệp hay chỗ không có thì không")
+	assert.Equal(t, []string{"CSGO"}, tenThuMuc(dirs), "liên kết tới thư mục là thư mục game; trỏ tới tệp hay chỗ không có thì không")
 	assert.NoError(t, mock.ExpectationsWereMet())
 
-	got, err = svc.LocalLaunchers("CSGO")
+	got, err := svc.LocalFiles("CSGO", "")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"KZ_CSGO.exe", "bin/cs2.exe"}, got, "dò bên trong thư mục game là liên kết, vẫn bỏ _kz và không đi theo liên kết lồng bên trong")
 }
 
-func TestLocalFoldersVaLaunchers_JunctionWindows(t *testing.T) {
+func TestLocalBrowseVaFiles_JunctionWindows(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("junction chỉ có trên Windows")
 	}
@@ -137,10 +173,10 @@ func TestLocalFoldersVaLaunchers_JunctionWindows(t *testing.T) {
 	svc, mock := cafeWithRoot(t, root)
 	mock.ExpectQuery(gameNamesSQL).WillReturnRows(sqlmock.NewRows(gameNameCols))
 
-	got, err := svc.LocalFolders("")
+	dirs, err := svc.LocalBrowse(root)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"Game"}, got)
-	got, err = svc.LocalLaunchers("Game")
+	assert.Equal(t, []string{"Game"}, tenThuMuc(dirs))
+	got, err := svc.LocalFiles("Game", "")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"KZ_Game.exe"}, got)
 }
@@ -184,7 +220,7 @@ func TestCreateLocal_Luu(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectBegin()
-	args := make([]driver.Value, 28) // số cột của bảng games; chỉ vài giá trị cần khớp
+	args := make([]driver.Value, 29) // số cột của bảng games; chỉ vài giá trị cần khớp
 	for i := range args {
 		args[i] = sqlmock.AnyArg()
 	}
@@ -229,26 +265,26 @@ func TestCreateLocal_TrungTen(t *testing.T) {
 }
 
 // kho: thư mục game của phần mềm khác (Kzone…) nằm ngoài GAME_ROOT, thêm thẳng không qua junction.
-func TestLocalFoldersVaLaunchers_GocTuyY(t *testing.T) {
+func TestLocalBrowseVaFiles_GocTuyY(t *testing.T) {
 	root, kho := t.TempDir(), t.TempDir()
 	writeEmpty(t, kho, "VALORANT/Riot Client/RiotClientServices.exe", "VALORANT/_kz/x.exe", "Roblox/r.exe", "tep.exe")
 	require.NoError(t, os.MkdirAll(filepath.Join(kho, "_kz"), 0o755))
 	svc, mock := cafeWithRoot(t, root)
 	mock.ExpectQuery(gameNamesSQL).WillReturnRows(sqlmock.NewRows(gameNameCols).AddRow("Roblox", model.GameOriginLocal, nil))
 
-	got, err := svc.LocalFolders(kho + string(filepath.Separator)) // gạch cuối như người gõ
+	dirs, err := svc.LocalBrowse(kho + string(filepath.Separator)) // gạch cuối như người gõ
 	require.NoError(t, err)
-	assert.Equal(t, []string{"VALORANT"}, got, "cùng luật với GAME_ROOT: bỏ thư mục ẩn, tệp lẻ, tên đã là game")
+	assert.Equal(t, []string{"Roblox*", "VALORANT"}, tenThuMuc(dirs), "cùng luật với GAME_ROOT: bỏ thư mục ẩn, tệp lẻ; đánh dấu tên đã là game")
 	assert.NoError(t, mock.ExpectationsWereMet())
 
-	got, err = svc.LocalLaunchers(filepath.Join(kho, "VALORANT"))
+	got, err := svc.LocalFiles(filepath.Join(kho, "VALORANT"), "")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"Riot Client/RiotClientServices.exe"}, got)
 
 	for _, bad := range []string{"Online Games", "a/b", `\\may\share`, "//may/share", filepath.Join(kho, "KhongCo")} {
-		_, err := svc.LocalFolders(bad)
+		_, err := svc.LocalBrowse(bad)
 		assert.Error(t, err, bad)
-		_, err = svc.LocalLaunchers(bad)
+		_, err = svc.LocalFiles(bad, "")
 		assert.Error(t, err, bad)
 	}
 	assert.NoError(t, mock.ExpectationsWereMet(), "đường dẫn sai không đọc DB")
@@ -299,7 +335,7 @@ func expectInsertGame(mock sqlmock.Sqlmock) *[]driver.Value {
 	var seen []driver.Value
 	mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectBegin()
-	args := make([]driver.Value, 28) // số cột của bảng games
+	args := make([]driver.Value, 29) // số cột của bảng games
 	for i := range args {
 		args[i] = ghiNhan{&seen}
 	}
@@ -363,7 +399,7 @@ func TestCreateLocal_TuThuMucNgoaiGameRoot(t *testing.T) {
 
 // Thư mục Roblox của Kzone khi Roblox đã là game của Hub: ngoài GAME_ROOT vẫn chọn được (thêm dưới tên khác), trong
 // GAME_ROOT thì không (đó là thư mục Hub tải về). Thư mục game cục bộ đã dùng thì ẩn ở mọi nơi.
-func TestLocalFolders_TrungTenGameHub(t *testing.T) {
+func TestLocalBrowse_TrungTenGameHub(t *testing.T) {
 	root, kho := t.TempDir(), t.TempDir()
 	for _, d := range []string{"Roblox", "Khac"} {
 		require.NoError(t, os.MkdirAll(filepath.Join(root, d), 0o755))
@@ -380,12 +416,12 @@ func TestLocalFolders_TrungTenGameHub(t *testing.T) {
 	mock.ExpectQuery(gameNamesSQL).WillReturnRows(rows())
 	mock.ExpectQuery(gameNamesSQL).WillReturnRows(rows())
 
-	got, err := svc.LocalFolders("")
+	got, err := svc.LocalBrowse(root)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"Khac"}, got, "trong GAME_ROOT, thư mục trùng tên game Hub là của Hub")
-	got, err = svc.LocalFolders(kho)
+	assert.Equal(t, []string{"Khac", "Roblox*"}, tenThuMuc(got), "trong GAME_ROOT, thư mục trùng tên game Hub là của Hub")
+	got, err = svc.LocalBrowse(kho)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"Khac", "Roblox"}, got, "ngoài GAME_ROOT: Roblox của Kzone chọn được, VALORANT đã là game cục bộ thì ẩn")
+	assert.Equal(t, []string{"Khac", "Roblox", "VALORANT*"}, tenThuMuc(got), "ngoài GAME_ROOT: Roblox của Kzone chọn được, VALORANT đã là game cục bộ")
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -476,7 +512,7 @@ func TestCreateLocal_ThayGameHubChuaTai(t *testing.T) {
 		mock.ExpectBegin()
 		mock.ExpectExec(`DELETE FROM "games" WHERE id = \$1 AND status = \$2 AND version = 0`).
 			WithArgs(hubID, model.GameStatusNotInstalled).WillReturnResult(sqlmock.NewResult(0, 1))
-		args := make([]driver.Value, 28)
+		args := make([]driver.Value, 29)
 		for i := range args {
 			args[i] = sqlmock.AnyArg()
 		}
@@ -541,6 +577,51 @@ func TestPullCatalog_KhongDeGameCucBo(t *testing.T) {
 	require.NoError(t, svc.pullCatalog(context.Background()))
 	settings()
 	assert.Empty(t, svc.Info().LocalClash)
+}
+
+// Vòng nền và nút Tải cùng đọc catalog có một game mới: không được cùng INSERT (lượt sau vấp unique idx_games_name).
+// Lượt sau phải chờ lượt trước xong, thấy dòng đã có và chỉ UPDATE.
+func TestPullCatalog_HaiLuotCungLuc(t *testing.T) {
+	items := []CatalogItem{{Name: "Roblox", DisplayName: "Roblox", Launcher: "RobloxPlayerBeta.exe", Version: 1, Infohash: "h1"}}
+	var den atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Giữ lượt đầu một chút để lượt kia (nếu không bị khoá) cũng kịp đọc catalog, như khi hai lượt chạy song song.
+		den.Add(1)
+		for het := time.Now().Add(300 * time.Millisecond); den.Load() < 2 && time.Now().Before(het); {
+			time.Sleep(5 * time.Millisecond)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 0, "data": items})
+	}))
+	defer srv.Close()
+	db, mock := newMockDB(t)
+	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe, UpstreamURL: srv.URL, CatalogKey: "k"})
+	svc.http = http.DefaultClient
+
+	const sel = `SELECT \* FROM "games" WHERE name = \$1`
+	// Chậm như PostgreSQL thật: lượt kia, nếu không bị khoá, SELECT trong lúc lượt này chưa kịp INSERT.
+	mock.ExpectQuery(sel).WithArgs("Roblox", 1).WillReturnRows(sqlmock.NewRows([]string{"id"})).WillDelayFor(50 * time.Millisecond)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO "games"`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("g1"))
+	mock.ExpectCommit()
+	mock.ExpectQuery(sel).WithArgs("Roblox", 1).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "origin"}).AddRow("g1", "Roblox", model.GameOriginHub))
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE "games" SET`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	var wg sync.WaitGroup
+	errs := make([]error, 2)
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = svc.pullCatalog(context.Background())
+		}()
+	}
+	wg.Wait()
+	require.NoError(t, errs[0])
+	require.NoError(t, errs[1])
+	assert.NoError(t, mock.ExpectationsWereMet(), "một INSERT rồi một UPDATE, không phải hai lần SELECT chưa thấy rồi cùng INSERT")
 }
 
 func TestDelete_QuanChiXoaDuocGameCucBo(t *testing.T) {
@@ -636,6 +717,78 @@ func TestUpdate_GameCucBoDoiThuMuc(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.loi)
 			assert.NoError(t, mock.ExpectationsWereMet(), "lỗi phải trả về trước khi ghi DB")
+		})
+	}
+}
+
+// Đổi tên game cục bộ (nhường tên cho game Hub cùng tên): thư mục giữ nguyên nhờ custom.folder.
+func TestUpdate_GameCucBoDoiTen(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	const countSQL = `SELECT count\(\*\) FROM "games" WHERE name = \$1 AND id <> \$2`
+	row := func(name, origin, custom string) *sqlmock.Rows {
+		return sqlmock.NewRows([]string{"id", "name", "origin", "custom"}).AddRow(id, name, origin, custom)
+	}
+
+	for _, tc := range []struct {
+		ten, name, custom, moi, customMoi string
+	}{
+		{"thư mục là tên cũ", "Naraka VNG", `{"client_root":"F:\\Online Games"}`, " Naraka VNG KZ ",
+			`{"client_root":"F:\\Online Games","folder":"Naraka VNG"}`},
+		{"đã có thư mục riêng thì giữ", "ROS Legacy", `{"client_root":"E:\\Online Games","folder":"Mirae Labs Launcher"}`,
+			"ROS Legacy KZ", `{"client_root":"E:\\Online Games","folder":"Mirae Labs Launcher"}`},
+		{"đổi về đúng tên thư mục thì bỏ custom.folder", "Roblox KZ", `{"client_root":"E:\\Online Games","folder":"Roblox"}`,
+			"Roblox", `{"client_root":"E:\\Online Games"}`},
+	} {
+		t.Run(tc.ten, func(t *testing.T) {
+			svc, mock := cafeWithRoot(t, t.TempDir())
+			mock.ExpectQuery(gameByIDSQL).WillReturnRows(row(tc.name, model.GameOriginLocal, tc.custom))
+			mock.ExpectQuery(countSQL).WithArgs(strings.TrimSpace(tc.moi), id).
+				WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+			expectGameUpdate(mock, `UPDATE "games" SET "custom"=\$1,"name"=\$2,"updated_at"=\$3 WHERE "id" = \$4`,
+				tc.customMoi, strings.TrimSpace(tc.moi), anyTime{}, id)
+			mock.ExpectQuery(gameByIDSQL).WillReturnRows(row(strings.TrimSpace(tc.moi), model.GameOriginLocal, tc.customMoi))
+			moi := tc.moi
+			_, err := svc.Update(id, &UpdateGameRequest{Name: &moi})
+			require.NoError(t, err)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+
+	t.Run("tên trống hoặc như cũ thì không đổi", func(t *testing.T) {
+		svc, mock := cafeWithRoot(t, t.TempDir())
+		for _, moi := range []string{"", "  ", "Roblox"} {
+			mock.ExpectQuery(gameByIDSQL).WillReturnRows(row("Roblox", model.GameOriginLocal, `{}`))
+			mock.ExpectQuery(gameByIDSQL).WillReturnRows(row("Roblox", model.GameOriginLocal, `{}`))
+			_, err := svc.Update(id, &UpdateGameRequest{Name: &moi})
+			require.NoError(t, err)
+		}
+		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("tên đã có game khác dùng", func(t *testing.T) {
+		svc, mock := cafeWithRoot(t, t.TempDir())
+		mock.ExpectQuery(gameByIDSQL).WillReturnRows(row("Roblox", model.GameOriginLocal, `{}`))
+		mock.ExpectQuery(countSQL).WithArgs("Steam", id).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(1))
+		moi := "Steam"
+		_, err := svc.Update(id, &UpdateGameRequest{Name: &moi})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "đã có game khác dùng")
+		assert.NoError(t, mock.ExpectationsWereMet(), "không ghi DB")
+	})
+
+	for _, tc := range []struct{ ten, origin, moi, loi string }{
+		{"game của Hub", model.GameOriginHub, "Roblox KZ", "chỉ đổi được tên game cục bộ"},
+		{"tên có dấu gạch", model.GameOriginLocal, `Roblox\KZ`, "tên game chỉ gồm"},
+		{"tên thiết bị Windows", model.GameOriginLocal, "CON", "tên game chỉ gồm"},
+	} {
+		t.Run(tc.ten, func(t *testing.T) {
+			svc, mock := cafeWithRoot(t, t.TempDir())
+			mock.ExpectQuery(gameByIDSQL).WillReturnRows(row("Roblox", tc.origin, `{}`))
+			moi := tc.moi
+			_, err := svc.Update(id, &UpdateGameRequest{Name: &moi})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.loi)
+			assert.NoError(t, mock.ExpectationsWereMet(), "lỗi phải trả về trước khi đọc hay ghi DB")
 		})
 	}
 }

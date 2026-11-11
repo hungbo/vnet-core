@@ -115,7 +115,11 @@ var Catalog = []Permission{
 	{"orders.create", "Tạo đơn hàng", "orders"},
 	{"orders.update", "Sửa đơn hàng", "orders"},
 	{"orders.delete", "Xoá đơn hàng", "orders"},
-	{"orders.status", "Đổi trạng thái đơn", "orders"},
+	// Xác nhận, huỷ và thu tiền là ba việc khác nhau, cấp lẻ được: trước đây
+	// "Đổi trạng thái đơn" (orders.status) gồm cả xác nhận lẫn huỷ, và qua API đó
+	// còn thu được tiền dù thiếu orders.pay.
+	{"orders.confirm", "Xác nhận đơn (cả duyệt đơn nạp tiền mặt, trạng thái món)", "orders"},
+	{"orders.cancel", "Huỷ đơn (cả từ chối đơn nạp)", "orders"},
 	{"orders.split", "Tách đơn", "orders"},
 	{"orders.pay", "Thanh toán đơn", "orders"},
 	{"orders.print", "In phiếu", "orders"},
@@ -168,6 +172,7 @@ var Catalog = []Permission{
 	{"shifts.handover", "Bàn giao ca", "shifts"},
 
 	{"transactions.view", "Xem sổ giao dịch", "reports"},
+	{"transactions.delete", "Xoá khoản ở trang Tiền vào", "reports"},
 	{"reports.view", "Xem báo cáo", "reports"},
 
 	{"settings.view", "Xem cài đặt", "settings"},
@@ -246,7 +251,7 @@ func StaffCodes() []string {
 		"curfew.view",
 		"categories.view",
 		"products.view",
-		"orders.view", "orders.create", "orders.update", "orders.status", "orders.split",
+		"orders.view", "orders.create", "orders.update", "orders.confirm", "orders.cancel", "orders.split",
 		"orders.pay", "orders.print",
 		"website_rules.view",
 		"games.view",
@@ -261,6 +266,11 @@ func StaffCodes() []string {
 		"upload.file",
 	}
 }
+
+// RetiredCodes là mã đã bỏ khỏi danh mục nhưng còn trong database của quán đang
+// chạy. Giữ lại để quay về bản trước vẫn chạy (bản đó gác API bằng mã cũ), còn
+// trang Phân quyền thì ẩn đi vì không API nào của bản này dùng nữa.
+var RetiredCodes = []string{"orders.status"}
 
 // Codes trả về toàn bộ mã trong danh mục.
 func Codes() []string {

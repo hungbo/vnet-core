@@ -10,6 +10,8 @@ export interface OpenOrders {
   /** Đã duyệt/làm món, chưa thanh toán. */
   unpaid_count: number;
   amount: number;
+  /** Hội viên còn nợ các đơn này; đơn khách vãng lai không có tên. */
+  member_names?: string[];
 }
 
 /** Lớp của dòng bảng cho máy có đơn chưa thu tiền — xem style ở hai trang. */

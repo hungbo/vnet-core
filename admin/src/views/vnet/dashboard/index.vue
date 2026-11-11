@@ -22,8 +22,8 @@ import { fetchAllMachines } from '../machines/modules/all-machines';
 
 const { t: $t } = useI18n();
 // Nút thiếu quyền của API tương ứng thì ẩn: nạp tiền (members.topup), sửa ghi
-// chú máy (machines.update), xem đơn (orders.view), xác nhận/huỷ đơn
-// (orders.status), thu tiền đơn (orders.pay).
+// chú máy (machines.update), xem đơn (orders.view), xác nhận đơn (orders.confirm),
+// huỷ đơn (orders.cancel), thu tiền đơn (orders.pay).
 const { hasAuth } = useAuth();
 
 // Ba số nằm bên phải tiêu đề bảng chứ không thành hàng thẻ riêng: nhường chỗ cho
@@ -38,7 +38,8 @@ const activeSessions = ref<any[]>([]);
 // Bảng "Máy đang hoạt động": máy đang chơi (lấy từ phiên) và máy sẵn sàng (đã
 // bật, chưa ai ngồi). Máy sẵn sàng không có phiên nên các cột phiên để trống.
 // Máy đã tắt mà còn đơn chưa thu tiền cũng ở lại bảng: đó đúng là máy khách vừa
-// bỏ về, mất khỏi bảng thì nhân viên không còn thấy nó nữa.
+// bỏ về, mất khỏi bảng thì nhân viên không còn thấy nó nữa. Máy đã tắt mà có ghi
+// chú (hỏng chuột, khách đặt trước…) cũng ở lại cho tới khi xoá ghi chú.
 const activeMachines = ref<any[]>([]);
 
 const statusTags: Record<string, { type: 'warning' | 'success' | 'danger'; label: string }> = {
@@ -201,7 +202,7 @@ function formatMoney(v: number) {
 // --- Lệnh cho nhiều máy ---------------------------------------------------------
 // Tích nhiều máy để thông báo, khởi động lại hay tắt một lần; chưa tích máy nào thì
 // nút trên tiêu đề thông báo tới mọi máy đang bật. Máy đã tắt (còn ở bảng vì đơn
-// chưa thu tiền) không tích được: lệnh không tới nơi.
+// chưa thu tiền hay có ghi chú) không tích được: lệnh không tới nơi.
 // reserve-selection giữ ô đã tích khi bảng tải lại theo thời gian thực (khoá theo
 // machine_id); lấy trạng thái mới nhất của máy từ bảng, không từ lúc tích.
 const tableRef = ref<any>(null);
@@ -248,13 +249,19 @@ async function refreshStats() {
   // Ghi chú nằm ở máy chứ không ở phiên, nên tra từ danh sách máy vừa tải.
   const noteOf = new Map(machineList.map(m => [m.id, m.note || '']));
   const available = machineList
-    .filter(m => (m.status === 'available' || donMo.has(m.id)) && !playing.has(m.id))
+    .filter(m => (m.status === 'available' || donMo.has(m.id) || m.note) && !playing.has(m.id))
     .map(m => ({ machine_id: m.id, machine_code: m.machine_code, status: m.status, note: m.note || '' }))
     .sort((a, b) => String(a.machine_code).localeCompare(String(b.machine_code)));
   activeMachines.value = [
     ...activeSessions.value.map(r => ({ ...r, status: 'in_use', note: noteOf.get(r.machine_id) || '' })),
     ...available
-  ].map(r => ({ ...r, open_orders: donMo.get(r.machine_id) }));
+  ].map(r => {
+    const open_orders = donMo.get(r.machine_id);
+    // Khách trả máy hay tắt máy thì dòng không còn hội viên: hiện lại tên người còn
+    // nợ để quầy biết gọi ai, tới khi thu xong đơn. Khách đang ngồi thì tên đã có.
+    const owing = open_orders?.member_names?.filter(n => n !== r.member_name).join(', ');
+    return { ...r, open_orders, owing };
+  });
 
   const rows: any[] = Array.isArray(revenue) ? revenue : revenue?.items || [];
   stats.value[2].value = formatMoney(rows.reduce((sum, r) => sum + (r.revenue || 0), 0));
@@ -357,6 +364,9 @@ onBeforeUnmount(() => {
               {{ row.member_name || '-' }}
             </ElLink>
             <span v-else>{{ row.member_name }}</span>
+            <div v-if="row.owing" class="machine-owing">
+              {{ $t('vnetPages.dashboard.owing', { names: row.owing }) }}
+            </div>
           </template>
         </ElTableColumn>
         <ElTableColumn prop="started_at" :label="$t('vnetPages.dashboard.startTime')" min-width="140" sortable>
@@ -482,7 +492,7 @@ onBeforeUnmount(() => {
             {{ $t('vnetPages.orders.batchPay', { count: ordersPayable.length }) }}
           </ElButton>
           <ElButton
-            v-if="ordersSelected.length && hasAuth('orders.status')"
+            v-if="ordersSelected.length && hasAuth('orders.confirm')"
             type="primary"
             :loading="ordersBusy"
             :disabled="!selectedConfirmable.length"
@@ -491,7 +501,7 @@ onBeforeUnmount(() => {
             {{ $t('vnetPages.orders.batchConfirm', { count: selectedConfirmable.length }) }}
           </ElButton>
           <ElButton
-            v-if="ordersSelected.length && hasAuth('orders.status')"
+            v-if="ordersSelected.length && hasAuth('orders.cancel')"
             type="danger"
             plain
             :loading="ordersBusy"
@@ -575,6 +585,13 @@ onBeforeUnmount(() => {
    trang Máy trạm. !important vì dòng đang rê chuột và cột cố định tự tô nền ô. */
 :deep(.el-table__row.machine-row--open-orders > td.el-table__cell) {
   background-color: var(--el-color-danger-light-8) !important;
+}
+
+/* Giữ màu chữ thường: chữ đỏ trên nền đỏ của dòng không đọc được ở giao diện tối. */
+.machine-owing {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .orders-footer {

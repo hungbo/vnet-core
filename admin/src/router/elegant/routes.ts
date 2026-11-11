@@ -765,15 +765,6 @@ export const generatedRoutes = [
         }
       },
       {
-        name: 'vnet_hub-games',
-        path: '/vnet/hub-games',
-        component: 'view.vnet_hub-games',
-        meta: {
-          title: 'vnet_hub-games',
-          i18nKey: 'route.vnet_hub-games'
-        }
-      },
-      {
         name: 'vnet_inventory-counts',
         path: '/vnet/inventory-counts',
         component: 'view.vnet_inventory-counts',

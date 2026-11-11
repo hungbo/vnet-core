@@ -11,19 +11,16 @@ import (
 	"github.com/boombuler/barcode/qr"
 )
 
-// Ngân hàng nhận tiền QR mà điện thoại ở quầy đọc được thông báo. BIN do Ngân
-// hàng Nhà nước cấp, nằm trong mã VietQR; Package là tên gói app trên Android,
-// điện thoại dùng để biết thông báo nào là của ngân hàng.
+// Ngân hàng nhận tiền QR. BIN do Ngân hàng Nhà nước cấp, nằm trong mã VietQR.
 type qrBank struct {
-	Code    string `json:"code"`
-	Name    string `json:"name"`
-	BIN     string `json:"bin"`
-	Package string `json:"package"`
+	Code string `json:"code"`
+	Name string `json:"name"`
+	BIN  string `json:"bin"`
 }
 
 var qrBanks = map[string]qrBank{
-	"mb":  {Code: "mb", Name: "MB Bank", BIN: "970422", Package: "com.mbmobile"},
-	"vcb": {Code: "vcb", Name: "Vietcombank", BIN: "970436", Package: "com.VCB"},
+	"mb":  {Code: "mb", Name: "MB Bank", BIN: "970422"},
+	"vcb": {Code: "vcb", Name: "Vietcombank", BIN: "970436"},
 }
 
 // tlv ghép một trường EMVCo: mã 2 chữ số, độ dài 2 chữ số, giá trị.

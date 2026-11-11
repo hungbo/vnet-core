@@ -1,17 +1,14 @@
 package service
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/vnet/core/internal/model"
 )
 
 func TestKiemTraCaiDatQR(t *testing.T) {
@@ -26,7 +23,6 @@ func TestKiemTraCaiDatQR(t *testing.T) {
 		"so tk qua ngan":    {"account_no": "12345"},
 		"han qua ngan":      {"expire_minutes": 1},
 		"han qua dai":       {"expire_minutes": 120},
-		"ghi khoa dt thang": {"device_key": "abc"},
 	} {
 		assert.Error(t, kiemTraCaiDatQR(in), name)
 	}
@@ -50,71 +46,54 @@ func TestTaoMaNap(t *testing.T) {
 	}
 }
 
-func TestQRPay_VerifyDevice(t *testing.T) {
-	db, mock := newMockDB(t)
-	now := time.Date(2026, 10, 31, 18, 0, 0, 0, time.UTC)
-	s := NewQRPayService(db, nil, nil, nil, nil)
-	s.now = func() time.Time { return now }
-	const key = "khoa-bi-mat"
-	body := []byte(`{"package":"com.mbmobile"}`)
-	ts := strconv.FormatInt(now.UnixMilli(), 10)
-	mac := hmac.New(sha256.New, []byte(key))
-	mac.Write([]byte(ts + "\n"))
-	mac.Write(body)
-	sig := hex.EncodeToString(mac.Sum(nil))
-
-	expectKey := func() {
-		mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1 AND key = \$2`).
-			WithArgs(QRPaymentGroup, QRDeviceKeyKey, 1).
-			WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}).AddRow(QRPaymentGroup, QRDeviceKeyKey, `"`+key+`"`))
-	}
-
-	expectKey()
-	assert.NoError(t, s.VerifyDevice(ts, sig, body))
-
-	expectKey()
-	assert.ErrorIs(t, s.VerifyDevice(ts, sig, []byte(`{"package":"com.VCB"}`)), ErrQRBadSignature)
-
-	expectKey()
-	old := strconv.FormatInt(now.Add(-10*time.Minute).UnixMilli(), 10)
-	assert.Error(t, s.VerifyDevice(old, sig, body))
-
-	require.NoError(t, mock.ExpectationsWereMet())
+func TestQRPay_SourceOnline(t *testing.T) {
+	now := time.Now()
+	s := &QRPayService{}
+	assert.False(t, s.sourceOnline(now), "chưa đọc được lần nào")
+	s.lastSync = now.Add(-20 * time.Second)
+	assert.True(t, s.sourceOnline(now))
+	s.lastSync = now.Add(-51 * time.Second)
+	assert.False(t, s.sourceOnline(now), "lỡ 3 lần đọc liên tiếp")
 }
 
-func TestQRPay_PairHuyMaSauNamLanSai(t *testing.T) {
-	db, mock := newMockDB(t)
-	s := NewQRPayService(db, nil, &AuditService{db: db}, nil, nil)
-	now := time.Date(2026, 10, 31, 18, 0, 0, 0, time.UTC)
-	s.now = func() time.Time { return now }
-	s.pairCode, s.pairExpires = "123456", now.Add(qrPairCodeTTL)
+func TestQRPay_DeleteNotification(t *testing.T) {
+	const id = "11111111-1111-1111-1111-111111111111"
+	const chon = `SELECT \* FROM "bank_notifications" WHERE id = \$1 AND "bank_notifications"."deleted_at" IS NULL`
+	const xoa = `UPDATE "bank_notifications" SET "deleted_at"=\$1 WHERE \(id = \$2 AND status NOT IN \(\$3,\$4\)\) AND "bank_notifications"."deleted_at" IS NULL`
+	cols := []string{"id", "amount", "incoming", "status", "content"}
 
-	for i := 0; i < qrPairMaxFails; i++ {
-		_, err := s.Pair(fmt.Sprintf("%06d", i))
-		require.Error(t, err)
-	}
-	// Mã đúng cũng không dùng được nữa: không có truy vấn nào xuống database.
-	_, err := s.Pair("123456")
-	assert.Error(t, err)
-	assert.Empty(t, s.pairCode)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
+	t.Run("chua cong tien thi xoa mem", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		s := NewQRPayService(db, nil, &AuditService{db: db}, nil, nil)
+		mock.ExpectQuery(chon).WillReturnRows(sqlmock.NewRows(cols).AddRow(id, 50000, true, model.BankNotifUnmatched, "chuyen nham"))
+		mock.ExpectBegin()
+		mock.ExpectExec(xoa).WithArgs(anyTime{}, id, model.BankNotifMatched, model.BankNotifAssigned).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectCommit()
+		mock.ExpectBegin()
+		mock.ExpectQuery(`INSERT INTO "audit_logs"`).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("a"))
+		mock.ExpectCommit()
 
-func TestQRPay_PhoneOnline(t *testing.T) {
-	s := NewQRPayService(nil, nil, nil, nil, nil)
-	now := time.Date(2026, 10, 31, 19, 0, 0, 0, time.UTC)
+		require.NoError(t, s.DeleteNotification(id, "22222222-2222-2222-2222-222222222222"))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 
-	// App cũ chỉ có nhịp HTTP: online nếu nhịp gần nhất chưa quá 3 phút.
-	s.phone.LastSeen = now.Add(-2 * time.Minute)
-	assert.True(t, s.phoneOnline(now))
-	s.phone.LastSeen = now.Add(-4 * time.Minute)
-	assert.False(t, s.phoneOnline(now))
+	t.Run("da cong tien thi khong xoa", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		s := NewQRPayService(db, nil, &AuditService{db: db}, nil, nil)
+		mock.ExpectQuery(chon).WillReturnRows(sqlmock.NewRows(cols).AddRow(id, 50000, true, model.BankNotifMatched, "VNET123"))
+		mock.ExpectBegin()
+		mock.ExpectExec(xoa).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectCommit()
 
-	// Đã từng nối WebSocket: rớt là tính theo lúc rớt, không theo nhịp.
-	s.wsCapable = true
-	s.phone.LastSeen = now.Add(-10 * time.Second)
-	s.wsLostAt = now.Add(-5 * time.Second)
-	assert.True(t, s.phoneOnline(now), "còn trong thời gian chờ nối lại")
-	s.wsLostAt = now.Add(-15 * time.Second)
-	assert.False(t, s.phoneOnline(now), "rớt quá 10 giây là mất kết nối, dù nhịp HTTP mới 10 giây")
+		assert.ErrorContains(t, s.DeleteNotification(id, ""), "đã cộng tiền")
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("ma khong hop le khong cham database", func(t *testing.T) {
+		db, mock := newMockDB(t)
+		s := NewQRPayService(db, nil, &AuditService{db: db}, nil, nil)
+		assert.Error(t, s.DeleteNotification("abc", ""))
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 }

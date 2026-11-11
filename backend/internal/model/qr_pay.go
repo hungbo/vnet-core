@@ -1,10 +1,12 @@
 package model
 
-import "time"
+import (
+	"time"
 
-// Nạp tiền bằng QR, tự xác nhận nhờ điện thoại ở quầy đọc thông báo biến động
-// số dư của app ngân hàng (app vnet-bank-notification). Kế hoạch:
-// research/nap-qr-dien-thoai-android-plan.md.
+	"gorm.io/gorm"
+)
+
+// Nạp tiền bằng QR, tự xác nhận nhờ giao dịch ThueAPI báo qua Hub.
 
 const (
 	QRRequestPending   = "pending"
@@ -14,7 +16,7 @@ const (
 )
 
 // QRRequest là một mã QR đã đưa cho khách: gắn với đúng một đơn nạp chờ duyệt.
-// Code nằm trong nội dung chuyển khoản; thông báo ngân hàng mang Code này về là
+// Code nằm trong nội dung chuyển khoản; giao dịch ngân hàng mang Code này về là
 // biết tiền của đơn nào.
 type QRRequest struct {
 	ID        string     `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
@@ -28,7 +30,7 @@ type QRRequest struct {
 	Status    string     `gorm:"type:varchar(20);not null;default:pending;index" json:"status"`
 	ExpiresAt time.Time  `gorm:"type:timestamptz;not null;index" json:"expires_at"`
 	PaidAt    *time.Time `gorm:"type:timestamptz" json:"paid_at"`
-	// Thông báo ngân hàng đã khớp với mã này.
+	// Giao dịch ngân hàng đã khớp với mã này.
 	BankNotificationID *string   `gorm:"type:uuid" json:"bank_notification_id"`
 	CreatedBy          *string   `gorm:"type:uuid" json:"created_by"`
 	CreatedAt          time.Time `gorm:"default:now();index" json:"created_at,omitempty"`
@@ -45,18 +47,18 @@ const (
 	BankNotifUnparsed  = "unparsed"  // không đọc được số tiền
 )
 
-// BankNotification là nguyên văn một thông báo điện thoại ở quầy gửi về, kèm
-// phần máy chủ đọc được và đã làm gì với nó. Giữ nguyên văn để đối chiếu sao kê
-// và để sửa bộ đọc khi app ngân hàng đổi định dạng.
+// BankNotification là một giao dịch tiền vào của tài khoản nhận QR và việc máy chủ
+// đã làm với nó. Các dòng cũ có Package là tên app ngân hàng: thông báo điện thoại
+// đọc được trước khi chuyển sang ThueAPI; dòng mới có Package "thueapi".
 type BankNotification struct {
 	ID         string    `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	ReceivedAt time.Time `gorm:"type:timestamptz;not null;index" json:"received_at"`
-	// Giờ app ngân hàng đăng thông báo, theo đồng hồ điện thoại.
+	// Giờ giao dịch theo nguồn báo.
 	PostedAt *time.Time `gorm:"type:timestamptz" json:"posted_at"`
 	Package  string     `gorm:"type:varchar(100);not null" json:"package"`
 	Title    string     `gorm:"type:text" json:"title"`
 	Text     string     `gorm:"type:text" json:"text"`
-	// Băm gói + nguyên văn: app ngân hàng hay đăng lại cùng một thông báo.
+	// Dấu riêng của giao dịch: nguồn báo có thể gửi lại cùng một giao dịch.
 	Hash          string    `gorm:"type:varchar(64);not null;uniqueIndex" json:"-"`
 	Bank          string    `gorm:"type:varchar(10)" json:"bank"`
 	Amount        int64     `gorm:"default:0" json:"amount"`
@@ -74,4 +76,6 @@ type BankNotification struct {
 	Note          string    `gorm:"type:text" json:"note"`
 	CreatedAt     time.Time `gorm:"default:now()" json:"created_at,omitempty"`
 	UpdatedAt     time.Time `gorm:"default:now()" json:"updated_at,omitempty"`
+	// Xoá mềm: dòng còn giữ Hash, nguồn báo gửi lại cùng giao dịch không làm nó hiện lại.
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
 }

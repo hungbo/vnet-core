@@ -330,3 +330,39 @@ func TestLivePermissions_MemberKeepsTokenPermissions(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, performRequest(router.ServeHTTP, "GET", "/test", nil).Code)
 }
+
+// API đổi trạng thái đơn gác "có ít nhất một trong ba quyền", handler kiểm quyền
+// đúng việc bằng HasPermission.
+func TestAnyPermissionRequired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tc := range []struct {
+		perms []string
+		code  int
+	}{
+		{[]string{"orders.cancel"}, http.StatusOK},
+		{[]string{"*"}, http.StatusOK},
+		{[]string{"orders.view"}, 403},
+		{nil, 403},
+	} {
+		router := gin.New()
+		router.GET("/test", func(c *gin.Context) {
+			if tc.perms != nil {
+				c.Set("permissions", tc.perms)
+			}
+		}, AnyPermissionRequired("orders.confirm", "orders.cancel", "orders.pay"), func(c *gin.Context) {
+			assert.True(t, HasPermission(c, "orders.cancel"))
+			assert.False(t, HasPermission(c, "orders.pay") && tc.perms[0] != "*")
+			c.JSON(http.StatusOK, gin.H{"ok": true})
+		})
+
+		w := performRequest(router.ServeHTTP, "GET", "/test", nil)
+		if tc.code == http.StatusOK {
+			assert.Equal(t, http.StatusOK, w.Code, "%v", tc.perms)
+			continue
+		}
+		var resp testResponse
+		json.Unmarshal(w.Body.Bytes(), &resp)
+		assert.Equal(t, tc.code, resp.Code, "%v", tc.perms)
+	}
+}

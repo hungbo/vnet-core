@@ -103,7 +103,6 @@ declare module "@elegant-router/types" {
     "vnet_feedback": "/vnet/feedback";
     "vnet_games": "/vnet/games";
     "vnet_hardware": "/vnet/hardware";
-    "vnet_hub-games": "/vnet/hub-games";
     "vnet_inventory-counts": "/vnet/inventory-counts";
     "vnet_machine-assets": "/vnet/machine-assets";
     "vnet_machine-groups": "/vnet/machine-groups";
@@ -259,7 +258,6 @@ declare module "@elegant-router/types" {
     | "vnet_feedback"
     | "vnet_games"
     | "vnet_hardware"
-    | "vnet_hub-games"
     | "vnet_inventory-counts"
     | "vnet_machine-assets"
     | "vnet_machine-groups"

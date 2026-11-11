@@ -1,11 +1,7 @@
 package service
 
 import (
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -16,22 +12,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/vnet/core/internal/hub"
 	"github.com/vnet/core/internal/model"
 	"github.com/vnet/core/pkg/pagination"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
-// Nạp tiền bằng QR, tự xác nhận nhờ điện thoại ở quầy (app vnet-bank-notification).
+// Nạp tiền bằng QR, tự xác nhận nhờ giao dịch ThueAPI báo qua Hub (bank_sync.go).
 //
 //  1. Khách (hoặc quầy) xin nạp X đồng bằng QR: tạo đơn nạp chờ như bình thường,
 //     kèm một mã nạp (VN + 6 ký tự) và mã VietQR có sẵn số tài khoản quán, số
 //     tiền, nội dung là mã nạp.
-//  2. Khách chuyển khoản. App ngân hàng trên điện thoại ở quầy hiện thông báo;
-//     app vnet-bank-notification gửi nguyên văn về Ingest.
-//  3. Ingest đọc số tiền + mã: khớp đúng một yêu cầu đang chờ và đúng số tiền
+//  2. Khách chuyển khoản. ThueAPI gọi webhook của Hub, Hub báo quán, quán đọc giao dịch mới.
+//  3. match đọc số tiền + mã: khớp đúng một yêu cầu đang chờ và đúng số tiền
 //     thì duyệt đơn bằng chính OrderService.Pay (cộng tiền, nạp tặng, báo số dư).
 //     Không khớp thì nằm ở trang "Tiền vào" cho nhân viên xử lý.
 //
@@ -39,7 +32,6 @@ import (
 
 const (
 	QRPaymentGroup  = "qr_payment"
-	QRDeviceKeyKey  = "device_key" // bí mật: không bao giờ trả qua API cài đặt
 	PaymentMethodQR = "qr"
 
 	qrKeyEnabled       = "enabled"
@@ -52,20 +44,6 @@ const (
 	qrDefaultExpireMinutes = 10
 	qrMinAmount            = 1000
 	qrMaxAmount            = 50_000_000
-	// Điện thoại gửi nhịp mỗi 60 giây; quá 3 phút không thấy là mất kết nối.
-	qrPhoneOfflineAfter = 3 * time.Minute
-	// WebSocket của điện thoại: máy chủ ping mỗi 10 giây, 25 giây không nghe gì
-	// là kết nối chết (điện thoại mất mạng không kịp đóng socket); rớt quá 10
-	// giây mới báo mất kết nối.
-	qrWSPingEvery = 10 * time.Second
-	qrWSReadWait  = 25 * time.Second
-	qrWSGrace     = 10 * time.Second
-	qrPairCodeTTL = 5 * time.Minute
-	// Mã ghép chỉ 6 số và route ghép không cần đăng nhập: sai bấy nhiêu lần là
-	// huỷ mã, không thì người trong mạng quán dò hết 1 triệu mã trong 5 phút,
-	// lấy được khoá điện thoại rồi tự "báo tiền về" cho mã QR của chính mình.
-	qrPairMaxFails  = 5
-	qrSignatureSkew = 5 * time.Minute
 	// Mã nạp lấy từ bảng chữ không có 0/O, 1/I/L.
 	qrCodeAlphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
 )
@@ -104,9 +82,6 @@ var reAccountNo = regexp.MustCompile(`^[0-9]{6,19}$`)
 
 // kiemTraCaiDatQR kiểm nhóm cài đặt qr_payment trước khi lưu.
 func kiemTraCaiDatQR(in map[string]interface{}) error {
-	if _, ok := in[QRDeviceKeyKey]; ok {
-		return errors.New("khoá điện thoại chỉ đặt được bằng cách ghép điện thoại")
-	}
 	if v, ok := in[qrKeyBank]; ok {
 		if s, _ := v.(string); s != "" {
 			if _, known := qrBanks[s]; !known {
@@ -138,17 +113,6 @@ func kiemTraCaiDatQR(in map[string]interface{}) error {
 	return nil
 }
 
-type qrPhoneState struct {
-	LastSeen     time.Time
-	LastNotifAt  time.Time
-	AppVersion   string
-	Queue        int
-	Battery      int
-	Charging     bool
-	ListenerOK   bool
-	BankPackages []string
-}
-
 type QRPayService struct {
 	db      *gorm.DB
 	hub     *hub.Hub
@@ -157,23 +121,23 @@ type QRPayService struct {
 	members *MemberService
 	now     func() time.Time
 
-	mu          sync.Mutex
-	pairCode    string
-	pairExpires time.Time
-	pairFails   int
-	phone       qrPhoneState
-	wasOnline   bool
+	// hubAccess trả địa chỉ Hub và key của quán; trống là quán chưa nối Hub.
+	hubAccess func() (url, key string)
+	kick      chan struct{} // có tin Hub báo giao dịch mới: đọc ngay, không đợi tới lượt
 
-	// Kết nối WebSocket của điện thoại (ServeDevice). Có kết nối là online; rớt
-	// thì sau qrWSGrace báo mất kết nối ngay, không đợi 3 phút không có nhịp.
-	// wsCapable: điện thoại này từng nối WebSocket (app cũ chỉ có nhịp HTTP).
-	wsConn    *websocket.Conn
-	wsCapable bool
-	wsLostAt  time.Time
+	mu        sync.Mutex
+	lastSync  time.Time // lần cuối đọc được Hub
+	wasOnline bool
 }
 
 func NewQRPayService(db *gorm.DB, h *hub.Hub, audit *AuditService, orders *OrderService, members *MemberService) *QRPayService {
-	return &QRPayService{db: db, hub: h, audit: audit, orders: orders, members: members, now: time.Now}
+	return &QRPayService{db: db, hub: h, audit: audit, orders: orders, members: members, now: time.Now, kick: make(chan struct{}, 1)}
+}
+
+// WithHubAccess cho biết đọc giao dịch ngân hàng ở đâu. GameService giữ cấu hình Hub của quán.
+func (s *QRPayService) WithHubAccess(f func() (url, key string)) *QRPayService {
+	s.hubAccess = f
+	return s
 }
 
 func (s *QRPayService) config() QRConfig { return qrConfigFrom(settingsGroup(s.db, QRPaymentGroup)) }
@@ -189,8 +153,7 @@ func (s *QRPayService) changed(topic string) {
 type QRStatus struct {
 	Enabled      bool       `json:"enabled"`
 	Configured   bool       `json:"configured"`
-	Paired       bool       `json:"paired"`
-	PhoneOnline  bool       `json:"phone_online"`
+	SourceOnline bool       `json:"source_online"` // đọc được giao dịch từ Hub
 	Ready        bool       `json:"ready"`
 	AutoConfirm  bool       `json:"auto_confirm"`
 	Bank         string     `json:"bank"`
@@ -198,25 +161,11 @@ type QRStatus struct {
 	AccountName  string     `json:"account_name"`
 	LastSeen     *time.Time `json:"last_seen"`
 	LastNotifAt  *time.Time `json:"last_notification_at"`
-	AppVersion   string     `json:"app_version"`
-	Queue        int        `json:"queue"`
-	Battery      int        `json:"battery"`
-	Charging     bool       `json:"charging"`
-	ListenerOK   bool       `json:"listener_ok"`
 	ExpireMinute int64      `json:"expire_minutes"`
-	WSConnected  bool       `json:"ws_connected"`
 }
 
-func (s *QRPayService) phoneOnline(now time.Time) bool {
-	if s.wsConn != nil {
-		return true
-	}
-	if s.wsCapable {
-		// Rớt Wi-Fi vài giây hay máy chủ vừa khởi động lại: app tự nối lại ngay,
-		// chưa coi là mất kết nối.
-		return now.Sub(s.wsLostAt) < qrWSGrace
-	}
-	return !s.phone.LastSeen.IsZero() && now.Sub(s.phone.LastSeen) < qrPhoneOfflineAfter
+func (s *QRPayService) sourceOnline(now time.Time) bool {
+	return !s.lastSync.IsZero() && now.Sub(s.lastSync) < qrSourceOfflineAfter
 }
 
 func timePtr(t time.Time) *time.Time {
@@ -228,41 +177,24 @@ func timePtr(t time.Time) *time.Time {
 
 func (s *QRPayService) Status() QRStatus {
 	cfg := s.config()
-	paired := s.deviceKey() != ""
+	var lastNotif *time.Time
+	s.db.Unscoped().Model(&model.BankNotification{}).Select("MAX(received_at)").Scan(&lastNotif)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	now := s.now()
-	online := paired && s.phoneOnline(now)
-	lastNotif := s.phone.LastNotifAt
-	if lastNotif.IsZero() {
-		// Máy chủ vừa khởi động lại: lấy từ sổ thay vì báo "chưa có".
-		var t *time.Time
-		s.db.Model(&model.BankNotification{}).Select("MAX(received_at)").Scan(&t)
-		if t != nil {
-			lastNotif = *t
-		}
-	}
-	st := QRStatus{
+	online := s.sourceOnline(s.now())
+	return QRStatus{
 		Enabled:      cfg.Enabled,
 		Configured:   cfg.configured(),
-		Paired:       paired,
-		PhoneOnline:  online,
+		SourceOnline: online,
 		Ready:        cfg.Enabled && cfg.configured() && online,
 		AutoConfirm:  cfg.AutoConfirm,
 		Bank:         cfg.Bank,
 		BankName:     qrBanks[cfg.Bank].Name,
 		AccountName:  cfg.AccountName,
-		LastSeen:     timePtr(s.phone.LastSeen),
-		LastNotifAt:  timePtr(lastNotif),
-		AppVersion:   s.phone.AppVersion,
-		Queue:        s.phone.Queue,
-		Battery:      s.phone.Battery,
-		Charging:     s.phone.Charging,
-		ListenerOK:   s.phone.ListenerOK,
-		WSConnected:  s.wsConn != nil,
+		LastSeen:     timePtr(s.lastSync),
+		LastNotifAt:  lastNotif,
 		ExpireMinute: cfg.ExpireMinutes,
 	}
-	return st
 }
 
 // --- Tạo mã nạp ---------------------------------------------------------------
@@ -339,14 +271,14 @@ func (s *QRPayService) CreateTopup(req CreateQRTopupRequest, createdBy string) (
 	return s.respond(cfg, r, order.OrderCode)
 }
 
-// qrReady: cùng điều kiện cho mọi mã QR — đã bật, đã cài tài khoản, điện thoại online.
+// qrReady: cùng điều kiện cho mọi mã QR — đã bật, đã cài tài khoản, đang đọc được giao dịch.
 func (s *QRPayService) qrReady() (QRConfig, error) {
 	cfg := s.config()
 	if !cfg.Enabled || !cfg.configured() {
 		return cfg, errors.New("quán chưa bật thanh toán bằng QR")
 	}
-	if !s.Status().PhoneOnline {
-		return cfg, errors.New("điện thoại báo tiền ở quầy đang mất kết nối, tạm thời không thanh toán bằng QR được")
+	if !s.Status().SourceOnline {
+		return cfg, errors.New("máy chủ quán đang mất kết nối tới Hub, tạm thời không thanh toán bằng QR được")
 	}
 	return cfg, nil
 }
@@ -515,310 +447,12 @@ func (s *QRPayService) ExpireDue() (int, error) {
 		// Nhật ký mã QR ở trang "Tiền vào"; hết hạn không đi qua yêu cầu HTTP nào.
 		s.changed("qr")
 	}
-	s.watchPhone()
 	return n, nil
 }
-
-// watchPhone báo trang quản lý và máy trạm khi điện thoại vừa mất/có lại kết nối.
-func (s *QRPayService) watchPhone() {
-	s.mu.Lock()
-	online := s.phoneOnline(s.now())
-	flipped := online != s.wasOnline
-	s.wasOnline = online
-	s.mu.Unlock()
-	if flipped {
-		s.changed("qr")
-	}
-}
-
-// --- Ghép điện thoại -----------------------------------------------------------
-
-func (s *QRPayService) deviceKey() string {
-	var row model.SystemSetting
-	if s.db.Where("group_name = ? AND key = ?", QRPaymentGroup, QRDeviceKeyKey).First(&row).Error != nil {
-		return ""
-	}
-	return decodeSettingValue(row.Value)
-}
-
-// StartPairing: quầy bấm "Ghép điện thoại", màn hình hiện mã 6 số sống 5 phút.
-func (s *QRPayService) StartPairing(actorID string) (string, time.Time, error) {
-	n, err := rand.Int(rand.Reader, big.NewInt(1_000_000))
-	if err != nil {
-		return "", time.Time{}, err
-	}
-	code := fmt.Sprintf("%06d", n.Int64())
-	s.mu.Lock()
-	s.pairCode, s.pairExpires, s.pairFails = code, s.now().Add(qrPairCodeTTL), 0
-	expires := s.pairExpires
-	s.mu.Unlock()
-	s.audit.Log(&LogAuditRequest{Action: "qr_pairing_start", EntityType: "system_setting", UserID: optionalUUID(actorID)})
-	return code, expires, nil
-}
-
-type QRPairResponse struct {
-	DeviceKey string            `json:"device_key"`
-	Banks     map[string]string `json:"banks"` // tên gói app → mã ngân hàng
-}
-
-// Pair: điện thoại gửi mã 6 số, nhận khoá riêng dùng ký mọi lần gửi về sau.
-// Ghép lại là thay khoá: điện thoại cũ hết gửi được.
-func (s *QRPayService) Pair(code string) (*QRPairResponse, error) {
-	s.mu.Lock()
-	ok := s.pairCode != "" && hmac.Equal([]byte(s.pairCode), []byte(strings.TrimSpace(code))) && s.now().Before(s.pairExpires)
-	if ok {
-		s.pairCode = ""
-	} else if s.pairCode != "" {
-		s.pairFails++
-		if s.pairFails >= qrPairMaxFails {
-			s.pairCode = ""
-		}
-	}
-	s.mu.Unlock()
-	if !ok {
-		return nil, errors.New("mã ghép sai hoặc đã hết hạn — sai 5 lần thì phải bấm Ghép điện thoại để lấy mã mới")
-	}
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return nil, err
-	}
-	key := hex.EncodeToString(raw)
-	value := `"` + key + `"`
-	row := model.SystemSetting{GroupName: QRPaymentGroup, Key: QRDeviceKeyKey, Value: value}
-	if err := s.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "group_name"}, {Name: "key"}},
-		DoUpdates: clause.Assignments(map[string]interface{}{"value": value, "updated_at": s.now()}),
-	}).Create(&row).Error; err != nil {
-		return nil, err
-	}
-	s.dropDevice()
-	s.audit.Log(&LogAuditRequest{Action: "qr_pairing_done", EntityType: "system_setting"})
-	s.changed("qr")
-	banks := map[string]string{}
-	for code, b := range qrBanks {
-		banks[b.Package] = code
-	}
-	return &QRPairResponse{DeviceKey: key, Banks: banks}, nil
-}
-
-func (s *QRPayService) Unpair(actorID string) error {
-	if err := s.db.Where("group_name = ? AND key = ?", QRPaymentGroup, QRDeviceKeyKey).
-		Delete(&model.SystemSetting{}).Error; err != nil {
-		return err
-	}
-	s.dropDevice()
-	s.audit.Log(&LogAuditRequest{Action: "qr_unpair", EntityType: "system_setting", UserID: optionalUUID(actorID)})
-	s.changed("qr")
-	return nil
-}
-
-// dropDevice quên điện thoại cũ (ghép lại hoặc gỡ): xoá trạng thái, đóng kết nối
-// WebSocket đang mở — khoá cũ hết hiệu lực thì kết nối của nó cũng vậy.
-func (s *QRPayService) dropDevice() {
-	s.mu.Lock()
-	s.phone = qrPhoneState{}
-	conn := s.wsConn
-	s.wsConn, s.wsCapable = nil, false
-	s.mu.Unlock()
-	if conn != nil {
-		_ = conn.Close()
-	}
-}
-
-// ServeDevice giữ kết nối WebSocket của điện thoại cho tới khi nó rớt. Điện
-// thoại gửi trạng thái (pin, hàng đợi...) theo nhịp; máy chủ ping để biết kết
-// nối còn sống. Có kết nối và mất kết nối đều báo trang quản lý ngay.
-func (s *QRPayService) ServeDevice(conn *websocket.Conn) {
-	now := s.now()
-	s.mu.Lock()
-	old := s.wsConn
-	s.wsConn, s.wsCapable = conn, true
-	s.phone.LastSeen = now
-	s.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
-	}
-	s.watchPhone()
-
-	conn.SetReadLimit(64 << 10)
-	_ = conn.SetReadDeadline(now.Add(qrWSReadWait))
-	conn.SetPongHandler(func(string) error {
-		s.mu.Lock()
-		s.phone.LastSeen = s.now()
-		s.mu.Unlock()
-		return conn.SetReadDeadline(s.now().Add(qrWSReadWait))
-	})
-	done := make(chan struct{})
-	go func() {
-		t := time.NewTicker(qrWSPingEvery)
-		defer t.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case <-t.C:
-				if conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)) != nil {
-					return
-				}
-			}
-		}
-	}()
-	for {
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			break
-		}
-		_ = conn.SetReadDeadline(s.now().Add(qrWSReadWait))
-		var hb QRHeartbeat
-		if json.Unmarshal(msg, &hb) == nil {
-			s.Heartbeat(hb)
-		}
-	}
-	close(done)
-	_ = conn.Close()
-	s.mu.Lock()
-	if s.wsConn == conn {
-		s.wsConn, s.wsLostAt = nil, s.now()
-	}
-	s.mu.Unlock()
-	time.AfterFunc(qrWSGrace+time.Second, s.watchPhone)
-}
-
-var ErrQRBadSignature = errors.New("chữ ký không hợp lệ")
 
 // errQROrderPaidElsewhere: đơn của mã đã được trả bằng cách khác (quầy thu tiền
 // mặt, duyệt tay) trước khi tiền QR về — tiền này đang thừa, phải để nhân viên xử lý.
 var errQROrderPaidElsewhere = errors.New("đơn đã được thanh toán bằng cách khác trước khi tiền QR về — tiền này chưa cộng cho ai")
-
-// VerifyDevice kiểm chữ ký HMAC-SHA256(khoá, timestamp + "\n" + body) của điện
-// thoại. Khoá không bao giờ đi trên mạng sau lúc ghép; timestamp chặn gửi lại.
-func (s *QRPayService) VerifyDevice(timestamp, signature string, body []byte) error {
-	key := s.deviceKey()
-	if key == "" {
-		return errors.New("chưa ghép điện thoại")
-	}
-	ms, err := strconv.ParseInt(timestamp, 10, 64)
-	if err != nil {
-		return ErrQRBadSignature
-	}
-	if d := s.now().Sub(time.UnixMilli(ms)); d > qrSignatureSkew || d < -qrSignatureSkew {
-		return errors.New("đồng hồ điện thoại lệch quá 5 phút")
-	}
-	mac := hmac.New(sha256.New, []byte(key))
-	mac.Write([]byte(timestamp + "\n"))
-	mac.Write(body)
-	want := hex.EncodeToString(mac.Sum(nil))
-	if !hmac.Equal([]byte(want), []byte(strings.ToLower(signature))) {
-		return ErrQRBadSignature
-	}
-	return nil
-}
-
-type QRHeartbeat struct {
-	AppVersion   string   `json:"app_version"`
-	Queue        int      `json:"queue"`
-	Battery      int      `json:"battery"`
-	Charging     bool     `json:"charging"`
-	ListenerOK   bool     `json:"listener_ok"`
-	BankPackages []string `json:"bank_packages"`
-}
-
-func (s *QRPayService) Heartbeat(in QRHeartbeat) QRStatus {
-	s.mu.Lock()
-	last := s.phone.LastNotifAt
-	s.phone = qrPhoneState{
-		LastSeen: s.now(), LastNotifAt: last, AppVersion: in.AppVersion, Queue: in.Queue,
-		Battery: in.Battery, Charging: in.Charging, ListenerOK: in.ListenerOK, BankPackages: in.BankPackages,
-	}
-	s.mu.Unlock()
-	s.watchPhone()
-	return s.Status()
-}
-
-// --- Nhận thông báo ngân hàng ------------------------------------------------
-
-type BankNotifyRequest struct {
-	Package    string `json:"package"`
-	Title      string `json:"title"`
-	Text       string `json:"text"`
-	PostedAt   int64  `json:"posted_at"`   // ms, đồng hồ điện thoại
-	ReceivedAt int64  `json:"received_at"` // ms, lúc app VNET đọc được
-}
-
-type BankNotifyResult struct {
-	ID     string `json:"id,omitempty"`
-	Status string `json:"status"`
-	Code   string `json:"code,omitempty"`
-}
-
-func bankNotifHash(pkg, title, text string) string {
-	sum := sha256.Sum256([]byte(pkg + "\n" + title + "\n" + text))
-	return hex.EncodeToString(sum[:])
-}
-
-func clip(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n])
-	}
-	return s
-}
-
-// Ingest lưu một thông báo và, nếu được, khớp nó với một mã nạp đang chờ.
-// Gửi lại cùng một thông báo (điện thoại thử lại sau lỗi mạng) trả "duplicate".
-func (s *QRPayService) Ingest(in BankNotifyRequest) (*BankNotifyResult, error) {
-	if strings.TrimSpace(in.Package) == "" || strings.TrimSpace(in.Text) == "" {
-		return nil, errors.New("thiếu tên gói hoặc nội dung thông báo")
-	}
-	p := parseBankNotification(in.Package, in.Title, in.Text)
-	now := s.now()
-	n := model.BankNotification{
-		ReceivedAt:    now,
-		Package:       clip(in.Package, 100),
-		Title:         in.Title,
-		Text:          in.Text,
-		Hash:          bankNotifHash(in.Package, in.Title, in.Text),
-		Bank:          p.Bank,
-		Amount:        p.Amount,
-		Incoming:      p.Incoming,
-		BankRef:       clip(p.BankRef, 60),
-		SenderName:    clip(p.SenderName, 120),
-		SenderAccount: clip(p.SenderAccount, 40),
-		Content:       p.Content,
-		Status:        model.BankNotifUnmatched,
-	}
-	if in.PostedAt > 0 {
-		t := time.UnixMilli(in.PostedAt)
-		n.PostedAt = &t
-	}
-	switch {
-	case p.Bank == "":
-		// Thông báo thử của chính app vnet-bank-notification (hoặc gói lạ): ghi lại để thấy
-		// đường gửi chạy, nhưng không bao giờ thành tiền vào cộng được cho ai.
-		n.Status, n.Note = model.BankNotifIgnored, "không phải app ngân hàng"
-	case !p.Parsed:
-		n.Status = model.BankNotifUnparsed
-	case !p.Incoming:
-		n.Status, n.Note = model.BankNotifIgnored, "tiền ra"
-	}
-
-	res := s.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hash"}}, DoNothing: true}).Create(&n)
-	if res.Error != nil {
-		return nil, res.Error
-	}
-	if res.RowsAffected == 0 {
-		return &BankNotifyResult{Status: "duplicate"}, nil
-	}
-	s.mu.Lock()
-	s.phone.LastNotifAt = now
-	s.mu.Unlock()
-
-	if n.Status == model.BankNotifUnmatched {
-		s.match(&n)
-	}
-	s.changed("bank-notifications")
-	return &BankNotifyResult{ID: n.ID, Status: n.Status, Code: n.Code}, nil
-}
 
 // match tìm mã nạp trong nội dung và quyết định: duyệt, gợi ý, hay để nhân viên.
 func (s *QRPayService) match(n *model.BankNotification) {
@@ -988,6 +622,30 @@ func (s *QRPayService) Ignore(id, actorID, note string) error {
 	return nil
 }
 
+// DeleteNotification ẩn một dòng khỏi trang Tiền vào. Khoản đã cộng cho hội viên thì
+// không xoá được: xoá không lấy lại được tiền, chỉ làm mất dấu để đối chiếu sao kê.
+func (s *QRPayService) DeleteNotification(id, actorID string) error {
+	var n model.BankNotification
+	if !laUUID(id) || s.db.Where("id = ?", id).First(&n).Error != nil {
+		return errors.New("không tìm thấy khoản tiền vào")
+	}
+	res := s.db.Where("id = ? AND status NOT IN ?", id, []string{model.BankNotifMatched, model.BankNotifAssigned}).
+		Delete(&model.BankNotification{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return errors.New("khoản này đã cộng tiền cho hội viên, không xoá được")
+	}
+	s.audit.Log(&LogAuditRequest{
+		Action: "bank_notification_delete", EntityType: "bank_notification", EntityID: id, UserID: optionalUUID(actorID),
+		Description: fmt.Sprintf("Xoá khoản tiền vào %s: %s", formatMoney(n.Amount), clip(n.Content, 120)),
+		Metadata: map[string]interface{}{"amount": n.Amount, "incoming": n.Incoming, "status": n.Status, "bank_ref": n.BankRef, "content": n.Content},
+	})
+	s.changed("bank-notifications")
+	return nil
+}
+
 type BankNotificationFilter struct {
 	DateFrom string `form:"date_from"`
 	DateTo   string `form:"date_to"`
@@ -1014,7 +672,8 @@ func (s *QRPayService) List(f BankNotificationFilter, params pagination.Params) 
 	q := s.db.Table("bank_notifications AS n").
 		Joins("LEFT JOIN members m ON m.id = n.member_id").
 		Joins("LEFT JOIN orders o ON o.id = n.order_id").
-		Joins("LEFT JOIN users u ON u.id = n.handled_by")
+		Joins("LEFT JOIN users u ON u.id = n.handled_by").
+		Where("n.deleted_at IS NULL")
 	q = locKhoangNgay(q, "n.received_at", f.DateFrom, f.DateTo)
 	if f.Status != "" {
 		q = q.Where("n.status = ?", f.Status)
