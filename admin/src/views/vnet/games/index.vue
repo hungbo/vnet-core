@@ -31,6 +31,7 @@ const info = ref<{
   key_grace_until?: string;
   events_connected: boolean;
   local_clash?: string[];
+  not_in_catalog?: string[];
 }>({
   role: '',
   root: '',
@@ -111,6 +112,16 @@ const shownRows = computed(() => {
         khongDau([r.custom?.display_name, r.display_name, r.name, r.category].filter(Boolean).join(' ')).includes(q))
   );
 });
+
+// Game Hub quán đang dùng mà Hub không còn gửi (máy chủ tính sau mỗi lượt đọc catalog): tên hiển thị như ở bảng.
+const notInCatalogNames = computed(() =>
+  (info.value.not_in_catalog || [])
+    .map(n => {
+      const r = rows.value.find(x => x.name === n);
+      return r?.custom?.display_name || r?.display_name || n;
+    })
+    .join(', ')
+);
 
 function formatSize(v: number) {
   if (!v) return '-';
@@ -750,6 +761,10 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
       <ElAlert v-if="!info.role" type="info" :closable="false" show-icon style="margin-bottom: 16px">
         {{ $t('vnetPages.games.offHint') }}
         {{ offStatus }}
+      </ElAlert>
+
+      <ElAlert v-if="isCafe && notInCatalogNames" type="warning" :closable="false" show-icon class="mb-16px">
+        {{ $t('vnetPages.games.notInCatalog', { names: notInCatalogNames }) }}
       </ElAlert>
 
       <ElTable v-loading="loading" :data="shownRows" border stripe class="fill-table" height="100%" style="width: 100%">

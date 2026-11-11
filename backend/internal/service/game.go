@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -159,6 +160,8 @@ type GameService struct {
 	eventsDial *websocket.Dialer  // test thay được; nil là dùng bộ nối có rào chặn địa chỉ nội bộ
 	localClash map[string]bool    // tên game cục bộ trùng một game của catalog; giữ mu
 	stats      *menuStats         // xếp hạng lượt mở đã đếm (nhãn Hot, thứ tự menu); giữ mu
+	// notInCatalog: game Hub quán đang dùng mà lượt đọc catalog gần nhất không có, nên không nhận bản mới; giữ mu
+	notInCatalog []string
 
 	mu          sync.Mutex
 	runCtx      context.Context // context của vòng nền; nil khi chưa chạy
@@ -269,6 +272,8 @@ type GameInfo struct {
 	// LocalClash: game cục bộ mà catalog cũng đang phát cùng tên. Quán giữ bản cục bộ; muốn dùng bản của Hub thì xoá
 	// game cục bộ đó (tệp trên ổ giữ nguyên) rồi chờ lượt đọc catalog kế tiếp.
 	LocalClash []string `json:"local_clash,omitempty"`
+	// NotInCatalog: game Hub quán đang dùng mà catalog không còn gửi (xem ghiNgoaiCatalog), nên không nhận bản mới.
+	NotInCatalog []string `json:"not_in_catalog,omitempty"`
 }
 
 func (s *GameService) Info() GameInfo {
@@ -307,6 +312,7 @@ func (s *GameService) Info() GameInfo {
 		info.LocalClash = append(info.LocalClash, name)
 	}
 	sort.Strings(info.LocalClash)
+	info.NotInCatalog = slices.Clone(s.notInCatalog)
 	s.mu.Unlock()
 	return info
 }
@@ -1781,7 +1787,42 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 		}
 		s.supersede(it.Name, it.Infohash)
 	}
+	s.ghiNgoaiCatalog(items)
 	return nil
+}
+
+// ghiNgoaiCatalog ghi lại các game Hub quán đang dùng (đang bật, đã tải hoặc đã bấm Tải) mà catalog vừa đọc không có.
+// Catalog không gửi thì dòng của game ở quán đứng yên ở bản cũ mà không báo gì: quán đã bỏ chọn nó, chuyển sang "chỉ
+// nhận game đã chọn" lúc nó còn đang tải (Hub cũ), hoặc Hub tạm dừng phát. Trang Game báo để quán chọn lại.
+// Đọc DB lỗi thì giữ danh sách cũ: catalog vẫn đã được ghi xong.
+func (s *GameService) ghiNgoaiCatalog(items []CatalogItem) {
+	q := s.db.Where("origin = ? AND enabled = ?", model.GameOriginHub, true)
+	if len(items) > 0 {
+		names := make([]string, 0, len(items))
+		for _, it := range items {
+			names = append(names, it.Name)
+		}
+		q = q.Where("name NOT IN ?", names)
+	}
+	var games []model.Game
+	if err := q.Order("name").Find(&games).Error; err != nil {
+		return
+	}
+	var out []string
+	for i := range games {
+		if daChonTai(&games[i]) {
+			out = append(out, games[i].Name)
+		}
+	}
+	s.mu.Lock()
+	cu := s.notInCatalog
+	s.notInCatalog = out
+	s.mu.Unlock()
+	for _, name := range out {
+		if !slices.Contains(cu, name) {
+			log.Printf("[game] %s: Hub không còn gửi game này cho quán nên quán không nhận bản mới (chọn lại ở hộp Tải game)", name)
+		}
+	}
 }
 
 func (s *GameService) install(ctx context.Context, g model.Game) error {

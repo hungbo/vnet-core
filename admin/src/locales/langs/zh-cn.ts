@@ -868,6 +868,7 @@ const local: App.I18n.Schema = {
       replaceHubConfirm:
         'Hub 已有游戏“{name}”，但网吧尚未下载。要用此本地游戏替换吗？Hub 版本将不再下载；若要重新使用，请删除本地游戏。',
       localClash: '本地游戏与 Hub 游戏重名：{names}。网吧保留本地版本；若要使用 Hub 版本，请删除本地游戏（磁盘上的文件保留）。',
+      notInCatalog: 'Hub 不再向网吧发送以下游戏的新版本：{names}。请打开“下载游戏”，在该游戏上点击“获取更新”；若没有此按钮，说明 Hub 已暂停下发该游戏。',
       runFirst: '启动游戏前先运行',
       runFirstHint: '游戏目录内的程序会依次运行并等待完成（每步最多 30 秒）后再打开游戏。最多 5 步。',
       addStep: '添加步骤',
@@ -2157,12 +2158,15 @@ const local: App.I18n.Schema = {
       download: '下载',
       hint: '在未下载的游戏上点击“下载”，然后选择服务器上的保存目录。已下载的游戏显示在游戏页面的表格中，开启“自动更新”时会获取新版本。',
       actionFailed: '操作失败',
+      reselect: '获取更新',
+      reselected: '已在 Hub 上重新选择 {name}，网吧将自动下载新版本',
       states: {
         downloaded: '已下载',
         downloading: '下载中',
         queued: '等待下载',
         error: '错误',
         needs_update: '有新版本',
+        not_selected: '不再获取更新',
         not_downloaded: '未下载',
         local_game: '已有同名本地游戏'
       }

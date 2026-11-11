@@ -877,6 +877,8 @@ const local: App.I18n.Schema = {
         'Hub đã có game "{name}" nhưng quán chưa tải. Thay bằng game cục bộ này? Game của Hub sẽ không tải về nữa; muốn dùng lại bản của Hub thì xoá game cục bộ.',
       localClash:
         'Game cục bộ trùng tên với game của Hub: {names}. Quán giữ bản cục bộ; muốn dùng bản của Hub thì xoá game cục bộ (tệp trên ổ giữ nguyên).',
+      notInCatalog:
+        'Hub không còn gửi bản mới của: {names}. Mở "Tải game" và bấm "Nhận bản mới" ở game đó; không có nút này thì Hub đang tạm dừng phát game đó.',
       runFirst: 'Chạy trước khi mở game',
       runFirstHint:
         'Các chương trình trong thư mục game chạy lần lượt và được chờ xong (tối đa 30 giây mỗi bước) trước khi mở game. Tối đa 5 bước.',
@@ -2185,12 +2187,15 @@ const local: App.I18n.Schema = {
       download: 'Tải',
       hint: 'Bấm Tải ở game chưa tải rồi chọn thư mục lưu trên máy chủ. Game đã tải hiện ở bảng trang Game và tự nhận bản mới khi bật "Tự cập nhật".',
       actionFailed: 'Không thực hiện được',
+      reselect: 'Nhận bản mới',
+      reselected: 'Đã chọn lại {name} trên Hub, quán sẽ tự tải bản mới',
       states: {
         downloaded: 'Đã tải',
         downloading: 'Đang tải',
         queued: 'Chờ tải',
         error: 'Lỗi',
         needs_update: 'Có bản mới',
+        not_selected: 'Không nhận bản mới',
         not_downloaded: 'Chưa tải',
         local_game: 'Có game cục bộ cùng tên'
       }

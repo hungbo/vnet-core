@@ -22,6 +22,7 @@ interface CatalogRow {
   available: boolean;
   version: number;
   mandatory: boolean;
+  selected: boolean; // có trong catalog của quán (Hub); quán "nhận mọi game" thì luôn đúng
   local_game?: boolean;
   local?: {
     id: string;
@@ -94,6 +95,22 @@ async function loadLimits() {
     limits.value = (await client.get('/games/limits')) as any;
   } catch {
     // Không có trần đã lưu thì để 0 (không giới hạn).
+  }
+}
+
+// Game quán đang dùng mà Hub không gửi cho quán nữa (bỏ chọn, hoặc rơi khỏi lựa chọn lúc quán chuyển sang "chỉ nhận game
+// đã chọn" khi nó còn đang tải): đứng yên ở bản cũ. Nhận bản mới = chọn lại trên Hub; quán tự cập nhật như mọi game khác.
+function khongNhanBanMoi(r: CatalogRow) {
+  return !r.selected && !r.local_game && Boolean(r.local?.chosen);
+}
+
+async function receiveUpdates(r: CatalogRow) {
+  try {
+    await client.put('/games/hub-selection', { mode: 'selected', add: [r.name] });
+    ElMessage.success($t('vnetPages.hubGames.reselected', { name: r.display_name }));
+    load();
+  } catch (e: any) {
+    ElMessage.error(e?.message || $t('vnetPages.hubGames.actionFailed'));
   }
 }
 
@@ -322,12 +339,15 @@ function formatTime(v?: string) {
           <ElTag v-if="row.local?.needs_update && row.local.version > 0" type="warning" size="small" class="ml-6px">
             {{ $t('vnetPages.hubGames.states.needs_update') }}
           </ElTag>
+          <ElTag v-if="khongNhanBanMoi(row as CatalogRow)" type="warning" size="small" class="ml-6px">
+            {{ $t('vnetPages.hubGames.states.not_selected') }}
+          </ElTag>
           <ElTooltip v-if="row.local?.status === 'error' && row.local.error" :content="row.local.error">
             <span class="ml-6px cursor-help text-12px">?</span>
           </ElTooltip>
         </template>
       </ElTableColumn>
-      <ElTableColumn v-if="canEdit" :label="$t('vnetPages.common.action')" width="100" fixed="right">
+      <ElTableColumn v-if="canEdit" :label="$t('vnetPages.common.action')" width="130" fixed="right">
         <template #default="{ row }">
           <ElButton
             v-if="tabOf(row as CatalogRow) === 'not_downloaded' && !row.local_game"
@@ -337,6 +357,15 @@ function formatTime(v?: string) {
             @click="emit('download', row as CatalogRow)"
           >
             {{ $t('vnetPages.hubGames.download') }}
+          </ElButton>
+          <ElButton
+            v-else-if="khongNhanBanMoi(row as CatalogRow)"
+            size="small"
+            type="warning"
+            :disabled="!row.available"
+            @click="receiveUpdates(row as CatalogRow)"
+          >
+            {{ $t('vnetPages.hubGames.reselect') }}
           </ElButton>
         </template>
       </ElTableColumn>

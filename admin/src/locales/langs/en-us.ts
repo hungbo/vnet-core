@@ -877,6 +877,8 @@ const local: App.I18n.Schema = {
         'The Hub already has a game "{name}" that this cafe has not downloaded. Replace it with this local game? The Hub version will no longer be downloaded; to use it again, delete the local game.',
       localClash:
         'A local game has the same name as a Hub game: {names}. The cafe keeps the local one; to use the Hub version, delete the local game (files on disk stay).',
+      notInCatalog:
+        'The Hub no longer sends new versions of: {names}. Open "Download games" and click "Get updates" on that game; if there is no such button, the Hub has paused that game.',
       runFirst: 'Run before the game starts',
       runFirstHint:
         'Programs inside the game folder run one after another and are awaited (up to 30 seconds each) before the game opens. At most 5 steps.',
@@ -2189,12 +2191,15 @@ const local: App.I18n.Schema = {
       download: 'Download',
       hint: 'Click Download on a game that is not downloaded, then pick a folder on the server. Downloaded games show on the Games page table and get new versions when "Auto update" is on.',
       actionFailed: 'Could not complete the action',
+      reselect: 'Get updates',
+      reselected: '{name} is selected again on the Hub; the cafe will download the new version',
       states: {
         downloaded: 'Downloaded',
         downloading: 'Downloading',
         queued: 'Waiting',
         error: 'Error',
         needs_update: 'Update available',
+        not_selected: 'Not getting updates',
         not_downloaded: 'Not downloaded',
         local_game: 'Local game with the same name'
       }
