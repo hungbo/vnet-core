@@ -156,7 +156,7 @@ func (a *App) DismissNotices(upTo int64) string {
 
 	// Cửa sổ đã đổi sang màn khác (tin nhắn tới đúng lúc khách bấm) thì để yên, đừng ẩn nhầm.
 	if len(keep) == 0 && a.panelModeNow() == noticeMode {
-		a.HidePanel()
+		a.anPanel("khách đã đọc hết thông báo")
 	}
 	return a.noticesJSON()
 }
@@ -198,7 +198,7 @@ func canhGiuaCoDinh(ctx context.Context, w, h int) {
 }
 
 // canhGiuaPanel căn cửa sổ phụ cho màn hình mode: hộp thông báo nhỏ cố định, menu game
-// theo tỉ lệ to hơn, các màn khác theo tỉ lệ màn hình như trước.
+// và Đồ ăn rộng gần sát thanh dọc, các màn khác theo tỉ lệ màn hình như trước.
 func (a *App) canhGiuaPanel(ctx context.Context, mode string) {
 	if mode == noticeMode {
 		canhGiuaCoDinh(ctx, noticeW, noticeH)
@@ -207,7 +207,7 @@ func (a *App) canhGiuaPanel(ctx context.Context, mode string) {
 	// Vừa là hộp thông báo thì cỡ tối thiểu đã bị hạ; trả về như lúc dựng cửa sổ.
 	wailsruntime.WindowSetMinSize(ctx, panelMinW, panelMinH)
 	rw, rh := childWidthRatio, childHeightRatio
-	if mode == "games" {
+	if mode == "games" || mode == "order" {
 		rw, rh = gameWidthRatio, gameHeightRatio
 	}
 	canhGiuaManHinh(ctx, panelMinW, panelMinH, rw, rh)

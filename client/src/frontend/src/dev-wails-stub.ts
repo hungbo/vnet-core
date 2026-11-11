@@ -22,11 +22,12 @@ const DEV_CATEGORIES = [
 
 const DEV_MENU = [
 	{ id: 'p1', category_id: 'c-mi', name: 'Mì Hảo Hảo tôm chua cay', price: 15000, image_url: `${DEV_SERVER}/uploads/seed/mi-01.svg` },
-	{ id: 'p2', category_id: 'c-mi', name: 'Mì xào bò', price: 45000, image_url: `${DEV_SERVER}/uploads/seed/mi-11.svg` },
+	{ id: 'p2', category_id: 'c-mi', name: 'Mì xào bò', price: 45000, has_stock: true, current_stock: 0, image_url: `${DEV_SERVER}/uploads/seed/mi-11.svg` },
 	{ id: 'p3', category_id: 'c-mi', name: 'Hủ tiếu Nam Vang ăn liền', price: 25000, image_url: `${DEV_SERVER}/uploads/seed/mi-20.svg` },
-	{ id: 'p4', category_id: 'c-com', name: 'Cơm rang dưa bò', price: 45000, image_url: `${DEV_SERVER}/uploads/seed/com-01.svg` },
-	{ id: 'p5', category_id: 'c-com', name: 'Cơm sườn trứng ốp la', price: 55000, image_url: `${DEV_SERVER}/uploads/seed/com-07.svg` },
-	{ id: 'p6', category_id: 'c-nuoc', name: 'Coca-Cola lon 330ml', price: 15000, image_url: `${DEV_SERVER}/uploads/seed/nuoc-uong-03.svg` },
+	// Cơm hết sạch: thấy được dòng nhắc chọn "Tất cả" khi cả mục đều hết hàng.
+	{ id: 'p4', category_id: 'c-com', name: 'Cơm rang dưa bò', price: 45000, has_stock: true, current_stock: 0, image_url: `${DEV_SERVER}/uploads/seed/com-01.svg` },
+	{ id: 'p5', category_id: 'c-com', name: 'Cơm sườn trứng ốp la', price: 55000, has_stock: true, current_stock: 0, image_url: `${DEV_SERVER}/uploads/seed/com-07.svg` },
+	{ id: 'p6', category_id: 'c-nuoc', name: 'Coca-Cola lon 330ml', price: 15000, has_stock: true, current_stock: 12, image_url: `${DEV_SERVER}/uploads/seed/nuoc-uong-03.svg` },
 	{ id: 'p7', category_id: 'c-nuoc', name: 'Trà sữa trân châu', price: 30000, image_url: `${DEV_SERVER}/uploads/seed/nuoc-uong-26.svg` },
 	{ id: 'p8', category_id: 'c-vat', name: 'Khoai tây chiên', price: 30000, image_url: `${DEV_SERVER}/uploads/seed/do-an-vat-14.svg` },
 	{ id: 'p9', category_id: 'c-vat', name: 'Xúc xích Đức Việt nướng', price: 15000, image_url: `${DEV_SERVER}/uploads/seed/do-an-vat-10.svg` },
@@ -111,6 +112,15 @@ const DEV_DISPLAY_MODES = [
 	{ width: 1920, height: 1080, hz: 60 },
 	{ width: 1280, height: 720, hz: 60 },
 ]
+// Điểm danh giả: chuỗi 4 ngày, mốc thưởng mỗi 7 ngày. ?diemdanh=roi để xem lúc đã điểm
+// danh hôm nay, ?diemdanh=dut cho chuỗi vừa đứt (bắt đầu lại từ ngày 1).
+const devDiemDanh = (() => {
+	const q = new URLSearchParams(location.search).get('diemdanh')
+	if (q === 'roi') return { checked_in_today: true, streak_days: 5, next_reward: 2000, streak_every: 7, last_checkin: '2026-11-03' }
+	if (q === 'dut') return { checked_in_today: false, streak_days: 0, next_reward: 2000, streak_every: 7, last_checkin: '2026-10-28' }
+	return { checked_in_today: false, streak_days: 4, next_reward: 2000, streak_every: 7, last_checkin: '2026-11-02' }
+})()
+
 const DEV_DISPLAY_BASELINE = { width: 1920, height: 1080, hz: 60 }
 const devDisplay = {
 	current: { ...DEV_DISPLAY_BASELINE },
@@ -193,6 +203,15 @@ export function installDevWailsStub() {
 							affordable_until: new Date(Date.now() + 90 * 60000).toISOString(),
 						})
 					),
+				GetAttendanceStatus: () => ok(JSON.stringify({ code: 0, data: devDiemDanh })),
+				CheckinAttendance: () => {
+					const thuong = devDiemDanh.next_reward
+					devDiemDanh.checked_in_today = true
+					devDiemDanh.streak_days++
+					devDiemDanh.last_checkin = new Date().toISOString().slice(0, 10)
+					return ok(JSON.stringify({ code: 0, data: { streak_days: devDiemDanh.streak_days, reward_amount: thuong } }))
+				},
+				SubmitFeedback: () => ok(JSON.stringify({ code: 0, data: { id: 'dev-feedback' } })),
 				GetFeatureFlags: () => ok(JSON.stringify({ attendance_enabled: true, feedback_enabled: true })),
 				GetTopupPresets: () => ok(JSON.stringify([10000, 20000, 50000, 100000])),
 				GetQRStatus: () => ok(JSON.stringify({ ready: new URLSearchParams(location.search).get('qr') !== 'off' })),

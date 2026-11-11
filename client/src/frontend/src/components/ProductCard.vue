@@ -28,6 +28,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { hetHang as laHetHang, soConLai as demConLai, theoDoiKho as coTheoDoiKho } from '../utils/stock'
 
 // Ảnh hỏng thì rơi về icon chứ không để lại một ô trắng: máy trạm hay chạy khi
 // máy chủ vừa đổi địa chỉ, và lúc đó mọi ảnh đều 404.
@@ -38,14 +39,11 @@ const props = defineProps<{
 	color?: string
 }>()
 
-// CHỈ xét tồn kho khi has_stock bật.
-//
-// Món nấu từ nguyên liệu mà không bật cờ này luôn được máy chủ trả về
-// current_stock = 0 (xem loadProductStock bên backend). Lấy số 0 đó ra mà khoá
-// là khoá nhầm gần hết thực đơn trong khi kho vẫn đầy.
-const theoDoiKho = computed(() => props.product?.has_stock === true)
-const soConLai = computed(() => Math.floor(Number(props.product?.current_stock ?? 0)))
-const hetHang = computed(() => theoDoiKho.value && soConLai.value <= 0)
+// Cách tính hết hàng (chỉ khi has_stock bật) ở utils/stock.ts, dùng chung với bộ lọc
+// "Còn hàng" của thực đơn.
+const theoDoiKho = computed(() => coTheoDoiKho(props.product))
+const soConLai = computed(() => demConLai(props.product))
+const hetHang = computed(() => laHetHang(props.product))
 
 const emit = defineEmits<{
 	select: [product: any]
@@ -62,7 +60,7 @@ function formatCurrency(n: number) {
 	flex-direction: column;
 	align-items: center;
 	gap: 6px;
-	padding: 20px 12px;
+	padding: 10px 10px 14px;
 	border: 1px solid var(--vnet-border);
 	border-radius: 12px;
 	cursor: pointer;
@@ -71,9 +69,8 @@ function formatCurrency(n: number) {
 	font-family: inherit;
 }
 
-/* Hết hàng vẫn hiện chứ không ẩn: khách cần biết quán có bán món đó, chỉ là
-   hôm nay tạm hết. Ẩn đi thì món biến mất rồi hiện lại luân phiên, trông như
-   lỗi giao diện. */
+/* Thực đơn mặc định chỉ hiện món còn hàng (bộ lọc ở ServiceMenu); món hết hàng chỉ
+   hiện khi khách chọn "Tất cả", mờ đi và không bấm được. */
 .product-card.het-hang {
 	opacity: .45;
 	cursor: not-allowed;
@@ -110,25 +107,28 @@ function formatCurrency(n: number) {
 .product-card.drink { color: var(--vnet-primary); }
 .product-card.snack { color: var(--vnet-text-muted); }
 
-.product-icon {
-	font-size: 28px;
-	line-height: 1;
-	/* Bằng đúng khung ảnh, nếu không thì hàng nào rơi về icon sẽ thấp hơn hẳn
-	   hàng có ảnh và cả lưới bị so le. */
-	height: 72px;
-	display: flex;
-	align-items: center;
-}
-
+/* Ảnh vuông rộng hết thẻ (quán muốn ảnh món to, nhìn rõ) thay cho ô 72px cũ. */
 .product-image {
-	width: 72px;
-	height: 72px;
+	width: 100%;
+	aspect-ratio: 1;
 	object-fit: cover;
 	border-radius: 10px;
 }
 
+.product-icon {
+	font-size: 48px;
+	line-height: 1;
+	/* Bằng đúng khung ảnh, nếu không thì hàng nào rơi về icon sẽ thấp hơn hẳn
+	   hàng có ảnh và cả lưới bị so le. */
+	width: 100%;
+	aspect-ratio: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
 .product-name {
-	font-size: 13px;
+	font-size: 14px;
 	font-weight: 500;
 	color: var(--vnet-text);
 }

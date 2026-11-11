@@ -121,9 +121,11 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import QrPayPanel from '../components/QrPayPanel.vue'
+import { useBaoSanSang } from '../utils/panelReady'
 
 declare const window: any
 const api = () => window.go?.main?.App
+const baoSanSang = useBaoSanSang()
 
 const props = defineProps<{ standalone?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -225,6 +227,7 @@ onMounted(async () => {
 	} catch {
 		presets.value = [5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000]
 	}
+	baoSanSang()
 })
 </script>
 

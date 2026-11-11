@@ -5,8 +5,9 @@ import vnetLogo from '../assets/vnet-logo.svg'
 
 // Thanh tiêu đề tự vẽ của thanh dọc mép phải.
 //
-// Cửa sổ chính không có viền hệ điều hành (main.go, Frameless). Ở đây chỉ có hai
-// thứ: vùng kéo cửa sổ và MỘT nút tắt. "Tắt" chỉ ẨN thanh xuống khay hệ thống (góc phải
+// Cửa sổ chính không có viền hệ điều hành (main.go, Frameless). Ở đây chỉ có logo và
+// MỘT nút tắt — KHÔNG có vùng kéo: thanh đứng cố định ở mép phải, khách không kéo nó đi
+// chỗ khác được (quán yêu cầu). "Tắt" chỉ ẨN thanh xuống khay hệ thống (góc phải
 // dưới, App.HideDock) chứ không thoát — mất đồng hồ tính tiền là không được. Mọi lệnh
 // đóng khác (Alt+F4, taskbar) cũng vậy — xem App.beforeDockClose bên Go.
 //
@@ -66,10 +67,6 @@ function tat() {
 	background: var(--vnet-surface);
 	border-bottom: 1px solid var(--vnet-border);
 	user-select: none;
-	/* Vùng kéo cửa sổ của Wails. Đây là thuộc tính tuỳ biến nên con cháu kế thừa luôn
-	   — nút bên dưới phải tự ghi đè bằng no-drag, nếu không bấm vào nó là bắt đầu
-	   kéo cửa sổ chứ không phải tắt. */
-	--wails-draggable: drag;
 }
 
 .dock-bar-logo {
@@ -81,7 +78,6 @@ function tat() {
 /* Cao hết thanh, rộng cỡ nút tắt của Windows: vùng bấm lớn mà khách không cần
    ngắm cho trúng. */
 .dock-bar-close {
-	--wails-draggable: no-drag;
 	display: grid;
 	place-items: center;
 	width: 46px;

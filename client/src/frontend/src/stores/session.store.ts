@@ -208,6 +208,13 @@ export const useSessionStore = defineStore('session', () => {
 		await logout(reason)
 	}
 
+	// Cửa sổ phụ (menu Game, Đồ ăn…) có đóng theo sự kiện hết phiên này không: lọc như
+	// clearSession ở trên — sự kiện ghi hội viên khác, hoặc nhân viên đang đăng nhập,
+	// thì không phải phiên của cửa sổ này.
+	function phienCuaToiKetThuc(data: any): boolean {
+		return isForCurrentMember(data) && role.value !== 'admin'
+	}
+
 	// Kiểm lại với máy chủ: tài khoản hội viên đang đăng nhập mà không còn phiên
 	// nào thì về màn hình khoá. Chốt chặn cho mọi sự kiện WebSocket bị rơi.
 	async function verifySession() {
@@ -322,5 +329,5 @@ export const useSessionStore = defineStore('session', () => {
 		}
 	}
 
-	return { loggedIn, token, userID, machineCode, role, displayName, machineStatus, session, memberInfo, loginLoading, dangKhoiPhuc, lockReason, login, adoptCurrentLogin, logout, loadData, updateSession, clearSession, verifySession, updateBalance, restore }
+	return { loggedIn, token, userID, machineCode, role, displayName, machineStatus, session, memberInfo, loginLoading, dangKhoiPhuc, lockReason, login, adoptCurrentLogin, logout, loadData, updateSession, clearSession, phienCuaToiKetThuc, verifySession, updateBalance, restore }
 })

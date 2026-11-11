@@ -165,8 +165,9 @@ func TestChildGeometry_MenuGameToHon(t *testing.T) {
 			}
 		})
 	}
-	if w, h, _, _ := childGeometry(1920, 1080, minW, minH, gameWidthRatio, gameHeightRatio); w != 1326 || h != 885 {
-		t.Errorf("màn 1920x1080: menu game %dx%d, mong 1326x885", w, h)
+	// Gần sát thanh dọc: khe giữa mép phải cửa sổ và thanh chỉ còn ~23px.
+	if w, h, x, _ := childGeometry(1920, 1080, minW, minH, gameWidthRatio, gameHeightRatio); w != 1513 || h != 885 || x != 23 {
+		t.Errorf("màn 1920x1080: menu game %dx%d tại x=%d, mong 1513x885 tại x=23", w, h, x)
 	}
 }
 

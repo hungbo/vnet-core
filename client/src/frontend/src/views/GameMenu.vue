@@ -113,9 +113,11 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, Refresh, Search } from '@element-plus/icons-vue'
 import { foldSearch, gameLabel, matchesSearch } from '../utils/gameName'
+import { useBaoSanSang } from '../utils/panelReady'
 
 declare const window: any
 const api = () => window.go?.main?.App
+const baoSanSang = useBaoSanSang()
 
 interface Game {
 	// key: khoá của mục (máy chủ từ 1.1.15). Một thư mục game có thể ra nhiều mục
@@ -378,6 +380,7 @@ onMounted(async () => {
 	// Ô tìm chỉ hiện khi đã có danh sách: chờ lượt tải đầu rồi mới đặt con trỏ vào.
 	await load()
 	await nextTick()
+	baoSanSang()
 	searchInput.value?.focus()
 })
 

@@ -30,9 +30,10 @@
 					:key="a.key"
 					class="action-btn"
 					:class="{ primary: a.key === 'topup' }"
-					@click="a.run()"
+					@click="bam(a)"
 				>
-					<el-icon :size="26" :style="{ color: a.color }"><component :is="a.icon" /></el-icon>
+					<el-icon v-if="dangMo === a.key" :size="26" class="is-loading" :style="{ color: a.color }"><Loading /></el-icon>
+					<el-icon v-else :size="26" :style="{ color: a.color }"><component :is="a.icon" /></el-icon>
 					<span>{{ a.label }}</span>
 				</button>
 			</div>
@@ -49,7 +50,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Setting, Bell, Timer, Coin, Chicken, ChatDotSquare, Calendar, Star, Trophy } from '@element-plus/icons-vue'
+import { Setting, Bell, Timer, Coin, Chicken, ChatDotSquare, Calendar, Star, Trophy, Loading } from '@element-plus/icons-vue'
 import { useSessionStore } from '../stores/session.store'
 import { useUiStore } from '../stores/ui.store'
 import TimerWidget from '../components/TimerWidget.vue'
@@ -111,7 +112,30 @@ const visibleActions = computed(() =>
 	})
 )
 
+// Ô mở cửa sổ phụ: cửa sổ đó hiện lên sau một nhịp (thanh này chạy lại .exe để gõ cửa).
+// Ô vừa bấm quay vòng tới khi cửa sổ lên trước — thanh này mất tiêu điểm — để khách biết
+// máy đã nhận mà không bấm thêm lần nữa. Không thấy mất tiêu điểm thì thôi quay sau hạn.
+const MO_CUA_SO_PHU = new Set(['topup', 'order', 'games', 'chat', 'attendance', 'feedback'])
+const QUAY_TOI_DA_MS = 2500
+const dangMo = ref('')
+let hanQuay: number | undefined
+
+function bam(a: (typeof ACTIONS)[number]) {
+	if (MO_CUA_SO_PHU.has(a.key)) {
+		dangMo.value = a.key
+		clearTimeout(hanQuay)
+		hanQuay = window.setTimeout(thoiQuay, QUAY_TOI_DA_MS)
+	}
+	a.run()
+}
+
+function thoiQuay() {
+	clearTimeout(hanQuay)
+	dangMo.value = ''
+}
+
 onMounted(() => {
+	window.addEventListener('blur', thoiQuay)
 	session.loadData()
 	ui.load()
 	timer = window.setInterval(() => {
@@ -120,6 +144,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+	window.removeEventListener('blur', thoiQuay)
+	clearTimeout(hanQuay)
 	if (timer) clearInterval(timer)
 })
 </script>

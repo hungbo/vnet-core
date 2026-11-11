@@ -17,6 +17,14 @@
 				<el-radio-button value="menu">Thực đơn</el-radio-button>
 				<el-radio-button value="orders">Đơn đã gọi</el-radio-button>
 			</el-radio-group>
+			<!--
+				Mặc định chỉ món còn hàng: khách khỏi lướt qua cả dãy món mờ không bấm được.
+				"Tất cả" hiện thêm món hết hàng, để khách biết quán có bán, chỉ là tạm hết.
+			-->
+			<el-radio-group v-show="tab === 'menu'" v-model="locKho">
+				<el-radio-button value="con-hang">Còn hàng</el-radio-button>
+				<el-radio-button value="tat-ca">Tất cả</el-radio-button>
+			</el-radio-group>
 		</div>
 
 		<MyOrders v-if="tab === 'orders'" />
@@ -32,11 +40,14 @@
 		<div v-show="tab === 'menu'" class="menu-content">
 			<main class="menu-grid">
 				<ProductCard
-					v-for="p in products" :key="p.id"
+					v-for="p in monHienThi" :key="p.id"
 					:product="p"
 					:color="p.color || 'food'"
 					@select="order.addToCart"
 				/>
+				<p v-if="products.length && !monHienThi.length" class="menu-trong">
+					Mục này đang hết hàng — chọn "Tất cả" để xem các món.
+				</p>
 			</main>
 
 			<CartPanel />
@@ -45,10 +56,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { useOrderStore } from '../stores/order.store'
+import { hetHang } from '../utils/stock'
+import { useBaoSanSang } from '../utils/panelReady'
 import ProductCard from '../components/ProductCard.vue'
 import CartPanel from '../components/CartPanel.vue'
 import MyOrders from '../components/MyOrders.vue'
@@ -64,6 +77,9 @@ const categories = ref<any[]>([])
 const products = ref<any[]>([])
 const activeCategory = ref('')
 const tab = ref<'menu' | 'orders'>('menu')
+const locKho = ref<'con-hang' | 'tat-ca'>('con-hang')
+const monHienThi = computed(() =>
+	locKho.value === 'tat-ca' ? products.value : products.value.filter(p => !hetHang(p)))
 
 async function loadProducts() {
 	try {
@@ -72,12 +88,20 @@ async function loadProducts() {
 	} catch { products.value = [] }
 }
 
+// Màn này được giữ nguyên giữa các lần mở (KeepAlive ở App.vue): lần đầu báo sẵn sàng khi
+// thực đơn tải xong, các lần sau báo ngay lúc được bật lại.
+const baoSanSang = useBaoSanSang()
+let daTai = false
+onActivated(() => { if (daTai) baoSanSang() })
+
 onMounted(async () => {
 	try {
 		const data = await api().GetCategories()
 		if (data) categories.value = JSON.parse(data)
 	} catch {}
-	loadProducts()
+	await loadProducts()
+	daTai = true
+	baoSanSang()
 
 	// Máy khác trong quán đặt món cuối, hoặc nhân viên nhập kho — thực đơn phải
 	// đổi theo mà không cần khách bấm gì.
@@ -116,6 +140,10 @@ onMounted(async () => {
 }
 
 .menu-tabs {
+	display: flex;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 8px;
 	padding: 12px 16px 0;
 	background: var(--vnet-surface);
 }
@@ -138,10 +166,18 @@ onMounted(async () => {
 	overflow-y: auto;
 	padding: 16px;
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+	/* Ô rộng hơn bản cũ (140px) để ảnh món to, nhìn rõ. */
+	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 	gap: 12px;
 	/* Lưới là khối co giãn cao hết cửa sổ, nên hàng duy nhất giãn theo và mỗi ô
 	   cao bằng cả màn hình. align-content: start giữ ô cao đúng bằng nội dung. */
 	align-content: start;
+}
+
+.menu-trong {
+	grid-column: 1 / -1;
+	padding: 32px 0;
+	text-align: center;
+	color: var(--vnet-text-muted);
 }
 </style>

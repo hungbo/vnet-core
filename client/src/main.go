@@ -220,11 +220,12 @@ const dockWidth = 360
 // Tỉ lệ so với màn hình, dùng cho cửa sổ phụ. Thanh dọc KHÔNG dùng tỉ lệ nữa:
 // nó cao hết vùng làm việc, đo bằng doVienTaskbar.
 const (
-	childWidthRatio  = 0.70 // cửa sổ gọi món / hỗ trợ
+	childWidthRatio  = 0.70 // cửa sổ hỗ trợ, nạp tiền...
 	childHeightRatio = 0.80
-	// Menu game to hơn một chút: lưới ô nhỏ nhiều cột như menu Kzone khách quen
-	// (~1326×885 trên màn 1920×1080, ~855×629 trên màn 1366×768).
-	gameWidthRatio  = 0.85
+	// Menu game và Đồ ăn rộng gần hết phần bên trái thanh dọc, chừa một khe nhỏ hai bên
+	// (quán yêu cầu "gần sát client"): lưới ô nhiều cột như menu Kzone khách quen, ảnh
+	// món to dễ nhìn (~1513×885 trên màn 1920×1080, ~975×629 trên màn 1366×768).
+	gameWidthRatio  = 0.97
 	gameHeightRatio = 0.82
 )
 
@@ -452,7 +453,7 @@ func runChildWindow(mode, thongBao string) {
 			if app.thoat.Load() {
 				return false
 			}
-			app.HidePanel()
+			app.anPanel("lệnh đóng cửa sổ (nút X, Alt+F4)")
 			return true
 		},
 		Bind: []interface{}{app},

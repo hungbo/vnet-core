@@ -6,6 +6,17 @@
 	-->
 	<div v-if="windowMode" class="app-container child-window">
 		<!--
+			Lớp chờ phủ lên màn hình đang dựng: hiện NGAY khi đổi màn hình (không có hiệu
+			ứng vào, để không lộ màn cũ), mờ dần khi màn mới báo đã tải xong (choManHinh).
+			Bật/tắt bằng class chứ không bằng <Transition>: Transition chờ khung hình kế
+			tiếp, mà cửa sổ đang ẩn thì trình duyệt có thể không vẽ khung nào — lớp chờ kẹt
+			lại che kín cửa sổ.
+		-->
+		<div v-if="TEN_MAN[windowMode]" class="panel-cho" :class="{ xong: !dangMo }" :aria-hidden="!dangMo">
+			<span class="panel-cho-vong" />
+			<span>Đang mở {{ TEN_MAN[windowMode] }}…</span>
+		</div>
+		<!--
 			Chờ khôi phục đăng nhập xong mới dựng: component con chạy onMounted
 			TRƯỚC onMounted của App, nên dựng sớm là cửa sổ Nạp tiền hỏi số dư khi
 			chưa có token — và hiện ra không có dòng "Số dư hiện tại". Hộp thông báo là
@@ -74,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, defineAsyncComponent } from 'vue'
+import { ref, onMounted, defineAsyncComponent, provide } from 'vue'
 import { ElMessage } from 'element-plus'
 import { EventsOn } from '../wailsjs/runtime/runtime'
 import { phatAm } from './utils/sound'
@@ -91,6 +102,7 @@ import GameMenu from './views/GameMenu.vue'
 import NoticeDialog from './views/NoticeDialog.vue'
 import MachineLockOverlay from './components/MachineLockOverlay.vue'
 import DockTitleBar from './components/DockTitleBar.vue'
+import { PANEL_SAN_SANG } from './utils/panelReady'
 
 // Khung chat (vue-advanced-chat, ~520 kB, tự đăng ký custom element lúc nạp) chỉ có ở
 // cửa sổ phụ Hỗ trợ; thanh chính không bao giờ vẽ nó nên màn hình khoá không phải chờ nó.
@@ -106,6 +118,28 @@ const windowMode = ref('')
 // Đếm số lần cửa sổ phụ được mở, để dựng mới các biểu mẫu một lần (xem template).
 const lanMo = ref(0)
 const childReady = ref(false)
+
+// Màn chờ của cửa sổ phụ. Mở một màn hình phụ có độ trễ: thanh chính chạy lại .exe để
+// gõ cửa, cửa sổ hiện lên rồi màn hình mới mới dựng và hỏi máy chủ. Trong quãng đó khách
+// thấy lớp "Đang mở …" thay vì màn cũ hay một màn trống. Màn hình báo xong qua
+// PANEL_SAN_SANG (utils/panelReady.ts). Hộp thông báo không cần: nó nhỏ và không tải gì.
+const TEN_MAN: Record<string, string> = {
+	order: 'Đồ ăn', support: 'Hỗ trợ', topup: 'Nạp tiền', attendance: 'Điểm danh', feedback: 'Đánh giá', games: 'Game',
+}
+// Màn nào quên báo, hoặc máy chủ treo, thì lớp chờ cũng không che khách quá chừng này.
+const CHO_TOI_DA_MS = 3000
+const dangMo = ref(true)
+let hanCho: number | undefined
+function choManHinh() {
+	dangMo.value = true
+	clearTimeout(hanCho)
+	hanCho = window.setTimeout(xongCho, CHO_TOI_DA_MS)
+}
+function xongCho() {
+	clearTimeout(hanCho)
+	dangMo.value = false
+}
+provide(PANEL_SAN_SANG, xongCho)
 
 // Hai màn hình này mở thành CỬA SỔ HỆ ĐIỀU HÀNH RIÊNG: thực đơn cần rộng hơn
 // thanh 360px, và cửa sổ hỗ trợ phải nổi lên trên được khi khách đang chơi game
@@ -158,6 +192,9 @@ onMounted(async () => {
 	// Biết mình là cửa sổ nào TRƯỚC khi dựng gì: cửa sổ phụ không có thanh điều
 	// khiển, không có màn hình khoá.
 	try { windowMode.value = (await api()?.GetWindowMode()) || '' } catch { /* ngoài Wails */ }
+	// Cửa sổ phụ khởi động thẳng vào một màn hình (chưa dựng sẵn kịp): che trong lúc
+	// WebView2 khởi động lạnh và khôi phục đăng nhập.
+	if (TEN_MAN[windowMode.value]) choManHinh()
 	// Cửa sổ phụ dựng sẵn từ lúc đăng nhập: nạp trước khung chat để lần đầu bấm Hỗ trợ khỏi chờ.
 	if (windowMode.value) import('./components/ChatWidget.vue').catch(() => {})
 
@@ -195,7 +232,24 @@ onMounted(async () => {
 	})
 
 	// Cửa sổ phụ dựng sẵn: thanh chính bấm nút nào thì đổi sang màn hình đó.
-	EventsOn('vnet:panel:mode', (m: string) => { windowMode.value = m; lanMo.value++ })
+	//
+	// Mở lại đúng Đồ ăn hay Hỗ trợ thì màn hình vẫn nguyên đó (không dựng lại, xem
+	// template): không có gì để chờ. Các màn khác dựng mới mỗi lần mở nên chờ chúng báo.
+	EventsOn('vnet:panel:mode', (m: string) => {
+		const giuNguyen = m === windowMode.value && (m === 'order' || m === 'support')
+		windowMode.value = m
+		lanMo.value++
+		if (giuNguyen) xongCho()
+		else choManHinh()
+	})
+	// Go báo ngay trước khi ẩn cửa sổ (App.anPanel). Bật sẵn lớp chờ cho lần mở sau, để
+	// lúc cửa sổ hiện lại khách không thấy lại màn cũ trong nhịp trước khi màn mới dựng.
+	// Trừ Đồ ăn và Hỗ trợ: mở lại đúng màn đó thì nó hiện ngay, không cần che.
+	EventsOn('vnet:panel:hidden', () => {
+		if (windowMode.value === 'order' || windowMode.value === 'support') return
+		clearTimeout(hanCho)
+		dangMo.value = true
+	})
 
 	// Chốt chặn cho sự kiện WebSocket bị rơi: hội viên đăng nhập mà máy chủ
 	// không còn phiên nào thì về màn hình khoá.
@@ -208,9 +262,11 @@ onMounted(async () => {
 	EventsOn('vnet:session:ended', (data: string) => {
 		let d: any = {}
 		try { d = JSON.parse(data) } catch {}
-		// Cửa sổ phụ không có màn hình khoá: phiên hết thì nó tự đóng.
+		// Cửa sổ phụ không có màn hình khoá: phiên hết thì nó tự đóng. Chỉ phiên của
+		// chính người đang đăng nhập — bản cũ đóng với mọi sự kiện hết phiên tới máy này,
+		// nên menu Game đang mở tự tắt trong khi thanh chính vẫn đăng nhập như thường.
 		if (windowMode.value) {
-			api()?.Logout()
+			if (session.phienCuaToiKetThuc(d)) api()?.Logout()
 			return
 		}
 		session.clearSession(d)
@@ -291,5 +347,45 @@ body {
    nội dung chiếm hết. */
 .child-window {
 	overflow: hidden;
+}
+
+/* Lớp chờ khi đổi màn hình trong cửa sổ phụ (xem choManHinh). */
+.panel-cho {
+	position: fixed;
+	inset: 0;
+	z-index: 3000;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 16px;
+	background:
+		radial-gradient(ellipse at top, rgba(123, 92, 255, 0.14), transparent 60%),
+		var(--vnet-bg);
+	color: var(--vnet-text-muted);
+	font-size: 15px;
+}
+
+.panel-cho-vong {
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	border: 4px solid var(--vnet-surface-2);
+	border-top-color: var(--vnet-primary);
+	border-right-color: var(--vnet-violet);
+	animation: panel-cho-quay .8s linear infinite;
+}
+
+@keyframes panel-cho-quay {
+	to { transform: rotate(360deg); }
+}
+
+/* Chỉ mờ dần lúc gỡ; lúc vào thì hiện ngay để không lộ màn cũ. Gỡ xong thì không
+   chặn chuột nữa, kể cả khi trình duyệt chưa vẽ xong hiệu ứng. */
+.panel-cho.xong {
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition: opacity .18s ease, visibility 0s linear .18s;
 }
 </style>
