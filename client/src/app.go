@@ -680,6 +680,7 @@ func (a *App) Logout() error {
 	// Không chặn ở đây thì cửa sổ thực đơn cũng gọi trả máy thay cho khách.
 	if a.windowMode != "" {
 		if a.ctx != nil {
+			log.Printf("[window] phiên kết thúc — đóng cửa sổ phụ (màn hình %s)", a.panelModeNow())
 			a.thoat.Store(true)
 			wailsruntime.Quit(a.ctx)
 		}
@@ -702,7 +703,7 @@ func (a *App) Logout() error {
 			}
 		}
 	}
-	a.closeChildWindows()
+	a.closeChildWindows("đăng xuất")
 	a.resetDisplayForNextUser()
 
 	// Hook chặn phím GIỮ NGUYÊN: đăng xuất là quay về màn hình khoá, và màn
@@ -924,7 +925,7 @@ func (a *App) setOfflineLock(on bool) {
 		}
 		a.offlineLocked.Store(true)
 		log.Printf("[offline] mất kết nối máy chủ quá ngưỡng — khoá màn hình")
-		a.closeChildWindows()
+		a.closeChildWindows("khoá vì mất kết nối máy chủ")
 		wailsruntime.WindowShow(a.ctx)
 		wailsruntime.WindowUnminimise(a.ctx)
 		wailsruntime.WindowFullscreen(a.ctx)
@@ -988,6 +989,7 @@ func (a *App) switchPanel(mode string) {
 		return
 	}
 	a.panelMu.Lock()
+	truoc := a.panelMode
 	a.panelMode = mode
 	san := a.panelSan && a.ctx != nil
 	if !san {
@@ -1000,6 +1002,9 @@ func (a *App) switchPanel(mode string) {
 	if !san {
 		return
 	}
+	// Menu Game "tự tắt" thường là bị màn hình khác (Hỗ trợ khi quầy nhắn, Thông báo)
+	// chiếm chỗ: dòng này cho biết nó bị đổi sang gì, lúc nào.
+	log.Printf("[window] hiện màn hình %s (trước đó: %s)", mode, truoc)
 	wailsruntime.WindowSetTitle(a.ctx, title)
 	wailsruntime.EventsEmit(a.ctx, "vnet:panel:mode", mode)
 	// Đo lại màn hình mỗi lần hiện: cửa sổ này dựng sẵn ẩn từ lúc khách đăng nhập và
@@ -1024,9 +1029,19 @@ func (a *App) panelKhoiDongXong() {
 	}
 }
 
-// HidePanel ẩn cửa sổ phụ thay vì tắt, để lần mở sau hiện ngay.
+// HidePanel ẩn cửa sổ phụ thay vì tắt, để lần mở sau hiện ngay. Đây là lệnh của
+// giao diện (vừa mở game, đóng Nạp tiền, gửi xong Đánh giá); màn hình đang hiện trong
+// log cho biết là lệnh nào.
 func (a *App) HidePanel() {
+	a.anPanel("giao diện yêu cầu")
+}
+
+// anPanel ẩn cửa sổ phụ, ghi lý do vào log để biết vì sao menu Game biến mất.
+func (a *App) anPanel(lyDo string) {
 	if a.windowMode != "" && a.ctx != nil {
+		log.Printf("[window] ẩn cửa sổ phụ (màn hình %s): %s", a.panelModeNow(), lyDo)
+		// Giao diện bật sẵn lớp chờ cho lần mở sau (App.vue): cửa sổ hiện lại không lộ màn cũ.
+		wailsruntime.EventsEmit(a.ctx, "vnet:panel:hidden")
 		// Hộp thông báo nổi trên mọi thứ tới khi khách đóng nó (ShowWindow): đóng bằng X
 		// cũng phải trả nó về như cũ, và thông báo đã bị gạt đi thì không hiện lại lần sau.
 		if a.panelModeNow() == noticeMode {
@@ -1172,6 +1187,13 @@ func (a *App) spawnWindow(mode string, extra ...string) error {
 		delete(childProcs, proc.Pid)
 		childMu.Unlock()
 
+		// Lần gõ cửa thoát với mã 0; cửa sổ phụ tự đóng vì hết phiên cũng vậy và tự ghi
+		// log của nó. Mã lỗi khác là cửa sổ chết ngang: sập, WebView2 hỏng, bị tắt từ
+		// Task Manager — khách thấy menu Game tự tắt mà không còn dấu vết nào khác.
+		if tuChet && err != nil {
+			log.Printf("[window] cửa sổ phụ %s (PID %d) tự thoát sau %s: %v", mode, proc.Pid, time.Since(batDau).Round(time.Second), err)
+		}
+
 		// WebView2 thỉnh thoảng không dựng được khung hiển thị lúc vừa có mạng
 		// lại (CreateCoreWebView2Controller lỗi) và thư viện thoát luôn. Cửa sổ
 		// dựng sẵn chết sớm như vậy thì dựng lại, tối đa ba lần liên tiếp.
@@ -1199,9 +1221,12 @@ var (
 	childProcs = map[int]*os.Process{}
 )
 
-func (a *App) closeChildWindows() {
+func (a *App) closeChildWindows(lyDo string) {
 	childMu.Lock()
 	defer childMu.Unlock()
+	if len(childProcs) > 0 {
+		log.Printf("[window] tắt %d cửa sổ phụ: %s", len(childProcs), lyDo)
+	}
 	for pid, p := range childProcs {
 		if err := p.Kill(); err != nil {
 			log.Printf("[window] không đóng được cửa sổ phụ %d: %v", pid, err)

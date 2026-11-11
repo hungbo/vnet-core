@@ -65,9 +65,11 @@ import { ArrowLeft, ChatDotRound } from '@element-plus/icons-vue'
 import { EventsOn } from '../../wailsjs/runtime/runtime'
 import { useSessionStore } from '../stores/session.store'
 import { useChatStore } from '../stores/chat.store'
+import { useBaoSanSang } from '../utils/panelReady'
 
 declare const window: any
 const api = () => window.go?.main?.App
+const baoSanSang = useBaoSanSang()
 
 const props = withDefaults(defineProps<{ fullPage?: boolean; standalone?: boolean }>(), {
 	fullPage: false,
@@ -250,6 +252,7 @@ onMounted(async () => {
 			}
 		})
 	}
+	baoSanSang()
 })
 
 onBeforeUnmount(() => {
