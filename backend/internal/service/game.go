@@ -1429,6 +1429,7 @@ func (s *GameService) setError(id, msg string) {
 func (s *GameService) SyncNow(id string) error { return s.SyncNowTo(id, "") }
 
 // SyncNowTo là SyncNow kèm thư mục lưu quán chọn ở hộp thoại Tải (rỗng là giữ thư mục đã có; game chưa có thì lỗi).
+// installRoot là chữ ổ trần ("E:" hay "E:\") thì lưu vào thư mục theo loại game trong ổ đó: E:\Games hay E:\Tools.
 func (s *GameService) SyncNowTo(id, installRoot string) error {
 	if s.conf().Role != config.GameRoleCafe {
 		return ErrGameCafeOnly
@@ -1444,6 +1445,9 @@ func (s *GameService) SyncNowTo(id, installRoot string) error {
 		return ErrGameIsLocal
 	}
 	updates := map[string]interface{}{"status": model.GameStatusQueued}
+	if goc, ok := gocTheoODia(installRoot, g.Category); ok {
+		installRoot = goc
+	}
 	if strings.TrimSpace(installRoot) != "" {
 		root, err := s.chonThuMucLuu(&g, installRoot)
 		if err != nil {
@@ -1484,12 +1488,14 @@ func (s *GameService) chonThuMucLuu(g *model.Game, raw string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Chỗ cũ của chính game này: tải tiếp hay kiểm lại, dữ liệu trong đó là của nó. Game chưa từng chọn thư mục thì không
+	// có chỗ cũ, kể cả khi thư mục chọn trùng GAME_ROOT: thư mục cùng tên ở đó có thể là bản Kzone hay của game cục bộ.
 	cu := g.InstallRoot
-	if cu == "" {
-		cu = s.conf().Root
+	if cu == "" && g.Infohash != "" {
+		cu = s.conf().Root // bản tải xong từ trước khi có install_root nằm trong GAME_ROOT
 	}
 	if cu != "" && cungThuMuc(filepath.Clean(cu), root) {
-		return root, nil // vẫn chỗ cũ: tải tiếp hay kiểm lại
+		return root, nil
 	}
 	if g.Infohash != "" {
 		return "", fmt.Errorf("game đã tải ở %s, không dời sang thư mục khác được", s.gameDir(g))
@@ -1500,7 +1506,7 @@ func (s *GameService) chonThuMucLuu(g *model.Game, raw string) (string, error) {
 			return "", fmt.Errorf("%s đã có nhưng không phải thư mục thường (liên kết tới chỗ khác?): chọn thư mục lưu khác", dir)
 		}
 		if entries, err := os.ReadDir(dir); err != nil || len(entries) > 0 {
-			return "", fmt.Errorf("%s đã có dữ liệu: chọn thư mục lưu khác (tải vào đó sẽ xoá các tệp không thuộc game)", dir)
+			return "", fmt.Errorf("%s đã có dữ liệu: chọn ổ hay thư mục lưu khác (tải vào đó sẽ xoá các tệp không thuộc game). Nếu đó chỉ là phần tải dở của chính game này thì xoá thư mục rồi tải lại", dir)
 		}
 	}
 	return root, nil
@@ -1731,7 +1737,8 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 			continue
 		}
 		var g model.Game
-		err := s.db.Where("name = ?", it.Name).First(&g).Error
+		// Không phân biệt hoa thường: game cục bộ "Valorant" và game Hub "VALORANT" là cùng một thư mục trên Windows.
+		err := s.db.Where("LOWER(name) = LOWER(?)", it.Name).First(&g).Error
 		fields := map[string]interface{}{
 			"display_name": it.DisplayName, "category": it.Category,
 			"launcher": it.Launcher, "launch_args": it.LaunchArgs,
@@ -1763,6 +1770,11 @@ func (s *GameService) pullCatalog(ctx context.Context) error {
 		if g.Origin == model.GameOriginLocal {
 			// Game cục bộ trùng tên với một game của catalog: quán giữ bản của mình, catalog không ghi đè.
 			s.noteLocalClash(it.Name)
+			continue
+		}
+		if g.Name != it.Name {
+			// Hai game của Hub chỉ khác hoa thường: cùng một thư mục, quán giữ game đã có.
+			log.Printf("[game] bỏ qua %q của catalog: quán đã có game %q chỉ khác hoa thường", it.Name, g.Name)
 			continue
 		}
 		// Vòng nền ghi lại catalog mỗi lượt dù không có gì mới: chỉ báo trang

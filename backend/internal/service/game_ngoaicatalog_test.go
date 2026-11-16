@@ -32,7 +32,7 @@ func TestPullCatalog_BaoGameHubKhongConTrongCatalog(t *testing.T) {
 	cols := []string{"id", "name", "origin", "enabled", "infohash", "install_root"}
 
 	// "lol" là game cục bộ trùng tên: chỉ đọc, không ghi, để lượt đọc catalog không có UPDATE nào.
-	mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).
+	mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "origin"}).AddRow("g0", "lol", model.GameOriginLocal))
 	mock.ExpectQuery(`SELECT \* FROM "games" WHERE \(origin = \$1 AND enabled = \$2\) AND name NOT IN \(\$3\) ORDER BY name`).
 		WithArgs(model.GameOriginHub, true, "lol").

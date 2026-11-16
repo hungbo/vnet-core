@@ -197,7 +197,8 @@ func (s *GameService) CreateLocal(req *CreateGameRequest) (*model.Game, error) {
 	// thì không: mất bản cập nhật và bỏ rơi tệp đã nằm trong GAME_ROOT.
 	replaceID := ""
 	var existing model.Game
-	if err := s.db.Where("name = ?", name).First(&existing).Error; err == nil {
+	// Không phân biệt hoa thường: trên Windows "Valorant" và "VALORANT" là cùng một thư mục.
+	if err := s.db.Where("LOWER(name) = LOWER(?)", name).First(&existing).Error; err == nil {
 		switch {
 		case existing.Origin == model.GameOriginLocal:
 			return nil, errors.New("game này đã có")
@@ -262,7 +263,7 @@ func (s *GameService) doiTenCucBo(g *model.Game, name string, updates map[string
 		return errTenGameCucBo
 	}
 	var n int64
-	if err := s.db.Model(&model.Game{}).Where("name = ? AND id <> ?", name, g.ID).Count(&n).Error; err != nil {
+	if err := s.db.Model(&model.Game{}).Where("LOWER(name) = LOWER(?) AND id <> ?", name, g.ID).Count(&n).Error; err != nil {
 		return err
 	}
 	if n > 0 {
@@ -356,8 +357,8 @@ type LocalDir struct {
 
 // LocalBrowse liệt kê thư mục con của dir (đường dẫn tuyệt đối trên máy chủ) để chọn thư mục game qua nhiều cấp; dir
 // rỗng là các ổ đĩa (Windows) hoặc "/". Bỏ thư mục ẩn, của hệ thống phân phối và của Windows ($RECYCLE.BIN…). Thư mục đã
-// là game được đánh dấu: tên game cục bộ ở mọi nơi, tên game Hub chỉ trong GAME_ROOT (đó là thư mục Hub tải về); ở nơi
-// khác, thư mục trùng tên game Hub là bản riêng của quán, thêm được dưới tên khác.
+// là game được đánh dấu: tên game cục bộ ở mọi nơi, tên game Hub chỉ ở thư mục nó tải về (thư mục lưu chọn lúc Tải, chưa
+// chọn thì GAME_ROOT); ở nơi khác, thư mục trùng tên game Hub là bản riêng của quán, thêm được dưới tên khác.
 func (s *GameService) LocalBrowse(dir string) ([]LocalDir, error) {
 	c := s.conf()
 	if c.Role == config.GameRoleMaster {
@@ -375,13 +376,15 @@ func (s *GameService) LocalBrowse(dir string) ([]LocalDir, error) {
 		return nil, fmt.Errorf("không đọc được thư mục %s: %w", dir, err)
 	}
 	var have []model.Game
-	if err := s.db.Select("name", "origin", "custom").Find(&have).Error; err != nil {
+	if err := s.db.Select("name", "origin", "custom", "install_root").Find(&have).Error; err != nil {
 		return nil, err
 	}
 	inRoot := cungThuMuc(dir, filepath.Clean(c.Root))
 	taken := make(map[string]bool, len(have))
 	for _, g := range have {
-		if g.Origin == model.GameOriginLocal || inRoot {
+		// Game Hub chiếm thư mục cùng tên ở nơi nó tải về: thư mục lưu quán chọn lúc Tải, chưa chọn thì GAME_ROOT.
+		hubHere := inRoot && g.InstallRoot == "" || g.InstallRoot != "" && cungThuMuc(dir, filepath.Clean(g.InstallRoot))
+		if g.Origin == model.GameOriginLocal || hubHere {
 			taken[strings.ToLower(g.Name)] = true
 		}
 		if g.Custom.Folder != "" {

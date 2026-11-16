@@ -26,7 +26,7 @@ import (
 const gameByIDSQL = `SELECT \* FROM "games" WHERE id = \$1`
 
 // LocalBrowse đọc tên, nguồn và phần tuỳ chỉnh (custom.folder) của mọi game để đánh dấu thư mục đã dùng.
-const gameNamesSQL = `SELECT "name","origin","custom" FROM "games"`
+const gameNamesSQL = `SELECT "name","origin","custom","install_root" FROM "games"`
 
 var gameNameCols = []string{"name", "origin", "custom"}
 
@@ -218,7 +218,7 @@ func TestCreateLocal_Luu(t *testing.T) {
 	writeEmpty(t, root, "Game/Bin/game.exe")
 	svc, mock := cafeWithRoot(t, root)
 
-	mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectBegin()
 	args := make([]driver.Value, 29) // số cột của bảng games; chỉ vài giá trị cần khớp
 	for i := range args {
@@ -247,7 +247,7 @@ func TestCreateLocal_TrungTen(t *testing.T) {
 
 	t.Run("trùng game của Hub", func(t *testing.T) {
 		svc, mock := cafeWithRoot(t, root)
-		mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "origin"}).AddRow("g1", "Game", model.GameOriginHub))
 		_, err := svc.CreateLocal(req)
 		require.Error(t, err)
@@ -256,7 +256,7 @@ func TestCreateLocal_TrungTen(t *testing.T) {
 	})
 	t.Run("đã thêm rồi", func(t *testing.T) {
 		svc, mock := cafeWithRoot(t, root)
-		mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "origin"}).AddRow("g1", "Game", model.GameOriginLocal))
 		_, err := svc.CreateLocal(req)
 		require.Error(t, err)
@@ -333,7 +333,7 @@ func TestCreateLocal_TuThuMuc_KiemTraTruocKhiChamDB(t *testing.T) {
 // expectInsertGame chờ lượt INSERT game và ghi lại mọi giá trị đã gửi.
 func expectInsertGame(mock sqlmock.Sqlmock) *[]driver.Value {
 	var seen []driver.Value
-	mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectBegin()
 	args := make([]driver.Value, 29) // số cột của bảng games
 	for i := range args {
@@ -432,7 +432,7 @@ func TestCreateLocal_TenKhacThuMuc(t *testing.T) {
 
 	t.Run("tên trùng game Hub: đặt tên khác", func(t *testing.T) {
 		svc, mock := cafeWithRoot(t, root)
-		mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).WithArgs("Roblox", 1).
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).WithArgs("Roblox", 1).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "origin"}).AddRow("g1", "Roblox", model.GameOriginHub))
 		_, err := svc.CreateLocal(&CreateGameRequest{Folder: filepath.Join(kho, "Roblox"), Launcher: "RobloxPlayerLauncher.exe", ClientRoot: cr})
 		require.Error(t, err)
@@ -473,7 +473,7 @@ func TestCreateLocal_ThayGameHubChuaTai(t *testing.T) {
 		return &CreateGameRequest{Folder: filepath.Join(kho, "Roblox"), Launcher: "RobloxPlayerLauncher.exe", ClientRoot: `E:\Online Games`, ReplaceHub: replace}
 	}
 	hubRow := func(mock sqlmock.Sqlmock, status string, version int) {
-		mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).WithArgs("Roblox", 1).
+		mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).WithArgs("Roblox", 1).
 			WillReturnRows(sqlmock.NewRows([]string{"id", "name", "origin", "status", "version"}).
 				AddRow(hubID, "Roblox", model.GameOriginHub, status, version))
 	}
@@ -560,7 +560,7 @@ func TestPullCatalog_KhongDeGameCucBo(t *testing.T) {
 	db, mock := newMockDB(t)
 	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe, UpstreamURL: srv.URL, CatalogKey: "k"})
 	svc.http = http.DefaultClient
-	mock.ExpectQuery(`SELECT \* FROM "games" WHERE name = \$1`).
+	mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "display_name", "origin"}).AddRow("g1", "lol", "Game của quán", model.GameOriginLocal))
 
 	settings := func() {
@@ -577,6 +577,37 @@ func TestPullCatalog_KhongDeGameCucBo(t *testing.T) {
 	require.NoError(t, svc.pullCatalog(context.Background()))
 	settings()
 	assert.Empty(t, svc.Info().LocalClash)
+}
+
+// Trên Windows "Valorant" và "VALORANT" là cùng một thư mục: catalog gửi tên chỉ khác hoa thường với game cục bộ thì
+// tính là trùng; với một game Hub đã có thì giữ game đã có, không ghi đè và không thêm dòng thứ hai.
+func TestPullCatalog_TrungTenKhacHoaThuong(t *testing.T) {
+	cases := map[string]struct {
+		origin    string
+		wantClash []string
+	}{
+		"game cục bộ": {model.GameOriginLocal, []string{"VALORANT"}},
+		"game Hub":    {model.GameOriginHub, nil},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			items := []CatalogItem{{Name: "VALORANT", DisplayName: "Valorant", Launcher: "a.exe", Version: 2, Infohash: "h2"}}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 0, "data": items})
+			}))
+			defer srv.Close()
+			db, mock := newMockDB(t)
+			svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe, UpstreamURL: srv.URL, CatalogKey: "k"})
+			svc.http = http.DefaultClient
+			mock.ExpectQuery(`SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`).WithArgs("VALORANT", 1).
+				WillReturnRows(sqlmock.NewRows([]string{"id", "name", "origin"}).AddRow("g1", "Valorant", c.origin))
+			require.NoError(t, svc.pullCatalog(context.Background()))
+			mock.ExpectQuery(`SELECT \* FROM "system_settings" WHERE group_name = \$1`).WithArgs("games").
+				WillReturnRows(sqlmock.NewRows([]string{"group_name", "key", "value"}))
+			assert.Equal(t, c.wantClash, svc.Info().LocalClash)
+			assert.NoError(t, mock.ExpectationsWereMet(), "không được UPDATE hay INSERT")
+		})
+	}
 }
 
 // Vòng nền và nút Tải cùng đọc catalog có một game mới: không được cùng INSERT (lượt sau vấp unique idx_games_name).
@@ -597,7 +628,7 @@ func TestPullCatalog_HaiLuotCungLuc(t *testing.T) {
 	svc := NewGameService(db, config.GameConfig{Role: config.GameRoleCafe, UpstreamURL: srv.URL, CatalogKey: "k"})
 	svc.http = http.DefaultClient
 
-	const sel = `SELECT \* FROM "games" WHERE name = \$1`
+	const sel = `SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`
 	// Chậm như PostgreSQL thật: lượt kia, nếu không bị khoá, SELECT trong lúc lượt này chưa kịp INSERT.
 	mock.ExpectQuery(sel).WithArgs("Roblox", 1).WillReturnRows(sqlmock.NewRows([]string{"id"})).WillDelayFor(50 * time.Millisecond)
 	mock.ExpectBegin()
@@ -724,7 +755,7 @@ func TestUpdate_GameCucBoDoiThuMuc(t *testing.T) {
 // Đổi tên game cục bộ (nhường tên cho game Hub cùng tên): thư mục giữ nguyên nhờ custom.folder.
 func TestUpdate_GameCucBoDoiTen(t *testing.T) {
 	const id = "11111111-1111-1111-1111-111111111111"
-	const countSQL = `SELECT count\(\*\) FROM "games" WHERE name = \$1 AND id <> \$2`
+	const countSQL = `SELECT count\(\*\) FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\) AND id <> \$2`
 	row := func(name, origin, custom string) *sqlmock.Rows {
 		return sqlmock.NewRows([]string{"id", "name", "origin", "custom"}).AddRow(id, name, origin, custom)
 	}

@@ -407,6 +407,7 @@ func Register(r *gin.Engine, db *gorm.DB, jwtManager *jwt.Manager, wsHub *hub.Hu
 				games.POST("/local", middleware.PermissionRequired("games.create"), h.Game.CreateLocal)
 				games.GET("/local/browse", middleware.PermissionRequired("games.create"), h.Game.LocalBrowse)
 				games.GET("/local/launchers", middleware.PermissionRequired("games.create"), h.Game.LocalLaunchers)
+				games.GET("/drives", middleware.PermissionRequired("games.view"), h.Game.Drives)
 				games.PUT("/:id", middleware.PermissionRequired("games.update"), h.Game.Update)
 				games.PUT("/:id/custom", middleware.PermissionRequired("games.update"), h.Game.UpdateCustom)
 				games.DELETE("/:id", middleware.PermissionRequired("games.delete"), h.Game.Delete)
