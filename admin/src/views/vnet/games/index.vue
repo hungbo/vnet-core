@@ -223,9 +223,9 @@ async function publish(row: any) {
   }
 }
 
-async function syncNow(row: any, installRoot = '') {
+async function syncNow(row: any, body: Record<string, string> = {}) {
   try {
-    await client.post(`/games/${row.id}/sync`, installRoot ? { install_root: installRoot } : {});
+    await client.post(`/games/${row.id}/sync`, body);
     ElMessage.success($t('vnetPages.games.queued', { name: row.display_name }));
     load(true);
     return true;
@@ -235,13 +235,18 @@ async function syncNow(row: any, installRoot = '') {
   }
 }
 
-// Hộp thoại Tải: game chưa tải bản nào thì quán chọn thư mục lưu trên máy chủ (chưa có thì máy chủ tự tạo). Gợi ý các
-// thư mục quán đã dùng; game đã tải thì tải ngay vào chỗ cũ, không hỏi. Dòng từ hộp "Tải game" (hub: true) đi qua
-// /games/hub-download để máy chủ chọn game trên Hub trước nếu cần.
+// Hộp thoại Tải: game chưa tải bản nào thì quán chọn ổ lưu; game nằm ở <ổ>\Games\<tên> (công cụ ở <ổ>\Tools), máy chủ
+// tự tạo thư mục. "Thư mục khác" vẫn cho gõ đường dẫn đầy đủ. Game đã tải thì tải ngay vào chỗ cũ, không hỏi. Dòng từ
+// hộp "Tải game" (hub: true) đi qua /games/hub-download để máy chủ chọn game trên Hub trước nếu cần.
 const catalogVisible = ref(false);
 const downloadRow = ref<any>(null);
 const downloadRoot = ref('');
+const downloadDrive = ref('');
+const downloadCustom = ref(false);
 const downloading = ref(false);
+// Dung lượng game (đã biết hoặc ước lượng của Hub) để báo ổ không đủ chỗ.
+const downloadNeed = computed(() => Number(downloadRow.value?.size_bytes) || 0);
+const tooSmall = (d: Drive) => downloadNeed.value > 0 && d.total_bytes > 0 && d.free_bytes < downloadNeed.value;
 const usedRoots = computed(() => {
   const seen = new Map<string, string>();
   for (const r of [...rows.value.map(x => x.install_root), info.value.root]) {
@@ -249,29 +254,89 @@ const usedRoots = computed(() => {
   }
   return [...seen.values()];
 });
-const downloadPath = computed(() =>
-  downloadRoot.value.trim() && downloadRow.value
-    ? joinServerPath(downloadRoot.value.trim(), downloadRow.value.name)
-    : ''
-);
+
+// Ổ đĩa của máy chủ. Máy trạm thấy ổ của máy chủ dưới cùng chữ ổ, nên lúc Tải và lúc thêm game cục bộ quán chỉ chọn ổ;
+// thư mục trong ổ theo loại game.
+interface Drive {
+  path: string;
+  label: string;
+  free_bytes: number;
+  total_bytes: number;
+  system: boolean;
+}
+const drives = ref<Drive[]>([]);
+async function loadDrives() {
+  try {
+    drives.value = ((await client.get('/games/drives')) as any) || [];
+  } catch {
+    drives.value = [];
+  }
+}
+const driveLetter = (p?: string) => (/^[A-Za-z]:/.test(p || '') ? p!.slice(0, 2).toUpperCase() : '');
+const driveName = (d: Drive) => (d.label ? `${d.label} (${driveLetter(d.path)})` : driveLetter(d.path) || d.path);
+// Ổ gợi ý sẵn: ổ của thư mục quán đã dùng, không có thì ổ không phải ổ hệ thống còn trống nhiều nhất.
+function defaultDrive(prefer?: string) {
+  const used = driveLetter(prefer) || driveLetter(usedRoots.value[0]);
+  if (used) return used;
+  const best = [...drives.value].filter(d => !d.system).sort((a, b) => b.free_bytes - a.free_bytes)[0];
+  return driveLetter(best?.path);
+}
+// Cùng luật với máy chủ (thuMucTheoLoai): công cụ vào <ổ>\Tools, game (online, offline, nhóm khác) vào <ổ>\Games.
+function folderFor(category?: string) {
+  return ['cong cu', 'tool', 'tools'].includes(khongDau((category || '').trim())) ? 'Tools' : 'Games';
+}
+function formatBytes(v: number) {
+  if (v >= 1024 ** 4) return `${(v / 1024 ** 4).toFixed(2)} TB`;
+  return `${Math.round(v / 1024 ** 3)} GB`;
+}
+const downloadPath = computed(() => {
+  const row = downloadRow.value;
+  if (!row) return '';
+  if (downloadCustom.value) return downloadRoot.value.trim() ? joinServerPath(downloadRoot.value.trim(), row.name) : '';
+  return downloadDrive.value ? `${downloadDrive.value}\\${folderFor(row.category)}\\${row.name}` : '';
+});
 function suggestRoots(_q: string, cb: (items: { value: string }[]) => void) {
   cb(usedRoots.value.map(value => ({ value })));
+}
+// Game đã có thư mục lưu (bấm Tải rồi bị ngắt) mà thư mục đó không phải <ổ>\Games của nó thì mở sẵn "Thư mục khác" đúng
+// chỗ cũ: tải tiếp ở đó thay vì sang chỗ mới.
+function prepareDownload(row: any, installRoot: string) {
+  downloadRow.value = row;
+  downloadRoot.value = installRoot || usedRoots.value[0] || '';
+  downloadDrive.value = defaultDrive(installRoot);
+  downloadCustom.value =
+    Boolean(installRoot) &&
+    installRoot.replace(/[\\/]+$/, '').toLowerCase() !==
+      `${driveLetter(installRoot)}\\${folderFor(row.category)}`.toLowerCase();
+  loadDrives().then(() => {
+    if (!downloadDrive.value) downloadDrive.value = defaultDrive(installRoot);
+  });
 }
 function openDownload(row: any) {
   if (row.infohash) {
     syncNow(row);
     return;
   }
-  downloadRow.value = row;
-  downloadRoot.value = row.install_root || usedRoots.value[0] || '';
+  prepareDownload(row, row.install_root);
 }
 function openHubDownload(row: any) {
-  downloadRow.value = { hub: true, name: row.name, display_name: row.display_name };
-  downloadRoot.value = row.local?.install_root || usedRoots.value[0] || '';
+  prepareDownload(
+    {
+      hub: true,
+      name: row.name,
+      display_name: row.display_name,
+      category: row.category,
+      size_bytes: row.size_bytes || (row.approx_size_mb || 0) * 1024 ** 2
+    },
+    row.local?.install_root || ''
+  );
 }
-async function hubDownload(row: any, installRoot: string) {
+// Thân gửi máy chủ: ổ (máy chủ ghép thư mục theo loại) hoặc thư mục đầy đủ khi chọn "Thư mục khác".
+const downloadBody = (): Record<string, string> =>
+  downloadCustom.value ? { install_root: downloadRoot.value.trim() } : { drive: downloadDrive.value };
+async function hubDownload(row: any, body: Record<string, string>) {
   try {
-    await client.post('/games/hub-download', { name: row.name, install_root: installRoot });
+    await client.post('/games/hub-download', { name: row.name, ...body });
     ElMessage.success($t('vnetPages.games.queued', { name: row.display_name }));
     load(true);
     return true;
@@ -282,9 +347,9 @@ async function hubDownload(row: any, installRoot: string) {
 }
 async function submitDownload() {
   const row = downloadRow.value;
-  const root = downloadRoot.value.trim();
+  const body = downloadBody();
   downloading.value = true;
-  if (await (row.hub ? hubDownload(row, root) : syncNow(row, root))) downloadRow.value = null;
+  if (await (row.hub ? hubDownload(row, body) : syncNow(row, body))) downloadRow.value = null;
   downloading.value = false;
 }
 
@@ -408,6 +473,10 @@ const emptyForm = () => ({
   priority: 0
 });
 const form = ref(emptyForm());
+// Ô ít dùng gom vào "Nâng cao"; mở sẵn khi sửa game đã có dùng tới chúng.
+const advancedOpen = ref<string[]>([]);
+const hasAdvanced = (f: ReturnType<typeof emptyForm>) =>
+  Boolean(f.launch_args || f.menu_entries.length || f.run_first.length || f.client_root || f.priority);
 // Hộp thêm/sửa game cục bộ: thư mục game chọn qua nhiều cấp thư mục của máy chủ; tệp chạy và icon chọn từ gợi ý (vẫn
 // gõ tay được).
 const localMode = ref(false);
@@ -467,6 +536,7 @@ function openCreate() {
   editingId.value = '';
   localMode.value = false;
   form.value = emptyForm();
+  advancedOpen.value = [];
   dialogVisible.value = true;
 }
 
@@ -484,8 +554,12 @@ async function loadLocalFiles(folder: string, quiet = false) {
         kind => client.get('/games/local/launchers', { params: { folder, kind } }) as Promise<any>
       )
     );
+    if (filesFor.value !== folder) return; // đã chọn thư mục khác trong lúc chờ
     localLaunchers.value = launchers || [];
     localIcons.value = icons || [];
+    if (localMode.value && !editingId.value && !form.value.launcher) {
+      form.value.launcher = guessLauncher(localLaunchers.value);
+    }
   } catch (e: any) {
     if (!quiet) ElMessage.error(e?.message || $t('vnetPages.common.error'));
   }
@@ -519,6 +593,66 @@ const folderProps = {
   }
 };
 
+// Thêm game cục bộ: chọn loại và ổ, rồi chọn thư mục game trong <ổ>\Games (công cụ trong <ổ>\Tools), một cấp. Game nằm
+// chỗ khác (kiểu Kzone E:\Online Games\...) thì "Thư mục khác" mở ô chọn thư mục nhiều cấp như trước.
+type LocalKind = 'game' | 'tool';
+// Nhóm điền sẵn theo loại: đúng tên nhóm Hub dùng, nên menu máy trạm xếp game cục bộ vào cùng tab với game Hub.
+const localCategory: Record<LocalKind, string> = { game: 'Game online', tool: 'Công cụ' };
+const localKind = ref<LocalKind>('game');
+const localDrive = ref('');
+const localPickOther = ref(false);
+const localDirs = ref<{ name: string; path: string; taken: boolean }[]>([]);
+const localDirsLoading = ref(false);
+const localBase = computed(() =>
+  localDrive.value ? `${localDrive.value}\\${localKind.value === 'tool' ? 'Tools' : 'Games'}` : ''
+);
+// Danh sách đọc theo base lúc gửi: đổi ổ nhanh thì kết quả cũ về muộn không đè kết quả mới.
+async function loadLocalDirs() {
+  const base = localBase.value;
+  localDirs.value = [];
+  if (!base) return;
+  localDirsLoading.value = true;
+  try {
+    const dirs = ((await client.get('/games/local/browse', { params: { path: base } })) as any) || [];
+    if (base === localBase.value) localDirs.value = dirs;
+  } catch {
+    // Thư mục chưa có trên ổ đó: danh sách trống, ô báo cách xử lý.
+  } finally {
+    if (base === localBase.value) localDirsLoading.value = false;
+  }
+}
+const autoCategory = ref('');
+function setLocalKind(kind: LocalKind) {
+  localKind.value = kind;
+  if (!form.value.category || form.value.category === autoCategory.value) {
+    form.value.category = localCategory[kind];
+    autoCategory.value = form.value.category;
+  }
+  if (!localPickOther.value) {
+    folderChain.value = [];
+    onLocalFolderPicked();
+    loadLocalDirs();
+  }
+}
+function setLocalDrive(drive: string) {
+  localDrive.value = drive;
+  folderChain.value = [];
+  onLocalFolderPicked();
+  loadLocalDirs();
+}
+function pickLocalDir(path: string) {
+  folderChain.value = path ? serverPathChain(path) : [];
+  onLocalFolderPicked();
+  if (path) loadLocalFiles(path);
+}
+function togglePickOther() {
+  localPickOther.value = !localPickOther.value;
+  folderChain.value = [];
+  folderPickerKey.value += 1;
+  onLocalFolderPicked();
+  if (!localPickOther.value) loadLocalDirs();
+}
+
 function openCreateLocal() {
   editingId.value = '';
   localMode.value = true;
@@ -527,8 +661,16 @@ function openCreateLocal() {
   folderChain.value = [];
   folderPickerKey.value += 1;
   autoDisplayName.value = '';
+  autoCategory.value = '';
+  advancedOpen.value = [];
+  localPickOther.value = false;
+  localDrive.value = defaultDrive(info.value.root);
+  setLocalKind('game');
   loadLocalFiles('');
   dialogVisible.value = true;
+  loadDrives().then(() => {
+    if (!localDrive.value) setLocalDrive(defaultDrive(info.value.root));
+  });
 }
 
 function onLocalFolderPicked() {
@@ -547,6 +689,29 @@ function onLocalFolderPicked() {
   form.value.launcher = '';
   form.value.icon = '';
 }
+
+// Tệp chạy tự chọn khi chắc chắn: thư mục chỉ có một tệp chạy, hoặc chỉ một tệp chạy nằm ngay trong thư mục game.
+// Icon để trống: máy chủ lấy icon từ tệp chạy.
+function guessLauncher(list: string[]) {
+  if (list.length === 1) return list[0];
+  const top = list.filter(f => !/[\\/]/.test(f));
+  return top.length === 1 ? top[0] : '';
+}
+
+// Tên game trùng game khác (không phân biệt hoa thường: trên Windows là cùng một thư mục). Game Hub quán chưa tải thì
+// lưu sẽ thay nó; game Hub đã tải hay đang tải, hoặc game cục bộ khác, thì phải đặt tên khác.
+const localClash = computed(() => {
+  if (!localMode.value) return null;
+  const name = (form.value.name.trim() || form.value.folder_name).toLowerCase();
+  if (!name) return null;
+  const other = rows.value.find(r => r.id !== editingId.value && String(r.name).toLowerCase() === name);
+  if (!other) return null;
+  if (isLocal(other)) return { kind: 'local', name: other.name };
+  const replaceable = !editingId.value && other.status === 'not_installed' && !other.version;
+  return { kind: replaceable ? 'replace' : 'hub', name: other.name };
+});
+const localClashBlocks = computed(() => ['local', 'hub'].includes(localClash.value?.kind || ''));
+
 function onFolderExpand(chain: any) {
   if (!takenFolders.has((chain as string[]).slice(-1)[0])) {
     folderChain.value = chain as string[];
@@ -590,6 +755,9 @@ function openEdit(row: any) {
     client_root: row.custom?.client_root || '',
     priority: row.priority || 0
   };
+  // Sửa thì chọn thư mục bằng ô nhiều cấp như trước: game cục bộ cũ có thể nằm bất kỳ đâu.
+  localPickOther.value = true;
+  advancedOpen.value = hasAdvanced(form.value) ? ['adv'] : [];
   dialogVisible.value = true;
 }
 
@@ -639,25 +807,9 @@ async function saveCustom() {
   }
 }
 
-// Tên trùng một game Hub quán chưa tải: hỏi trước, máy chủ chỉ thay khi có replace_hub. null là người dùng huỷ.
-async function askReplaceHub(): Promise<boolean | null> {
-  if (!localMode.value || editingId.value) return false;
-  const name = form.value.name.trim() || form.value.folder_name;
-  const hub = rows.value.find(r => r.name === name && !isLocal(r));
-  if (!hub || hub.status !== 'not_installed' || hub.version) return false;
-  try {
-    await ElMessageBox.confirm($t('vnetPages.games.replaceHubConfirm', { name }), $t('vnetPages.common.confirm'), {
-      type: 'warning'
-    });
-  } catch {
-    return null;
-  }
-  return true;
-}
-
 async function submit() {
-  const replaceHub = await askReplaceHub();
-  if (replaceHub === null) return;
+  // Trùng game Hub quán chưa tải: hộp đã báo sẵn là lưu sẽ thay game đó, máy chủ chỉ thay khi có replace_hub.
+  const replaceHub = localClash.value?.kind === 'replace';
   saving.value = true;
   try {
     if (editingId.value) {
@@ -1033,7 +1185,45 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
       @update:model-value="downloadRow = null"
     >
       <ElForm label-position="top" @submit.prevent="submitDownload">
-        <ElFormItem :label="$t('vnetPages.games.downloadRoot')">
+        <ElFormItem v-if="!downloadCustom" :label="$t('vnetPages.games.downloadDrive')">
+          <div class="w-full">
+            <ElRadioGroup v-model="downloadDrive" class="w-full flex flex-col items-stretch gap-6px">
+              <ElRadio
+                v-for="d in drives"
+                :key="d.path"
+                :value="driveLetter(d.path)"
+                :disabled="tooSmall(d)"
+                border
+                class="!mr-0"
+              >
+                <span class="font-medium">{{ driveName(d) }}</span>
+                <span v-if="d.total_bytes" class="ml-8px text-12px text-gray-500">
+                  {{
+                    $t('vnetPages.games.driveFree', {
+                      free: formatBytes(d.free_bytes),
+                      total: formatBytes(d.total_bytes)
+                    })
+                  }}
+                </span>
+                <ElTag v-if="d.system" size="small" type="warning" class="ml-6px">
+                  {{ $t('vnetPages.games.driveSystem') }}
+                </ElTag>
+                <ElTag v-if="tooSmall(d)" size="small" type="danger" class="ml-6px">
+                  {{ $t('vnetPages.games.driveFull') }}
+                </ElTag>
+              </ElRadio>
+            </ElRadioGroup>
+            <div v-if="!drives.length" class="text-12px text-gray-500">{{ $t('vnetPages.games.drivesEmpty') }}</div>
+            <div class="mt-4px text-12px text-gray-500">
+              {{ downloadPath ? $t('vnetPages.games.downloadPath', { path: downloadPath }) : '' }}
+              {{ $t('vnetPages.games.driveHint') }}
+            </div>
+            <ElButton link type="primary" size="small" @click="downloadCustom = true">
+              {{ $t('vnetPages.games.downloadOther') }}
+            </ElButton>
+          </div>
+        </ElFormItem>
+        <ElFormItem v-else :label="$t('vnetPages.games.downloadRoot')">
           <ElAutocomplete
             v-model="downloadRoot"
             :fetch-suggestions="suggestRoots"
@@ -1045,11 +1235,19 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
             {{ downloadPath ? $t('vnetPages.games.downloadPath', { path: downloadPath }) : '' }}
             {{ $t('vnetPages.games.downloadRootHint') }}
           </div>
+          <ElButton link type="primary" size="small" @click="downloadCustom = false">
+            {{ $t('vnetPages.games.downloadDriveOnly') }}
+          </ElButton>
         </ElFormItem>
       </ElForm>
       <template #footer>
         <ElButton @click="downloadRow = null">{{ $t('vnetPages.common.cancel') }}</ElButton>
-        <ElButton type="primary" :loading="downloading" :disabled="!downloadRoot.trim()" @click="submitDownload">
+        <ElButton
+          type="primary"
+          :loading="downloading"
+          :disabled="downloadCustom ? !downloadRoot.trim() : !downloadDrive"
+          @click="submitDownload"
+        >
           {{ $t('vnetPages.games.syncNow') }}
         </ElButton>
       </template>
@@ -1057,7 +1255,9 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
 
     <ElDialog
       v-model="dialogVisible"
-      :title="editingId ? $t('vnetPages.common.edit') : localMode ? $t('vnetPages.games.addLocal') : $t('vnetPages.games.add')"
+      :title="
+        editingId ? $t('vnetPages.common.edit') : localMode ? $t('vnetPages.games.addLocal') : $t('vnetPages.games.add')
+      "
       width="720px"
     >
       <ElAlert v-if="localMode" type="info" :closable="false" show-icon style="margin-bottom: 16px">
@@ -1067,7 +1267,63 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
         {{ $t('vnetPages.games.addHint', { root: info.root }) }}
       </ElAlert>
       <ElForm label-width="150px">
-        <ElFormItem v-if="localMode" :label="$t('vnetPages.games.localFolder')">
+        <template v-if="localMode && !localPickOther">
+          <ElFormItem :label="$t('vnetPages.games.localKind')">
+            <ElRadioGroup :model-value="localKind" @update:model-value="setLocalKind($event as LocalKind)">
+              <ElRadioButton value="game">{{ $t('vnetPages.games.localKindGame') }}</ElRadioButton>
+              <ElRadioButton value="tool">{{ $t('vnetPages.games.localKindTool') }}</ElRadioButton>
+            </ElRadioGroup>
+          </ElFormItem>
+          <ElFormItem :label="$t('vnetPages.games.localDrive')">
+            <ElSelect
+              :model-value="localDrive"
+              class="w-full"
+              :placeholder="$t('vnetPages.games.localDrive')"
+              @update:model-value="setLocalDrive"
+            >
+              <ElOption v-for="d in drives" :key="d.path" :value="driveLetter(d.path)" :label="driveName(d)">
+                <span>{{ driveName(d) }}</span>
+                <span v-if="d.total_bytes" class="ml-8px text-12px text-gray-500">
+                  {{
+                    $t('vnetPages.games.driveFree', {
+                      free: formatBytes(d.free_bytes),
+                      total: formatBytes(d.total_bytes)
+                    })
+                  }}
+                </span>
+              </ElOption>
+            </ElSelect>
+          </ElFormItem>
+          <ElFormItem :label="$t('vnetPages.games.localFolder')">
+            <div class="w-full">
+              <ElSelect
+                :model-value="localFolderPath"
+                filterable
+                clearable
+                class="w-full"
+                :loading="localDirsLoading"
+                :disabled="!localBase"
+                :placeholder="$t('vnetPages.games.localDirPick', { base: localBase })"
+                :no-data-text="$t('vnetPages.games.localDirsEmpty', { base: localBase })"
+                @update:model-value="pickLocalDir($event || '')"
+              >
+                <ElOption v-for="d in localDirs" :key="d.path" :value="d.path" :label="d.name" :disabled="d.taken">
+                  <span>{{ d.name }}</span>
+                  <span v-if="d.taken" class="ml-8px text-12px text-gray-500">
+                    {{ $t('vnetPages.games.localDirTaken') }}
+                  </span>
+                </ElOption>
+              </ElSelect>
+              <div class="text-12px text-gray-500">
+                {{ localFolderPath ? $t('vnetPages.games.localFolderPath', { path: localFolderPath }) : '' }}
+              </div>
+              <ElButton link type="primary" size="small" @click="togglePickOther">
+                {{ $t('vnetPages.games.localOther') }}
+              </ElButton>
+            </div>
+          </ElFormItem>
+        </template>
+        <ElFormItem v-if="localMode && localPickOther" :label="$t('vnetPages.games.localFolder')">
           <div class="w-full">
             <ElCascader
               :key="folderPickerKey"
@@ -1085,13 +1341,34 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
               {{ localFolderPath ? $t('vnetPages.games.localFolderPath', { path: localFolderPath }) : '' }}
               {{ $t(editingId ? 'vnetPages.games.localFolderEditHint' : 'vnetPages.games.localFolderHint') }}
             </div>
+            <ElButton v-if="!editingId" link type="primary" size="small" @click="togglePickOther">
+              {{ $t('vnetPages.games.localByDrive') }}
+            </ElButton>
           </div>
         </ElFormItem>
-        <ElFormItem v-else :label="$t('vnetPages.games.folder')">
+        <ElFormItem v-if="!localMode" :label="$t('vnetPages.games.folder')">
           <ElInput v-if="editingId" :model-value="form.folder_name" disabled />
           <ElInput v-else v-model="form.name" placeholder="League of Legends" />
         </ElFormItem>
-        <ElFormItem v-if="localMode" :label="$t('vnetPages.games.localName')">
+        <ElAlert
+          v-if="localClash"
+          :type="localClashBlocks ? 'error' : 'warning'"
+          :closable="false"
+          show-icon
+          class="mb-16px"
+          :title="
+            $t(
+              localClash.kind === 'replace'
+                ? 'vnetPages.games.localClashReplace'
+                : localClash.kind === 'hub'
+                  ? 'vnetPages.games.localClashHub'
+                  : 'vnetPages.games.localClashLocal',
+              { name: localClash.name }
+            )
+          "
+        />
+        <!-- Tên game mặc định là tên thư mục: chỉ hiện ở đây khi phải đặt tên khác hay đang sửa, còn lại nằm trong Nâng cao. -->
+        <ElFormItem v-if="localMode && (editingId || localClashBlocks)" :label="$t('vnetPages.games.localName')">
           <ElInput v-model="form.name" :placeholder="form.folder_name" />
           <div class="text-12px text-gray-500">
             {{ $t(editingId ? 'vnetPages.games.localRenameHint' : 'vnetPages.games.localNameHint') }}
@@ -1127,9 +1404,6 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
           </ElSelect>
           <ElInput v-else v-model="form.launcher" placeholder="Riot Client/RiotClientServices.exe" />
         </ElFormItem>
-        <ElFormItem :label="$t('vnetPages.games.launchArgs')">
-          <ElInput v-model="form.launch_args" />
-        </ElFormItem>
         <ElFormItem :label="$t('vnetPages.games.icon')">
           <ElSelect
             v-if="localMode"
@@ -1146,64 +1420,86 @@ useRealtimeRefresh(['games', 'settings'], () => load(true));
           <ElInput v-else v-model="form.icon" placeholder="League of Legends/LeagueClient.exe" />
           <div class="text-12px text-gray-500">{{ $t('vnetPages.games.iconHint') }}</div>
         </ElFormItem>
-        <ElFormItem :label="$t('vnetPages.games.menuEntries')">
-          <div class="w-full">
-            <div class="text-12px text-gray-500">{{ $t('vnetPages.games.menuEntriesHint') }}</div>
-            <div
-              v-for="(e, i) in form.menu_entries"
-              :key="i"
-              class="grid grid-cols-[1fr_1fr_auto] mt-8px items-center gap-6px"
-            >
-              <ElInput v-model="e.display_name" :placeholder="$t('vnetPages.games.entryName')" />
-              <ElInput v-model="e.launcher" placeholder="program/swriter.exe" />
-              <ElButton type="danger" link @click="form.menu_entries.splice(i, 1)">
-                {{ $t('vnetPages.common.delete') }}
-              </ElButton>
-              <ElInput v-model="e.launch_args" :placeholder="$t('vnetPages.games.launchArgs')" />
-              <ElInput v-model="e.icon" :placeholder="$t('vnetPages.games.icon')" />
-            </div>
-            <ElButton class="mt-8px" size="small" @click="form.menu_entries.push(emptyEntry())">
-              {{ $t('vnetPages.games.addEntry') }}
-            </ElButton>
-          </div>
-        </ElFormItem>
-        <ElFormItem :label="$t('vnetPages.games.runFirst')">
-          <div class="w-full">
-            <div class="text-12px text-gray-500">{{ $t('vnetPages.games.runFirstHint') }}</div>
-            <div v-for="(s, i) in form.run_first" :key="i" class="grid grid-cols-[1fr_1fr_auto] mt-8px items-center gap-6px">
-              <ElInput v-model="s.launcher" :placeholder="$t('vnetPages.games.stepLauncher')" />
-              <ElInput v-model="s.launch_args" :placeholder="$t('vnetPages.games.stepArgs')" />
-              <ElButton type="danger" link @click="form.run_first.splice(i, 1)">
-                {{ $t('vnetPages.common.delete') }}
-              </ElButton>
-            </div>
-            <ElButton v-if="form.run_first.length < 5" class="mt-8px" size="small" @click="form.run_first.push(emptyStep())">
-              {{ $t('vnetPages.games.addStep') }}
-            </ElButton>
-          </div>
-        </ElFormItem>
-        <ElFormItem v-if="localMode" :label="$t('vnetPages.games.clientRootLocal')">
-          <ElInput
-            v-model="form.client_root"
-            :placeholder="editingId && !folderChanged ? 'E:\\Games2' : clientRootDefault"
-          />
-          <div class="text-12px text-gray-500">
-            {{
-              $t(
-                editingId && !folderChanged
-                  ? 'vnetPages.games.clientRootLocalHint'
-                  : 'vnetPages.games.clientRootFolderHint'
-              )
-            }}
-          </div>
-        </ElFormItem>
-        <ElFormItem :label="$t('vnetPages.games.priority')">
-          <ElInputNumber v-model="form.priority" style="width: 100%" />
-        </ElFormItem>
+        <ElCollapse v-model="advancedOpen" class="mb-16px">
+          <ElCollapseItem name="adv" :title="$t('vnetPages.games.advanced')">
+            <ElFormItem v-if="localMode && !editingId && !localClashBlocks" :label="$t('vnetPages.games.localName')">
+              <ElInput v-model="form.name" :placeholder="form.folder_name" />
+              <div class="text-12px text-gray-500">{{ $t('vnetPages.games.localNameHint') }}</div>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.games.launchArgs')">
+              <ElInput v-model="form.launch_args" />
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.games.menuEntries')">
+              <div class="w-full">
+                <div class="text-12px text-gray-500">{{ $t('vnetPages.games.menuEntriesHint') }}</div>
+                <div
+                  v-for="(e, i) in form.menu_entries"
+                  :key="i"
+                  class="grid grid-cols-[1fr_1fr_auto] mt-8px items-center gap-6px"
+                >
+                  <ElInput v-model="e.display_name" :placeholder="$t('vnetPages.games.entryName')" />
+                  <ElInput v-model="e.launcher" placeholder="program/swriter.exe" />
+                  <ElButton type="danger" link @click="form.menu_entries.splice(i, 1)">
+                    {{ $t('vnetPages.common.delete') }}
+                  </ElButton>
+                  <ElInput v-model="e.launch_args" :placeholder="$t('vnetPages.games.launchArgs')" />
+                  <ElInput v-model="e.icon" :placeholder="$t('vnetPages.games.icon')" />
+                </div>
+                <ElButton class="mt-8px" size="small" @click="form.menu_entries.push(emptyEntry())">
+                  {{ $t('vnetPages.games.addEntry') }}
+                </ElButton>
+              </div>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.games.runFirst')">
+              <div class="w-full">
+                <div class="text-12px text-gray-500">{{ $t('vnetPages.games.runFirstHint') }}</div>
+                <div
+                  v-for="(s, i) in form.run_first"
+                  :key="i"
+                  class="grid grid-cols-[1fr_1fr_auto] mt-8px items-center gap-6px"
+                >
+                  <ElInput v-model="s.launcher" :placeholder="$t('vnetPages.games.stepLauncher')" />
+                  <ElInput v-model="s.launch_args" :placeholder="$t('vnetPages.games.stepArgs')" />
+                  <ElButton type="danger" link @click="form.run_first.splice(i, 1)">
+                    {{ $t('vnetPages.common.delete') }}
+                  </ElButton>
+                </div>
+                <ElButton
+                  v-if="form.run_first.length < 5"
+                  class="mt-8px"
+                  size="small"
+                  @click="form.run_first.push(emptyStep())"
+                >
+                  {{ $t('vnetPages.games.addStep') }}
+                </ElButton>
+              </div>
+            </ElFormItem>
+            <ElFormItem v-if="localMode" :label="$t('vnetPages.games.clientRootLocal')">
+              <ElInput
+                v-model="form.client_root"
+                :placeholder="editingId && !folderChanged ? 'E:\\Games2' : clientRootDefault"
+              />
+              <div class="text-12px text-gray-500">
+                {{
+                  $t(
+                    editingId && !folderChanged
+                      ? 'vnetPages.games.clientRootLocalHint'
+                      : 'vnetPages.games.clientRootFolderHint'
+                  )
+                }}
+              </div>
+            </ElFormItem>
+            <ElFormItem :label="$t('vnetPages.games.priority')">
+              <ElInputNumber v-model="form.priority" style="width: 100%" />
+            </ElFormItem>
+          </ElCollapseItem>
+        </ElCollapse>
       </ElForm>
       <template #footer>
         <ElButton @click="dialogVisible = false">{{ $t('vnetPages.common.cancel') }}</ElButton>
-        <ElButton type="primary" :loading="saving" @click="submit">{{ $t('vnetPages.common.save') }}</ElButton>
+        <ElButton type="primary" :loading="saving" :disabled="localClashBlocks" @click="submit">
+          {{ $t('vnetPages.common.save') }}
+        </ElButton>
       </template>
     </ElDialog>
 
