@@ -857,7 +857,7 @@ const local: App.I18n.Schema = {
       addLocal: 'Thêm game cục bộ',
       localTag: 'Cục bộ',
       localHint:
-        'Game quán tự tải: chọn thư mục game (ở bất kỳ đâu trên máy chủ, không cần tạo liên kết) và tệp chạy. Game hiện trên menu máy trạm nhưng không đồng bộ với Hub; Hub không ghi đè hay xoá nó.',
+        'Game quán tự có: chọn loại và ổ rồi chọn thư mục game trong <ổ>\\Games (công cụ trong <ổ>\\Tools). Game nằm chỗ khác thì bấm "Thư mục khác". Game hiện trên menu máy trạm nhưng không đồng bộ với Hub; Hub không ghi đè hay xoá nó.',
       localFolder: 'Thư mục game',
       localFolderPick: 'Chọn thư mục game trên máy chủ',
       localFolderHint:
@@ -865,16 +865,29 @@ const local: App.I18n.Schema = {
       localFolderEditHint:
         'Chọn thư mục khác để trỏ game sang đó. Tên game giữ nguyên; tệp chạy phải có trong thư mục mới.',
       localFolderPath: 'Đang chọn: {path}.',
+      localKind: 'Loại',
+      localKindGame: 'Game',
+      localKindTool: 'Công cụ',
+      localDrive: 'Ổ đĩa',
+      localDirPick: 'Chọn thư mục trong {base}',
+      localDirsEmpty: 'Chưa có thư mục nào trong {base}. Chép game vào đó rồi mở lại hộp này, hoặc bấm "Thư mục khác".',
+      localDirTaken: 'đã là game',
+      localOther: 'Thư mục khác (game không nằm trong Games / Tools)',
+      localByDrive: 'Chọn theo ổ',
+      localClashReplace:
+        'Hub có game "{name}" quán chưa tải. Lưu sẽ thay nó bằng game cục bộ này; muốn dùng lại bản của Hub thì xoá game cục bộ.',
+      localClashHub:
+        'Trùng tên game "{name}" của Hub mà quán đã tải hoặc đang tải. Đặt Tên game khác (thư mục giữ nguyên), ví dụ thêm KZ.',
+      localClashLocal: 'Đã có game cục bộ tên "{name}" (không phân biệt hoa thường). Đặt Tên game khác.',
+      advanced: 'Nâng cao',
       localLauncherPick: 'Chọn hoặc gõ tệp chạy',
       localIconPick: 'Chọn hoặc gõ tệp icon',
       categoryPick: 'Chọn nhóm hoặc gõ nhóm mới',
       localName: 'Tên game',
       localNameHint:
-        'Để trống thì lấy tên thư mục. Trùng một game Hub quán chưa tải thì trang sẽ hỏi có thay không; trùng game Hub đã tải hoặc tên thư mục có dấu tiếng Việt thì đặt tên khác (chỉ chữ không dấu, số, khoảng trắng và . _ ( ) + -).',
+        'Để trống thì lấy tên thư mục. Tên thư mục có dấu tiếng Việt thì đặt tên khác (chỉ chữ không dấu, số, khoảng trắng và . _ ( ) + -).',
       localRenameHint:
         'Đổi tên để nhường tên cho game Hub cùng tên (ví dụ thêm KZ). Thư mục game và lượt chơi giữ nguyên. Chỉ chữ không dấu, số, khoảng trắng và . _ ( ) + -.',
-      replaceHubConfirm:
-        'Hub đã có game "{name}" nhưng quán chưa tải. Thay bằng game cục bộ này? Game của Hub sẽ không tải về nữa; muốn dùng lại bản của Hub thì xoá game cục bộ.',
       localClash:
         'Game cục bộ trùng tên với game của Hub: {names}. Quán giữ bản cục bộ; muốn dùng bản của Hub thì xoá game cục bộ (tệp trên ổ giữ nguyên).',
       notInCatalog:
@@ -927,6 +940,15 @@ const local: App.I18n.Schema = {
       downloadPath: 'Game sẽ nằm ở {path}.',
       downloadRootHint:
         'Chọn thư mục đã dùng hoặc gõ đường dẫn mới, ví dụ E:\\Games; chưa có thì máy chủ tự tạo. Máy trạm mở game theo đúng đường dẫn này; máy trạm thấy ổ khác thì đặt ở Tuỳ chỉnh.',
+      downloadDrive: 'Ổ lưu trên máy chủ',
+      driveFree: 'trống {free} / {total}',
+      driveSystem: 'Ổ hệ thống',
+      driveFull: 'Không đủ chỗ',
+      drivesEmpty: 'Không đọc được danh sách ổ của máy chủ: bấm "Thư mục khác" để gõ đường dẫn.',
+      driveHint:
+        'Game lưu ở <ổ>\\Games, công cụ ở <ổ>\\Tools; chưa có thì máy chủ tự tạo. Máy trạm phải thấy ổ này dưới cùng chữ ổ.',
+      downloadOther: 'Thư mục khác',
+      downloadDriveOnly: 'Chỉ chọn ổ',
       publishing: 'Đang băm {name} để publish, sẽ xong sau ít phút',
       queued: 'Đã xếp {name} vào hàng tải',
       deleteConfirm: 'Bỏ {name} khỏi danh mục? Tệp trên ổ đĩa giữ nguyên.',

@@ -227,6 +227,21 @@ func (h *GameHandler) LocalBrowse(c *gin.Context) {
 	response.Success(c, dirs)
 }
 
+// Drives
+// @Summary      Các ổ đĩa của máy chủ kèm tên ổ và dung lượng trống, để chọn ổ lưu game (máy trạm thấy cùng chữ ổ)
+// @Tags         Games
+// @Produce      json
+// @Success      200  {object}  response.Response{data=[]service.GameDrive}
+// @Router       /api/games/drives [get]
+func (h *GameHandler) Drives(c *gin.Context) {
+	drives, err := h.svc.Drives()
+	if err != nil {
+		gameError(c, err)
+		return
+	}
+	response.Success(c, drives)
+}
+
 // LocalLaunchers
 // @Summary      Tệp chạy (.exe, .bat, .cmd, .lnk) hoặc tệp icon (.exe, .ico) trong một thư mục game, gồm cả thư mục con
 // @Tags         Games
@@ -321,12 +336,13 @@ func (h *GameHandler) Publish(c *gin.Context) {
 // Sync
 // @Summary      Tải ngay một game từ master (chỉ máy chủ quán)
 // @Tags         Games
-// @Description  Thân tuỳ chọn {"install_root": "E:\\Games"}: thư mục lưu quán chọn (tự tạo nếu chưa có). Bỏ trống là giữ thư mục game đã có.
+// @Description  Thân tuỳ chọn {"drive": "E:"}: ổ quán chọn, game lưu ở E:\\Games (công cụ ở E:\\Tools). Hoặc {"install_root": "E:\\Games"}: thư mục lưu đầy đủ (tự tạo nếu chưa có). Bỏ trống là giữ thư mục game đã có.
 // @Param        id  path  string  true  "Game ID"
 // @Success      200  {object}  response.Response
 // @Router       /api/games/{id}/sync [post]
 func (h *GameHandler) Sync(c *gin.Context) {
 	var req struct {
+		Drive       string `json:"drive"`
 		InstallRoot string `json:"install_root"`
 	}
 	if c.Request.ContentLength != 0 {
@@ -335,7 +351,11 @@ func (h *GameHandler) Sync(c *gin.Context) {
 			return
 		}
 	}
-	if err := h.svc.SyncNowTo(c.Param("id"), req.InstallRoot); err != nil {
+	root := req.InstallRoot
+	if req.Drive != "" {
+		root = req.Drive
+	}
+	if err := h.svc.SyncNowTo(c.Param("id"), root); err != nil {
 		gameError(c, err)
 		return
 	}
@@ -359,7 +379,7 @@ func (h *GameHandler) HubCatalog(c *gin.Context) {
 
 // DownloadHubGame
 // @Summary      Tải một game của Hub vào thư mục quán chọn (chỉ máy chủ quán)
-// @Description  Game quán chưa nhận từ Hub thì chọn nó trên Hub trước. install_root là thư mục trên máy chủ (game nằm ở install_root\\name); game đã tải bỏ trống để tải tiếp vào chỗ cũ.
+// @Description  Game quán chưa nhận từ Hub thì chọn nó trên Hub trước. drive là ổ quán chọn (game lưu ở <ổ>\\Games, công cụ ở <ổ>\\Tools); install_root là thư mục đầy đủ trên máy chủ (game nằm ở install_root\\name); game đã tải bỏ trống cả hai để tải tiếp vào chỗ cũ.
 // @Tags         Games
 // @Accept       json
 // @Produce      json
@@ -368,13 +388,18 @@ func (h *GameHandler) HubCatalog(c *gin.Context) {
 func (h *GameHandler) DownloadHubGame(c *gin.Context) {
 	var req struct {
 		Name        string `json:"name" binding:"required"`
+		Drive       string `json:"drive"`
 		InstallRoot string `json:"install_root"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		handleValidationError(c, err)
 		return
 	}
-	if err := h.svc.DownloadHubGame(c.Request.Context(), req.Name, req.InstallRoot); err != nil {
+	root := req.InstallRoot
+	if req.Drive != "" {
+		root = req.Drive
+	}
+	if err := h.svc.DownloadHubGame(c.Request.Context(), req.Name, root); err != nil {
 		gameError(c, err)
 		return
 	}

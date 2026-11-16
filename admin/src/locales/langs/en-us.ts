@@ -857,7 +857,7 @@ const local: App.I18n.Schema = {
       addLocal: 'Add local game',
       localTag: 'Local',
       localHint:
-        'A game the cafe downloads itself: pick its folder (anywhere on the server, no link needed) and its launcher. It shows on the workstation menu but is not synced with the Hub, and the Hub never overwrites or deletes it.',
+        'A game the cafe has itself: pick the type and drive, then its folder in <drive>\\Games (tools in <drive>\\Tools). For a game somewhere else, click "Other folder". It shows on the workstation menu but is not synced with the Hub, and the Hub never overwrites or deletes it.',
       localFolder: 'Game folder',
       localFolderPick: 'Pick the game folder on the server',
       localFolderHint:
@@ -865,16 +865,29 @@ const local: App.I18n.Schema = {
       localFolderEditHint:
         'Pick another folder to point the game there. The game name stays; the launcher must exist in the new folder.',
       localFolderPath: 'Selected: {path}.',
+      localKind: 'Type',
+      localKindGame: 'Game',
+      localKindTool: 'Tool',
+      localDrive: 'Drive',
+      localDirPick: 'Pick a folder in {base}',
+      localDirsEmpty: 'No folders in {base} yet. Copy the game there and reopen this dialog, or click "Other folder".',
+      localDirTaken: 'already a game',
+      localOther: 'Other folder (game not in Games / Tools)',
+      localByDrive: 'Pick by drive',
+      localClashReplace:
+        'The Hub has a game "{name}" this cafe has not downloaded. Saving replaces it with this local game; to use the Hub version again, delete the local game.',
+      localClashHub:
+        'Same name as the Hub game "{name}" this cafe has downloaded or is downloading. Give another Game name (the folder stays), e.g. add KZ.',
+      localClashLocal: 'There is already a local game named "{name}" (case-insensitive). Give another Game name.',
+      advanced: 'Advanced',
       localLauncherPick: 'Pick or type the launcher file',
       localIconPick: 'Pick or type the icon file',
       categoryPick: 'Pick a category or type a new one',
       localName: 'Game name',
       localNameHint:
-        'Leave empty to use the folder name. If it matches a Hub game this cafe has not downloaded, you will be asked whether to replace it; if it matches a downloaded Hub game or the folder name has accents, give another name (letters without accents, digits, spaces and . _ ( ) + - only).',
+        'Leave empty to use the folder name. If the folder name has accents, give another name (letters without accents, digits, spaces and . _ ( ) + - only).',
       localRenameHint:
         'Rename to free the name for a Hub game with the same name (for example add KZ). The game folder and play counts stay. Letters without accents, digits, spaces and . _ ( ) + - only.',
-      replaceHubConfirm:
-        'The Hub already has a game "{name}" that this cafe has not downloaded. Replace it with this local game? The Hub version will no longer be downloaded; to use it again, delete the local game.',
       localClash:
         'A local game has the same name as a Hub game: {names}. The cafe keeps the local one; to use the Hub version, delete the local game (files on disk stay).',
       notInCatalog:
@@ -927,6 +940,15 @@ const local: App.I18n.Schema = {
       downloadPath: 'The game will be stored in {path}.',
       downloadRootHint:
         'Pick a folder already used or type a new path, e.g. E:\\Games; the server creates it if missing. Workstations open the game at this same path; if they see a different drive, set it in Customize.',
+      downloadDrive: 'Drive on the server',
+      driveFree: '{free} free of {total}',
+      driveSystem: 'System drive',
+      driveFull: 'Not enough space',
+      drivesEmpty: 'Could not read the server drives: click "Other folder" to type a path.',
+      driveHint:
+        'Games go to <drive>\\Games and tools to <drive>\\Tools; the server creates them if missing. Workstations must see this drive under the same letter.',
+      downloadOther: 'Other folder',
+      downloadDriveOnly: 'Pick a drive only',
       publishing: 'Hashing {name} for publishing; this takes a few minutes',
       queued: '{name} queued for download',
       deleteConfirm: 'Remove {name} from the catalog? Files on disk are kept.',

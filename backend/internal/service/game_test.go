@@ -850,14 +850,23 @@ func TestSyncNowTo_ThuMucLuu(t *testing.T) {
 		require.NoError(t, svc.SyncNowTo(id, root))
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
-	t.Run("game cũ trong thư mục chung: chọn đúng thư mục chung là tải tiếp", func(t *testing.T) {
+	t.Run("game đã tải xong trong thư mục chung từ trước khi có install_root: chọn đúng thư mục chung là kiểm lại", func(t *testing.T) {
 		root := real(t.TempDir())
 		writeEmpty(t, root, "Dota 2/game/dota.exe")
 		svc, mock := cafe(root)
-		game(mock, "", "")
+		game(mock, "h", "")
 		expectGameUpdate(mock, syncSQL, root, model.GameStatusQueued, anyTime{}, id, model.GameStatusDownloading)
 		require.NoError(t, svc.SyncNowTo(id, root))
 		assert.NoError(t, mock.ExpectationsWereMet())
+	})
+	t.Run("game chưa tải bao giờ, chọn thư mục chung mà đã có thư mục cùng tên: từ chối", func(t *testing.T) {
+		// Thư mục đó có thể là bản Kzone hay thư mục của game cục bộ: engine xoá mọi tệp không thuộc game.
+		root := real(t.TempDir())
+		writeEmpty(t, root, "Dota 2/_kz/KZ_Dota2.exe")
+		svc, mock := cafe(root)
+		game(mock, "", "")
+		assert.ErrorContains(t, svc.SyncNowTo(id, root), "đã có dữ liệu")
+		assert.NoError(t, mock.ExpectationsWereMet(), "không được xếp hàng")
 	})
 	t.Run("game đã tải xong ở chỗ khác: không dời", func(t *testing.T) {
 		svc, mock := cafe("")
@@ -1045,7 +1054,7 @@ func pullCatalogVoi(t *testing.T, items []CatalogItem, setup func(mock sqlmock.S
 }
 
 func TestPullCatalog_KhongGhiDeTenTotBangTenHong(t *testing.T) {
-	const selectSQL = `SELECT \* FROM "games" WHERE name = \$1`
+	const selectSQL = `SELECT \* FROM "games" WHERE LOWER\(name\) = LOWER\(\$1\)`
 	const updateKhongTen = `UPDATE "games" SET "category"=\$1,"icon"=\$2,"launch_args"=\$3,"launcher"=\$4,"menu_entries"=\$5,"remote_infohash"=\$6,"remote_relays"=\$7,"remote_trackers"=\$8,"remote_version"=\$9,"remote_webseeds"=\$10,"run_first"=\$11,"updated_at"=\$12 WHERE "id" = \$13`
 	const updateCoTen = `UPDATE "games" SET "category"=\$1,"display_name"=\$2,"icon"=\$3,"launch_args"=\$4,"launcher"=\$5,"menu_entries"=\$6,"remote_infohash"=\$7,"remote_relays"=\$8,"remote_trackers"=\$9,"remote_version"=\$10,"remote_webseeds"=\$11,"run_first"=\$12,"updated_at"=\$13 WHERE "id" = \$14`
 	item := func(ten string) []CatalogItem {
